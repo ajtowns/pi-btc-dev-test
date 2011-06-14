@@ -1,0 +1,53 @@
+From: jgarzik@exmulti.com (Jeff Garzik)
+Date: Tue, 14 Jun 2011 13:14:21 -0400
+Subject: [Bitcoin-development] Bumping up against flood control limits
+	again?
+In-Reply-To: <BANLkTinuEayfr5S9NEcW+cTLpv2r8iwRgDXYniOAHgQ43zwGqQ@mail.gmail.com>
+References: <BANLkTinuEayfr5S9NEcW+cTLpv2r8iwRgDXYniOAHgQ43zwGqQ@mail.gmail.com>
+Message-ID: <BANLkTik78Lokrm_09RW5EBkq2mJC3kMzxA@mail.gmail.com>
+
+On Tue, Jun 14, 2011 at 12:44 PM, Mike Hearn <mike at plan99.net> wrote:
+> Block sizes have started to get quite large once again. Whilst testing
+> chain download today I was disconnected due to going over the 10mb
+> flood control limit. Infuriatingly, I can't reproduce this reliably.
+> But at 500 blocks an average of 20kb per block will cause this. As we
+> can see from the block explorer, the average is probably quite close
+> to that.
+>
+> The flood control seems like a pretty serious scalability limitation.
+> I can see a few solutions. One is to raise the limit again. Another is
+> to raise the limit and simultaneously lower the batch size. 500 blocks
+> in one message means very large messages no matter how big the flood
+> control limit is. Going down to 100 or even 50 would hurt chain
+> download speed quite a bit in high latency environments, but chain
+> download is already a serious bottleneck.
+
+The main goal was not flood control but preventing an internal buffer
+memory explosion.  We already have the block chain on disk, so in
+theory, if we can -eliminate- the outgoing network buffer and simply
+use a pointer into the block chain file, we can send as much data as
+we want.
+
+HTTP servers certainly don't buffer huge amounts in memory; they would
+keel over if so.  HTTP servers have been working on the reverse, in
+fact:  moving the data-pushing over to sendfile(2) syscall and similar
+optimizations.
+
+This is an unfortunate relic of how bitcoin P2P code is written.  If
+the remote side has reduced their TCP window to zero, bitcoin will
+still buffer so that it may continue processing other P2P traffic from
+other nodes.  That makes sense in the case of tiny, 31-byte address
+messages -- one must handle the case of a half-sent message before
+write(2) refuses additional data -- but not huge block chain download
+messages.
+
+The P2P code just wasn't written for huge amounts of streaming data,
+and needs some serious thinking...  I agree 100% that it is an issue
+we will start bumping into, if we haven't already.
+
+-- 
+Jeff Garzik
+exMULTI, Inc.
+jgarzik at exmulti.com
+
+
