@@ -1,0 +1,63 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Wed, 22 Jun 2011 11:32:49 -0400
+Subject: [Bitcoin-development] [PULL] Add scriptPubKey enforced
+ sendescrow and redeemescrow API calls
+In-Reply-To: <BANLkTinUbJ6CKczHiyX2esMyRWgUrJ_9ASeOqZbRj+23GZgjcQ@mail.gmail.com>
+References: <18440.87.106.138.84.1308200020.squirrel@lavabit.com>
+	<BANLkTi=FTLnU-riNVYssnR9FLdcEeZX7gOS6Zdv1f_XDcJoSSg@mail.gmail.com>
+	<BANLkTikkBoHBr8z6Uv7oGU_KuT0bvgx3HA@mail.gmail.com>
+	<BANLkTinUbJ6CKczHiyX2esMyRWgUrJ_9ASeOqZbRj+23GZgjcQ@mail.gmail.com>
+Message-ID: <BANLkTikP-VheXQyXikH6jvaqnWfH_cNjnw@mail.gmail.com>
+
+...
+>> I think all of these could use a new type of bitcoin payment address;
+>> it might make sense for THAT to be generic, maybe containing:
+>> ?version byte
+>> ?m
+>> ?n
+>> ?hash of xor of all n public keys
+>> ?checksum
+>
+> I don't understand what this is for. For triggering such a transaction
+> via the UI, I think establishing a higher level protocol would be
+> needed. It's a separate step.
+
+You're right, it doesn't make sense.  The use case I would like to work is:
+
+I setup an escrow that requires m of n signatures to release funds,
+securely getting public keys from the other n-1 parties.
+
+Now we all need to fund the escrow. Or maybe other people can fund the
+escrow (it just takes m of n of us to decide when/how/where to spend
+the funds).
+
+It would be spiffy to publish a new type of bitcoin address that is an
+"m of n address", that anybody could pay into, but would require m of
+n signatures to spend.  Publishing a really really long address with
+all n public keys would work.
+
+It would be great if the "higher level protocol" for pay-to-escrow was
+just get a bitcoin address via https (or other secure mechanism), like
+we do now for pay-to-single-party.  Where the person you're paying has
+their own mechanisms for generating or fetching/authenticating the
+public keys, and knows which bitcoin addresses they've published.
+
+All of which makes me wonder if the straightforward "n PUBKEYS m
+CHECKMULTISIG" transaction type is the right thing to do.
+Following the pattern of our standard DUP HASH160 etc. transaction
+type, maybe 2 of 2 and 2 of three should be:
+
+2DUP ADD HASH160 ...hash(pubkey1+2)... EQUALVERIFY 2 2 ROLL CHECKMULTISIGVERIFY
+3DUP ADD  ADD HASH160 ...hash(pubkey1+2+3)... EQUALVERIFY 2 3 ROLL
+CHECKMULTISIGVERIFY
+
+Spending those transactions would mean putting the m signatures and
+the n public keys in the TxIn, but sending funds you'd only need the
+hash of the sum of the public keys.
+
+-- 
+--
+Gavin Andresen
+http://clearcoin.com/
+
+
