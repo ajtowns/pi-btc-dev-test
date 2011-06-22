@@ -1,0 +1,79 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Wed, 22 Jun 2011 16:49:51 +0200
+Subject: [Bitcoin-development] [PULL] Add scriptPubKey enforced
+ sendescrow and redeemescrow API calls
+In-Reply-To: <BANLkTikkBoHBr8z6Uv7oGU_KuT0bvgx3HA@mail.gmail.com>
+References: <18440.87.106.138.84.1308200020.squirrel@lavabit.com>
+	<BANLkTi=FTLnU-riNVYssnR9FLdcEeZX7gOS6Zdv1f_XDcJoSSg@mail.gmail.com>
+	<BANLkTikkBoHBr8z6Uv7oGU_KuT0bvgx3HA@mail.gmail.com>
+Message-ID: <BANLkTinUbJ6CKczHiyX2esMyRWgUrJ_9ASeOqZbRj+23GZgjcQ@mail.gmail.com>
+
+> Mike: ?Did Satoshi ever tell you what he was thinking for the best way
+> to implement MULTISIG transactions?
+
+He didn't. Satoshi told me very little unfortunately. What he did tell
+me, I've written up about half of it. I still have high frequency
+trading and some details of obscure SIGHASH types to go, but I wanted
+to find examples to illustrate them first as Satoshi only gave the
+vaguest of outlines.
+
+> I'm wondering if hard-coding new standard script templates in
+> script.cpp Solver():
+
+CHECKMULTISIG allows up to 20 keys, I think. So it'd probably be
+better to just have a bit of custom logic that checks if the script is
+of the right form.
+
+> ... would be the right approach to support 1/2 of 2 and 1/2/3 of 3
+> signatures. ?It'd be nice if there were generic
+> OP_N << OP_PUBKEY_N << OP_N ?... template matching opcodes, but there aren't.
+
+I suppose they could be added if need be. Template matching opcodes
+might come in useful later when clients only want to download
+transactions of interest to them.
+
+> I'm also wondering if it makes sense to just support 2-of-2 (for
+> validate-on-multiple-devices) and 2-of-3 (for escrow) for now.
+
+Given the costs involved with adding new transaction types, I'd go for
+allowing any number of signatures up to the max.
+
+> I think all of these could use a new type of bitcoin payment address;
+> it might make sense for THAT to be generic, maybe containing:
+> ?version byte
+> ?m
+> ?n
+> ?hash of xor of all n public keys
+> ?checksum
+
+I don't understand what this is for. For triggering such a transaction
+via the UI, I think establishing a higher level protocol would be
+needed. It's a separate step.
+
+For instance, it's not safe to use escrow until you've checked that
+the escrow key is owned by who you think it is. Otherwise a buyer
+could give you a 2-of-3 transaction where they own both keys. So there
+needs to be some kind of protocol (probably HTTP based) where the
+buyer communicates to the merchant a list of acceptable escrow
+agencies, the merchant intersects with the list of agencies it
+accepts, there needs to be a way to request a pubkey from a remote
+domain, one side needs to be able to challenge that domain with a
+nonce, etc. It's quite complicated and would need to be specced out
+independently of supporting multipay transactions.
+
+> I'm most interested in the 2-of-2 case; I think merchants and
+> exchanges need bitcoin deposit/payment addresses that they can make
+> secure by requiring a 2-step signature process for spending those
+> funds.
+
+Yes it's one way to achieve security. Having BitBanks that store your
+coins and require you to verify tx acceptance with an external device
+is even stronger, because that external device can be guaranteed
+virus/clone-proof. Some banks do this today for wire transfers (they
+implicitly assume you get the wire details out of band or that no
+virus can rewrite wiring instructions to point somewhere else).
+
+But it'll be a while yet before any such company arises. Until then
+2-of-2 transactions are probably a good halfway point.
+
+
