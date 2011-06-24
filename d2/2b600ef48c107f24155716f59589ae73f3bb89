@@ -1,0 +1,41 @@
+From: witchspace81@gmail.com (John Smith)
+Date: Fri, 24 Jun 2011 05:30:54 +0000
+Subject: [Bitcoin-development] Speeding up "getbalance <account>" calls
+In-Reply-To: <20110623215143.GA3351@dax.lan.local>
+References: <20110623215143.GA3351@dax.lan.local>
+Message-ID: <BANLkTi=eSgC0T_mKn660dZv1h+g-Z9TU+g@mail.gmail.com>
+
+Jan,
+
+On Thu, Jun 23, 2011 at 9:51 PM, <jan at uos.de> wrote:
+
+> Hi there!
+>
+> Instawallet has enjoyed steady growth and I'm running into a bottleneck
+> now with "getbalance <someaccounthere>" taking quite some time to
+> complete. My understanding is, that this is because bitcoind runs
+> through all relevant transactions each time anew to compute the balance.
+> I was hoping the list could give me some pointers/ideas on how I can
+> improve this.
+>
+
+I think the easiest way to speed this up would be to scan the wallet every
+time a block comes in or something else changes in the block chain (or, if
+you prefer, some pre-set interval of N minutes). Then go over the entire
+wallet and the accumulate balances for all accounts. This could be done in
+amortized linear time using a hash_map.
+
+1) This reduces the time the API takes to return the balance for an account
+to a predictable, very short time. Just the time to look up the balance in
+the hash table (and return 0 on miss). The number crunching happens in the
+network thread, not while you're waiting on the API.
+
+2) Less bug-prone than "incremental caching" as you propose, and doesn't
+require determining which accounts are influenced by a new block
+
+3) Block chain reorgs are no problem.
+
+JS
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20110624/3762c70c/attachment.html>
