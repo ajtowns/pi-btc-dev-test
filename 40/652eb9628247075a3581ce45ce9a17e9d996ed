@@ -1,0 +1,53 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Fri, 1 Jul 2011 12:23:59 -0400
+Subject: [Bitcoin-development] Useful bitcoin patches...
+In-Reply-To: <BANLkTi=+jZCANpe8Bmh_7e6KNnQZjF35yA@mail.gmail.com>
+References: <BANLkTinus7PWNLJi9rEvTtSB93hjLKhFpg@mail.gmail.com>
+	<BANLkTi=+jZCANpe8Bmh_7e6KNnQZjF35yA@mail.gmail.com>
+Message-ID: <BANLkTimiNOynfvQnncUeiRoZm+CG6njjoA@mail.gmail.com>
+
+On Fri, Jul 1, 2011 at 12:03 PM, Christian Decker
+<decker.christian at gmail.com> wrote:
+> Some appear to be beneficial to everybody.
+> Multithreading the RPC will certainly speed up quite a few services and I
+> see no downside in adding it. The same is true for Keep-Alive.
+
+The multithreaded RPC stuff will need very aggressive testing to make
+sure it doesn't expose race conditions elsewhere in the code.
+
+E.g. you don't want to lose change from a send because some txn called
+getnewaddress concurrently and there was a bug. So far the
+multithreaded RPC patches have pretty much only been run by miners...
+who have a different rpc profile than everyone else.
+
+(and the MT RPC that I've been using only multhreaded getwork?)
+
+> The Hub mode is good, and I would go a step further and optimize the
+> connection logic for all nodes by default.
+
+Gah. No.
+
+The 'hub mode' is not good. We're already low on sockets network wide,
+adding a built in DDOS mode flag to bitcoin that makes nodes
+aggressively connect to lots of neighbors is a bad idea. People will
+ignorantly enable it thinking they are adding resources to the network
+when they are really consuming much much more.
+
+I have a big fast node with a higher connection limit and the flood
+fixes and I'm currently seeing 596 inbound connections right now. This
+suggests the situation is already a lot worse than the rough numbers
+using lfnet connection counts suggested.
+
+
+Miners, concerned with fast block propagation, should manually addnode
+each other. We should fix the addnode logic so that it reserve
+connection slots for addnoded nodes and tries to keep connecting to
+them (or, alternatively, add a peernode flag for that behavior)
+currently addnode is oneshot.
+
+There is a lot of room for longer term improvements to the connection
+and forwarding logic, and I have a couple interesting ones I'm running
+on my nodes, but we don't really have any good way to test and
+validate changes, so I'm hesitant to publish them.
+
+
