@@ -1,0 +1,66 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Thu, 7 Jul 2011 13:15:58 +0200
+Subject: [Bitcoin-development] Version bytes
+Message-ID: <20110707111557.GA5231@ulyssis.org>
+
+Hello everyone,
+
+after a discussion on IRC, we decided to try to standardize the version bytes
+used by bitcoin for several applications.
+
+There are 3 components that seem meaningful:
+* network? (realnet, testnet, alternate chains?)
+* data class? (address, private key, master key, ...?)
+* version? (real version, per data class defined)
+
+There is no technical reason why different network and different data classes
+would need separate version bytes, but i think it is a good thing to keep
+them from colliding. People will mix them up, and when things are well
+defined, a nice warning message could help a lot ("Oops it seems you entered
+a private key instead of an address!").
+
+So, first of all, there is already one actually used alternate chain, namely
+namecoin, using version byte 52 for addresses. For this reason, i'd like to
+reserve bit 16 in the version byte for "alternate chain". When bit 16 is set,
+everything is up to the network itself, and no further semantics are defined.
+
+When bit 16 isn't set:
+
+Then remains the rest of the network. The problem is that testnet already uses
+version 111, which is not a single bit. We can use a trick though, namely
+choosing bit 1 for testnet, and if bit 1 is set, XOR the rest of the version
+number with 111. Otherwise, we could reset testnet (not actually reset, just
+change its addresses a bit), and simply state odd=testnet, even=realnet.
+
+That leaves use with 6 more bits to play with, namely 128,64,32 and 8,4,2.
+As 128 is already used for private keys, let's use (128,64,32) for data classes,
+and (8,4,2) for versions.
+
+So, in full:
+* Bits 128/64/32 define data class
+** 0 = address
+** 32,64,96,160,192 = reserved for future use
+** 128 = private key
+** 224 = extended data class, another "data class" byte follows
+* Bit 16 defines "private"
+** 0 = bitcoin
+** 16 = alternate chain
+* Bits 8/4/2 define version number
+** 0 = only thing used for now
+** 2,4,6,8,10,12 = reserved for future use
+** 14 = extended version, another version byte follows
+* Bit 1 defines testnet
+** 0 = realnet
+** 1 = testnet (possibly using XOR 111, if not reset)
+
+This whole discussion started when Stefan wanted to define a format for master keys from which
+to derive deterministic wallet keys, i suggest using data class 192 for that, leaving the
+lower numbers for more basic data, like public keys.
+
+Any comments?
+
+-- 
+Pieter
+
+
+
