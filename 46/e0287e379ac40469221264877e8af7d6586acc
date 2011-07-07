@@ -1,0 +1,79 @@
+From: andyparkins@gmail.com (Andy Parkins)
+Date: Thu, 7 Jul 2011 10:49:47 +0100
+Subject: [Bitcoin-development] Suggestion for enhancements to getblock
+Message-ID: <201107071049.48131.andyparkins@gmail.com>
+
+Hello,
+
+This is a suggestion with a mind to the future.  In particular, I'm slowly 
+working on an alternative client and library (I know, everyone says that).  
+I've got a feature that I'd like to have that would need a change in the 
+protocol.  It's a change that I think would improve the official client as 
+well, so I'm bringing it up here.
+
+It's actually two changes; and both could be acheived by adding new commands 
+to the protocol.  I think that would be overkill though; as they fit quite 
+nicely into an extended getblocks command.
+
+(1) The getblocks message is a list of inventory items (type MSG_BLOCK) being 
+requested.
+
+Imagine this situation though.  I am a light weight client.  I store the block 
+headers only.  I am only interested in the history of my own wallet addresses.  
+I receive a block broadcast with a transaction that sends coins to one of my 
+addresses.  That transaction references other transactions (of course), but I 
+haven't stored any transactions.  So; I want to request those transactions and 
+ensure they are all valid and in blocks.  I can't.
+
+I can request the transactions themselves; but I have no way of finding out 
+what block they were in without downloading the entire full block chain 
+myself.  The thing is, a peer with the full block chain is able to do this 
+instantly.
+
+Here then is my suggestion:  getblocks should accept inventory items of type 
+MSG_TX as well as MSG_BLOCK.  When it finds a MSG_TX request, it shouldn't 
+send the transaction (after all that is what the getdata message is for); 
+instead it should return the block that contains that transaction.  It's an 
+alternative way of requesting a block -- by transaction in that block.
+
+It should be obvious then that it would be easy for a lightweight client to 
+request the transaction chain transactions its interested in to create a list 
+of relevant hashes for the history it's after; and then put those hashes in a 
+getblocks request and have to look only at a few full blocks instead of the 
+full block chain.
+
+
+(2) If you are offline when new transactions are broadcast, there is no way to 
+know they are pending.
+
+Transactions that have been broadcast but not yet accepted into a block are 
+never resent (nor should they be).  But if I am on a mobile client say, or a 
+light-weight, intermittently used client; I have no way of checking if a 
+transaction sending coins to one of my addresses is pending.
+
+It should be possible to request the current pending transaction list.
+
+My sugestion then is that a special virtual block request be possible.  The 
+all zero block hash can never exist (it's used as the parent for the genesis 
+block, so it had better not).  If I send a getblocks that contains an all-zero 
+hash, then the virtual block should be returned in a block message.  That 
+virtual block will list all the current pending transactions.  Obviously there 
+would be a problem that it's actual hash would not be zero; so it would have 
+to be marked as the virtual block in some other way (perhaps a zero timestamp 
+plus a zero parent hash, or similar).
+
+
+
+The combination of the above two protocol changes makes it possible for any 
+client to have a large chunk of the facilities available in blockexplorer.com 
+and the very useful http://bitcoincharts.com/bitcoin/ information.
+
+
+
+
+Andy
+-- 
+Dr Andy Parkins
+andyparkins at gmail.com
+
+
