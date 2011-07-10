@@ -1,0 +1,137 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Mon, 11 Jul 2011 01:36:53 +0200
+Subject: [Bitcoin-development] overall bitcoin client code quality
+In-Reply-To: <97305540.4426247.1310337435268.JavaMail.fmail@mwmweb052>
+References: <97305540.4426247.1310337435268.JavaMail.fmail@mwmweb052>
+Message-ID: <1310341013.2230.66.camel@Desktop666>
+
+On Mon, 2011-07-11 at 00:37 +0200, Michael Offel wrote:
+> Hello,
+>  
+> I would like to start a discussion about code quality to catch some opinions and create an codebase cleanup plan.
+>  
+> Let me just start with some points I've seen while reading and stepping throw bitcoin:
+>  
+>  
+> 1. nearly no code documentation
+Yep, anyone with the time can gladly comment up the code, it would be
+much appreciated, but as it stands now there are more important things
+to do...like many of the things here:
+
+> All I found was the original paper and some partial wiki pages and the overall coding style does not help much here. I would love to see some class hierarchy, method descriptions and thoughts in the code. 
+Yes, thats one of the general development goal, sipa's CWallet was an
+excellent start, but much more work needs done in terms of clear
+splitting of the code.
+
+> Instead one can find comments like this...
+>  
+> >    // Map ports with UPnP
+> >    if (fHaveUPnP)
+> >        MapPort(fUseUPnP);
+>  
+> This comment is just waste of valuable disk space and time for anyone who reads it.
+My bad, was just following the previous comments...
+> While I can guess what the CScript class does I would more like to understand the thoughts behind the decision to implement some crypto macros in a compile time interpreter and 
+> why Berkeley db 4 is used at all.
+At the time Bitcoin began being built, Ubuntu 9.04 (or was it 9.10?) was
+used, as it offered the oldest libc on the newest OS.  Ubuntu 9.04 just
+happened to only have db4.7.  For backward compatibility, db4.7 has been
+used ever since (except, for some reason, the osx builds).  In 0.4,
+db4.8 will be used.  If you are asking why bdb was used to begin with,
+why not? its an excellent db and why reinvent the wheel?
+
+>  
+> 2. isolation of modules
+>  
+> It would be a lot easier to understand parts of the code if they would use well defined interfaces to communicate. Bitcoin makes use of global variables, public member variables in classes and global external functions what makes understanding the code a lot harder.
+> To give an example here, the irc module has no interface at use it or to use. It gets some kind of magic thread started and pushes received addresses directly to some global function in net.cpp. The code is full of concepts like this.
+> A well defined interface would be an bitcoin unrelated IRC module interface and some kind of translation class between the IRC and peer2peer network interface.
+Though satoshi was clearly brilliant, he didn't care much for code
+cleanliness.  This is one of the next development goals (IMO).
+
+>  
+> 3. poor use of threads
+>  
+> Bitcoin starts a new thread for every little module it has and as soon as there is some serious work to do, it locks some kind of global mutex. While this eliminates nearly every performance advantage, it introduces a high difficulty in writing bug free code.
+> Not only that one has to know which mutex to lock when, there is no documentation about that, one may also accidently add dead locks.
+> This kind of bug is very hard to find, it may run well for a million of tests and crash or just hang on the next one. And my experience tells me that it will not be an developer nor an little user when it occurs.
+> The fist user who hit's the bug will be mt gox doing an emergency transfer. ;)
+This is something that will come with general code cleanup and
+modularization.  The locks will become specific to the object (as they
+should be) and the performance and clarity will be fixed.
+
+> My suggestion is to remove all threads and critical sections and build a sequential easy to follow model.
+> Some modules like the cpu miner may still require to spawn threads, but he should do this internally and hide any synchronization.
+Though it would be ideal to rewrite 90% of Bitcoin just to fix code
+clarity, that is way more work than anyone has time for, in the mean
+time there is more than just code cleanup that needs done.  It has to be
+done in chunks.
+
+>  
+> 4. long build times
+>  
+> It takes longer to build Bitcoin than building some of the million lines of code projects I'm working on. The reasons I did see so far is the use of boost, lack of module isolation and implementations in header files.
+> While the rest is just bad coding style the use of boost is arguable. As far as I can see it is mainly used for threading and FOREACH. I already put threading on the table,
+> but using pthread or making an platform dependent startthread and mutex would be much more lightweight and nobody needs FOREACH. Boost is also an heavy non standard dependency that is an unnecessary barrier for new developers.
+Header files could stand to be cleaned up a bit, though all the
+implementation stuff is limited to one or two lines (though sometimes
+thats too much).  If you want to rewrite Bitcoin sans-boost, please do,
+however Boost really isnt a huge barrier as its a build-once thing.  If
+you are on Linux, all you have to do is install a bunch of packages and
+build wx.  If you are on Windows, why are you on Windows? ;)
+
+>  
+> 5. style guide
+>  
+> There is a style guide but it does not include anything about readability.
+> I'm talking about one file per class, no methods and single code line longer than a screen page. It should be natural to write code like this and I dislike having a lot of rules but the code shows that there is a need for such thing.
+Its not due to the current coders, its due to how it was originally
+written.
+
+>  
+> 6. hardcoded values
+>  
+> There are tons of hardcoded values for the official and the testnet block chain. It would be a great step to move all chain related settings to a chain description file. This would allow custom chains and clean up the code.
+This one is an interesting debate.  There is no real reason to do this
+aside from some questionable code cleanup.  Also, there is no reason to
+encourage improperly-implemented alternate chains.  Alternate chains
+should be designed in such a way as to share the main chain's difficulty
+as described by Mike on the forum, not just make a new chain and hope it
+sticks.
+
+>  
+> All this is just the tip of the iceberg. Bitcoin is a widely used application and users are transferring millions of dollars. The current code quality is very prone to bug's.
+> To be clear I'm not saying there are a lot of bugs nor do I blame someone for the code quality. It is still a beta version and it was necessary to bring out a working version to attract more developers.
+> And it is hard to analyze the code or just see a bug during development. One can be happy to understand what a method does, but this gives not the confidence to see and report obvious bugs.
+>  
+> Let me also say that I'm not pointing to someone to do all this. I'm willing to spend a lot of time on this promising project but this kind of cleanup is simply too large for one person who is new to the code.
+> My overall suggestion is to begin a complete rewrite, inspired by the old code rather than moving a lot of "known to be somehow functional" around.
+Really no reason to do that.  Although the code is messy in terms of
+global usage and poorly-implemented RPC/net/etc, most of the code is
+absolutely fine.  Just throw it in clearly-defined methods and classes
+and it would be much more readable and less prone to mistakes.
+Additionally, the things that are poorly-implemented can be slowly
+changed over time in a clean and independent fashion instead of having
+to rewrite massive chunks at a time.  Even if we had a full-time
+development team of many, many developers, this isn't the right way to
+do it.  The code itself is cleaner that it first appears, even if its
+global structure is not.
+
+> The official Bitcoin client should be some kind of an reference project for other clients and must therefore be extra clean and well documented.
+True, but it is much higher priority to clean up the code than comment
+it better, plus there are various other features/more user-facing issues
+that need fixed as well, so...
+>  
+> Hopefully I did not hurt someone's feelings.
+Don't think so, the code sucks in terms of cleanliness, everyone knows
+it, its just a question of who is going to and when its going to get
+fixed.
+
+Matt
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 836 bytes
+Desc: This is a digitally signed message part
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20110711/6a60bf07/attachment.sig>
