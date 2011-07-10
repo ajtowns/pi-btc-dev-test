@@ -1,0 +1,66 @@
+From: Michael.Offel@web.de (Michael Offel)
+Date: Mon, 11 Jul 2011 00:37:15 +0200 (CEST)
+Subject: [Bitcoin-development] overall bitcoin client code quality
+Message-ID: <97305540.4426247.1310337435268.JavaMail.fmail@mwmweb052>
+
+Hello,
+?
+I would like to start a discussion about code quality to catch some opinions and create an codebase cleanup plan.
+?
+Let me just start with some points I've seen while reading and stepping throw bitcoin:
+?
+?
+1. nearly no code documentation
+?
+All I found was the original paper and some partial wiki pages and the overall coding style does not help much here. I would love to see some class hierarchy, method descriptions and thoughts in the code. Instead one can find comments like this...
+?
+>??? // Map ports with UPnP
+>??? if (fHaveUPnP)
+>??????? MapPort(fUseUPnP);
+?
+This comment is just waste of valuable disk space and time for anyone who reads it. While I can guess what the CScript class does I would more like to understand the thoughts behind the decision to implement some crypto macros in a compile time interpreter and why Berkeley db 4 is used at all.
+?
+?
+2. isolation of modules
+?
+It would be a lot easier to understand parts of the code if they would use well defined interfaces to communicate. Bitcoin makes use of global variables, public member variables in classes and global external functions what makes understanding the code a lot harder. To give an example here, the irc module has no interface at use it or to use. It gets some kind of magic thread started and pushes received addresses directly to some global function in net.cpp. The code is full of concepts like this. A well defined interface would be an bitcoin unrelated IRC module interface and some kind of translation class between the IRC and peer2peer network interface.
+?
+?
+3. poor use of threads
+?
+Bitcoin starts a new thread for every little module it has and as soon as there is some serious work to do, it locks some kind of global mutex. While this eliminates nearly every performance advantage, it introduces a high difficulty in writing bug free code. Not only that one has to know which mutex to lock when, there is no documentation about that, one may also accidently add dead locks. This kind of bug is very hard to find, it may run well for a million of tests and crash or just hang on the next one. And my experience tells me that it will not be an developer nor an little user when it occurs. The fist user who hit's the bug will be mt gox doing an emergency transfer. ;) My suggestion is to remove all threads and critical sections and build a sequential easy to follow model. Some modules like the cpu miner may still require to spawn threads, but he should do this internally and hide any synchronization.
+?
+?
+4. long build times
+?
+It takes longer to build Bitcoin than building some of the million lines of code projects I'm working on. The reasons I did see so far is the use of boost, lack of module isolation and implementations in header files. While the rest is just bad coding style the use of boost is arguable. As far as I can see it is mainly used for threading and FOREACH. I already put threading on the table, but using pthread or making an platform dependent startthread and mutex would be much more lightweight and nobody needs FOREACH. Boost is also an heavy non standard dependency that is an unnecessary barrier for new developers.
+?
+?
+5. style guide
+?
+There is a style guide but it does not include anything about readability.
+I'm talking about one file per class, no methods and single code line longer than a screen page. It should be natural to write code like this and I dislike having a lot of rules but the code shows that there is a need for such thing.
+?
+?
+6. hardcoded values
+?
+There are tons of hardcoded values for the official and the testnet block chain. It would be a great step to move all chain related settings to a chain description file. This would allow custom chains and clean up the code.
+?
+?
+All this is just the tip of the iceberg. Bitcoin is a widely used application and users are transferring millions of dollars. The current code quality is very prone to bug's. To be clear I'm not saying there are a lot of bugs nor do I blame someone for the code quality. It is still a beta version and it was necessary to bring out a working version to attract more developers. And it is hard to analyze the code or just see a bug during development. One can be happy to understand what a method does, but this gives not the confidence to see and report obvious bugs.
+?
+Let me also say that I'm not pointing to someone to do all this. I'm willing to spend a lot of time on this promising project but this kind of cleanup is simply too large for one person who is new to the code.
+My overall suggestion is to begin a complete rewrite, inspired by the old code rather than moving a lot of "known to be somehow functional" around.
+The official Bitcoin client should be some kind of an reference project for other clients and must therefore be extra clean and well documented.
+?
+Hopefully I did not hurt someone's feelings.
+?
+Michael
+?
+?
+
+___________________________________________________________
+Schon geh?rt? WEB.DE hat einen genialen Phishing-Filter in die
+Toolbar eingebaut! http://produkte.web.de/go/toolbar
+
+
