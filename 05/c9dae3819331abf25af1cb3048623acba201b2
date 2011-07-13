@@ -1,0 +1,128 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Wed, 13 Jul 2011 02:17:59 +0200
+Subject: [Bitcoin-development] overall bitcoin client code quality
+In-Reply-To: <602127524.20110712224712@web.de>
+References: <602127524.20110712224712@web.de>
+Message-ID: <1310516279.2279.20.camel@Desktop666>
+
+On Tue, 2011-07-12 at 22:47 +0100, Michael Offel wrote:
+> Monday, July 11, 2011, 12:31:20 AM, Jeff Garzik wrote:
+> >> 2. isolation of modules
+> > It is a long term goal to move towards 'libbitcoin"
+> What  about creating a branch and start libbtc by implementing a small
+> module  like irc or p2p connection handling and use the new lib in the
+> client. I think this would be a proper start for a new clean code base
+> without  having  a  non  functional  client  for some time and it also
+> provides  some  kind  of red line between libbtc (cleaned up code) and
+> the old code base, making it easy to maintain order.
+> Would this approach be accepted for a merge?
+I had been planning on, and putting off starting work on, a central hub
+infrastructure to Bitcoin until fairly recently.  Its a central hub
+where net/main/wallet/etc can subscribe to get notified of new
+blocks/txes/etc, push new blocks/txes/etc and can get information about
+blocks/txes/etc.  I started work fairly recently, but hopefully it will
+be functional sometime in the not-too-distant future.
+As I said earlier, the Bitcoin code base really isn't all that messy,
+its only its lack of clear lines between classes that makes it seem that
+way.  It does some things inefficiently, however its general algorithms
+are quite good the way they stand.  (though net could probably stand a
+ground-up rewrite of the backend).  If you want to rewrite for a more
+optimized handling of p2p connections/etc, it would be apprecitated and
+(assuming its done well) certainly merged.
+> 
+> It  was  more  meant  as an rhetorical question. A documented decision
+> would give anyone the chance of arguing against the usage of a library
+> instead  of asking stupid questions. A mailing list archive suits well
+> for  this  type  of information, so let me try to get some information
+> here.  Db4  is  an  excellent  choice  if  you  need  indexed database
+> functionality without SQL interface. But compared to an stl map lookup
+> and  fopen,  fwrite  and  fclose  it  is much harder to understand and
+> brings  a  lot  performance  overhead.  This  is  true as long as your
+> information are small enough to stay in main memory. A stl map storing
+> file  offsets  is  also  not that hard to write and understand. On the
+> other  side  using  an  SQL  interface  would  bring  the advantage of
+> swapping  database  providers.  An enterprise website could use oracle
+> while the average user could use sqlite. Also is db4 used for any type
+> of disk storage, this makes files like wallet.dat some kind of hard to
+> read. It is in no way more secure than storing private key's in an xml
+> file. But it is much harder to maintain and understand by the user and
+> the average programer.
+I can't speak for satoshi here, but I would agree with his decision on
+the grounds that BDB offers a good mix.  Compared to a sql-driven
+library, it offers a much lighter-weight footprint.  Compared to rolling
+our own, its much, much simpler to use the existing code that people
+have spent years writing/optimizing/fixing/etc.  It also provides good
+Database transactioning which Bitcoin does depend on on some (rare,
+though hopefully less so as time goes on) circumstances.
+> 
+> >>
+> >> 6. hardcoded values
+> >>  
+> >> There are tons of hardcoded values for the official and the testnet block chain. It would be a great step to move all chain related settings to a chain description file. This would allow custom chains and clean up the code.
+> > This one is an interesting debate.  There is no real reason to do this
+> > aside from some questionable code cleanup.  Also, there is no reason to
+> > encourage improperly-implemented alternate chains.  Alternate chains
+> > should be designed in such a way as to share the main chain's difficulty
+> > as described by Mike on the forum, not just make a new chain and hope it
+> > sticks.
+> It  is  not  that  interesting  as it looks first.
+Interesting might have been the wrong word.  Let me rephrase that too
+"of hot topic if you ask several people who incessantly create new
+chains for no reason other than to create new chains".
+> There is no good in
+> running multiple chains for production use. To share the difficulty is
+> indeed  a  good  start  to  solve  the problem. That's also one of the
+> things  I  don't  like  off  the QBitcoin client. 
+Neither the original client nor any other client or patch currently
+implements work-sharing, I don't think you understood my statement here.
+I was referring to http://forum.bitcoin.org/?topic=7219.0
+
+> What I meant is just
+> to have the possibility to have all adjustable parameters in one place
+> and  to  be  able  to  quickly build an internal testnet without crazy
+> firewalling  to prevent it from dying. The first would allow to detect
+> problematic ddos protection settings early and giving the average user
+> the  possibility  to adjust all important settings if he knows what he
+> does.
+Those parameters are available, though I don't think they show up in
+--help output.  If someone had the time to go back and document the
+parameters not in --help, it would be much appreciated ;)
+> That  includes  not  only alternate chains. One could choose to
+> include  transactions  only  at  a  higher  fee  or  at no fee at all.
+> Everyone could do such things by changing the code anyway. But not all
+> brilliant administrators or users are programmers.
+That is yet another debated issue.  The transaction (relay) fees are
+there for a reason much more than just for the hell of it.  If
+transaction (relay) fees were easily changeable, they would serve no
+purpose as they would all be set to 0.  Transaction fee handling needs a
+rethinking and recoding, but offering each user the option to just relay
+every transaction off the wire is not an option.
+
+> 
+> Tuesday, July 12, 2011, 4:31:07 AM, Gavin Andresen wrote:
+> > We'll just tell everybody to stop using bitcoin so much for six months
+> > or so while we implement a much better client.  It will be exactly
+> > like the bitcoin we have now, except with a much nicer internal
+> > architecture and much cleaner code-base, and we're pretty sure we can
+> > get it done in six months if everything goes exactly as planned.
+> It  is  some  kind of arrogant to believe that anyone would stop using
+> bitcoin  if some programers decide to stop working for some month. And
+> it  is  also fond to not fix bugs in the old code base if they appear.
+> Also  there are lots of people out there using old clients anyway. The
+> important  improvement is more about quick extendibility and therefore
+> more  feature  rich secure code. This would not only help the official
+> code  base,  it would also improve trust and result in better external
+> bitcoin related projects.
+That was not at all the point of that comment.  Trying to fix bugs on an
+old codebase while rewriting a new one is worthless and just creating
+way more effort than is necessary.
+
+Matt
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 836 bytes
+Desc: This is a digitally signed message part
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20110713/9d27706e/attachment.sig>
