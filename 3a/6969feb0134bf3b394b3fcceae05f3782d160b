@@ -1,0 +1,100 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Thu, 14 Jul 2011 11:10:42 +0200
+Subject: [Bitcoin-development] Notifications from client/wallet
+In-Reply-To: <CAJNQ0st6Fo+VgVWj-AA5x8EvetZt4H=PR=n5q6NhZ6RyR0HYOA@mail.gmail.com>
+References: <CAJNQ0st6Fo+VgVWj-AA5x8EvetZt4H=PR=n5q6NhZ6RyR0HYOA@mail.gmail.com>
+Message-ID: <20110714091041.GA3814@ulyssis.org>
+
+On Thu, Jul 14, 2011 at 05:19:11AM +0000, John Smith wrote:
+> Hello all,
+> 
+> I'd like to add notifications to the client and wallet, to decouple UI and
+> core communication, and especially so that UIs no longer have to poll for
+> changes.
+> 
+> I propose to use the boost::signal mechanism for that. It is basically a
+> glorified callback system, but allows decoupled delivery of 'signals' from
+> an object. Multiple other objects can listen in on an event without the
+> emitting object having to care.
+
+I like this idea. Matt and I were considering a similar system for the internal
+communication between net/wallet/blockdb/mempool, but weren't really aware of
+boost::signal. I looked at it, and really seems to provide everything necessary.
+
+> Specific notifications that would be useful:
+> 
+> Wallet:
+> 
+>    - balanceChanged(int64): spendable balance changed
+
+Maybe even per-account?
+
+>    - transactionAdded(int256): new transaction added to wallet
+>    - transactionUpdated(int256): transaction info changed
+
+Does that include more confirmations? I think we'd first need to define what
+exactly is relevant information for transactions. It could be defined in
+terms of a/some high-level information request functions for transactions, so
+GUI/RPC don't inspect the wallet datastructures themselves anymore:
+* GetTransactionState(): return state (immature, generated, unconfirmed,
+                         rejected, confirmed), and number of confirmations.
+                         (possibly using the negative number of confirmations
+                         semantics as described here:
+               http://forum.bitcoin.org/index.php?topic=5920.msg328468#msg328468.
+* GetBroadcasts(): return either -1 (unknown) or some integer denoting how often
+                   this tx was broadcast. The "0/offline" state is equal to 
+                   unconfirmed + 0 broadcasts
+* GetInputs(): return a list of pairs (uint256 txId, int nOffset, int64 nAmount)
+* GetOutputsToMe(): return a list of pairs (address addr, string label, fBool isChange,
+                int64 nAmount, bool fGenerated, bool fAvailable) describing all
+                To-Me outputs
+* GetOutputsToOthers(): return a list of pairs (address addr, string label,
+                        int64 nAmount)
+* GetFee(): get the fee paid
+
+The only things that can change while the transaction is already in the wallet seems
+to be GetTransactionState() and GetBroadcasts(), so those would cause a
+transactionUpdated event?
+
+Adding/removing private keys from the wallet may change the other outputs, so i suppose
+those are also candidates for causing this event.
+
+     - transactionRemoved(int256): transaction removed from wallet (can this
+>    happen? for completeness)
+for now, that can't happen, but if something like unspending/rejecting/detection
+of conflicting transactions is added, it may.
+
+>    - addressAdded(int160): address was added to address book
+>    - addressUpdated(int160): address label/other metadata was modified
+>    - addressRemoved(int160): address was removed from address book
+>    - notification(std::string message, int severity): warning/error occured
+>    in wallet processing, notify user
+
+Ok.
+
+>    - int askFee(std::string message, ...): ask user for fee
+
+You simply mean the "Transaction requires fee of ..., agree?" message?
+
+Regarding wallet encryption, we could use a
+
+     - string askPassphrase()
+
+maybe?
+
+> Network client:
+> 
+>    - numConnectionsChanged(int): new connections / connections broken
+>    - numBlocksChanged(int): new blocks came in or other changes to block
+>    chain
+>    - notification(std::string message, int severity): warning/error occured
+>    in network processing, notify user
+
+Ok; those would need to be implemented as globals until a more modular structure
+is implemented.
+
+-- 
+Pieter
+
+
+
