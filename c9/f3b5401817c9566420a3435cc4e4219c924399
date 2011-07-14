@@ -1,0 +1,69 @@
+From: witchspace81@gmail.com (John Smith)
+Date: Thu, 14 Jul 2011 05:19:11 +0000
+Subject: [Bitcoin-development] Notifications from client/wallet
+Message-ID: <CAJNQ0st6Fo+VgVWj-AA5x8EvetZt4H=PR=n5q6NhZ6RyR0HYOA@mail.gmail.com>
+
+Hello all,
+
+I'd like to add notifications to the client and wallet, to decouple UI and
+core communication, and especially so that UIs no longer have to poll for
+changes.
+
+I propose to use the boost::signal mechanism for that. It is basically a
+glorified callback system, but allows decoupled delivery of 'signals' from
+an object. Multiple other objects can listen in on an event without the
+emitting object having to care.
+
+Wallet:
+
+class CWallet { ...
+    boost::signal<void(int64)> balanceChanged;
+}
+
+void CWallet::newTx (...) {
+    ...
+    balanceChanged(new_balance);
+    ...
+}
+
+
+UI:
+
+GUI::GUI(CWallet *wallet) {
+   ...
+   wallet->balanceChanged.connect(boost::bind(&GUI::balanceChanged, this,
+_1));
+}
+GUI::balanceChanged(int64 new_balance) {
+   someWidget->setValue(new_balance);
+}
+
+Specific notifications that would be useful:
+
+Wallet:
+
+   - balanceChanged(int64): spendable balance changed
+   - transactionAdded(int256): new transaction added to wallet
+   - transactionUpdated(int256): transaction info changed
+   - transactionRemoved(int256): transaction removed from wallet (can this
+   happen? for completeness)
+   - addressAdded(int160): address was added to address book
+   - addressUpdated(int160): address label/other metadata was modified
+   - addressRemoved(int160): address was removed from address book
+   - notification(std::string message, int severity): warning/error occured
+   in wallet processing, notify user
+   - int askFee(std::string message, ...): ask user for fee
+
+Network client:
+
+   - numConnectionsChanged(int): new connections / connections broken
+   - numBlocksChanged(int): new blocks came in or other changes to block
+   chain
+   - notification(std::string message, int severity): warning/error occured
+   in network processing, notify user
+
+
+JS
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20110714/f39ec2f5/attachment.html>
