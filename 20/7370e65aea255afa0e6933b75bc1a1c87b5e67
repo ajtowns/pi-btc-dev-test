@@ -1,0 +1,91 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Thu, 14 Jul 2011 16:13:04 +0200
+Subject: [Bitcoin-development] Notifications from client/wallet
+In-Reply-To: <CAJNQ0st6Fo+VgVWj-AA5x8EvetZt4H=PR=n5q6NhZ6RyR0HYOA@mail.gmail.com>
+References: <CAJNQ0st6Fo+VgVWj-AA5x8EvetZt4H=PR=n5q6NhZ6RyR0HYOA@mail.gmail.com>
+Message-ID: <1310652784.2284.192.camel@Desktop666>
+
+This sounds cool, I started implementing the other half of this a couple
+days ago.  My broad idea of a source cleanup (that sipa largely wrote)
+is to have a central notification interface which wallet(s)/net/block
+store/etc all communicate with, and then an interface, like the one
+proposed here, which GUI/RPC/etc use to communicate with wallet/net.
+This should allow for very clean separation of pieces and large-scale
+rewrites of one or another part (or drop-in replacements) without
+touching anything but the parts that are being redone.  This should also
+allow for cool programs (like pushpoold/a block notification server/etc)
+to use Bitcoin as a library fairly efficiently.
+
+Matt
+
+On Thu, 2011-07-14 at 05:19 +0000, John Smith wrote:
+> Hello all,
+> 
+> I'd like to add notifications to the client and wallet, to decouple UI
+> and core communication, and especially so that UIs no longer have to
+> poll for changes. 
+> 
+> I propose to use the boost::signal mechanism for that. It is basically
+> a glorified callback system, but allows decoupled delivery of
+> 'signals' from an object. Multiple other objects can listen in on an
+> event without the emitting object having to care. 
+> 
+> Wallet:
+> 
+> class CWallet { ...
+>     boost::signal<void(int64)> balanceChanged;
+> }
+> 
+> 
+> void CWallet::newTx (...) {
+> 
+>     ...
+>     balanceChanged(new_balance);
+>     ...
+> }
+> 
+> 
+> 
+> UI:
+> 
+> GUI::GUI(CWallet *wallet) {
+>    ...
+>    wallet->balanceChanged.connect(boost::bind(&GUI::balanceChanged,
+> this, _1));
+> }
+> GUI::balanceChanged(int64 new_balance) {
+>    someWidget->setValue(new_balance);
+> }
+> 
+> 
+> Specific notifications that would be useful:
+> 
+> Wallet:
+>       * balanceChanged(int64): spendable balance changed
+>       * transactionAdded(int256): new transaction added to wallet
+>       * transactionUpdated(int256): transaction info changed
+>       * transactionRemoved(int256): transaction removed from wallet
+>         (can this happen? for completeness)
+>       * addressAdded(int160): address was added to address book
+>       * addressUpdated(int160): address label/other metadata was
+>         modified
+>       * addressRemoved(int160): address was removed from address book
+>       * notification(std::string message, int severity): warning/error
+>         occured in wallet processing, notify user
+>       * int askFee(std::string message, ...): ask user for fee
+> Network client:
+>       * numConnectionsChanged(int): new connections / connections
+>         broken
+>       * numBlocksChanged(int): new blocks came in or other changes to
+>         block chain
+>       * notification(std::string message, int severity): warning/error
+>         occured in network processing, notify user
+> 
+> JS
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 836 bytes
+Desc: This is a digitally signed message part
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20110714/efb85581/attachment.sig>
