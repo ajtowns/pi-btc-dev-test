@@ -1,0 +1,54 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Sat, 23 Jul 2011 19:39:13 -0400
+Subject: [Bitcoin-development] Discussion related to pull 349 and pull 319
+	(escrow transactions)
+Message-ID: <CAAS2fgQ-L-1K2Oi40tqnhxpnnWQHqgbd4BmqedhA3WcevYiCzg@mail.gmail.com>
+
+Pull 349 (https://github.com/bitcoin/bitcoin/pull/349)
+implements a pretty nice implementation of multiple signature escrowed
+transactions. Especially with clearcoin gone I think that this is
+something we ought to have sooner rather than later.
+
+I've tested it on a private network and it appears to work pretty well.
+
+It probably needs more testing and discussion before it is actually
+added to the client, but one challenge is that because it requires a
+new transaction type it won't be deployable until _after_ an updated
+isStandard is widely used in the network.
+
+So I think that makes a good argument for separating out the
+IsStandard part of the patch and getting it out in 0.4.
+
+Unfortunately, the patch exposes an issue with multisig validation: If
+I understand it correctly, the problem is that due to redundancy in
+ the script length coding opcodes it's possible to code a script
+multiple ways. The signature validation code creates new template
+scripts in order to evaluate signatures for one output, and the code
+in bitcoin is not careful to code the new script the same way the
+original one was coded, causing the signature validation to fail when
+something used OP_PUSHDATA when a direct length could have been used.
+
+Pull 349 (https://github.com/bitcoin/bitcoin/pull/349) contains one
+candidate fix for this: Excluding the length opcodes from the
+comparison.
+
+This fix carries a risk of creating differences in how nodes validate
+transactions leading to lasting forks. (e.g. Old clients will reject a
+block which new clients would have accepted).  I do also wonder about
+strange effects arising from multiple valid TXN which are identical in
+meaning but have different hashes, but I guess thats already possible
+in a number of different ways.
+
+Another way of fixing this would be to just define that OP_PUSHDATA*
+_cannot_ be used to push the smaller lengths which could be more
+efficiently encoded with the direct length opcodes.  I think this
+would have the benefit of being consistent with the current behavior
+and carry no severe split risk.
+
+Yet way of fixing it would be to change out the templating code works
+to make sure it codes the template the same way the original was
+coded. This seems tricky to implement to me, tricky to validate, but
+it would potentially be beneficial if this same class of problem
+exists for things other than the length coding.
+
+
