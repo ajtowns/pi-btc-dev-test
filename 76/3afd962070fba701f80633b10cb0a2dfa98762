@@ -1,0 +1,78 @@
+From: rick@support-intelligence.com (Rick Wesson)
+Date: Mon, 25 Jul 2011 17:29:21 -0700
+Subject: [Bitcoin-development] bitcoin DNS addresses
+Message-ID: <CAJ1JLts5_r6hHoJR-gS-CuuvS00p=RQ6iYbCyOkBDcvgs1xtew@mail.gmail.com>
+
+I've just joined the list with the goals of producing a patch to
+sendtoaddress in rpc.cpp to support DNS lookups so that one could publish a
+TXT record in the DNS with their wallet address to facilitate sending of
+coin.
+
+I'm proposing something like the code below, which works but needs
+additional error handling.
+
+also working on a internet-draft to describe how to put bitcoin addresses in
+the DNS which I hope to post the first draft of this week.
+
+I'd appreciate comments on issues around annomity, community push back and
+any other issues you might have with leveraging the DNS for bitcoin
+transactions.
+
+thanks,
+
+-rick
+
+
+Value sendtoaddress(const Array& params, bool fHelp)
+{
+   if (fHelp || params.size() < 2 || params.size() > 4)
+       throw runtime_error(
+           "sendtoaddress <bitcoinaddress> <amount> [comment]
+[comment-to]\n"
+           "<amount> is a real and is rounded to the nearest 0.00000001");
+
+/**
+; <<>> DiG 9.7.3 <<>> _btc.rick.wesson.us txt
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 43754
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+
+;; QUESTION SECTION:
+;_btc.rick.wesson.us.           IN      TXT
+
+;; ANSWER SECTION:
+_btc.rick.wesson.us.    300     IN      TXT     "BTC=1;
+1GCVXLfF1TcpnnDLJRHk845NZhuJWQTnUD"
+
+;; Query time: 143 msec
+**/
+
+
+   string strAddress = params[0].get_str();
+   string dname="_btc.";
+   if(strAddress.find("@")){
+      unsigned char answer[255];
+      int len=0;
+      dname.append(strAddress);
+      dname.replace(dname.find("@"), 1, ".");
+
+      if((len = res_query(dname.c_str(), C_IN, T_TXT, answer, PACKETSZ)) <
+0) {
+        string dnsAnswer=(char*)answer;
+        int i=dnsAnswer.find("BTC=1;");
+        if( i < 0) throw runtime_error( dname + " is not associated with a
+bitcoin address");
+        i += 6;
+        i = dnsAnswer.find("1", 6) ; // address start with a one (1)
+        dnsAnswer.erase(0,i);
+        strAddress=dnsAnswer;
+      }
+
+   }
+   // Amount
+   int64 nAmount = AmountFromValue(params[1]);
+...
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20110725/56cd48d3/attachment.html>
