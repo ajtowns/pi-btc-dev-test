@@ -1,0 +1,55 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Wed, 03 Aug 2011 13:38:19 +0200
+Subject: [Bitcoin-development] DNS seeds returning gone peers
+In-Reply-To: <CANEZrP1-BaNmKhSPXSe2sjH0-DPm62_=OQ_S6aCT3-nLdFLLGA@mail.gmail.com>
+References: <CANEZrP1-BaNmKhSPXSe2sjH0-DPm62_=OQ_S6aCT3-nLdFLLGA@mail.gmail.com>
+Message-ID: <1312371499.2322.14.camel@Desktop666>
+
+On Wed, 2011-08-03 at 12:04 +0200, Mike Hearn wrote:
+> This is expected to happen from time to time of course as it's
+> inherently racy, but there are a lot of bad nodes appearing in the DNS
+> seeds.
+
+> $ nmap -oG /tmp/x -p 8333 `dig +short bitseed.bitcoin.org.uk
+> dnsseed.bluematt.me bitseed.xf2.org`
+> ...
+> Nmap done: 48 IP addresses (25 hosts up) scanned in 9.80 seconds
+
+> $ grep -c 'closed' /tmp/x
+> 6
+
+> So of 48 IPs returned only 19 are actually usable. This is slowing
+> down peer bringup for the Android apps, which don't currently save the
+> addresses of last-used peers (yes, I know we should fix this).
+Its actually much, much less.  You forgot to grep for filtered, which
+are also worthless and you didn't make an actual connection to the node,
+meaning there is no way to tell if the node has its connection slots
+full (a node which has the maximum connection count will ack a syn, but
+will drop the connection after the first message, so nmap thinks the
+port is open).
+I just tested and I show 0 accepting from bitseed.xf2.org and 0 from
+bitcoin.bitcoin.co.uk.  dnsseed.bluematt.me rotates every 2 minutes to
+the most recently checked so it tends to be pretty good if you get it
+right after a rotate, if you wait to long, those slots fill up quick.
+> 
+> I was talking to a friend a few days ago about Bitcoin, he seemed
+> interested. I'm hoping he might take on DNS seeding as a project. A
+> custom DNS server that watches the network to find long-lived peers
+> that run the latest version would be helpful for resolving this kind
+> of thing.
+Point him to https://github.com/TheBlueMatt/dnsseed it could use a bit
+of cleanup, but it works.
+If a different DNS Server were used to could pull directly from the
+database in a more dynamic way it would probably work better too (it was
+originally set up on MySQL and PowerDNS, but that is quite a resource
+hog compared to SQLite and BIND, but the original backend is still there
+and could work if you have a beefy enough server).
+
+Matt
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 836 bytes
+Desc: This is a digitally signed message part
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20110803/3cbcb018/attachment.sig>
