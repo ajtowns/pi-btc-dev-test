@@ -1,0 +1,117 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Thu, 04 Aug 2011 19:45:17 +0200
+Subject: [Bitcoin-development] Double spend detection to speed up
+ transaction trust
+In-Reply-To: <201108041423.14176.andyparkins@gmail.com>
+References: <201108041423.14176.andyparkins@gmail.com>
+Message-ID: <1312479917.3109.25.camel@Desktop666>
+
+There really is no reason to add the extra network complexity for this.
+
+First of all (as you point out) no one buying a Ferrari will refuse to
+wait an hour for the payment to confirm.  If someone is attempting to
+pull a similar trick on, say, a vending machine however it might make
+sense.  But that changes the equation.  In order for these two scammers
+to pull it off, some effort is required in terms of communicating the
+time to send the coins and the nodes of the targets (vending machines or
+whatever) must be figured out.  So now its less of "make it impossible"
+and more of "make it really hard to the point that it is no where near
+worth the effort".
+
+Lets simplify the scenario a bit so that one scammer can pull it off.
+Send one copy of your transaction to the target node and another to
+large mining operations so that the payment transaction is considered
+invalid to miners and a transaction which pays you is confirmed.
+
+If you are the vending machine, your goal is not to figure out any
+transactions which are yours, but to figure out which transactions which
+are yours are going to be confirmed.  So, you peer with the largest
+miners (a "Bitcoin backbone" or large miners and merchants has been
+suggested over and over again and really hasn't happened) and modify
+your client to, instead of dropping transactions which are
+double-spends, keep both in memory pool and consider them both invalid
+until one of them confirms.
+
+This will work with 1, 2, or n scammers, doesn't require any additional
+network messages, and offers just as good, if not better security over a
+double spend message.
+
+Additionally, in the future, when(/if) Bitcoin payment processors exist,
+most merchants will rely on those, which can handle such double-spend
+checks and tell a merchant a transaction is confirmed in ten seconds for
+small transactions, an hour for large ones, or anywhere in between.
+Such payment processors could also mine or have contracts with large
+miners which allows them to influence the transactions which are to be
+confirmed, allowing for even quicker confirmations and the offering of
+insurance against unconfirmed transactions being invalidated.
+
+Matt
+
+On Thu, 2011-08-04 at 14:23 +0100, Andy Parkins wrote:
+> Hello,
+> 
+> Here's a scenario (it's contrived to make the players easy to identify, more 
+> likely this would be low value automated vendors):
+> 
+> Two scammers get together to buy two Ferraris using only one set of BTC.  They 
+> travel to opposite ends of the world to two car dealerships that accept 
+> bitcoins without waiting for confirmations.  They are in contact by mobile.  
+> They each buy the car and come to pay.  At exactly the same moment, they both 
+> spend the same coins.  They both walk away with a car.
+> 
+> The current solution is the recommendation that vendors wait for six 
+> confirmations before releasing goods.  That's a long time though; more than 
+> most would be willing to wait.
+> 
+> Some points:
+>  - The bitcoin network is essentially honest
+>  - If a block chain fork happens, the transactions that are orphaned get added
+>    to the pending transaction list again, meaning ...
+>  - A valid transaction will _eventually_ make it into the (longest) block
+>    chain.
+>  - Actual distribution time for a transaction through the network is in the
+>    order of seconds not minutes
+>  - A double spend attempt has to enter the network near simulateously at
+>    different places, otherwise the second spend will be rejected instantly by
+>    the whole network.
+> 
+> New transactions propagate through the network if they are found to be valid.  
+> If they aren't valid, they are silently dropped.  In the event of a double 
+> spend attempt one of those transactions goes to (say) half the network, the 
+> other goes to the other half.  Whichever one reaches a node first is seen as 
+> the real one, the second being seen as invalid.  One or other of these will 
+> therefore end up in the "longest" chain; but there is no way to know which.
+> 
+> Here's my proposal then: when a node drops a transaction, it should not be 
+> silent.  It should be broadcast just as it always was going to be had it been 
+> valid.  Only it is broadcast with a new "inv" type, let's say 
+> "MSG_DOUBLESPEND" instead of "MSG_TX".
+> 
+> Now run the Ferrari test again.  The vendor sees the transaction that pays for 
+> the car appear near instantly (within the propagation time of the network).  A 
+> short while later they also see a MSG_DOUBLESPEND of the same coins that they 
+> have just accepted.  They can then operate whatever policy they want: wait for 
+> six, ten, twenty confirmations.  Call the police.  Whatever.  Miners can also 
+> significantly lower the priority of any transactions that get flagged in this 
+> way.
+> 
+> When there isn't a double spend attempt message within the network propagation 
+> time, they can be sure that their transaction is the one that miners are 
+> working on, and they'll eventually get their money.  In other words, they can 
+> accept the payment on zero confirmations.
+> 
+> At first I was concerned that this would make it possible to DOS a 
+> transaction, but of course it doesn't -- the transaction has to be internally-
+> valid to result in a MSG_DOUBLESPEND, meaning it can only be DOSed by someone 
+> with the appropriate private keys.
+> 
+> 
+> 
+> Andy
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 836 bytes
+Desc: This is a digitally signed message part
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20110804/25520642/attachment.sig>
