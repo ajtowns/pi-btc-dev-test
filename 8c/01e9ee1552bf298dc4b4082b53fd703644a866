@@ -1,0 +1,67 @@
+From: jgarzik@exmulti.com (Jeff Garzik)
+Date: Thu, 4 Aug 2011 19:43:56 -0400
+Subject: [Bitcoin-development] Useful bitcoin patches...
+In-Reply-To: <201108041629.04130.luke@dashjr.org>
+References: <BANLkTinus7PWNLJi9rEvTtSB93hjLKhFpg@mail.gmail.com>
+	<201107101442.43605.luke@dashjr.org>
+	<201108041629.04130.luke@dashjr.org>
+Message-ID: <CA+8xBpdYJVE_DkKrmZCUd1gAdoMzcLuS-7fBdZx+fPeYqTz83Q@mail.gmail.com>
+
+>> ? threaded_rpc
+>> ? \-- rpc_keepalive (depends on threaded_rpc, or a single connection would
+>> ? ? ? ? ? ? ? ? ? ? ?keep the JSON-RPC interface locked up)
+
+Definitely want _some_ path to HTTP/1.1 persistent connections, either
+this or async I/O, https://github.com/bitcoin/bitcoin/pull/214
+
+Based on field usage, it sounds like the above, threaded rpc, is more
+stable.  So my only question remaining, for which I've not yet
+reviewed the code, is:  what is the behaviour under assault from lots
+of new incoming TCP connections?  One very common problem with
+threaded TCP servers is blindly creating new threads without any
+filtering or checking of incoming connections, thereby quickly
+reaching thread limits, possibly causing other parts of the program to
+fail.
+
+Any amount of RPC request volume, miner or not, sent to the present
+implementation winds up using a lot of socket resources due to the
+constant disconnect/reconnect demanded of the current HTTP/1.0 code.
+This patch addresses that key issue, providing positive impact for all
+production bitcoin sites using RPC.
+
+Miners are hitting these problems now, and Gavin's right that mainnet
+miners are a small portion of the total population, but our RPC server
+implementation really is bloody awful at present.  Reliable,
+production TCP servers use either threads or async I/O, or a
+combination of both (thread pool + async I/O == win).  Deploying
+HTTP/1.1 persistent connections will make a positive impact at any
+site heavily using RPC.
+
+
+>> ? bugfix_CreateThread_leak
+
+Did I leave something out, when merging
+
+     commit 67ed7d9d4929d8fe1c5f976c184c72dff02d83b7
+     Author: JoelKatz <DavidJoelSchwartz at GMail.com>
+     Date:   Mon Jul 25 15:06:45 2011 -0700
+
+?
+
+
+>> ? getwork_dedupe (original branch for my bugfix)
+
+I think we need this, but have not yet reviewed/thought about it.
+
+>> ? gitignore (ignore some common misc files)
+
+Sounds nice to have.
+
+     Jeff
+
+
+P.S.  I'm moving my home computer lab setup to a new house.  Internet
+will be spotty until August 11, and you won't see much of me at all on
+#bitcoin-dev.
+
+
