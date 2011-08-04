@@ -1,0 +1,157 @@
+From: andrew@andrewschaaf.com (Andrew Schaaf)
+Date: Thu, 4 Aug 2011 16:07:42 -0400
+Subject: [Bitcoin-development] Double spend detection to speed up
+	transaction trust
+In-Reply-To: <201108042042.55214.andyparkins@gmail.com>
+References: <201108041423.14176.andyparkins@gmail.com>
+	<201108041922.16956.andyparkins@gmail.com>
+	<1312483196.3109.38.camel@Desktop666>
+	<201108042042.55214.andyparkins@gmail.com>
+Message-ID: <82CEB610-9821-4928-8A13-30088A59223C@andrewschaaf.com>
+
+
+One double-spend fighting option is for each mining pool to offer a realtime feed of accepted TXs.
+
+I am hoping to complete the following later this month:
+	
+	(1) A minimal bitcoind patch that writes raw accepted TXs and BLOCKs to stdout with a prefix of ("2naXaRQj--TX\n%d\n" % (data_length))
+		(Proof-of-concept done ? I'll submit a pull request with "--print-accepted-txs-and-blocks" when I get a chance to clean it up)
+	
+	(2) A minimal NodeJS app which invokes bitcoind as a subprocess, parses the TXs and BLOCKs, and offers a realtime feed
+
+
+
+On Aug 4, 2011, at 3:42 PM, Andy Parkins wrote:
+
+> On Thursday 04 August 2011 19:39:56 Matt Corallo wrote:
+> 
+>> But why? It results in slightly more network traffic which is exactly
+>> what we don't want, and it adds yet another message people have to know
+>> about.
+> 
+> "Slightly" is an understatement.  It add more network traffic for every 
+> double spend attempt.  Which don't happen very often.
+> 
+> Also, I'm not proposing a new message, heaven forbid that we add a new 
+> message type, I'm proposing that we do this:
+> 
+> enum
+> {
+>     MSG_TX = 1,
+>     MSG_BLOCK,
+> +    MSG_DOUBLESPEND,
+> };
+> 
+> Also, people don't "have" to know about it.  And it's not "people" it's an 
+> addition to the _one_ official client.  _and_ it's backward compatible 
+> because if they don't know about it, nothing changes... the TX gets dropped 
+> just as it is now.
+> 
+>>> I think you've missed the point.  Double spend transactions that enters
+>>> the network at two reasonably evenly connected points are each only
+>>> seen by half the network, since the first one locks out the second
+>>> from propagation.
+>> 
+>> No one cares about what the network thinks is the right transaction, its
+>> only what miners believe that matters.
+> 
+> They do care because the network as a whole is what makes the eventual 
+> decision about which is the block-chain-to-rule-them-all.  Chain forks, and 
+> eventual reorgs are also far less disruptive when each leg of a double spend 
+> isn't on each potential chain.  "Half the network" includes half of the 
+> miners.  It's perfectly possible for half the miners to be working on one 
+> leg, half on the other.  That means it's 50/50 which leg eventually gets 
+> confirmed.
+> 
+>> Even if the vending machine doesn't keep the full chain and doesn't
+>> accept incoming connections, its still the target node.  What other
+>> nodes on the network think doesn't matter as long as you get the target
+>> to think a transaction that won't be confirmed will be.  If it doesn't
+>> accept incoming connections you want to find nodes that do that are
+>> connected to your target.
+> 
+> Well that's true enough; but how on earth you're going to identify an IP 
+> address of a particular vending machine that isn't accepting incoming 
+> connections is beyond me.  If it is a target it's pretty close to invisible.
+> 
+>> Its much easier to create than to change the network code to relay info
+>> on double-spend transactions.
+> 
+> What?  It's easier to trigger massive adoption and organisation of an 
+> inherently disorgainsed network of miners than it is to write a few lines of 
+> code?  If that's true, then the bitcoin source is even more impenetrable 
+> than I imagine.
+> 
+>>> Well that's what happens now.  But that doesn't help the poor sap who's
+>>> just handed over some goods.  I want it so that small businesses can
+>>> use the client to give them practical answers instead of this
+>>> "0/unconfirmed" stuff which requires understanding of the system.
+>> 
+>> No, thats not what happens now.  Currently if your node gets a
+>> transaction which conflicts with one it already knows about, it silently
+>> drops it without a second thought.  My point is if you actually dealt
+>> with such cases and made good connections, you would be able to prevent
+>> double spends nearly perfectly.
+> 
+> It's not about prevention, they are already prevented.  It's about 
+> detection.  Quickly.
+> 
+>>> I'm not really trying to prevent double spends -- bitcoin _already_
+>>> prevents double spends.  Also: the only difference between your
+>>> suggestion (don't drop) and my suggestion (don't drop but mark with
+>>> MSG_DOUBLESPEND) is a single number in the inv.  I really don't get
+>>> the objection.
+>> 
+>> No, my suggestion is not to relay the second transaction.  The second
+>> transaction should continue to not be relayed as it currently is,
+>> however receiving such a transaction should trigger the node to notify
+>> the user that the transaction should not be accepted until it makes it
+>> into a block (in fact, you could already do this if you implemented a
+>> debug.log parser and made well-placed connections).
+> 
+> How is this second transaction going to end up anywhere but on a few 
+> isolated nodes if it isn't propagated?  The only way _both_ can be in a pool 
+> is if they are both received.  If they aren't both forwarded then it won't 
+> be in most pools.  If it isn't in most pools then which how is the relevant 
+> user going to get notified?
+> 
+>> Bitcoin is absolutely still an experiment and no one thinks that any
+>> kind of future is guaranteed.  This was not meant as an argument, but
+> 
+> If it's still an experiment why is there such huge objection to pretty much 
+> every change anyone proposes?  Bitcoin is one of the most conservative 
+> projects I've ever seen, even for the most passive of changes.  I can 
+> understand wanting to prevent potential financial loss, but it's not like 
+> I'm suggesting we start broadcasting private keys on the network.
+> 
+>> simply as "if bitcoin does end up going somewhere, it will likely be
+>> done like this".
+> 
+> When you're using it as an argument for why a suggestion is unnecessary 
+> that's not how it sounds.
+> 
+> Anyway; it's fine.  You don't think it's a good idea; and I suspect none of 
+> the other official client developers will either, they don't like protocol 
+> changes.  So be it; it was only a suggestion and I'm a nobody around here.
+> 
+> 
+> 
+> Andy
+> 
+> -- 
+> Dr Andy Parkins
+> andyparkins at gmail.com
+> 
+> ------------------------------------------------------------------------------
+> BlackBerry&reg; DevCon Americas, Oct. 18-20, San Francisco, CA
+> The must-attend event for mobile developers. Connect with experts. 
+> Get tools for creating Super Apps. See the latest technologies.
+> Sessions, hands-on labs, demos & much more. Register early & save!
+> http://p.sf.net/sfu/rim-blackberry-1
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
