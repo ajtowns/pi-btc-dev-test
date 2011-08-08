@@ -1,0 +1,146 @@
+From: me@endeavour.zapto.org (Venkatesh Srinivas)
+Date: Sun, 7 Aug 2011 23:07:52 -0400
+Subject: [Bitcoin-development] DragonFly BSD bitcoind patches
+Message-ID: <4e3f530c.6374340a.2490.7a81@mx.google.com>
+
+Hi,
+
+Related to https://bitcointalk.org/index.php?topic=28022.0 ;
+
+Here are three patches that allow bitcoind to build and run on DragonFly BSD.
+
+0001) bitcoind assumes a definition of BSD implies SO_NOSIGPIPE is available.
+This is not true on NetBSD, OpenBSD, and DragonFly.
+
+0002) main.cpp has: "char pchMessageStart[4] = { 0xf9, 0xbe, 0xb4, 0xd9 };"
+Per discussion on the thread linked, leaving the signedness of pchMessageStart
+is unsafe for values > 0x80. This patch specifies 'unsigned char' in main.cpp
+and net.h.
+
+0003) db.cpp has a number of uses of make_tuple and has 'using namespace std'
+and 'using namespace boost'. Without qualifying make_tuple, std::make_tuple is
+preferred, which is incorrect. This patch qualifies make_tuple.
+
+Patches are from git format-patch and can be applied with git-am.
+
+Thanks,
+-- vs
+-------------- next part --------------
+>From 310cd8d1bdd130d04c98e5e724b2af904fe94e2e Mon Sep 17 00:00:00 2001
+From: Venkatesh Srinivas <me at endeavour.zapto.org>
+Date: Sun, 7 Aug 2011 12:18:05 -0400
+Subject: [PATCH 1/3] Test for SO_NOSIGPIPE rather than assuming all BSDs
+ support it.
+
+---
+ src/net.cpp |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/net.cpp b/src/net.cpp
+index d697788..9feeb43 100644
+--- a/src/net.cpp
++++ b/src/net.cpp
+@@ -98,7 +98,7 @@ bool ConnectSocket(const CAddress& addrConnect, SOCKET& hSocketRet, int nTimeout
+     SOCKET hSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+     if (hSocket == INVALID_SOCKET)
+         return false;
+-#ifdef BSD
++#ifdef SO_NOSIGPIPE
+     int set = 1;
+     setsockopt(hSocket, SOL_SOCKET, SO_NOSIGPIPE, (void*)&set, sizeof(int));
+ #endif
+@@ -1579,7 +1579,7 @@ bool BindListenPort(string& strError)
+         return false;
+     }
+ 
+-#ifdef BSD
++#ifdef SO_NOSIGPIPE
+     // Different way of disabling SIGPIPE on BSD
+     setsockopt(hListenSocket, SOL_SOCKET, SO_NOSIGPIPE, (void*)&nOne, sizeof(int));
+ #endif
+-- 
+1.7.5.4
+
+-------------- next part --------------
+>From 7ed0ddde65b3f5c467e471fc6f9fff648b976e56 Mon Sep 17 00:00:00 2001
+From: Venkatesh Srinivas <me at endeavour.zapto.org>
+Date: Sun, 7 Aug 2011 12:19:14 -0400
+Subject: [PATCH 2/3] Use 'unsigned char' rather than 'char' for
+ pchMessageStart.
+
+---
+ src/main.cpp |    2 +-
+ src/net.h    |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/main.cpp b/src/main.cpp
+index b57974f..4bcb87f 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -1766,7 +1766,7 @@ bool static AlreadyHave(CTxDB& txdb, const CInv& inv)
+ // The message start string is designed to be unlikely to occur in normal data.
+ // The characters are rarely used upper ascii, not valid as UTF-8, and produce
+ // a large 4-byte int at any alignment.
+-char pchMessageStart[4] = { 0xf9, 0xbe, 0xb4, 0xd9 };
++unsigned char pchMessageStart[4] = { 0xf9, 0xbe, 0xb4, 0xd9 };
+ 
+ 
+ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
+diff --git a/src/net.h b/src/net.h
+index 78055bf..6678e56 100644
+--- a/src/net.h
++++ b/src/net.h
+@@ -66,7 +66,7 @@ bool StopNode();
+ //  (4) size
+ //  (4) checksum
+ 
+-extern char pchMessageStart[4];
++extern unsigned char pchMessageStart[4];
+ 
+ class CMessageHeader
+ {
+-- 
+1.7.5.4
+
+-------------- next part --------------
+>From 74647b73e06ae5b4ec995873a8ef56977f3b7e93 Mon Sep 17 00:00:00 2001
+From: Venkatesh Srinivas <me at endeavour.zapto.org>
+Date: Sun, 7 Aug 2011 12:20:00 -0400
+Subject: [PATCH 3/3] Qualify make_tuple with boost:: namespace.
+
+---
+ src/db.cpp |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/db.cpp b/src/db.cpp
+index 9c8c9c4..b3fa3e1 100644
+--- a/src/db.cpp
++++ b/src/db.cpp
+@@ -610,7 +610,7 @@ bool CWalletDB::WriteAccount(const string& strAccount, const CAccount& account)
+ 
+ bool CWalletDB::WriteAccountingEntry(const CAccountingEntry& acentry)
+ {
+-    return Write(make_tuple(string("acentry"), acentry.strAccount, ++nAccountingEntryNumber), acentry);
++    return Write(boost::make_tuple(string("acentry"), acentry.strAccount, ++nAccountingEntryNumber), acentry);
+ }
+ 
+ int64 CWalletDB::GetAccountCreditDebit(const string& strAccount)
+@@ -638,7 +638,7 @@ void CWalletDB::ListAccountCreditDebit(const string& strAccount, list<CAccountin
+         // Read next record
+         CDataStream ssKey;
+         if (fFlags == DB_SET_RANGE)
+-            ssKey << make_tuple(string("acentry"), (fAllAccounts? string("") : strAccount), uint64(0));
++            ssKey << boost::make_tuple(string("acentry"), (fAllAccounts? string("") : strAccount), uint64(0));
+         CDataStream ssValue;
+         int ret = ReadAtCursor(pcursor, ssKey, ssValue, fFlags);
+         fFlags = DB_NEXT;
+-- 
+1.7.5.4
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: not available
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20110807/d7036521/attachment.sig>
