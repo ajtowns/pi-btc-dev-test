@@ -1,0 +1,117 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Wed, 10 Aug 2011 20:57:53 +0200
+Subject: [Bitcoin-development] Roadmap/schedules
+In-Reply-To: <1312995554.17416.22.camel@BMThinkPad.lan.bluematt.me>
+References: <CABsx9T2pTg8YG_Q09cnAvsrxquLO-6cWr1tb=fdWtLPBEyJzng@mail.gmail.com>
+	<1312995554.17416.22.camel@BMThinkPad.lan.bluematt.me>
+Message-ID: <20110810185752.GA18562@ulyssis.org>
+
+On Wed, Aug 10, 2011 at 06:59:14PM +0200, Matt Corallo wrote:
+> On Wed, 2011-08-10 at 12:29 -0400, Gavin Andresen wrote:
+> > I've been wading through the pull requests and bug lists to figure out
+> > a roadmap for the next few months.
+> > 
+> > Here are the things on my priority list:
+>
+> > 2. We've got a chronic problem with new code causing CRITICAL_SECTION
+> > deadlocks (see issue #453 for the latest). Detecting potential
+> > deadlocks early should be done; longer term I think re-architecting to
+> > be single-threaded/asio is probably the right thing to do.
+> Sipa had begin looking at doing some redoing of the locking system (to
+> support more broad stuff like read-only locks, etc) to solve that exact
+> bug, but I never heard anything about if he actually started writing
+> code or how far he got.
+
+No I didn't start writing anything - I've been quite busy the past few weeks,
+and will be more so the coming weeks. Anyway, some ideas:
+
+Either we try to make everything single threaded, and aim towards a bitcoin
+library which you pass events (which can be network, rpc, UI, ...) and
+it always processes in finite time, without any separate threads. That
+would be a serious rewrite, and maybe a limitation on potential growth
+(there *will* be a time where a full node doesn't run on anything but
+a 16-core machine...).
+
+The alternative is doing a very careful checking/rework of the locking
+system. I think you want some per-object locking instead of per single
+data structure. Making it so fine-grained forces careful checking of
+the order in which things are locked. That is hard to keep track of,
+and probably doesn't gain you very much (just a guess, experiments could
+prove me wrong, obviously)
+
+I would propose a system with one lock for the node-handling code
+(mapTransactions, mapBlockIndex, mapOrphanBlocks, ...), one lock for
+the wallet-handling code (mapWallet, CKeyStore), and one lock for
+network-handling code. No access to any inner data structures of
+these components is exposed, and everything goes through accessor
+functions. All exposed functions of each component take the respective
+lock upon entering the component. This includes functions that only
+need read-only access (which currently often don't take a lock at
+all, iirc).
+
+However, I think we can move to reader-writer locks (boost's shared_mutex).
+A lot of code does not need an exclusive lock on the data, as multiple
+threads reading the internal data structures simultaneously is not a
+problem. This would mean that all inspector functions are wrapped in a
+lock_shared/unlock_shared blocks, all mutator functions are wrapped in
+a lock_upgrade/unlock_upgrade block, and code that actually modifies
+data structures is wrapped in a unlock_upgrade_and_lock/
+unlock_and_lock_upgrade block. 
+
+This is clearly part of a larger code-cleanup effort, as it would mean
+moving all code in GUI and RPC that take locks on various things, to
+the component they are taking locks on. That's immediately a nice step
+towards "librarification" of the code...
+
+> > Sipa's wallet and key export/import
+> I was under the impression the plan was for this to go in 0.4 aka next
+> release, but personally, I don't care too much either way.
+
+I think it should be more or less finished by now in terms of
+functionality, at least for dumpprivkey, importprivkey, removeprivkey.
+I'm somewhat less sure about dumpwallet/importwallet, as some changes
+to the json dump format might be useful still. It does require testing
+though...
+
+> > Move from wxWidgets to qt for the GUI
+
+I'd really like to see that - with or without autotools, if some degree
+of consistent config/build architecture can be maintained for the
+different platforms.
+
+> > Un-hardcode fee handling (anybody already working on this?)
+> Sipa did some good thinking through for algorithms that could be really
+> useful here, but I don't think any code was ever written, nor did he
+> finish (is he off doing the studying thing?)
+
+I was working on a draft for a reworked fee system. I didn't get to
+write things out nicely, but the main idea was: assign a score to each
+transaction group, in a way that scores always keep increasing over time.
+Keep the memory pool sorted according to those scores, and drop the lowest
+scoring ones when a configurable memory limit is reached (no limit on the
+score itself). Finally, for mining, select the top N transaction groups
+from the pool in such a way that an average configurable fee per byte
+is maintained. 
+
+As each mining node chooses a (hopefully more or less fixed, or at least
+only slowly changing) cutoff score above which transactions are included,
+the network should converge to a more or less fixed probability distribution
+for the score at which transactions are included.
+
+Nodes can measure and estimate this distribution, and calculate expected time
+to inclusion for a given fee.
+
+The devil is in the details, as it is kinda hard to define a scoring system
+for transactions that is independent from the current exchange value of
+bitcoins, from which kind of transactions are common on the network, but still
+tries to mimic the cost for the network to handle that transaction.
+
+
+
+Anyway, as said, I currently don't have the time to implement these ideas
+right now. I do read the mailing list, though :)
+
+-- 
+Pieter
+
+
