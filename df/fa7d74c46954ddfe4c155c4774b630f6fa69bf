@@ -1,0 +1,60 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 11 Aug 2011 18:17:23 +0200
+Subject: [Bitcoin-development] Protocol changes
+Message-ID: <CANEZrP2hvYst92u22c_41e9=izPCP7uv-RzVM4XSt7gxC99D0A@mail.gmail.com>
+
+This thread is getting off-topic so I changed the subject.
+
+> The benefit I'm aiming at is to imagine a thin client that has done a fast
+> startup and only downloaded the headers.
+
+OK. A better way is tx filtering, as discussed here:
+
+   http://bitcointalk.org/?topic=7972.0
+
+The reason is you want to only get the transactions+merkle branches
+relevant to you, otherwise cost is still O(system activity) not O(your
+activity) as blocks get bigger, even if you don't download every
+block.
+
+> The sequence number (and perhaps I've misunderstood) allows me to replace a
+> transaction I've already submitted
+
+Yes, but it's more complex than that.
+
+Some contract protocols require one party in a set to be able to
+re-issue transactions without interacting with the other parties. The
+reason is that each input can come from a different person. If the
+sequence number was a property of the transaction, updating it would
+either require all participants to re-sign the transaction, or for the
+signatures to not cover the sequence number at all.
+
+With seqnums on the inputs, I can create a newer version of the
+transaction by just resigning my input with a higher sequence number.
+This is defined by IsNewerThan(). Note that my options here are
+limited - I can't create an arbitrarily different version of the
+transaction without invalidating all the other input signatures. If I
+own all the inputs, no problem. If some are owned by others, what I
+can change is defined by the SIGHASH flags. To replace this tx in the
+memory pool requires others to re-sign their input with a higher
+sequence number than mine - so we establish a kind of chain. Nobody
+can rewind the transaction to an earlier point, but anyone can update
+it within the parameters established by the SIGHASH flags on the
+others signatures.
+
+These features all combine together to allow for particular types of
+contracts that take place on the negotiating table of the networks
+memory pool. For instance, if you are taking part and then decide you
+don't wish to continue, you can set the output that's in the same
+position as your input to reassign all the money you put in back to
+you, sign the input with SIGHASH_SINGLE and broadcast with nSequence
+set to UINT_MAX. Now the transaction is still valid but is a no-op
+from your perspective. Note that once you've done this, you've bowed
+out of the negotiation completely because you can't replace the
+transaction anymore.
+
+You can't change anything about the inputs beyond scripts this way.
+The transaction still has to connect to the same outputs as before,
+and thus import the same amount of value.
+
+
