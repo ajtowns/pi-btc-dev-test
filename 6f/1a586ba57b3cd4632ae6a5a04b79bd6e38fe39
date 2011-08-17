@@ -1,0 +1,44 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Wed, 17 Aug 2011 10:53:43 -0400
+Subject: [Bitcoin-development] DEBUG_LOCKORDER : early detection of
+	potential deadlocks
+Message-ID: <CABsx9T0nZcAnM29R8H9Diw3B3Ak2UXzE4u6zCpfCL0T8cF60mg@mail.gmail.com>
+
+Commit 865ed8a adds a new compile-time #ifdef : DEBUG_LOCKORDER
+
+Compile with -DDEBUG_LOCKORDER and every time a lock is acquired by a
+CCriticalSection a check is made to record the order of locks and
+complain if they are being acquired in an inconsistent order.  Here's
+what you get in debug.log when potential deadlocks are detected:
+
+POTENTIAL DEADLOCK DETECTED
+Previous lock order was:
+ pwallet->cs_mapWallet  db.cpp:686
+ pwallet->cs_KeyStore  db.cpp:687
+ cs_KeyStore  keystore.cpp:74
+ cs_vMasterKey  keystore.cpp:75
+ cs_KeyStore  keystore.cpp:31
+Current lock order is:
+ pwallet->cs_mapWallet  db.cpp:686
+ pwallet->cs_KeyStore  db.cpp:687
+ cs_KeyStore  keystore.cpp:74
+ cs_vMasterKey  keystore.cpp:75
+
+POTENTIAL DEADLOCK DETECTED
+Previous lock order was:
+ pnode->cs_vRecv  net.cpp:1525
+ cs_main  main.cpp:2372
+ cs_vSend  net.h:681
+Current lock order is:
+ pnode->cs_vSend  net.cpp:1531
+ cs_main  main.cpp:2411
+
+I'll be working on figuring out how to eliminate these, and will be
+working on some RPC stress-tests that try to exercise all the code
+paths to early-detect other potential problems.
+
+-- 
+--
+Gavin Andresen
+
+
