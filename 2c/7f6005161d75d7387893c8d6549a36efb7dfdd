@@ -1,0 +1,75 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Thu, 18 Aug 2011 12:46:17 -0400
+Subject: [Bitcoin-development] From the forums: one-confirmation attack
+In-Reply-To: <CABsx9T2zpG=M6nkX4W=KrAJAYaTFR25_MLFmwj43+btWanqqsw@mail.gmail.com>
+References: <CABsx9T0AgUL+rphhB8YUVHDGJnc0TmaYG=kjt7Pz1yrwLjBbDQ@mail.gmail.com>
+	<1313681783.14523.79.camel@mei>
+	<CANEZrP0rXWO51O6wJfQ3r3A6bviZ7zpthJjzZkA0JDC7auBEdw@mail.gmail.com>
+	<CABsx9T2zpG=M6nkX4W=KrAJAYaTFR25_MLFmwj43+btWanqqsw@mail.gmail.com>
+Message-ID: <CAAS2fgQJZ2b-YDZKfmbA-rTtZfmKsP=QBYuYSQbwFdihoQyHsQ@mail.gmail.com>
+
+On Thu, Aug 18, 2011 at 12:16 PM, Gavin Andresen
+<gavinandresen at gmail.com> wrote:
+> We could start with an as simple-as-possible "confidence == 0 if
+> confirmations < 2, otherwise confidence = function(#confirmations)"
+> and improve it from there.
+
+
+At the same time, if this causes people to wait less than the 6 blocks
+that the software currently waits for before leaving unconfirmed
+status then that would be sad.
+
+Simply waiting a number of blocks is an excellent metric and provides
+robustness against almost all attack patterns in a way that various
+one-off-heuristics can not as it equates to _real difficulty_ (and
+real expense (hashing computation, loss of income on the orphaned
+blocks)) in a way that can't be faked.
+
+A few weeks back when there was some rumor going around that mybitcoin
+lost coin based on some kind of one confirmation attack I described on
+IRC a similar attack pattern which had a useful improvement:
+
+* The attacker runs many widely distributed sybil nodes (e.g. using
+botnet drones as simple tcp proxies to appear at many addresses). He
+takes advantage of the fact the bitcoin won't connect to /16s that
+have already connected to it to further isolate nodes.
+
+* By creating normal looking probe transactions which his own nodes
+won't forward he detects network partitions which he is able to
+create. He searches for a cut which causes there to be at least two
+partitions which contain significant mining power.
+
+* He creates two accounts at MoronBank. He doesn't even bother
+identifying MoronBank's node. MoronBank will be in one partition or
+another. He makes deposits in both partitions, and conflicting
+transactions in the opposite partitions, while carefully filtering out
+these transactions from crossing the boundary.
+
+(Notably, the network doesn't appear partitioned to everyone else now
+because he's still forwarding blocks and transactions unrelated to his
+attack? it only becomes visible once some of his evil transactions are
+mined)
+
+* After the funds show up in MoronBank he withdraws and drops the partitioning.
+
+Only if he has difficulty getting MoronBank into the smaller partition
+does he need to bother locating it and attacking it directly.
+
+The bad thing about this attack is that it doesn't require the
+attacker to have any hash power at all: he captures miners as
+unwilling (or willing but plausibly deniable) participants. The lost
+income from orphaned blocks is externalized to the victimized miners
+(and since most pools don't pay orphaned blocks out of pocket a pool
+operator would be inclined to help out).
+
+The good thing about it is that it's killed dead by nodes adding in a
+few manually configured peerings, they don't even really need to be
+trusted: You just need to trust that they don't all go to a single
+bad-guy conspiracy. At a minimum all major miners should be fully
+meshed.
+
+Unfortunately, We don't currently have software for this as addnode
+doesn't worry about keeping the links up... and the major pools also
+don't seem to be interested in participating.
+
+
