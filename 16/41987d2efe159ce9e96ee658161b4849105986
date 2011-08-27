@@ -1,0 +1,76 @@
+From: bgroff@lavabit.com (bgroff at lavabit.com)
+Date: Fri, 26 Aug 2011 21:15:26 -0400 (EDT)
+Subject: [Bitcoin-development] New standard transaction types: time to
+ schedule a blockchain split?
+In-Reply-To: <CABsx9T1RnwLZkBwOipXsscDUbMoiikFTbb2WMkGxhGDO9je3zA@mail.gmail.com>
+References: <CABsx9T1uw43JuvhEmJP0KCyojsDi1r7v6BaLBHz7wWazduE5iw@mail.gmail.com>
+	<CANEZrP2FYjJXvB=kzu+wBcoGOyL=45QeDqLfyZONxYu-9M50Uw@mail.gmail.com>
+	<CABsx9T1RnwLZkBwOipXsscDUbMoiikFTbb2WMkGxhGDO9je3zA@mail.gmail.com>
+Message-ID: <1929.81.218.219.122.1314407726.squirrel@lavabit.com>
+
+>> Whitelisting the basic CHECKMULTISIG form (assuming it can be made to
+>> work) seems uncontroversial, why not do it today?
+>
+> That seems like the right way forward.
+>
+> I just wrote a unit test and stepped through the CHECKMULTISIG code to
+> see exactly what the bug is, and the offending line is:
+>    797	                    int isig = ++i;
+>    798	                    i += nSigsCount;
+>
+> It should be just   int isig = i;
+>
+> The result is CHECKMULTISIG expects one extra item on the stack, so
+> the workaround would be a standard transaction type of the form:
+>
+> scriptSig: OP_0 sig1...m
+> scriptPubKey: m pubkey1...n  n OP_CHECKMULTISIG
+
+Right, that is the workaround in pull 319.
+
+There is another disadvantage to CHECKMULTISIG - you currently can only
+have 1000 of these in a block.  This is because a CHECKMULTISIG is counted
+as 20 sigop operations in GetSigOpCount, and you can have a maximum of
+20000 sigops in a block (MAX_BLOCK_SIGOPS).  This is in CheckBlock so
+won't change anytime soon.
+
+If you want to use HASH160 based addresses, CHECKMULTISIG looks even less
+attractive.  The shortest script with CHECKSIG is something like:
+
+0
+OVER 2SWAP CHECKSIG SWAP HASH160 {} EQUAL BOOLAND ADD // n times
+m GREATERTHANOREQUAL
+
+( thanks to coblee
+https://gist.github.com/39158239e36f6af69d6f#gistcomment-47017 )
+
+I think this is actually as short as the shortest you can do with
+CHECKMULTISIG.
+
+Another issue that came up during pull 319 discussion is whether to
+support more general cases or more specific cases.  For example, should we
+optimize for the 1-of-2, 2-of-2 and 2-of-3 cases or should we just have
+one script template for all m-of-n? I would propose focusing on a more
+general case for the following reasons:
+
+* It is easier to validate one general algorithm than an expanding set of
+special-purpose functions.  For example, I think the most people on this
+list can validate the coblee script above for all n and m, but faced with
+a bunch of special purpose scripts they might miss a bug.
+
+* We don't have to expose the most general cases to the API, but it would
+be nice if we didn't have to keep changing IsStandard as people find use
+cases for 2-of-4, etc.  With IsStandard remaining narrow, innovation with
+new scripts is stifled because most client won't mine or relay
+non-standard transactions.
+
+* It would be less work for third-party software to track this
+(blockexplorer, android wallet).
+
+--
+Bobby Groff
+
+
+
+
+
