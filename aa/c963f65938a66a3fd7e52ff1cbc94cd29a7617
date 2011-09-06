@@ -1,0 +1,53 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Tue, 6 Sep 2011 13:59:29 -0400
+Subject: [Bitcoin-development] 0.4rc1 known bugs
+In-Reply-To: <CAPg+sBjy1FANzv5N7P4kx0Djqz-P2XbqQAFTxnK-MVu8erja+g@mail.gmail.com>
+References: <CABsx9T1juB-0hr9NW=PoO5eh_Aqhzkiv3tnXTSTsjBKiy4y0JA@mail.gmail.com>
+	<20110904115926.GA16476@ulyssis.org>
+	<CAPg+sBjy1FANzv5N7P4kx0Djqz-P2XbqQAFTxnK-MVu8erja+g@mail.gmail.com>
+Message-ID: <CABsx9T3kV884bc-f9SVBGPixMOi6fEwo4do8gixTBTK-szFS1A@mail.gmail.com>
+
+Nice work, Detective Wuille!
+
+Patch for the deadlock issue:
+
+https://github.com/bitcoin/bitcoin/pull/500
+
+I took a different approach to fix from the one Pieter suggested,
+performing the database operation after the cs_mapaddresses deadlock
+is released.  Please review to check my logic, it did survive my
+start/stop/restart... stress test.
+
+And I did review every place in the code that starts a database
+transaction, to look for similar issues, and they are all OK.
+
+
+RE: improving DEBUG_LOCKORDER:  requires some thought.  Deadlocks are
+still possible with TRY_CRITICAL_SECTION, if some codepaths TRY and
+some don't.
+
+
+On Tue, Sep 6, 2011 at 7:55 AM, Pieter Wuille
+<pieter.wuille at cs.kuleuven.be> wrote:
+> My mistake: these are not actual potential deadlocks, as all locking
+> of cs_vRecv/cs_vSend
+> happens inside TRY_CRITICAL_SECTION blocks. Gavin, maybe you can add the rule to
+> your debug code that ignores critical sections which are only locked
+> through TRY_...?
+>
+>>> + sipa found what looks like a deadlock between the addr-handling and
+>>> IRC-join-handling code.
+>
+> Regarding the actual deadlock between IRC seeding and AddAddress:
+>
+> Internally, DB also uses pthreads to implement the txn_begin()/commit() scheme,
+> though I'm not sure with which granularity. These need to be taken into account
+> when searching for deadlocks, but are obviously not detected by
+> DEBUG_LOCKORDER.
+
+
+-- 
+--
+Gavin Andresen
+
+
