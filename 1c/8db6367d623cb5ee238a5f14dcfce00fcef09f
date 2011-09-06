@@ -1,0 +1,61 @@
+From: pieter.wuille@cs.kuleuven.be (Pieter Wuille)
+Date: Tue, 6 Sep 2011 13:55:30 +0200
+Subject: [Bitcoin-development] 0.4rc1 known bugs
+In-Reply-To: <20110904115926.GA16476@ulyssis.org>
+References: <CABsx9T1juB-0hr9NW=PoO5eh_Aqhzkiv3tnXTSTsjBKiy4y0JA@mail.gmail.com>
+	<20110904115926.GA16476@ulyssis.org>
+Message-ID: <CAPg+sBjy1FANzv5N7P4kx0Djqz-P2XbqQAFTxnK-MVu8erja+g@mail.gmail.com>
+
+On Sun, Sep 4, 2011 at 13:59, Pieter Wuille
+<pieter.wuille at cs.kuleuven.be> wrote:
+> I've compiled bitcoind with Gavin's DEBUG_LOCKORDER, and fixed two potential
+> reported deadlock issues (see https://github.com/sipa/bitcoin/commits/lockfixes).
+
+My mistake: these are not actual potential deadlocks, as all locking
+of cs_vRecv/cs_vSend
+happens inside TRY_CRITICAL_SECTION blocks. Gavin, maybe you can add the rule to
+your debug code that ignores critical sections which are only locked
+through TRY_...?
+
+>> + sipa found what looks like a deadlock between the addr-handling and
+>> IRC-join-handling code.
+
+Regarding the actual deadlock between IRC seeding and AddAddress:
+
+Internally, DB also uses pthreads to implement the txn_begin()/commit() scheme,
+though I'm not sure with which granularity. These need to be taken into account
+when searching for deadlocks, but are obviously not detected by
+DEBUG_LOCKORDER.
+
+In particular here, the processing of "addr" created a db transaction for the
+entire message, while only locking cs_mapAddresses inside AddAddress. For
+IRC seeded addresses however, no db tx was precreated, and AddAddress first
+locked cs_mapAddress, and then did the database write (causing a lock) inside.
+
+A solution: in main.cpp, ProcessMessage, case "addr":
+
+          // Store the new addresses
+          CAddrDB addrDB;
++         CRITICAL_BLOCK(cs_mapAddresses) {
+          addrDB.TxnBegin();
+          int64 nNow = GetAdjustedTime();
+          int64 nSince = nNow - 10 * 60;
+
+              }
+          }
+          addrDB.TxnCommit();  // Save addresses (it's ok if this fails)
++         }
+          if (vAddr.size() < 1000)
+
+
+which makes sure that cs_mapAddresses is always entered before starting
+a database transaction.
+
+However, there may be similar issues in other place where TxnBegin is called
+explicitly. Also, maybe there are other solutions, like changing BDB parameters
+that make the db transaction fail instead of block, for example.
+
+-- 
+Pieter
+
+
