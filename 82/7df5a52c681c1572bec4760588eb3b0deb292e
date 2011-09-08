@@ -1,0 +1,28 @@
+From: shadders.del@gmail.com (Steve)
+Date: Thu, 08 Sep 2011 18:15:50 +1000
+Subject: [Bitcoin-development] bitcoind multiplexing proxy -
+ request/response routing problem
+Message-ID: <4E6879B6.7090203@gmail.com>
+
+4a/ Serialize all request/response exchanges.  i.e. request comes in 
+from remote node, proxy aquires lock on the proxy-localdaemon channel 
+and sends request.  Channel remains locked until response is received or 
+timeout (in which case remote node gets no response).  Unlock channel 
+after response received and send to client.
+
+Possibly messages that don't expect a response (e.g. relaying a tx 
+broadcast from remote node) can be pushed down a locked channel to 
+improve performance as they won't interfere with sequencing.  Locked 
+channels may also receive other unsolicited messages from local daemon 
+before the expected response message which would be dealt with the same 
+as if they came from an unlocked channel.
+
+Disadvantages:  Idle time for channel while waiting for response.  As 
+per option 2 this allows the proxy to stay dumb/thin but loses 
+opportunity for de-duplicating/caching unless option 1 is layered on top.
+
+4b/ As per 4a but use all 125 available bitcoind connections in a 
+channel pool.  Acquiring a lock on a channel consists of checking for an 
+unlocked channel first then waiting in a queue for one to become available.
+
+
