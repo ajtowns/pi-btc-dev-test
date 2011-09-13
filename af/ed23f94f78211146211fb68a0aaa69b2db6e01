@@ -1,0 +1,65 @@
+From: kjj@jerviss.org (kjj)
+Date: Tue, 13 Sep 2011 11:24:35 -0500
+Subject: [Bitcoin-development] Difficulty adjustment / time issues
+In-Reply-To: <CABsx9T2XLj4gZVPYodteaVCm0chR1n4WLUoSqB6+NnmWCDqHKQ@mail.gmail.com>
+References: <CABsx9T2XLj4gZVPYodteaVCm0chR1n4WLUoSqB6+NnmWCDqHKQ@mail.gmail.com>
+Message-ID: <4E6F83C3.9020108@jerviss.org>
+
+Gavin Andresen wrote:
+> Background:
+>
+> Timejacking:
+>    http://culubas.blogspot.com/2011/05/timejacking-bitcoin_802.html
+>
+> And a recent related exploit launched against the low-difficulty
+> alternative chains:
+>    https://bitcointalk.org/index.php?topic=43692.msg521772#msg521772
+>
+>
+> Seems to me there are two fundamental problems:
+>
+> 1) Bitcoin should be overlapping the ranges of block timestamps that
+> it uses to calculate difficulty adjustments.
+>
+> 2) Bitcoin's "what time is it" code is kind of a hack.
+>
+>
+> Fixing (1) would mean a potential block-chain split; before
+> considering doing that I'd like to consider second-best solutions.
+>
+> Fixing (2) is easier; incorporating a ntp library and/or simply
+> removing the bitcoin mining code from the client but requiring pools
+> and miners to have accurate-to-within-a-minute system clocks (or their
+> blocks will be "discouraged") seems reasonable to me. If you want to
+> produce blocks that the rest of the network will accept, run ntp on
+> your system.
+>
+> I THINK that fixing (2) will make (1) a non-issue-- if miners can't
+> mess around with block times very much then it will be very difficult
+> for them to manipulate the difficulty for their benefit.
+>
+The first thing I always do when I grab the source for my colo server is 
+patch util.cpp so that GetAdjustedTime() returns GetTime() with no 
+adjustment.  But I'm the kind of guy that buys special GPS receivers 
+because stratum 2 isn't low enough and occasionally checks ebay for 
+caesium fountains.
+
+NTP has been around for long enough now that there is no reason for the 
+client to screw with the clock.  If the client sees different times on 
+the network, it should issue a warning, and if it is off too far, it 
+should give an error and fail to run (and/or peers should reject it).
+
+But that doesn't solve the whole problem, because the block timestamp 
+checking is based on the assumption that the node is looking at the 
+bitcoin clock rather than the, ahem, real clock.  If we change the idea 
+of network time to NTP, we will then need to write (and test!) new block 
+timestamp rules to account for the new assumptions.
+
+I'm not sure that just fixing item 2 is going to stop the attacks found 
+by ArtForz, et al.  Some of the attacks Art pointed out are particularly 
+bad because they change the incentive structure of the system, at least 
+in the short term.  We need to flip that back around ASAP.
+
+Also, this is going to cause problems for at least one pool operator.
+
+
