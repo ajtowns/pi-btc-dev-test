@@ -1,0 +1,52 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Thu, 15 Sep 2011 10:21:44 -0400
+Subject: [Bitcoin-development] Request review: drop misbehaving peers
+In-Reply-To: <CABsx9T1_rOTd+sSgBTnj2iGKC2t7Rrh_pFAGtmWwjAKxaT0jdQ@mail.gmail.com>
+References: <CABsx9T2MKTYCeOqERXKBMYEqNEK4eo9jGt81gZE1=Fv=s3wEqA@mail.gmail.com>
+	<CANEZrP3FFEK0xrZqQkPyi8uoyb=XiPU7fSJDcGCLxiGH2uh3dQ@mail.gmail.com>
+	<CABsx9T0Eowp6_mTcggCz3tivRL0NsqyyxqingmPzZ2qkJnU9EA@mail.gmail.com>
+	<4E71F6D6.2090208@justmoon.de>
+	<CABsx9T1_rOTd+sSgBTnj2iGKC2t7Rrh_pFAGtmWwjAKxaT0jdQ@mail.gmail.com>
+Message-ID: <CAAS2fgRUv48Fnx4iDkjMeWxsqOVfN0nig37GRpG16bMKQgYaRg@mail.gmail.com>
+
+On Thu, Sep 15, 2011 at 10:06 AM, Gavin Andresen
+<gavinandresen at gmail.com> wrote:
+> If I think you're trying to DoS me, why would I be nice to you? ?I
+> think response messages would just give an attacker another potential
+> attack vector, and it is clear from the debug.log what triggers a ban.
+
+Fail hard, log the reason locally. Problem becomes tractable. Also,
+for any problem big enough to cause a network outage the issue won't
+be reproducibility.
+
+I support the imposition of txn rules? otherwise the dropping is
+nearly pointless due to the hole that any attack can just take the
+form of junk txn? but you must be super careful that an attack can't
+be transitive: There should be nothing I can give a node that it will
+forward on that will make that node's peers drop it. (and this needs
+to remain true while forwarding rules evolve)
+
+So, I'd suggest that you'd only drop on transactions that would
+invalidate a block if included in it but the problem there is that
+double spends meet that criteria. Better would, perhaps be something
+like "would invalidate a block if included; except that double spends
+after the last checkpoint are allowed, and nodes should not forward
+any txn until they are current with their last checkpoint"
+
+(That bit of complexity is to reduce exposure where a new node gets
+hit with double spends that its yet too stupid to reject, and it
+forwards them onto its friendly peers who then hang up on it thus
+prolonging its period of ignorance? in general care needs to be taken
+to avoid hanging up on nodes that are just too young to know better)
+
+> Good question. Anybody see a reason not to? ?How much tolerance (if
+> any) should there be for sending garbage data (I assume the
+> lower-level network stack almost never garbles data, is that a good
+> assumption)?
+
+It would be fine to hang up on any garbage data: something is
+obviously wrong. I'd be hesitant to ban on a single instance of it,
+it's rare but happens. (e.g. see
+http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.14.150&rep=rep1&type=ps)
+
+
