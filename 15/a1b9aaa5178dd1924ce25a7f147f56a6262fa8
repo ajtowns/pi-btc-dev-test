@@ -1,0 +1,46 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 15 Sep 2011 13:45:04 +0200
+Subject: [Bitcoin-development] Request review: drop misbehaving peers
+In-Reply-To: <CABsx9T2MKTYCeOqERXKBMYEqNEK4eo9jGt81gZE1=Fv=s3wEqA@mail.gmail.com>
+References: <CABsx9T2MKTYCeOqERXKBMYEqNEK4eo9jGt81gZE1=Fv=s3wEqA@mail.gmail.com>
+Message-ID: <CANEZrP3FFEK0xrZqQkPyi8uoyb=XiPU7fSJDcGCLxiGH2uh3dQ@mail.gmail.com>
+
+Probabilistic disconnections could make it quite hard to debug protocol
+implementations and increases the risk of flaky behaviour in the wild
+significantly. I don't see why a simpler solution isn't better.
+
+The most likely failure mode of this is not an attack but the same as
+previous breakages - scaling or legitimate version skew that causes problems
+as the network evolves.
+
+Agree with Luke that non-standard transactions should not be considered an
+attack.
+
+If you stay with the scoring system I'd be tempted to have a flag (defaults
+to 100) that sets a minimum threshold for the badness scores and ignores any
+below that. Attacks based on sending transactions that aren't syntactically
+valid don't seem likely to me, this isn't a good way to DoS somebody because
+discarding them is so cheap. If it turns out later there is a problem,
+people under attack could flip the flag until a new version is released.
+
+The formula for the DoS score in the case of invalid signatures/merkle roots
+seem unnecessarily elaborate. An invalid signature should never occur and
+could always result in immediate disconnection.
+
+Treating a block with too many sigops as invalid means legitimate relayers
+might be treated as an attacker if/when the constant changes in future. I'd
+suggest not treating this as an attacking situation at all.
+
+Why use a mutable field with a const setter?
+
+Unit tests that rely on sleeps like this can be flaky because the OS delay
+isn't always precise, not to mention slow/irritating to run. It's better if
+tests can override the clock, eg, if GetTime() did something like
+
+   if (nMockTime) { return nMockTime} else { ... }
+
+then unit tests could reliably modify and advance the clock in a
+fast/efficient manner.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20110915/0124d72f/attachment.html>
