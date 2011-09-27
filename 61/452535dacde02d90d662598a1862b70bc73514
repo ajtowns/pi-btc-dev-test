@@ -1,0 +1,58 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Tue, 27 Sep 2011 16:39:32 -0400
+Subject: [Bitcoin-development] Newly introduced DoS
+In-Reply-To: <201109271608.07053.luke@dashjr.org>
+References: <201109261517.11245.luke@dashjr.org>
+	<CABsx9T1gfuiHj9aR=1gDxtEqJzov5iXRqVEiEBUx-VBcearAZQ@mail.gmail.com>
+	<201109271608.07053.luke@dashjr.org>
+Message-ID: <CABsx9T3Znz83XpCBZO_J8jNecKkmUseVsBgHDDmbiVuZ1HFaoQ@mail.gmail.com>
+
+> @@ -1276,13 +1278,13 @@ bool CBlock::AcceptBlock()
+> ? ? // Get prev block index
+> ? ? map<uint256, CBlockIndex*>::iterator mi =
+> mapBlockIndex.find(hashPrevBlock);
+> ? ? if (mi == mapBlockIndex.end())
+> - ? ? ? ?return error("AcceptBlock() : prev block not found");
+> + ? ? ? ?return DoS(10, error("AcceptBlock() : prev block not found"));
+>
+>
+> Is it certain that it cannot be triggered by a peer having some huge number
+> more blocks than you?
+
+As I said, that is a "can't never happen but we'll wear a
+belt-and-suspenders just in case" case.
+
+AcceptBlock() is called from two places in the code:
+
+ProcessBlock, if the block is not an orphan:
+    // If don't already have its previous block, shunt it off to
+holding area until we get it
+    if (!mapBlockIndex.count(pblock->hashPrevBlock))
+    {
+....  orphan processing stuff...
+      return true;
+    }
+
+    // Store to disk
+    if (!pblock->AcceptBlock())
+        return error("ProcessBlock() : AcceptBlock FAILED");
+
+The mapBlockIndex.find(hashPrevBlock) in AcceptBlock can't fail.
+
+The second place is recursively, in AcceptBlock(), processing orphans
+that link to the block being accepted, and mapBlockIndex.find() would
+find the used-to-be-an-orphan-block-that-is-now-being-accepted.
+
+So: it is a case that should be impossible to trigger. However, in
+case there is some subtle bug or edge case I'm not considering it seem
+to me keeping the check is appropriate, and, because it will be a
+subtle bug or edge case, it seems to me keeping the DoS penalty is
+also appropriate, because attackers look for subtle bugs and edge
+cases that can be exploited.
+
+
+-- 
+--
+Gavin Andresen
+
+
