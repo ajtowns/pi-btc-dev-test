@@ -1,0 +1,75 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Thu, 29 Sep 2011 12:07:41 -0400
+Subject: [Bitcoin-development] Multisignature transations
+Message-ID: <CABsx9T2QzafV-uzn7yL01gs2mrzLaP0FCgjt_O--Ldw+s-Xm9w@mail.gmail.com>
+
+Design discussion:  https://gist.github.com/39158239e36f6af69d6f
+Pull request:  https://github.com/bitcoin/bitcoin/pull/541
+
+Initial support for multisignature transactions
+
+This adds initial support for three new types of transactions:
+(a and b)
+(a or b)
+(a and b) or c
+
+... where a/b/c are keys. These new transaction types will enable
+better wallet security and backup in future versions of bitcoin.
+
+I've taken a conservative approach with this initial pull; the new
+transaction types will be relayed and included in blocks, but are
+ignored by the wallet code, so will not affect the balance and will
+never be considered available to spend. I'm going to start a
+discussion on bitcoin-dev to do a bit of a brain-dump on what NOT to
+do with multi-signature transactions (there are several potential
+attacks that we'll need to be careful to avoid).
+
+I'll be creating a multisig_testing branch in the gavinandresen github
+fork that WILL add multisig transactions to the balance, will have a
+new RPC call to create multisig transactions, and will be able to
+spend the multisig transactions; that will be for testing this PULL
+only for now.
+=======================
+
+Here's the discussion of potential attacks that occurred to me while I
+was working on this:
+
++ Attacker has an account and a funding address/key ("a") at a
+shared-wallet service.  Attacker also has their own address/key ("b").
++ They send 100 bitcoins that can be spent by (a or b).  Note that the
+shared-wallet service can't stop the attacker from doing that.
+
+IF the shared-wallet service credits their account (because "a" can
+spend the coins), then Bad Things might happen:
+
++ The shared-wallet service probably assumes that it controls all the
+keys in its wallet, and the only time coins in its wallet will be
+spent will be when it issues a send* RPC command. But the attacker can
+spend using "b" anytime they like.
+
++ If the shared-wallet service allows importing of keys then the
+attacker might be able to get double-credit by importing "b"
+(depending on what the 'import private key' code does).
+
+The pull I've submitted doesn't have any of those issues because
+multisignature transactions are not credited / added to the wallet.
+
+Going forward, I think the right thing to do is only add
+multisignature transactions to the wallet's balance (and make them
+available to spend) if the public half of ALL of the keys involved are
+known to the wallet.  The private half of the key may not be in the
+wallet (maybe it is on another device or maybe it is a deterministic
+backup master key protected by a passphrase), but the public key must
+be known and in the wallet.
+
+
+I'd really like to get this into the 0.5 release because it will
+enable much better wallet security and backup in some future release
+or alternative client (but these transaction types need to be relayed
+and mined BEFORE then to make that possible).
+
+-- 
+--
+Gavin Andresen
+
+
