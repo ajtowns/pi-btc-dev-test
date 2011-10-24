@@ -1,0 +1,42 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Mon, 24 Oct 2011 10:55:14 -0400
+Subject: [Bitcoin-development] Determine input addresses of a transaction
+In-Reply-To: <44861.134.106.52.172.1319444997.squirrel@webmail.uni-osnabrueck.de>
+References: <44861.134.106.52.172.1319444997.squirrel@webmail.uni-osnabrueck.de>
+Message-ID: <CABsx9T2v4uhUdsWEg58Xs2OhOf3ED0Q2LGmkrRpdJDxvVMexdQ@mail.gmail.com>
+
+> So my first shot at this is to go through the inputs of a transaction and
+> see if the scriptSig field has only two opcodes. If that is the case, I
+> assume that it is of the structure <sig> <pubKey> and calculate the
+> Bitcoin address from <pubKey>.
+> But then I started to wonder if this is safe. Can this be tricked somehow?
+
+Sure. There are lots of non-standard scriptPubKey scripts that will
+validate if given <sig> <pubKey> as input:  a simple OP_NOP would work
+(do nothing, then check the top value on the stack and validate if it
+is not zero-- and <pubKey> is not zero).
+
+If you assume the client has all previous transactions, then you could
+get the transaction input's prevout (from the memory pool or disk) and
+then ExtractAddress() from it. That is probably a bad idea for
+listtransactions, since fetching all the previous inputs from disk
+just so you can check to see if they're 'green' violates the "a
+feature shouldn't cost anything if it is not being used" design
+principle.
+
+You know, just thinking out loud...
+
+Green addresses could be implemented as a second signature in the
+scriptSig.  You'd have to hack your bitcoin client, but you could
+generate a transaction that had <greensig> <sig> <pubKey>  ... as the
+input instead of <sig> <pubKey>.
+
+The <greensig> will be ignored by old clients.  The transactions is
+still considered 'standard'.  But you could teach bitcoin to look for
+<greensig> signatures in wallet transactions...
+
+-- 
+--
+Gavin Andresen
+
+
