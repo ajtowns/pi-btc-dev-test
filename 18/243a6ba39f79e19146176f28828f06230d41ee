@@ -1,0 +1,79 @@
+From: gronager@ceptacle.com (=?iso-8859-1?Q?Michael_Gr=F8nager?=)
+Date: Wed, 26 Oct 2011 10:58:45 +0200
+Subject: [Bitcoin-development] Detecting OP_EVAL scriptPubKeys that
+	are	to you
+In-Reply-To: <CALf2ePy=3N1JQodP3s9PzH=Af1z-7qGdy_4=QW9-CJmaxYGz5Q@mail.gmail.com>
+References: <CANEZrP1ic4RXFzoqf66MGv=rJe3MgWxVi5nnk2VKkMc4VMCDyw@mail.gmail.com>
+	<CABsx9T3WKv3RLWT+Q6s7cCLzDL3sVRCWfmPiKcSp=_Re05m+zQ@mail.gmail.com>
+	<CAAS2fgSYwUdiyY2XfHhWn+aN_6a72XRKs-8W7ibZM5t0tZ28rg@mail.gmail.com>
+	<CALf2ePy=3N1JQodP3s9PzH=Af1z-7qGdy_4=QW9-CJmaxYGz5Q@mail.gmail.com>
+Message-ID: <7A50EE90-0FFC-45FB-A27F-786AEB23A8CA@ceptacle.com>
+
+I think it is a very important feature to be able to extract transaction to/from you only from your private keys. In the standard transactions this is easily accomplished - in the case you only want to find the addr to tx mapping:
+
+   vector<pair<opcodetype, vector<unsigned char> > > vSolution;
+   if (!Solver(scriptPubKey, vSolution))
+       return 0;
+
+   BOOST_FOREACH(PAIRTYPE(opcodetype, vector<unsigned char>)& item, vSolution)
+   {
+       vector<unsigned char> vchPubKey;
+       if (item.first == OP_PUBKEY)
+           // encode the pubkey into a hash160
+           return Hash160(item.second);
+       else if (item.first == OP_PUBKEYHASH)
+           return uint160(item.second);                
+   }
+
+This possibility is used today in:
+* blockexplorer
+* bitcoin-js
+* my own tiered implementation for thin clients
+
+I agree that you can of course always construct payment schemes to hide payments (hashes from classic novels, sending the private key off line etc), but I consider those either exotic or on purpose hidden, and hence they are not really a problem, nor an argument that this feature does not really exist today.
+
+So, if we introduce a standard (multikey) payment that hides the address (or makes it overly complicated to extract it) it will be a major problem for the projects that I listed above. 
+
+I will post a more detailed technical comment reflecting directly on the BIPs, but the wiki is currently down and I need to re-read the BIPs first.
+
+Cheers,
+
+Michael
+
+
+On 25/10/2011, at 18:47, Alan Reiner wrote:
+
+> On Tue, Oct 25, 2011 at 10:49 AM, Gregory Maxwell <gmaxwell at gmail.com> wrote:
+> On Tue, Oct 25, 2011 at 9:21 AM, Gavin Andresen <gavinandresen at gmail.com> wrote:
+>> You give the hash to whoever is paying you, and store the hash -->
+>> script  mapping when you do that (assuming you're not using a
+>> deterministic wallet; if you are, you probably just increment a
+>> counter in the wallet).
+> 
+> If anyone finds that solution unsatisfying, consider? It's already the
+> case that I could take one of your disclosed public keys and create an
+> infinite series of secondary keys out of it for which only you could
+> decode, and the only way for you to find them in the blockchain would
+> be to have performed the same procedure and made a note of the
+> addresses you're watching for.
+> 
+> 
+> (1) As I understand it, OP_EVAL is being proposed as an *optional* tool for multi-signature transactions.  It sounds like to me, that you can still use the regular OP_CHECKMULTISIG if you are concerned about these things.  If you're dealing with too many parties with questionable reliability that they will notify you of transacitons that include you, I don't see anything wrong with declaring that you'd only prefer dealing with OP_CMS transactions and not OP_EVAL (besides some grumbling from them that their way is "better").   Either way, they're screwing themselves, too, if they want to include you on transactions and don't notify you as such (kind of defeats the purpose of multi-sig txs).
+> 
+> (2) I think it's unnecessary to discuss cases where you somehow lose your mappings but not your private keys.  In order for OP_EVAL scripts to work, the subscripts/mappings are *just as important* as your regular private keys.  They should be kept in your wallet forever just like your private keys--and thus you lose none of them or all of them.  The only real difference is that they aren't sensitive like your private keys, so they don't have to be encrypted.
+> 
+> (3) There should most definitely be a button on the main client that allows you to "Add OP_EVAL script" or something along those lines (maybe something with a less obscure name).  We need to make it as easy as possible for someone to add such a script/mapping to their wallet.  Although, this invites a breach of one of my core rules of user interfaces:  if the functionality is dependent on the user performing some regular maintenance task, you better be prepared for all users to fail at doing it.  Even diligent users are going to forget/mess-up sometimes.  If failure at performing this task results in breaking the client or losing money, we should avoid promoting that usage paradigm.
+> 
+> ------------------------------------------------------------------------------
+> The demand for IT networking professionals continues to grow, and the
+> demand for specialized networking skills is growing even more rapidly.
+> Take a complimentary Learning at Cisco Self-Assessment and learn 
+> about Cisco certifications, training, and career opportunities. 
+> http://p.sf.net/sfu/cisco-dev2dev_______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
+
