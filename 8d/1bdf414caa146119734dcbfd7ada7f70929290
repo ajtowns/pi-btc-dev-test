@@ -1,0 +1,88 @@
+From: andyparkins@gmail.com (Andy Parkins)
+Date: Wed, 23 Nov 2011 13:13:12 +0000
+Subject: [Bitcoin-development] Addressing rapid changes in mining power
+In-Reply-To: <CALxbBHVEvCqun0aX_9awGhW39h5cx0jLPx2ptoesBcmKGO-_Dw@mail.gmail.com>
+References: <201111231035.48690.andyparkins@gmail.com>
+	<CAGQP0AEZ9CUNd9ERyMsx741bqjLptY4pPRU6EmxQcD7kR8bdbw@mail.gmail.com>
+	<CALxbBHVEvCqun0aX_9awGhW39h5cx0jLPx2ptoesBcmKGO-_Dw@mail.gmail.com>
+Message-ID: <201111231313.12534.andyparkins@gmail.com>
+
+On 2011 November 23 Wednesday, Christian Decker wrote:
+
+> The current block generation with a fixed difficulty was chosen because it
+> it clear when to adjust and to what target difficulty it has to be
+> adjusted. If we were to use synchronized time windows and select the
+> hardest block it gets incredibly complicated as synchronization is not
+> possible in distributed systems. Even the smallest drift would allow for
+> forks in the chain all over the place. Furthermore the delay in propagation
+> will also cause forks.
+> 
+> If 1/2 of the network see one block as the hardest, and for the rest of the
+> network it came too late then we'll have a fork that stays with us quite a
+> while.
+> 
+> The block chain is described as a timestamp server in the paper, but it is
+> more of a proof-of-existence before, as the contained timestamp cannot be
+> trusted anyway.
+
+These are reasonable objections.  My counter is this:
+
+Let's view block difficulty as a measure of time, not time itself.  The 
+timestamp is merely a convenience for the block.  You cannot fake the 
+computing power needed for a particular difficulty; so the hardest chain 
+always wins (note: hardest chain).
+
+If I am a miner, I have two choices:
+
+  (a) try to replace the top block on the current hardest chain
+  (b) try to append to the current hardest chain
+
+Either of these is acceptable; but in case (a) I have to generate a more 
+difficult block to replace it; in case (b), at the start of the window, any 
+difficulty is acceptable (however, I'm competing with other miners, so _any_ 
+difficulty won't beat them).
+
+The rule then is that you're trying to win the one block reward that is 
+available every 10 minutes; and your peers will be rejecting blocks with 
+timestamps that are lies.
+
+Perhaps an example...
+
+ - I (a node), download the blockchain
+ - The blockchain has N potential heads.  Each of those heads has a time, t
+   and a sum_of_difficulty.
+ - The next block reward is going to go to the highest difficulty with
+   t < timestamp < (t + T) _and_ verified timestamp (i.e. not received more
+   than, say 5 minutes, from its claimed timestamp).
+ - I can choose any head to start generating from, but given that it's the
+   highest difficulty chain that's going to win the next reward (not the 
+   highest difficulty block), I will surely pick the most difficult?
+ - A rogue miner then issues a block with a fake timestamp; it actually
+   generated at (t + T + 5) but claims (t + 5).  Should I start using
+   that block as my new head?  Obviously not, because my peers might decide
+   that it is a lie and reject it because it was received too late, making my
+   work useless.  It is in my interest to pick a head that is honest.
+
+Resolving forks is easy:
+
+ - 50 coins every ten minutes only
+ - most difficult chain wins
+
+I'm certainly not saying it's a simple change.  There are certainly areas I 
+haven't thought about, and could be game-overs; but I do like the idea of 
+there being no target difficulty, and instead the blocks are issued at a fixed 
+ten minute rate (or rather the rewards are).
+
+
+Andy
+
+-- 
+Dr Andy Parkins
+andyparkins at gmail.com
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: This is a digitally signed message part.
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20111123/7405827f/attachment.sig>
