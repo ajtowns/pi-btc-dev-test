@@ -1,0 +1,72 @@
+From: andyparkins@gmail.com (Andy Parkins)
+Date: Wed, 23 Nov 2011 12:54:41 +0000
+Subject: [Bitcoin-development] Addressing rapid changes in mining power
+In-Reply-To: <CAGQP0AEZ9CUNd9ERyMsx741bqjLptY4pPRU6EmxQcD7kR8bdbw@mail.gmail.com>
+References: <201111231035.48690.andyparkins@gmail.com>
+	<201111231130.58785.andyparkins@gmail.com>
+	<CAGQP0AEZ9CUNd9ERyMsx741bqjLptY4pPRU6EmxQcD7kR8bdbw@mail.gmail.com>
+Message-ID: <201111231254.41426.andyparkins@gmail.com>
+
+On 2011 November 23 Wednesday, Jorge Tim?n wrote:
+> With the current system, the timestamp can also be cheated, but miners
+> have no direct incentive to do it. With your system, they increase
+> their probability of mining a block by putting a false timestamp.
+> Also, where's the network clock you're talking about? Isn't it the
+> timestamps in the blockchain?
+
+(1) The "probability of mining a block" is old-think.  The probability of 
+mining a block is 100% in my system.  Instead, it becomes "the probability of 
+your block being the hardest" and that requires actual hashing power 
+regardless of the timestamp you write on the block.  I could write that my 
+block was generated next year; but I can't fake the hashing power it needs to 
+generate one year's worth of hashes.
+
+If chain difficulty were summed correctly (sum(log(difficulty)), I guess), 
+then time makes not the slightest difference anyway.  You can issue blocks at 
+any time with any difficulty, and the "hardest" chain always wins.  The block 
+period can be anything, and it is only the block reward that makes it 
+necessary to pick a particular period for block issuing (even that could be 
+worked around I guess with a variable reward, but why bother?).
+
+(2) For the network clock; see util.cpp:GetAdjustedTime().
+
+(3) Current clients do have an incentive: more time.  The more time they get, 
+the more hashes they can try.  The current client already checks the 
+timestamp:
+
+  main.cpp:CBlock::CheckBlock()
+
+    // Check timestamp
+    if (GetBlockTime() > GetAdjustedTime() + 2 * 60 * 60)
+        return error("CheckBlock() : block timestamp too far in the future");
+
+My suggestion only requires that the two hour window be reduced; and a lower 
+limit to be added.  Also: while the miners have an incentive to lie about the 
+time, the nodes they broadcast to have an incentive to reject mistimed blocks, 
+so you won't gain much by lying to your peers since your block won't be 
+accepted -- the incentive is therefore removed.
+
+Note: my system also prevents an attack that is possible with current bitcoin: 
+recalculating the entire chain.  Let's say Visa want to take over bitcoin.  
+They buy enough computing power to significantly beat the current bitcoin 
+network; then they start recalculating the entire block chain; since early 
+blocks were low difficulty, it's not that hard to do.  Once they overtake the 
+real chain, they have effectively undone all previous transactions.  (I'm not 
+suggesting this is likely; and it's actually mitigated by the hard-coded block 
+hashes).  The point is that blocks are only generatable for the time when the 
+rest of the network is willing to add them to the chain.
+
+
+
+Andy
+
+-- 
+Dr Andy Parkins
+andyparkins at gmail.com
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: This is a digitally signed message part.
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20111123/c91e1106/attachment.sig>
