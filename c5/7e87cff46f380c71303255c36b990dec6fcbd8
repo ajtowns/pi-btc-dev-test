@@ -1,0 +1,66 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Sun, 18 Dec 2011 16:42:06 +0100
+Subject: [Bitcoin-development] Pubkey addresses
+In-Reply-To: <CAGQP0AE-OkJroyAN5jga_a-s8i_SSub9uSgTQBZDrQQfzC=bSg@mail.gmail.com>
+References: <201112170132.26201.luke@dashjr.org>
+	<CAGQP0AFg7dMK4Rzm9M1Ur-jeQmAp85nKbE_Ry5sXr+Pw=e3EQg@mail.gmail.com>
+	<1324138546.29801.3.camel@BMThinkPad.lan.bluematt.me>
+	<4EECDD5F.8030402@parhelic.com>
+	<CAGQP0AE-OkJroyAN5jga_a-s8i_SSub9uSgTQBZDrQQfzC=bSg@mail.gmail.com>
+Message-ID: <20111218154205.GA5304@ulyssis.org>
+
+On Sun, Dec 18, 2011 at 01:15:26PM +0100, Jorge Tim?n wrote:
+> But anyway, reading some comments I feel I'm missing something about
+> this proposal. How can you save space by putting the whole public key
+> instead of just the address (a hash of the public key) with each
+> output?
+> Is this what it's being proposed?
+
+Yes. The reason is that currently a send-to-address puts the address in the
+output script, while redeeming requires the full pubkey plus the signature
+to be placed in the input script. Overall, this requires more space than a
+send-to-pubkey, where the output contains the pubkey, and the input the
+signature.
+
+There are several possible improvements however, and they may not all have
+been explained in this thread. To summarize:
+* compressed public keys (33 byte pubkeys instead of 65 bytes)
+* compact signatures (66 bytes instead of 72, including hash type byte)
+* pubkey recovery (allows the public key to be derived from a compact signature)
+
+The first is very easy to implement (see pull #649). Compact signatures 
+and pubkey recovery require a change to the scripting language (though are
+already implemented, as they are used for message signing).
+
+These result in several combinations that could be proposed:
+1) send-to-pubkeys-hash
+   - currently the default addres type
+2) send-to-recovered-pubkeys-hash-with-compact-signature-inside-op_eval
+   - extend the scripting language inside OP_EVAL, as described in
+     https://gist.github.com/1262449
+   - use compact signatures
+   - use key recovery, and never put a pubkey in the blockchain data
+3) send-to-pubkey
+   - traditional transaction type
+4) send-to-compressed-pubkey
+   - what Luke proposes as new address type
+5) send-to-compressed-pubkeys-hash
+   - what pull #649 would bring
+
+Gregory Maxwell made a small table to compare these options:
+
+  http://people.xiph.org/~greg/addr.compare.html
+
+If you don't consider pruning, everything is better than send-to-pubkeys-hash
+as we have now. Both using pubkeys instead of hashes, using compressed pubkeys
+instead of full ones improve the situation independently, and using key
+recovery is even better.
+
+If you do consider pruning, the advantages are smaller, but it is far from
+clear to me how pruning will be implemented in the future (as a pruning
+node cannot function as a NODE_NETWORK service anymore).
+
+-- 
+Pieter
+
+
