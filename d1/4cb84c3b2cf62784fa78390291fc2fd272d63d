@@ -1,0 +1,226 @@
+From: gronager@ceptacle.com (=?iso-8859-1?Q?Michael_Gr=F8nager?=)
+Date: Wed, 21 Dec 2011 09:50:17 +0100
+Subject: [Bitcoin-development] Protocol extensions
+In-Reply-To: <4EEE58CA.5090902@justmoon.de>
+References: <CABr1YTebhitO4g-SarZ7H=aoG9a8zW1wd0rfR32o8i0vODbLJw@mail.gmail.com>
+	<82659F61-0449-47BB-88DC-497E0D02F8A1@ceptacle.com>
+	<CALxbBHUXEJLRDZ=RS1vuvkm7rDjFUPir0sU__f6TJXiTTQxWzA@mail.gmail.com>
+	<4EEE58CA.5090902@justmoon.de>
+Message-ID: <67FAA76C-1734-471D-A3D8-31E5216DD512@ceptacle.com>
+
+DHTs and Bitcoin:
+
+First, lets define the problem we want to solve: scalability - when bitcoin takes over all credit card transactions (!), and even before that, we will meet a scalability problem. The blockchain will grow rapidly, (1MB/10min or 50GB/yr) and we will constantly have transactions pending to get into a block. Further, the clients will turn into toasters just from validating all transactions. At the same time we have a level of validation and block chain distribution that we really don't need - today txes are validated by 100k clients in the future that could be 100M clients, and they are stored at way more locations than they are today. So... all this calls for a partition of the transaction/block space, and for a more flexible than 1MB / block setup.
+
+First things first. The partitioning of the tx space. One way to partition the tx space is through a partition in hash, namely the DHT approach. There might be other schemes, but as we already have both the ability to share addresses and maintain a hash space it seems obvious.
+
+So we would like a scheme that provides distributed validation and storage keeping a similar level of trust and security as we have today. We hence need to be able to query another node for validation and ensure it is not pulling our leg (Sybil...).
+
+There are two important aspects of bitcoin:
+1. transaction signing / validation
+2. to avoid double spending
+
+1. Is a a simple and inclusive problem to solve, 2 is more complex and exclusive. 1. can to a large extend be solved by asking for transactions and validating these against the block chain - it is hard to cheat as you can match blocks containing your transaction with the block chain headers, requiring a false node to perform heavy proof of work tasks.
+If we on the other hand query other nodes for 2. just blocking an answer would be enough to enable a double spend. (at least seen from the one node querying).
+
+Today you can, assuming you have en up to date block chain, only block pending tx'es which gives you an approximate 10 minutes scale for cheating by double spending. If we create a setup where we distribute the block index and the block chain, we can fake any older transaction as well, and leave a node to believe that a tx has not been spend. The obvious way around it is to ensure a high level of connectedness and to query several geographically distributed nodes if a tx has already been spend. But this can be quite hard and also, you don't want to flood the network with to many extra commands.
+
+If we design the system based on the above conclusions we get:
+
+1. A client is, based on the hash of its ip:port assigned to serve a part of the block chain, a part of the block index and possibly also a part of the bitcoin addresses (hash160).
+
+2. Further, the client can announce that it also serves any other hashspace fractions - e.g. to enable notification of payments to its bitcoin address or use of its coins (txouts).
+
+3. On validation of a tx, the txins are queried for at the clients serving these and a possible double spend can be monitored. We need to query more clients to ensure we are not cheated by one. And we need to maintain the requirement that they come from separate A.B address spaces (so they don't just setup a matching hash from playing with C.D and ports).
+
+4. The proper nodes are found using Chord DHT scheme (other schemes might be suitable as well).
+
+Thin clients keep their spendable coins to a minimum and use only one bitcoin address, that way they will only serve and listen to 3 hash fractions. If we split the current space into 4096 parts we get roughly 100 clients for each hash space.
+
+The (only?) new attack vector, compared to the current system is the possibility that a client has only evil peers within one hash range and hence can be fooled into believing an old tx can be spend again.
+
+The new scheme will scale well as each client will only serve a part of the hashspace and hence the number of validations and block storage can be kept at a minimum. Further, it scales well for thin clients vs more full clients as you can add as many or as few (down to 1-3) hash space parts as you want, so the new scheme includes the old scheme in the limit of subscribing to all hash space parts.
+
+I might have overlooked something - so please fill in some comments...
+
+Cheers,
+
+Michael
+
+
+On 18/12/2011, at 22:19, Stefan Thomas wrote:
+
+> Hey Chris,
+> 
+>> The storage would be distributed, messages are routed on behalf of others, which makes finding the origin of the query hard to find (think Tor)
+> 
+> This type of intermediate routing makes Tor slow. Bitcoin does not and imho should not make anonymity guarantees. Many users do not need them.
+> 
+> Let those who want anonymity connect through Tor, Freenet, etc. It's easy to add anonymity via an extra layer, but it is impossible to add performance on top of a slow system.
+> 
+> That's really the only thing I wanted to point out - if you do DHTs, focus on performance, not anonymity. :)
+> 
+> Cheers,
+> 
+> Stefan
+> 
+> On 12/17/2011 2:37 PM, Christian Decker wrote:
+>> A while back I had proposed a similar idea to the DHT, although my main goal was to reduce the need for broadcasts.
+>> 
+>> My idea was to structure the network in a hypercube and use prefixes to address different parts of the network, and use those prefixes also to find the location where an item (transaction, block, ...) should be stored. Each vertex in the hypercube is a small, highly connected, cluster of nodes. The storage would be distributed, messages are routed on behalf of others, which makes finding the origin of the query hard to find (think Tor), each node would have to store only O(log(p)) items, with p being the prefix length, maximum number of hops is equal to the dimension of the hypercube O(log(n)).
+>> 
+>> Newly created transaction will be sent directly to the location they'll be stored and miners retrieve new transactions at regular intervals. It might increase delays to the confirmations, but it reduces the number of broadcasts and storage requirements on nodes greatly.
+>> 
+>> Regards,
+>> Chris
+>> 
+>> 
+>> On Sat, Dec 17, 2011 at 2:13 PM, Michael Gr?nager <gronager at ceptacle.com> wrote:
+>> Hey Eric,
+>> 
+>> Two comments.
+>> 
+>> 1.
+>> The ability to query for transactions belonging to pubkeys or bitcoin addresses is supported today by several implementations:
+>> * blockexplorer.com
+>> * bitcoin-js
+>> * my own libBTC (will more on this soon)
+>> 
+>> To query for transactions you need to use json-rpc and not the bitcoin protocol, however. But still the purpose is the same: to be able to build thin clients that can rely on a server for           storing the blockchain and keeping connected on the p2p network.
+>> 
+>> The reason for not having these queries part of the standard protocol (I think) are as they breaks anonymity, and that you would actually encourage people to participate in the p2p.
+>> 
+>> 2. The second part you mention, to some how move the storage of the blockchain into a DHT based storage would be quite nice. The benefit of this is that it could be a way to integrate the smaller clients into the network without breaking the anonymity. But it should be thought out quite carefully. Further, if each client only store a fraction of the blockchain we should work out what fraction that need to be in order to ensure a similar service level. I would be           happy to work with you on this.
+>> 
+>> Cheers,
+>> 
+>> Michael
+>> 
+>> On 17/12/2011, at 08:41, Eric Lombrozo wrote:
+>> 
+>>> Hey, guys.
+>>> 
+>>> I haven't posted here before so I'll introduce myself. My name's Eric,
+>>> I've been developing cryptocurrency-related
+>>> software for several months now, I've implemented some libraries for
+>>> dealing with core bitcoin datastructures, made
+>>> some custom builds of bitcoind and interfaced it with a few apps I've written.
+>>> 
+>>> In doing so, I've come to appreciate just how little of the potential
+>>> for the bitcoin protocol is being exploited right now...
+>>> not only in terms of the script features but in terms of the potential
+>>> commands and node types that could exist.
+>>> 
+>>> For instance, the protocol spec at
+>>> https://en.bitcoin.it/wiki/Protocol_specification only has 16 commands
+>>> listed and
+>>> only one service type...despite having a full 12 bytes for a command
+>>> code and a full eight bytes for a services
+>>> type.
+>>> 
+>>> The fact that only one node service type is specified is probably due
+>>> to the fact that the satoshi client was written
+>>> to be a standalone monolithic app that took care of all the essential
+>>> needs for a network of peers.
+>>> i.e. block chain storage/management, transaction signing/verification,
+>>> key generation/wallet management, block mining, etc...
+>>> However, I think there's an urgent need for breaking up all these
+>>> different tasks into separate components that can run as independent
+>>> services on different types of devices.
+>>> 
+>>> One of the big issues I'm dealing with now pertains to block chain
+>>> storage. As of right now, it is implemented as sequential
+>>> disk files using Berkeley DB in the satoshi client. Then you have
+>>> other projects that have been using SQL tables, etc...
+>>> But I believe the direction this really needs to move towards is some
+>>> sort of distributed hash table...and the database queries
+>>> should be performed using the bitcoin protocol itself. Perhaps adding
+>>> a few more commands. As things stand right now,
+>>> the only way to query for transactions or blocks is by their hash. And
+>>> once a transaction gets incorporated into a block and
+>>> removed from the transaction pool, one can no longer query it by the
+>>> transaction hash without stepping outside the bitcoin protocol.
+>>> We need access to the disk file that stores the blocks whether it be
+>>> via Berkeley DB or SQL or whatever.
+>>> 
+>>> I propose an extension to the bitcoin protocol to provide methods for
+>>> performing more sophisticated queries, such as "Give me
+>>> an inventory of transactions involving this particular public key" or
+>>> "Give me an inventory all transactions in the last n blocks with
+>>> unredeemed outputs." This could be done by adding a few more commands.
+>>> 
+>>> Furthermore, I propose a new network services type for nodes that
+>>> serve as block chain/transaction pool storage.
+>>> 
+>>> Of couse, any peer that wishes to verify the integrity of the block
+>>> chain would still have to download at the very least
+>>> all the block headers...and to be completely sure, also all the blocks
+>>> themselves...and verify everything. But it would be
+>>> very nice to be able to run thin services that can rely on other
+>>> network peers to do this work. It is still possible to attain
+>>> a high level of confidence in the integrity by querying multiple peers
+>>> for similar objects and comparing. It is also possible
+>>> to run your own dedicated block chain storage servers which you trust.
+>>> 
+>>> There are other ideas I have for other types of services, too.
+>>> 
+>>> Anyhow, I'm just throwing this out there...if anyone's interested I'd
+>>> love to develop these ideas further and help put together some
+>>> specs.
+>>> 
+>>> -Eric Lombrozo
+>>> 
+>>> ------------------------------------------------------------------------------
+>>> Learn Windows Azure Live!  Tuesday, Dec 13, 2011
+>>> Microsoft is holding a special Learn Windows Azure training event for
+>>> developers. It will provide a great way to learn Windows Azure and what it
+>>> provides. You can attend the event by watching it streamed LIVE online.
+>>> Learn more at http://p.sf.net/sfu/ms-windowsazure
+>>> _______________________________________________
+>>> Bitcoin-development mailing list
+>>> Bitcoin-development at lists.sourceforge.net
+>>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>> 
+>> 
+>> 
+>> ------------------------------------------------------------------------------
+>> Learn Windows Azure Live!  Tuesday, Dec 13, 2011
+>> Microsoft is holding a special Learn Windows Azure training event for
+>> developers. It will provide a great way to learn Windows Azure and what it
+>> provides. You can attend the event by watching it streamed LIVE online.
+>> Learn more at http://p.sf.net/sfu/ms-windowsazure
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>> 
+>> 
+>> 
+>> ------------------------------------------------------------------------------
+>> Learn Windows Azure Live!  Tuesday, Dec 13, 2011
+>> Microsoft is holding a special Learn Windows Azure training event for 
+>> developers. It will provide a great way to learn Windows Azure and what it 
+>> provides. You can attend the event by watching it streamed LIVE online.  
+>> Learn more at 
+>> http://p.sf.net/sfu/ms-windowsazure
+>> 
+>> 
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> 
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> 
+> ------------------------------------------------------------------------------
+> Learn Windows Azure Live!  Tuesday, Dec 13, 2011
+> Microsoft is holding a special Learn Windows Azure training event for 
+> developers. It will provide a great way to learn Windows Azure and what it 
+> provides. You can attend the event by watching it streamed LIVE online.  
+> Learn more at http://p.sf.net/sfu/ms-windowsazure
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
