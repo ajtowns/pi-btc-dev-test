@@ -1,0 +1,108 @@
+From: moon@justmoon.de (Stefan Thomas)
+Date: Thu, 29 Dec 2011 20:54:28 +0100
+Subject: [Bitcoin-development] Alternative to OP_EVAL
+In-Reply-To: <CABsx9T1Hu7Yg-gWUZsRirpNjzYayySJvaVihKGnuntF2rBdmBA@mail.gmail.com>
+References: <alpine.LRH.2.00.1112290111310.22327@theorem.ca>
+	<CABsx9T06H29R4CpL9hXF_yyB4chko1YdkhbCZ8rdwo1gLmF1BQ@mail.gmail.com>
+	<alpine.LRH.2.00.1112291143220.22327@theorem.ca>
+	<CABsx9T1Hu7Yg-gWUZsRirpNjzYayySJvaVihKGnuntF2rBdmBA@mail.gmail.com>
+Message-ID: <4EFCC574.1030901@justmoon.de>
+
+> RE: delaying EVAL rollout:  I could live with rolling out just BIP 11
+> (up-to-3-signature-CHECKMULTISIG as 'standard' transactions) and
+> delaying EVAL rollout on the main network, but I worry that will just
+> encourage people to delay thoroughly reviewing/testing for a couple of
+> months, and we'll be right back here at the beginning of March.
+
+How about releasing it on testnet first? If you want "less smart" people 
+such as myself to help test, well I don't think I would get anywhere if 
+I tried to abstractly reason about every possibility. Low-level testing 
+is certainly important, but for me "thorough testing" requires an actual 
+network of nodes (running different clients) and applications capable of 
+creating and verifying real OP_EVAL transactions.
+
+My suggestion would be: Deploy OP_EVAL on testnet quickly, let's build 
+some real-life applications and if it works well, /then /let's pull the 
+trigger for mainnet. If some issues or improvements arise, we'll have a 
+chance to adjust it and try again.
+
+I don't think this is too conservative or paranoid. I think this is a 
+textbook use case for testnet.
+
+
+On 12/29/2011 7:00 PM, Gavin Andresen wrote:
+> RE: preventing OP_EVAL from executing the result of calculations:
+>
+>> This is not adequate:<data>  OP_SHA256 OP_EVAL runs random code that is more>  than 5 bytes.
+> Good point, the rule should be "OP_EVAL shall fail if asked to execute
+> 8 or fewer bytes."
+>
+> RE: this minor disadvantage:
+>
+>>>   OP_EVALs are not executed, and so the code associated with them does
+>>> not have to be part of the transaction, if they are in the
+>>> non-executed branch of an OP_IF. That could be good for privacy, and
+>>> could be good for reducing block-chain size.
+>> I don't understand the above paragraph.
+> It is the "Either This or That can redeem" case that motivated me to
+> allow 2-deep EVAL recursion.
+>
+> Start with the most straightforward code for doing "this or that" (in
+> pseudocode):
+>
+> scriptSig:<sigs>  <either the code for This or the code for That>
+> scriptPuKey:
+>    IF<hash of code>  EQUALS hash of This or hash of That:
+>      EVAL
+>    ELSE
+>      fail validation
+>    ENDIF
+>
+> That can be done with CODESEPARATOR/CODEHASH.
+>
+> But if you want to then bundle that up so the scriptPubKey is a
+> standard 'pay to script', you get:
+>
+> scriptSig:<sigs>  <either the code for This or the code for That>
+> <serialized IF... code from above>
+> scriptPubKey:  ... standard DUP HASH160<>  EQUALVERIFY EVAL
+>
+> To be backwards compatible with old clients the scriptSig would have to be:
+>
+> <hash1>  <hash2>  <sigs>  CODESEPARATOR this_or_that_code
+>   CODEHASH
+>   CODESEPARATOR
+>   IF<hash of code>  does not equal hash2:
+>     fail verification
+>   ENDIF
+>
+> That could only be done if the definition of CODEHASH was modified to
+> hash only the stuff between CODESEPARATORS instead of hashing from
+> CODESEPARATOR to the end of the scriptSig.
+>
+> RE: static analysis:
+>
+>> Yes, but maybe there is other static analysis miners may want to do.  I
+>> can't imagine every scenario.
+> The vast majority of miners are "discouraging" (not relaying or
+> putting into blocks) anything besides 'standard' transaction types.
+>
+> Until somebody smarter than me (like Russell) has done a deep analysis
+> of Script and all of its opcodes, I don't think that should change.
+> The standard transaction types are easy to reason about, and the
+> standard types extended with OP_EVAL are also easy to reason about--
+> you can template-match them to find out how many ECDSA operations a
+> CHECKMULTISIG will do, etc.
+>
+> Again, in practice, I don't think EVAL as proposed is a danger.
+>
+> RE: delaying EVAL rollout:  I could live with rolling out just BIP 11
+> (up-to-3-signature-CHECKMULTISIG as 'standard' transactions) and
+> delaying EVAL rollout on the main network, but I worry that will just
+> encourage people to delay thoroughly reviewing/testing for a couple of
+> months, and we'll be right back here at the beginning of March.
+>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20111229/6e7f0034/attachment.html>
