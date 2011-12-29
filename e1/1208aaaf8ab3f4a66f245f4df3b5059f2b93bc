@@ -1,0 +1,46 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Thu, 29 Dec 2011 22:00:26 +0100
+Subject: [Bitcoin-development] Alternative to OP_EVAL
+In-Reply-To: <20111229190838.GA29609@ulyssis.org>
+References: <alpine.LRH.2.00.1112290111310.22327@theorem.ca>
+	<20111229190838.GA29609@ulyssis.org>
+Message-ID: <20111229210022.GA29974@ulyssis.org>
+
+On Thu, Dec 29, 2011 at 08:08:38PM +0100, Pieter Wuille wrote:
+> On Thu, Dec 29, 2011 at 01:55:03AM -0500, roconnor at theorem.ca wrote:
+> > Gavin asked me to come up with an alternative to OP_EVAL, so here is my 
+> > proposal.
+> > 
+> > OP_CODEHASH Initial Proposal
+> 
+> If we're again brainstorming about alternatives for OP_EVAL, I'll do my own.
+> 
+> It is called OP_CHECKEDEVAL, and is specified as follows:
+
+I realized this may have been needlessly complicated. All is required to achieve the
+same properties (plus win half-verification by old clients) is a somewhat more
+restricted OP_EVAL which:
+* Does not touch the stack or altstack - it looks at the last (code-position wise)
+  literal pushed (and not yet consumed by another OP_EVAL) on the stack and uses
+  that as script to be executed.
+* Executes its subscript in an independent environment, which inherits only the
+  main stack (this allows the outer script to hide information from the
+  inner script by moving it temporarily to the alt stack).
+* OP_EVAL is an effective no-op for the execution state of the outer script,
+  except for:
+  * potentially causing failure (if the subscript doesn't parse or doesn't
+    terminate succesfully)
+  * popping an element from the literal-only stack
+
+A pay-to-script-hash becomes:
+
+  OP_EVAL OP_HASH160 <scriptHash> OP_EQUAL
+
+and is redeemed using
+
+  [script input] <<script>>
+
+-- 
+Pieter  
+
+
