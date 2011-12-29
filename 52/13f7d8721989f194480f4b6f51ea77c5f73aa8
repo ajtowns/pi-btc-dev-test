@@ -1,0 +1,152 @@
+From: etotheipi@gmail.com (Alan Reiner)
+Date: Thu, 29 Dec 2011 16:31:11 -0500
+Subject: [Bitcoin-development] Alternative to OP_EVAL
+In-Reply-To: <20111229190838.GA29609@ulyssis.org>
+References: <alpine.LRH.2.00.1112290111310.22327@theorem.ca>
+	<20111229190838.GA29609@ulyssis.org>
+Message-ID: <CALf2ePzoC85=16h63ngn-KaEHDSYFqAOkW7UWqB_Jgd2F_pkTQ@mail.gmail.com>
+
+I haven't been much a part of these brainstorming discussions, and so I'm
+really looking at this from a bird's eye view, without any bias towards any
+particular idea.
+
+I do see what appears to be relevant concerns, brought up just before new,
+powerful functionality is injected into 50%+ of the nodes on the network.
+ I cannot tell from my position if there is/has been consistent concern for
+OP_EVAL proposal, or if it's mostly a transient response to hearing about
+recursion in the scripting engine, etc (like myself, originally).  I
+haven't debated this topic much, so I'm not in a position to personally
+comment on any proposals.  (Though, this all feels very similar to the
+problem of hash-table collisions in HTTP
+POST<http://www.securityweek.com/hash-table-collision-attacks-could-trigger-ddos-massive-scale>
+).
+
+However, I would like to remind everyone that we/you are messing with a
+$20+ million dollar *thing*.  There's more than just a piece of software at
+stake -- whatever goes in needs to be as hard as diamond.  If we open up a
+hole that allows someone to satisfy arbitrary scripts, or create one-packet
+DoS/crash attacks, that could be devastating for Bitcoin.  Roconner is
+persuasive enough to make *me* think that not all corners of this
+functional space has been explored properly.  And while my opinion doesn't
+matter, I'm concerned that others may feel too invested in the current
+design path to want to "go backwards."  Again, I don't know one way or
+another, I just want to warn against pride getting priority over security.
+
+
+At the very least, you should consider consequences and recovery path of
+such unanticipated problems.  If the things that could go wrong are
+devastating, let's lean towards a more conservative solution (like
+sandboxing the sub-scripting engine).   Remember, the network is working
+just fine *without *OP_EVAL, and while OP_EVAL provides some really nice
+benefits, I don't think the benefits over regular multi-sig are worth the
+consequences of making a mistake in this multi-million dollar beast.
+
+Okay, back to your regularly-scheduled debating...
+-Alan
+
+On Thu, Dec 29, 2011 at 2:08 PM, Pieter Wuille <pieter.wuille at gmail.com>wrote:
+
+> On Thu, Dec 29, 2011 at 01:55:03AM -0500, roconnor at theorem.ca wrote:
+> > Gavin asked me to come up with an alternative to OP_EVAL, so here is my
+> > proposal.
+> >
+> > OP_CODEHASH Initial Proposal
+>
+> If we're again brainstorming about alternatives for OP_EVAL, I'll do my
+> own.
+>
+> It is called OP_CHECKEDEVAL, and is specified as follows:
+> * It looks at the two elements most recently (in code position) pushed by
+> a literal,
+>  and not yet consumed by another OP_CHECKEDEVAL. These are S (the
+> serialized script),
+>  and H (its hash). This implies it defines its own literal-only stack,
+> where all
+>  literals push to, and only OP_CHECKEDEVAL pops from. This special stack
+> has the
+>  advantage of allowing static analysis - one does not need to execute any
+> operations
+>  to find out which data will end up on it. Note that "skipped" code
+> (inside the
+>  ignored part of an IF-THEN-ELSE) can still push to the literal stack.
+> * For the "outer script", it does not have any effect at all, except for:
+>  * 2 elements popped from the literal-only stack
+>  * potentially causing failure
+>  It does not touch the main stack, alt stack or any other part of the
+> execution state
+>  not listed above.
+> * Failure is caused when either of these conditions hold:
+>  * No two elements remain on the literal-only stack
+>  * The Hash(S) != H
+>  * The inner script execution caused failure
+> * For the execution of the inner script:
+>  * It is executed in a completely new and independent execution
+> environnement
+>  * It executes the deserialized S
+>  * It inherits the main stack and alt stack (without the serialized script
+> and the hash
+>    themselves) from the outer execution.
+>
+> This requires OP_CHECKEDEVAL to immediately follow the push of script and
+> hash,
+> so the code in the pair < <script> OP_CHECKEDEVAL > can be parsed and
+> interpreted as code,
+> allowing static analysis.
+>
+> As OP_CHECKEDEVAL has absolutely no effects except for potentially causing
+> failure, it
+> is very similar to the OP_NOPx it would replace, and guarantees that
+> interpreting
+> OP_CHECKEDEVAL as OP_NOPx can never cause the script to become invalid if
+> it wasn't
+> already.
+>
+> A basic pay-to-script-hash scriptPubKey is very short:
+>
+>  <scriptHash> OP_CHECKEDEVAL
+>
+> And it is redeemed using:
+>
+>  <script inputs> <script>
+>
+> Furthermore, the implementation is very similar to what was already done
+> for
+> OP_EVAL. Modifications:
+> * EvalScriptInner needs less by-ref arguments, as it cannot modify the
+> parent's state.
+> * A literal-only stack needs to be maintained.
+>
+>
+> I believe this combines all advantages:
+> * Easy spend-to-script-hash (shorter than OP_EVAL)
+> * Backward compatible (guaranteed by construction, instead of separately
+> enforced like with OP_EVAL)
+> * Statically analyzable (though it requires deserializing the script data).
+> * Possibility to introduce a new language inside (not done in this
+> proposal)
+>
+> Only disadvantages:
+> * Slightly less flexible than OP_EVAL, as it disallows dynamic interation
+> with serialized scripts.
+> * Static code analyzers need to deserialize script data.
+>
+> Credits: gmaxwell for the idea of a literal-only stack
+>
+> --
+> Pieter
+>
+>
+> ------------------------------------------------------------------------------
+> Ridiculously easy VDI. With Citrix VDI-in-a-Box, you don't need a complex
+> infrastructure or vast IT resources to deliver seamless, secure access to
+> virtual desktops. With this all-in-one solution, easily deploy virtual
+> desktops for less than the cost of PCs and save 60% on VDI infrastructure
+> costs. Try it free! http://p.sf.net/sfu/Citrix-VDIinabox
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20111229/46ff339a/attachment.html>
