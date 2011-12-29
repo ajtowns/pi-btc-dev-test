@@ -1,0 +1,82 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Thu, 29 Dec 2011 11:23:56 -0500
+Subject: [Bitcoin-development] Alternative to OP_EVAL
+In-Reply-To: <alpine.LRH.2.00.1112290111310.22327@theorem.ca>
+References: <alpine.LRH.2.00.1112290111310.22327@theorem.ca>
+Message-ID: <CABsx9T06H29R4CpL9hXF_yyB4chko1YdkhbCZ8rdwo1gLmF1BQ@mail.gmail.com>
+
+First, thanks very much to Russell for looking more closely at both
+BIP 12 and the patch than anybody else-- he's found two bugs and two
+things the BIP isn't clear enough on (so far).
+
+And I've got to say, I'm very sympathetic to the "OP_EVAL starts down
+the code-as-data path, and There Be Dragons" argument.
+
+But:
+
+I don't think the proposed alternative would be, in practice, any
+better.  I see two main disadvantages over OP_EVAL:
+
+  about 20-bytes larger
+
+  it means going back to where we were two months ago, writing more
+code, reviewing it, finding bugs in it, backporting it so miners
+running old software can support it, etc.
+
+... and some other minor disadvantages:
+
+  'standard' scripts will need to be slightly different in the
+scriptSig and the scriptPubKey
+   (e.g. <signature> CHECKSIG  becomes  <signature> CHECKSIGVERIFY
+with OP_CODEHASH)
+
+  OP_EVALs are not executed, and so the code associated with them does
+not have to be part of the transaction, if they are in the
+non-executed branch of an OP_IF. That could be good for privacy, and
+could be good for reducing block-chain size.
+
+----------------------
+
+In discussions in IRC yesterday, we talked a little about possible
+changes to the OP_EVAL BIP to make it less subject to abuse. In
+particular, the big can of worms is allowing arithmetic or bit
+operations on the serialized script that will be EVAL'ed:
+  <serialized script> <other_data> OP_ADD OP_EVAL  <-- Look! Dragons!
+
+If <serialized script> is more than 4 bytes, that is actually illegal
+right now (all of the arithmetic operations are limited to operating
+on numbers that are 4 bytes of less, and I believe we could prove that
+no series of operations will ever produce a value more than 5 bytes
+big given the current limitations).
+
+Which leads me to suggest that BIP 12 be amended to state that:
+  OP_EVAL shall cause script validation to fail if the top item on the
+stack is less than 8 bytes long.
+
+I'm tempted to propose a rule:
+  OP_EVAL shall fail if the top item on the stack is the result of any
+calculation
+
+... but I don't think the extra code it would take to implement that
+(keep track of which items on the stack were the results of
+OP_ADD/etc) is worth it.
+
+
+On the "you can't tell how many CHECKSIG operations will be performed
+before executing the script" issue:
+
+That is already true, because the parameters to CHECKMULTISIG that
+determine how many signatures it checks might be computed.
+
+Finally, I would echo theymos' observation that I think we'll
+eventually do something very much like OP_EVAL in the future-- maybe
+to support (in a backwards-compatible way) a
+quantum-computing-resistant signature algorithm or SHA3. When that is
+done, I think it might make sense to do a bottom-up redesign of Script
+based on what we've learned.
+
+-- 
+--
+Gavin Andresen
+
+
