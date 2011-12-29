@@ -1,0 +1,72 @@
+From: roconnor@theorem.ca (roconnor at theorem.ca)
+Date: Thu, 29 Dec 2011 01:55:03 -0500 (EST)
+Subject: [Bitcoin-development] Alternative to OP_EVAL
+Message-ID: <alpine.LRH.2.00.1112290111310.22327@theorem.ca>
+
+Gavin asked me to come up with an alternative to OP_EVAL, so here is my 
+proposal.
+
+OP_CODEHASH Initial Proposal
+
+The idea is to add third "codehash" stack to the scripting engine (or 
+alternatively a codehash state variable) and have OP_CODESEPARATOR in 
+addition to its current behaviour push the hash of the remaining code in 
+the script onto the codehash stack (or alternatively set the codehash 
+state variable).
+
+Then we add a new OP_CODEHASH operator that pops the codehash stack and 
+pushes it onto the main stack (or alternatively push the value of the 
+codehash state variable onto the mainstack which is initialized using the 
+hash of the sigScript).
+
+The new send-to-script transaction would be:
+
+OP_CODEHASH OP_HASH160 {20-byte-hash-value} OP_EQUAL
+
+Which can be redeemed by
+
+{20-byte-code-hash} signatures OP_CODESEPARATOR code
+
+
+When run the code will consume all the signatures leaving the 
+20-byte-code-hash on the stack.  When OP_CODEHASH is interpreted as a NOP 
+it is skipped, then the hash is hashed and compared to the 
+20-byte-hash-value and a match is required to succeed.
+
+When OP_CODEHASH is interpreted by a new client it pops the codehash stack 
+and pushes the value onto the main stack, which in this standard 
+transaction pushes a value identical to the existing {20-byte-code-hash} 
+on the stack. Then again this hash is hashed and compared to to 
+{20-byte-code-hash}.
+
+
+This proposal covers all the desired behaviour from OP_EVAL proposal but 
+with a less radical change:
+   (1) you get send-to-script addresses
+   (2) you cannot redeem with the old client without knowing the hash of the script
+
+OP_CODEHASH has no dynamically generated code that is executed.  The 
+language remains a weak stack based language which is clearly terminating. 
+The number of operations executed is still bounded by the number of 
+operations occurring in the script.  With the OP_EVAL proposal the script 
+language becomes essentially Turing complete, with only an artificial 
+limit on recursion depth preventing arbitrary computation and there is no 
+way to know what code will run without executing it.  With the OP_EVAL 
+proposal there is no way to statically analyze the script (say to count 
+the number of uses of OP_CHECKSIG or OP_MULTICHECKSIG or other analysis) 
+without actually executing the script.
+
+This is just an initial proposal there are clearly some variations that 
+could be done that would work just as well.
+
+Thanks goes to luke-jr and others for their thoughts on this proposal.
+
+Good night everyone.
+
+-- 
+Russell O'Connor                                      <http://r6.ca/>
+``All talk about `theft,''' the general counsel of the American Graphophone
+Company wrote, ``is the merest claptrap, for there exists no property in
+ideas musical, literary or artistic, except as defined by statute.''
+
+
