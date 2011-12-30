@@ -1,0 +1,64 @@
+From: gronager@ceptacle.com (=?iso-8859-1?Q?Michael_Gr=F8nager?=)
+Date: Fri, 30 Dec 2011 08:38:22 +0100
+Subject: [Bitcoin-development] Trickle in CNode::SendMessages
+In-Reply-To: <AB205206-AC96-4A95-B100-E8F4461B08C5@ceptacle.com>
+References: <AB205206-AC96-4A95-B100-E8F4461B08C5@ceptacle.com>
+Message-ID: <E986F3D9-1FAF-4BEF-8B16-2BEF3897243D@ceptacle.com>
+
+Small correction - if the node is the trickle node it gets all invs, not just the special quarter.  This means that everything get distributed everywhere every 12-15seconds, but a special quarter of the hash space is treated earlier, so there is a meaning for vInvWait, but there is still a mismatch between comments and code.
+
+Cheers,
+
+M
+
+
+On 29/12/2011, at 23:05, Michael Gr?nager wrote:
+
+> In CNode::SendMessages there is a trickle algorithm. Judging from the comments it is supposed to:
+> 
+> * at each update round a new (random) trickle node is chosen, with 120 nodes and an average round time of 100ms (the sleep) we will have moved through roughly all nodes every 12-15 seconds.
+> * when a node is the trickle node it will get to send all its pending addresses to its corresponding peer.
+> * when a node is not trickle node (the rest of the nodes) we send transaction-invs, however, only 1/4 of them - the rest is pushed to wait for the next round and would eventually get sent.
+> 
+> However, the way the 1/4 of the invs are chosen is by: 
+> 	(inv.getHash() ^ hashSalt) & 3 == 0
+> 
+> As hashSalt is a constant (static, generated on start up) and as the hash of an inv is constant for the inv too, the other 3/4 will never get sent and hence it does not make sense to carry them around from round to round:
+> 	if (fTrickleWait) vInvWait.push_back(inv); 
+> and:
+> 	pto->vInventoryToSend = vInvWait;
+> 
+> The hashSalt will be different for each node in the peer-to-peer network and hence as long as we have much more than 4 nodes all tx'es will be sent around.
+> 
+> Ironically, this (wrong?) implementation divides the inv forwarding hash space into 4, along the same lines as we discussed last week for DHTs...
+> 
+> I suggest to either keep the algorithm as is, but remove the redundant vInvWait stuff, or to change the algorithm to e.g. push the tx'es into a multimap (invHash^hashSalt, invHash) and choose the first 25% in each round. 
+> 
+> The last alternative is that I have misunderstood the code... - if so please correct me ;)
+> 
+> Happy New Year!
+> 
+> Michael
+> 
+> 
+> ------------------------------------------------------------------------------
+> Ridiculously easy VDI. With Citrix VDI-in-a-Box, you don't need a complex
+> infrastructure or vast IT resources to deliver seamless, secure access to
+> virtual desktops. With this all-in-one solution, easily deploy virtual 
+> desktops for less than the cost of PCs and save 60% on VDI infrastructure 
+> costs. Try it free! http://p.sf.net/sfu/Citrix-VDIinabox
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+Michael Gronager, PhD
+Owner Ceptacle / NDGF Director, NORDUnet A/S
+Jens Juels Gade 33
+2100 Copenhagen E
+Mobile: +45 31 62 14 01
+E-mail: gronager at ceptacle.com
+
+
+
+
