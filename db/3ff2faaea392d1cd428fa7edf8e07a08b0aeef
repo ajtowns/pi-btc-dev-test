@@ -1,0 +1,89 @@
+From: roconnor@theorem.ca (roconnor at theorem.ca)
+Date: Mon, 2 Jan 2012 11:42:31 -0500 (EST)
+Subject: [Bitcoin-development] Alternative to OP_EVAL
+In-Reply-To: <CABsx9T3gNNmPen=WtCpG8RCChSwpJ73r7WU2Kz_fP31wAQ+jQg@mail.gmail.com>
+References: <alpine.LRH.2.00.1112290111310.22327@theorem.ca>
+	<1325148259.14431.140661016987461@webmail.messagingengine.com>
+	<alpine.LRH.2.00.1112291135040.22327@theorem.ca>
+	<CALn1vHHjY6Qq0zEUcWaNzm_eP_JekjrK26zMXfcrfPSydwSKig@mail.gmail.com>
+	<alpine.LRH.2.00.1112301214380.9419@theorem.ca>
+	<4F01C9D8.10107@justmoon.de>
+	<CABsx9T3gNNmPen=WtCpG8RCChSwpJ73r7WU2Kz_fP31wAQ+jQg@mail.gmail.com>
+Message-ID: <alpine.LRH.2.00.1201021134030.21247@theorem.ca>
+
+Seems ... acceptable from first glance.
+
+Though I propose an ammendent to either
+
+(1)
+
+make the script: OP_NOP1 HASH160 <push-20-byte-hash> EQUAL to make it 
+extremely easy to see from the first byte that this is verly likely to be 
+a special transaction (or more accurately if the first byte isn't 
+OP_NOP1 then you immediately know it isn't a special script and can even 
+disregard the token).
+
+or
+
+(2)
+
+If you are feel like spending another byte make the script:
+OP_NOP1 <push-special-script-version-number> <special-script>
+
+and assign 1 to this special script, making this case:
+
+OP_NOP1 OP_1 HASH160 <push-20-byte-hash> EQUAL
+
+On Mon, 2 Jan 2012, Gavin Andresen wrote:
+
+> Here are my latest thoughts on a safer OP_EVAL alternative, inspired
+> by all the ideas and agitated IRC and email
+> discussions of the last week or so:
+>
+> Goal:  Let users publish a short "funding address" that is the hash of
+> an arbitrary redemption Script revealed when they spend the funds,
+> implemented in a backwards-compatible-in-the-blockchain way.
+>
+> Proposal:
+>
+> A new 'standard' transaction type, "pay to Script hash":
+>
+> scriptPubKey:  HASH160 <push-20-byte-hash>  EQUAL
+>
+> Redeemed with the same scriptSig as the OP_EVAL proposal:
+> <signatures> <serialized Script>
+>
+> Old clients/miners will ignore <signatures> and just validate that the
+> hash of <serialized Script> matches.
+>
+> New clients/miners will recognize the new type of transaction and will
+> do the following additional validation:
+>
+> 1. Fail validation if there were any operations other than "push data"
+> in the original scriptSig.
+> 2. Deserialize the top (last) item on the scriptSig stack (fail
+> validation if it fails to deserialize properly).
+> 3. Run an additional validation on the deserialized script, using the
+> remaining items on the scriptSig stack and the deserialized script as
+> the scriptPubKey.
+>
+>
+> ---------------
+>
+> As Amir said in IRC chat today, "the idea is a hack.... but I like it."
+>
+> I like it, too-- it is cleaner than OP_EVAL, more straightforward to
+> implement, and pretty much exactly matches the feature I care about
+> (moving code from the scriptPubKey to the scriptSig). There are no
+> special cases like "CODESEPARATORS not allowed in <serialized
+> script>".
+>
+>
+
+-- 
+Russell O'Connor                                      <http://r6.ca/>
+``All talk about `theft,''' the general counsel of the American Graphophone
+Company wrote, ``is the merest claptrap, for there exists no property in
+ideas musical, literary or artistic, except as defined by statute.''
+
+
