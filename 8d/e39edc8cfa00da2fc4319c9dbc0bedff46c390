@@ -1,0 +1,169 @@
+From: moon@justmoon.de (Stefan Thomas)
+Date: Mon, 02 Jan 2012 16:14:32 +0100
+Subject: [Bitcoin-development] Alternative to OP_EVAL
+In-Reply-To: <alpine.LRH.2.00.1112301214380.9419@theorem.ca>
+References: <alpine.LRH.2.00.1112290111310.22327@theorem.ca>
+	<1325148259.14431.140661016987461@webmail.messagingengine.com>
+	<alpine.LRH.2.00.1112291135040.22327@theorem.ca>
+	<CALn1vHHjY6Qq0zEUcWaNzm_eP_JekjrK26zMXfcrfPSydwSKig@mail.gmail.com>
+	<alpine.LRH.2.00.1112301214380.9419@theorem.ca>
+Message-ID: <4F01C9D8.10107@justmoon.de>
+
+The OP_EVAL discussion went into some private discussion for a bit, so 
+here is a summary of what we talked about.
+
+Roconnor pointed out that the currently proposed OP_EVAL removes the 
+ability to statically reason about scripts. Justmoon pointed out that 
+this is evidenced by the changes to GetSigOpCount:
+
+Currently, the client first counts the number of sigops and if it is 
+over a certain limit, it doesn't execute the script at all. This is no 
+longer possible with OP_EVAL, since OP_EVAL can stand for any number of 
+other operations, which might be part of some piece of data. The script 
+that is executed by OP_EVAL can be changed (polymorphic code). Gavin's 
+patch deals with this, by counting the sigops at runtime and aborting 
+only after the limit has been reached.
+
+Here is an example for a script that based on naive counting contains no 
+sigops, but in fact contains 20:
+
+[20 signatures] 20 [pubkey] OP_DUP OP_DUP OP_2DUP OP_3DUP OP_3DUP     
+OP_3DUP OP_3DUP OP_3DUP 20 "58959998C76C231F" OP_RIPEMD160 OP_EVAL
+
+RIPEMD160( 58 95 99 98 C7 6C 23 1F )
+
+hashes to
+
+AE4C10400B7DF3A56FE2B32B9906BCF1B1AFE975
+
+which OP_EVAL interprets as
+
+OP_CHECKMULTISIG "400B7DF3A56FE2B32B9906BCF1B1AFE9" OP_DROP
+
+The nonce 58959998C76C231F was generated using this code: 
+https://gist.github.com/1546061
+
+Gavin and Amir argued that it is possible to "dry run" the script, 
+avoiding the expensive OP_CHECKSIG operation and running only the other 
+very cheap operations. However, sipa pointed out that in the presence of 
+an OP_CHECKSIG a dry runner cannot predict the outcome of conditional 
+branches, so it has to either do the OP_CHECKSIG (and become just a 
+regular execution) or it has to follow both branches. Roconnor and 
+justmoon suggested the following script to illustrate this point:
+
+[sig] [pubkey]
+[some data]
+[sig] [pubkey] OP_CHECKSIG OP_IF OP_HASH160 OP_ELSE OP_HASH256 OP_ENDIF
+(previous line repeated 33 times with different sigs/pubkeys)
+OP_EVAL
+
+This script is valid assuming that the resulting hash from the branch 
+that is chosen based on what signatures are valid contains an 
+OP_CHECKSIG. (And the initial [sig] and [pubkey] are valid.) But a dry 
+runner trying to count how many OP_CHECKSIGs this script contains would 
+run into the first OP_CHECKSIG OP_IF and have to run both branches. In 
+both branches it would again encounter a OP_CHECKSIG OP_IF and run all 
+four branches, etc. In total it has to run (2^33 - 2) * 1.5 SHA256 
+operations (8 GHash) and 2^32 - 1 RIPEMD160 operations. Therefore we now 
+believe a dry runner is not possible or at least too complicated to be 
+involved in protocol rules such as the sigops limit.
+
+As a result people are now on a spectrum from those who feel strongly 
+that static analysis is an important property and not something to give 
+up easily all the way to those who think it's superfluous and the other 
+side is just unnecessarily delaying OP_EVAL deployment.
+
+One thing I want to note is that static analysis is a property for which 
+there is a better argument than for other, weaker properties, such as 
+limited recursion depth. Bitcoin currently allows you to:
+
+* Tell if a script contains a specific opcode or not
+* Count how many times a script will execute an operation at most
+* Count how many total operations a script will execute at most
+* Count how many signatures a script will execute at most
+* Find the maximum length of a datum pushed onto the stack
+* Find the maximum number of items that can be pushed onto the stack
+* Find the maximum size (in bytes) of the stack
+* Calculate how long a script will run at most
+
+OP_EVAL as proposed makes these upper bounds almost meaningless as it 
+can contain, indirectly, up to 32 instances of any other opcode. (About 
+3-6 instances are currently practical.) The only way to answer these 
+questions would then be to fully execute the script.
+
+Suppose we want to one day allow arbitrary scripts as IsStandard, but 
+put constraints on them, such as enforcing a subset of allowed opcodes. 
+(See list above for other possible restrictions.) If we want to include 
+OP_EVAL in the set of allowed opcodes, it's important that OP_EVAL is 
+implemented in a way that allows static analysis, because we can then 
+allow it while still maintaining other restrictions.
+
+If proponents of the current implementation want to argue that we don't 
+need static analysis now, the burden is on them to show how we could 
+retrofit it when/if we get to this point or why they think we will never 
+want to allow some freedom in IsStandard that includes OP_EVAL.
+
+There are several proposals for OP_EVAL that allow static analysis:
+
+* Using a fixed position reference prefix (sipa)
+* Using an execute bit on data set by an opcode (justmoon)
+* Using OP_CODEHASH (roconnor)
+* Using OP_CHECKEDEVAL (sipa)
+* Using OP_HASH160 OP_EQUALVERIFY as a special sigPubKey (gavinandresen)
+
+Let's fully develop these proposals and see how much of a hassle it 
+would actually be to get a statically verifiable OP_EVAL. I think that's 
+a prerequisite for having the argument on whether it is *worth* the hassle.
+
+(Update: Gavin's latest proposal looks *very* good, so that may settle 
+the debate quickly.)
+
+
+
+
+On 12/30/2011 6:19 PM, roconnor at theorem.ca wrote:
+> On Sat, 31 Dec 2011, Chris Double wrote:
+>
+>> On Fri, Dec 30, 2011 at 5:42 AM, <roconnor at theorem.ca> wrote:
+>>> Basically OP_DUP lets you duplicate the code on the stack and that 
+>>> is the
+>>> key to looping.  I'm pretty sure from here we get get Turing 
+>>> completeness.
+>>> Using the stack operations I expect you can implement the SK-calculus
+>>> given an OP_EVAL that allows arbitrary depth.
+>>>
+>>> OP_EVAL adds dangerously expressive power to the scripting language.
+>>
+>> If you look at the archives of the concatenative programming mailing
+>> list [1] you'll see lots of examples of people creating stack
+>> languages with minimal operations that exploit similar functionality
+>> to reduce the required built in operations. The discussion on the list
+>> is mostly about stack based languages where programs can be pushed on
+>> the stack and executed (eg. Joy [2]/Factor/Some Forths).
+>>
+>> I don't think the scripting engine in bitcoin has the ability to
+>> concatenate, append or otherwise manipulate scripts on the stack to be
+>> eval'd though does it?
+>
+> It will limited ability manipulate scripts on the stack through the 
+> use of arithmetic and hashing operations, and if OP_CAT, OP_SUBSTR and 
+> friends are ever restored, it will have even more abilities.
+>
+>
+>
+> ------------------------------------------------------------------------------
+> Ridiculously easy VDI. With Citrix VDI-in-a-Box, you don't need a complex
+> infrastructure or vast IT resources to deliver seamless, secure access to
+> virtual desktops. With this all-in-one solution, easily deploy virtual
+> desktops for less than the cost of PCs and save 60% on VDI infrastructure
+> costs. Try it free! http://p.sf.net/sfu/Citrix-VDIinabox
+>
+>
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120102/5e4eb4bb/attachment.html>
