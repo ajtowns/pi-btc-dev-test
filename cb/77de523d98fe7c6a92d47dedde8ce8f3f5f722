@@ -1,0 +1,42 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Sat, 7 Jan 2012 20:12:35 -0500
+Subject: [Bitcoin-development] Pull 748 pay to script hash
+In-Reply-To: <1325977874.57604.YahooMailNeo@web121006.mail.ne1.yahoo.com>
+References: <1325956875.73286.YahooMailNeo@web121006.mail.ne1.yahoo.com>
+	<CABsx9T00=X+0-59+pQN6MqAox8hnqm-08gr2GA=QWfqe_qSF5g@mail.gmail.com>
+	<1325977874.57604.YahooMailNeo@web121006.mail.ne1.yahoo.com>
+Message-ID: <CABsx9T26Uit2jHkKeZSHOW51p8H31osmBo7JYp8Md6RaBDWPhw@mail.gmail.com>
+
+> what is the purpose behind counting the number of sig ops after you have executed the script in ConnectInputs?
+> Seems like it would be too late then.
+
+The purpose is to comply with the "a block shall not contain more than
+MAX_BLOCK_SIGOPS (20,000)" rule, under both the old way of counting
+(look at the scriptPubKeys and count CHECKMULTISIGs as 20 sigops no
+matter what) and the new way (look at both scriptPubKeys and
+pay-to-script-hash scripts in the scriptSig, but count CHECKMULTISIGS
+preceded by OP_1/2/3/... as 1/2/3 operations).
+
+RE: too late:
+
+Excellent point. I'll refactor ConnectInputs further, and do something like:
+
+FetchInputs()
+AreInputsStandard() <-- reject from memory pool if nonstanard
+ComputeSigOps()
+ComputeFees() <-- reject if too little fees per byte / sigop
+ConnectInputs()
+
+Pieter's compressed-public-keys patch (which was just pulled)
+interacts with pay-to-script-hash to make ECDSA denial-of-service
+attempts less expensive; I think we need to think hard again about
+transaction fees before releasing 0.6, and maybe tweak the fee policy
+so denial-of-service attacks using compressed public keys and 1-of-3
+CHECKMULTISIG transactions is expensive enough to deter would-be
+attackers.
+
+-- 
+--
+Gavin Andresen
+
+
