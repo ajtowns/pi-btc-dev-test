@@ -1,0 +1,59 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Thu, 19 Jan 2012 11:29:29 -0500
+Subject: [Bitcoin-development] Extending IsStandard() to transaction
+	scriptSigs
+Message-ID: <CABsx9T2Hh-qb6CwMdD-Ov_qT6pg=muqO4uY1=+ccCxhVLUU5Gw@mail.gmail.com>
+
+I've been working on a patch to make transaction inputs (scriptSigs) with
+extra data non-standard, as part of a general attitude of "try to
+anticipate possible problems before they turn into real problems."
+
+Today, any node on the network that is relaying unconfirmed transactions
+can add bytes to the transaction's scriptSig's before passing it on, and
+that modified version of the transaction will get relayed and might
+possibly get mined.
+
+For example, take a standard scriptSig that is:   OP_PUSHDATA <signature>
+OP_PUSHDATA <public key>
+... and change it to:   OP_PUSHDATA <Hi Mom!> OP_PUSHDATA <signature>
+OP_PUSHDATA <public key>
+... and the modified transaction will pass all of the IsStandard(),
+IsValid(), and OP_CHECKSIG checks.
+
+That is... unexpected, especially since it changes the transaction id.  You
+might transmit a transaction with ID 123 but find out it has been mined as
+transaction ID 456.  Satoshi's code doesn't care (it just looks like an
+attempted double-spend of the coins), but I wouldn't be surprised if it
+caused problems for other implementations or other transaction-handling
+software.
+
+My patch will make transactions with extra stuff in the scriptSig
+non-standard, so they won't get relayed or mined by new nodes. Alternative
+implementations will still have to deal with all types of double-spends, of
+course, and there are other ways of producing two transactions that are
+identical except for their scriptSigs  (you can generate an arbitrary
+number of valid signatures for a transaction if you have the private keys,
+for example) so this isn't a panacea for poorly-implemented bitcoin
+transaction handling software. But it does remove some "wiggle room," which
+is generally a good idea for improving security.
+
+
+I'm still thinking about how much further to go with this:
+
++ I think requiring that the <signature> and <public key> be DER-encoded
+for the transaction to be IsStandard() is a good idea.  DER encoding
+defines a canonical way of representing data; Satoshi's code relies on
+OpenSSL to decode signatures and public keys, and OpenSSL accepts any, more
+general, BER encoding.
+
++ I'm tempted to require that the "filler item" to workaround the
+OP_CHECKMULTISIG pops-one-too-many-items-off-the-stack bug be exactly OP_0.
+
+Discussion welcome; I should be making a pull request for my patch this
+afternoon.
+
+--
+Gavin Andresen
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120119/a1656f10/attachment.html>
