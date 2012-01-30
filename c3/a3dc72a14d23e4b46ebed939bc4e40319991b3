@@ -1,0 +1,51 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Mon, 30 Jan 2012 03:31:02 +0100
+Subject: [Bitcoin-development] CAddrMan: Stochastic IP address manager
+Message-ID: <CAPg+sBjNTS3n8Q3XzZi5GpBL6k_-4AxRKr0BkWa=-AAVgqS=2Q@mail.gmail.com>
+
+Hello all,
+
+wanting to move to IPv6 support in the Satoshi bitcoin client
+somewhere in the future, the way IP addresses were managed is not
+really possible anymore. Right now, basically all addresses ever seen
+are kept - both on-disk and in-memory, and sorted on last-seen time
+with some randomization. For some people this lead to multi-megabyte
+addr.dat files that took ages (well, seconds) to load.
+
+After some discussion with Gregory Maxwell and others on IRC, I
+decided to write a specialized address manager based on an entirely
+different principle: only keep a limited number of addresses, keep and
+index them in-memory, and only occasionally (and asynchronously) dump
+them to disk. This of course leads to a weakness: attackers may try to
+poison your entire address cache with addresses they control, in order
+to perform a Sybil attack. This is especially dangerous in the context
+of IPv6, where much more possible addresses exist.
+
+To protect against this, we came up with this design: keep two tables:
+one that keeps addresses we've had actual connections with, and one
+that maintains untried/new addresses. Both are separated into several
+limited-size buckets. Each tables provides a level of protection
+against sybil attacks:
+ * Addresses in the first table are placed in one of only a few
+buckets chosen based on the address range (/16 for IPv4). This way, an
+attacker cannot have tons of active nodes in the same /16 range, and
+use those to fill the table.
+ * Addresses in the second table are placed in one of a few buckets
+chosen based on address range the information came from, instead of
+the address itself. This way, an attacker spamming you with tons of
+"addr" messages can only still have a limited effect.
+ * All crucial decisions (selection of addresses, picking a place in a
+bucket, which entry to evict if necessary, ...) are randomized with
+biases to improve efficiency. Selection of buckets is based on a
+cryptographic hash using a secret key to deterministically randomize
+behaviour.
+
+The implementation is available in pull request 787
+(https://github.com/bitcoin/bitcoin/pull/787), but there is certainly
+need for testing, and room for improvements. Test reports, comments,
+constructive criticism, suggestions and improvements are very welcome.
+
+-- 
+Pieter
+
+
