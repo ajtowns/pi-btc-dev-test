@@ -1,0 +1,63 @@
+From: michael@ndrix.org (Michael Hendricks)
+Date: Mon, 30 Jan 2012 09:53:27 -0700
+Subject: [Bitcoin-development] CAddrMan: Stochastic IP address manager
+In-Reply-To: <CAPg+sBjNTS3n8Q3XzZi5GpBL6k_-4AxRKr0BkWa=-AAVgqS=2Q@mail.gmail.com>
+References: <CAPg+sBjNTS3n8Q3XzZi5GpBL6k_-4AxRKr0BkWa=-AAVgqS=2Q@mail.gmail.com>
+Message-ID: <CAFHuXub52Lu4T0mCWoPoCrHGhCXyLpmEpSWn32_PZPjaRGL2LQ@mail.gmail.com>
+
+On Sun, Jan 29, 2012 at 7:31 PM, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+> wanting to move to IPv6 support in the Satoshi bitcoin client
+> somewhere in the future, the way IP addresses were managed is not
+> really possible anymore. Right now, basically all addresses ever seen
+> are kept - both on-disk and in-memory, and sorted on last-seen time
+> with some randomization. For some people this lead to multi-megabyte
+> addr.dat files that took ages (well, seconds) to load.
+
+I think this is a great change for IPv4 too.  On certain machines with
+slow IO, I routinely delete the address database before starting
+bitcoind to improve load times.
+
+> After some discussion with Gregory Maxwell and others on IRC, I
+> decided to write a specialized address manager based on an entirely
+> different principle: only keep a limited number of addresses, keep and
+> index them in-memory, and only occasionally (and asynchronously) dump
+> them to disk.
+
+I've started a couple patches with a similar design, but not produced
+anything I'm happy with.  That work has persuaded me that this
+architecture is a valuable improvement over what we have today.
+
+> This of course leads to a weakness: attackers may try to
+> poison your entire address cache with addresses they control, in order
+> to perform a Sybil attack. This is especially dangerous in the context
+> of IPv6, where much more possible addresses exist.
+
+If the Bitcoin client has multiple peer discovery methods enabled
+(IRC, DNS, seed nodes, etc), it might be wise to guarantee that at
+least one peer is selected via each method.  This requires a Sybil
+attacker to control all peer discovery methods for a successful
+attack.
+
+> To protect against this, we came up with this design: keep two tables:
+> one that keeps addresses we've had actual connections with, and one
+> that maintains untried/new addresses. Both are separated into several
+> limited-size buckets. Each tables provides a level of protection
+> against sybil attacks:
+> ?* Addresses in the first table are placed in one of only a few
+> buckets chosen based on the address range (/16 for IPv4). This way, an
+> attacker cannot have tons of active nodes in the same /16 range, and
+> use those to fill the table.
+> ?* Addresses in the second table are placed in one of a few buckets
+> chosen based on address range the information came from, instead of
+> the address itself. This way, an attacker spamming you with tons of
+> "addr" messages can only still have a limited effect.
+
+Cool design.  It seems resilient to many attacks.  A Sybil attack
+coming from a large botnet (which controls addresses in many ranges)
+can still fill all buckets in both tables, I think.  As far as I can
+tell, that wasn't possible with the old design.
+
+-- 
+Michael
+
+
