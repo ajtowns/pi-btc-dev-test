@@ -1,0 +1,84 @@
+From: andyparkins@gmail.com (Andy Parkins)
+Date: Tue, 31 Jan 2012 16:50:58 +0000
+Subject: [Bitcoin-development] BIP16/17 replacement
+Message-ID: <201201311651.02726.andyparkins@gmail.com>
+
+Hello,
+
+Gulp.  Am a little nervous about wading into this swamp.  However, it seems 
+to me that the debate has veered into the personal and away from the 
+technical.  Surely if there are objections to both suggestions, that another 
+solution might be better?  The answer doesn't have to be A or B, if the 
+answer C turns out to be acceptable.
+
+That being said; I am not confident enough to start making BIPs so I offer 
+this idea up for my traditional mailing-list roasting but with the hope that 
+I blindly stumble toward something more acceptable to everyone.
+
+----
+
+If the change is going to be a big one anyway and will require a client 
+upgrade why not...
+
+ - Increase the version number in transactions to make a new transaction
+   structure
+ - Dump the "scriptPubKey" field completely.  Everything will be pay-to-
+   script-hash in version2 transactions
+ - Replace it with "hashOfClaimingScript"
+ - Add an "unsignedParameters" array.
+
+hashOfClaimingScript is _not_ script.  It's just the hash of the script that 
+is allowed to claim the output.  Then before scriptSig is allowed to run, it 
+is hashed and compared against the hashOfClaimingScript.
+
+unsignedParameters replaces the need for all the crazy messing around that 
+OP_CHECKSIG currently does because it is specifically a block of the 
+transaction that it not signed (although I would include the array size bytes 
+in the signature calculation), therefore no script filtering is necessary.
+
+The claiming script, scriptSig, can then be checked against whatever list of 
+templates you like.  For pay-to-address it will probably look like:
+
+  OP_PUSHPARAMETER {0}
+  OP_PUSH { <claimant public key> }
+  OP_CHECKSIGVERIFY
+
+Handling the more complicated transactions (they're the point of all this 
+after all) is pretty obvious; the unsignedParameters block can hold as many 
+signatures as you like.  It also removes the need for OP_CHECKMULTISIG, since 
+the script can specify the signature conditions.  e.g. a 2-of-3 script:
+
+  OP_PUSHPARMETER {0}
+  OP_PUSH { <claimant public key0> }
+  OP_CHECKSIG
+  OP_PUSHPARMETER {1}
+  OP_PUSH { <claimant public key1> }
+  OP_CHECKSIG
+  OP_PUSHPARMETER {1}
+  OP_PUSH { <claimant public key1> }
+  OP_CHECKSIG
+  OP_ADD
+  OP_ADD
+  OP_PUSH {1}
+  OP_GREATERTHAN
+
+(I'm sure someone cleverer than I can improve on the above)
+
+-----
+
+Let the flaming commence...
+
+
+
+Andy
+
+-- 
+Dr Andy Parkins
+andyparkins at gmail.com
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: This is a digitally signed message part.
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120131/b2ee00aa/attachment.sig>
