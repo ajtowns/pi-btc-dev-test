@@ -1,0 +1,124 @@
+From: solar@heliacal.net (solar)
+Date: Tue, 31 Jan 2012 13:50:13 +0000
+Subject: [Bitcoin-development] CAddrMan: Stochastic IP address manager
+In-Reply-To: <CAAS2fgRPj29FSBcC_RQbufSC5tPhnZjguUQVAaWOn2VN6DZR1A@mail.gmail.com>
+References: <CAPg+sBjNTS3n8Q3XzZi5GpBL6k_-4AxRKr0BkWa=-AAVgqS=2Q@mail.gmail.com>
+	<CAFHuXub52Lu4T0mCWoPoCrHGhCXyLpmEpSWn32_PZPjaRGL2LQ@mail.gmail.com>
+	<CABsx9T0avsrL3134WaA3boG-cdx2NcgEH1mQG7Cef78ZV5UNkw@mail.gmail.com>
+	<CAAS2fgRPj29FSBcC_RQbufSC5tPhnZjguUQVAaWOn2VN6DZR1A@mail.gmail.com>
+Message-ID: <0491E579-66B9-4E23-859E-90E1ECC98D66@heliacal.net>
+
+We split IRC among all those channels to handle the load when there were 60k clients.. the ideal thing would be some kind of dynamic sizing, and this applies to the number of outbound connections and transaction relaying logic too.. the same values that work for 1k clients don't work as well for 50k.  It is difficult to get this kind of thing tuned correctly, especially with the added complexity of potentially malicious nodes.
+
+I think the observed isolation problems, with or without IRC, are simply due to there not being many bitcoin nodes leaving/joining the network.  The ones that are stable are happy with their 8 connections or whatever they're set to, and they're just relaying.  There are only about 5k clients on IRC now.. it would probably work to go back to the single channel model as (at least from the IRC point of view) the usage is declining not growing.  Maybe people are just turning off IRC though.  IRC works well with many channels having a few clients each, not with one channel having many clients.  We considered probing bitcoin clients to see if they're listening and favoring those clients in the WHO response, kind of like the DNS booters, but nobody got around to doing it.
+
+Still, I think it's good to have a bunch of different ways to bootstrap in case one or the other is broken/poisoned.
+
+Laszlo
+
+
+
+On Jan 31, 2012, at 2:57 AM, Gregory Maxwell wrote:
+
+> On Mon, Jan 30, 2012 at 9:05 PM, Gavin Andresen <gavinandresen at gmail.com> wrote:
+>> I've also been wondering if it is time to remove the IRC bootstrapping
+>> mechanism; it would remove a fair bit of code and we'd stop getting
+>> reports that various ISPs tag bitcoin as malware.  When testing the
+>> list of built-in bootstrapping IP addresses I always connect fairly
+>> quickly, and the DNS seeding hosts seems to be working nicely, too.
+> 
+> S?? would we remove it or leave it deactivated as a fallback users can turn on?
+> 
+> I have two different thoughts about IRC depending on the answer.
+> 
+> I think it's important that we have more mechanisms then just DNS and
+> hardcoded seednodes.
+> 
+> This is important because the mechanisms we have are all pretty
+> subject to blocking. Now? before you say it? Bitcoin isn't intended to
+> be blocking resistant (combine it with Tor and Tor anti-censorship
+> tools) but by making blocking a bit harder we discourage people from
+> even trying, even if we're not seriously in the anti-blocking
+> business? and it gives bitcoin users more confidence because there is
+> a bit less FUD  "What if your ISP blocks it?? It uses DNS! Someone
+> might take away the domains! SOPA PIPI ACTA CIPA Alakazam".
+> 
+> Is the fact that users can addnodes / addr.txt enough of an
+> alternative to address this?   _If so_, then removing it is a good
+> idea.  I volunteer to maintain a multi-channel joining node for the
+> foreseeable future to avoid letting old clients get partitioned
+> (several people need to do this).
+> 
+> An area where I think our mechanisms are inadequate absent IRC is
+> announcing new nodes. I had a new listener up for over a week recently
+> and was basically getting no inbound until I enabled IRC.   I
+> volunteer to do some measurement of this (e.g. bring up some nodes
+> with no irc and find out how long until sipa hears about them).  If
+> DNS seeds are slow to learn about new nodes we may need to add a
+> simple UDP announcement feature.
+> 
+> In any case, I hadn't been thinking that we would completely remove
+> IRC? I was expecting us to keep IRC around but turned off.
+> 
+> In particular I think it may be a little risky to turn off IRC at the
+> same time as deploying addrman, because if addrman has unexpected bad
+> behavior IRC is what may keep things going.  Obviously it should be
+> well tested enough to feel confident, but belt-and-suspenders is the
+> way to go.
+> 
+> 
+> If we do keep in the long run I think it's important to _fix_ IRC.
+> Right now it has some really stupid behavior which is highly
+> pro-partitioning.
+> 
+> */who only returns a few nodes, and because most idlers aren't
+> actually working (no port forward) it's usually for there to be only a
+> few that work. (I've never seen zero, but I've seen 1).
+> *Other than who we only learn about nodes when they join. But the
+> stable long lived nodes we need to hear about seldom rejoin. Nonuseful
+> windows boxes go up and down a lot.
+> *Nodes sit in a single channel forever. There are 100 of them.
+> Especially with fewer clients on line nodes may be sitting alone with
+> no correctly working nodes with them.
+> *Nodes recently seen on IRC are highly promoted in the peer selection.
+> 
+> So, here is an updated irc.cpp which I've been running (in various
+> versions) for a while:
+> http://people.xiph.org/~greg/irc.cpp
+> 
+> It does the following things:
+> * Only stays connected for a half hour
+> * If its sure its not listening it uses a random nick so people won't
+> try to connect
+> * Reconnects if it needs more connections
+> * If the node is actually listening (evidence by actual incoming
+> connections) it reconnects on its own every 1-2 hours and joins two
+> channels at random rather than one.
+> (it doesn't change peer selection? It's hard to be confident of the
+> impact of that change. I think addrman makes it less of an issue)
+> 
+> I've only not submitted it as a pull request because I haven't had a
+> chance to test to my standards, and because I felt unsure about the
+> future of IRC.
+> 
+> I feel strongly that if we're going to keep IRC as a backup we should
+> fix it. If we're not going to bother then thats fine? but I think we
+> need to think carefully if we're doing enough for bootstraping (with
+> the points I made) without it.
+> 
+> Certainly getting it off by default would be a good move. The botnet
+> allegations are horrible.
+> 
+> ------------------------------------------------------------------------------
+> Keep Your Developer Skills Current with LearnDevNow!
+> The most comprehensive online learning library for Microsoft developers
+> is just $99.99! Visual Studio, SharePoint, SQL - plus HTML5, CSS3, MVC3,
+> Metro Style Apps, more. Free future releases when you subscribe now!
+> http://p.sf.net/sfu/learndevnow-d2d
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
