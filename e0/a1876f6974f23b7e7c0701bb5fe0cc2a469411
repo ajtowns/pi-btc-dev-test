@@ -1,0 +1,112 @@
+From: gronager@ceptacle.com (=?iso-8859-1?Q?Michael_Gr=F8nager?=)
+Date: Thu, 2 Feb 2012 09:32:24 +0100
+Subject: [Bitcoin-development] Announcement: libcoin
+In-Reply-To: <CAD2Ti29cto8wS1jO5yOkORbE48c+t6Of2vysXcA0xM9LKCOCgg@mail.gmail.com>
+References: <D55C3D18-8286-44E9-B877-6FCE7C05E980@ceptacle.com>
+	<CAJna-HiS34V5rNrRfFOMRJ6JhRmS1aeEE3oA=o07Hgf4S6qNfw@mail.gmail.com>
+	<54950761-EBFB-402E-8D7B-0B54A08260D2@ceptacle.com>
+	<CAD2Ti29cto8wS1jO5yOkORbE48c+t6Of2vysXcA0xM9LKCOCgg@mail.gmail.com>
+Message-ID: <4CE9708D-0627-480C-B928-3F812544CD90@ceptacle.com>
+
+I agree on your architectural considerations - and with libcoin you can have several wallets in the same application ( and several RPC servers for that matter). And ... they all use the same Node / blockchain.
+
+You will also find the RPC server in libcoin blistering fast compared to the Satoshi client. (It was actually what got me to write libcoin in the first place...). The Satoshi client HTTP server executes all rpc commands in its own thread, but to do so, it needs to stop the thread of the Node, even though the command executed is just a query (i.e. not a SendTo), you hence have two threads blocking each other and when they wait, you wait... In libcoin all the query methods access the blockChain as a const object and they can hence safely query it without intervening the work of the Node thread. The exception are the SendTo methods that first query if a transaction can take place, then pushes it to the work-queue of the Node thread and again exits immediately. The actual execution then follows once the Node has finished its current tasks (e.g. validating a block).
+
+I have attached the code for a very simple one node, two wallet, libcoin client below (~30 lines), and I have added it to the libcoin source as an example (example name: extrawallets).
+
+Once running, you can access your extra wallet using the RPC interface:
+./extrawallet extragetbalance
+And youy normal wallet by:
+./extrawallet getbalance
+
+I'll leave the generalization to an n-wallet gui application to the reader ;)
+
+Cheers,
+
+Michael
+
+....
+
+// The derived classes below are only to get other class names (using the auto rpc name feature)
+// I will put adding a "setName" method to the Method class on the todo. 
+class ExtraGetBalance : public GetBalance {
+public:
+   ExtraGetBalance(Wallet& wallet) : GetBalance(wallet) {}
+};
+class ExtraSendToAddress : public GetBalance {
+public:
+   ExtraSendToAddress(Wallet& wallet) : GetBalance(wallet) {}
+};
+
+int main(int argc, char* argv[])
+{    
+   logfile = CDB::dataDir(bitcoin.dataDirSuffix()) + "/debug.log";
+
+   Node node; // deafult chain is bitcoin
+
+   Wallet wallet(node, "wallet.dat"); // add the wallet
+   Wallet extra_wallet(node, "extra_wallet.dat"); // add the extra wallet
+
+   thread nodeThread(&Node::run, &node); // run this as a background thread
+
+   Server server;
+
+   // Register Server methods.
+   server.registerMethod(method_ptr(new Stop(server)));
+
+   // Register Node methods.
+   server.registerMethod(method_ptr(new GetBlockCount(node)));
+   server.registerMethod(method_ptr(new GetConnectionCount(node)));
+   server.registerMethod(method_ptr(new GetDifficulty(node)));
+   server.registerMethod(method_ptr(new GetInfo(node)));
+
+   // Register Wallet methods. - note that we don't have any auth, so anyone (on localhost) can read your balance!
+   server.registerMethod(method_ptr(new GetBalance(wallet)));
+   server.registerMethod(method_ptr(new SendToAddress(wallet)), Auth("username","password"));
+   server.registerMethod(method_ptr(new ExtraGetBalance(wallet)));
+   server.registerMethod(method_ptr(new ExtraSendToAddress(wallet)), Auth("username","password"));
+   server.run();
+
+   node.shutdown();
+   nodeThread.join();
+}
+
+
+On 02/02/2012, at 00:50, grarpamp wrote:
+
+>> However, I think perhaps the bitcoin project should be split into a library, with a prototype client and the actual clients. This library facilitates this.
+> 
+> I'll be trying your implementation soon. And libbitcoin/subvertx too.
+> Partly because they're also non-interpreted, and partly to what seems
+> better architected...
+> 
+> To the minimal extent of my understanding... I'd like to see wallet
+> ops completely separated from background chain ops. ie: have
+> a chain daemon doing it's thing, updating, verifying, etc. The
+> generator doing it's thing. And a wallet app that can independently
+> manage separate wallets in parallel, referencing the live chain files
+> as needed. It seems a library would allow quality focus on the separate
+> functions and let apps/ui's use the fn's as desired on top. Right now, it
+> seems I have to run bitcoind and can only deal with one wallet at a time,
+> having to stop it, deal with state issues, swap in a new wallet, start
+> it, and repeat till illness ensues :( And when the chain is being processed
+> hard by the daemon cpuwise, bitcoin RPC takes minutes to respond, if ever
+> or errors out. If wallet ops or statistical queries on the chain need it for
+> integrity or reading, a db checkpoint/lock/logroll could be implemented into
+> the chain demon processes with a client lib api to trigger it as needed.
+> Don't know, just saying.
+> 
+> fyi... boost 1.48 and db 4.8.30 work fine with 0.5.2, 0.5.x, and master,
+> you just need to compile and include it by hand if you want it and
+> your package manager doesn't have it.
+
+Michael Gronager, PhD
+Director, Ceptacle
+Jens Juels Gade 33
+2100 Copenhagen E
+Mobile: +45 31 45 14 01
+E-mail: gronager at ceptacle.com
+Web: http://www.ceptacle.com/
+
+
+
