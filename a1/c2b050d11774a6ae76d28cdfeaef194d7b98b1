@@ -1,0 +1,98 @@
+From: gronager@ceptacle.com (=?iso-8859-1?Q?Michael_Gr=F8nager?=)
+Date: Thu, 2 Feb 2012 23:43:07 +0100
+Subject: [Bitcoin-development] libcoin (HEAD) now supports boost < 1.47
+	- please test
+In-Reply-To: <201202021130.12213.luke@dashjr.org>
+References: <31B4BA03-FE8A-4730-9EFD-9850BC894C3B@ceptacle.com>
+	<201202021130.12213.luke@dashjr.org>
+Message-ID: <50342F76-062C-4A88-A5DA-A77C799AEC80@ceptacle.com>
+
+Thanks for the patch and the detective work!
+
+Enabling dynamic libs was on my TODO, but on the Redmond_OS_not_to_be_mentioned you need to :
+* prepend class definitions with __declspec(dllexport) when you compile the dll
+* prepend class definitions with __declspec(dllimport) when you use the dll
+I just love the way they spoil their developers...
+
+I have the framework to automate this with CMake from a former project, but I havn't tested it for libcoin yet, hence the static build. And well, iOS also has this fetich for static libs.
+
+I also recall another issue with dll's: If you define a global variable it is shared between all executables using this dll. I have still a handful of globals to clean out, namely those related to logging - I will do so, but it has not yet been a top priority. 
+
+So, feel free to use dynamic libs on unix'es, but on windows it is .libs for a little while longer.
+
+Will fix the Qt stuff in CMake - thanks!
+
+Cheers,
+
+Michael
+
+
+On 02/02/2012, at 17:30, Luke-Jr wrote:
+
+> On Thursday, February 02, 2012 8:46:05 AM Michael Gr?nager wrote:
+>> Please test and feed back.
+> 
+> I found the problem: you are trying to use static libraries. Best practices 
+> are to use shared libraries (except for specific scenarios like universal 
+> "Linux" binaries) and most distros do not have static libraries installed by 
+> default.
+> 
+> The coinQt stuff was also creating a problem.
+> 
+> I am able to build with this patch:
+> diff --git a/CMakeLists.txt b/CMakeLists.txt
+> index dea37c4..b876881 100644
+> --- a/CMakeLists.txt
+> +++ b/CMakeLists.txt
+> @@ -352,7 +352,7 @@ ENDIF(BDB_FOUND)
+> #Note: We need as a minimum Boost 1.47 to support the signal_set used in 
+> Server. A backup signal_set has been created, though.
+> SET(Boost_NO_BOOST_CMAKE ON)
+> SET(Boost_ADDITIONAL_VERSIONS "1.47" "1.47.0" "1.48" "1.48.0")
+> -SET(Boost_USE_STATIC_LIBS        ON)
+> +#SET(Boost_USE_STATIC_LIBS        ON)
+> SET(Boost_USE_MULTITHREADED      ON)
+> SET(Boost_USE_STATIC_RUNTIME    OFF)
+> 
+> @@ -804,9 +804,9 @@ SET(PKGCONFIG_FILES
+> #  libcoin-coinMine
+> )
+> 
+> -IF(QT4_FOUND)
+> -  SET(PKGCONFIG_FILES ${PKGCONFIG_FILES} libcoin-coinQt)
+> -ENDIF(QT4_FOUND)
+> +#IF(QT4_FOUND)
+> +#  SET(PKGCONFIG_FILES ${PKGCONFIG_FILES} libcoin-coinQt)
+> +#ENDIF(QT4_FOUND)
+> 
+> FOREACH(PKGCONFIG_FILE ${PKGCONFIG_FILES})
+>   CONFIGURE_FILE(${PROJECT_SOURCE_DIR}/packaging/pkgconfig/${PKGCONFIG_FILE}.pc.in
+> diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+> index 0011392..67044d1 100644
+> --- a/src/CMakeLists.txt
+> +++ b/src/CMakeLists.txt
+> @@ -19,9 +19,9 @@ FOREACH( mylibfolder
+> 
+> ENDFOREACH()
+> 
+> -IF (QT4_FOUND AND NOT ANDROID)
+> -    ADD_SUBDIRECTORY(coinQt)
+> -ENDIF()
+> +#IF (QT4_FOUND AND NOT ANDROID)
+> +#    ADD_SUBDIRECTORY(coinQt)
+> +#ENDIF()
+> 
+> IF(ANDROID)
+>     configure_file("${LIBCOIN_ANDROID_TEMPLATES}/Android.mk.src.in" 
+> "${CMAKE_CURRENT_BINARY_DIR}/Android.mk")
+
+Michael Gronager, PhD
+Director, Ceptacle
+Jens Juels Gade 33
+2100 Copenhagen E
+Mobile: +45 31 45 14 01
+E-mail: gronager at ceptacle.com
+Web: http://www.ceptacle.com/
+
+
+
