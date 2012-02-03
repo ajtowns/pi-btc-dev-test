@@ -1,0 +1,42 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Fri, 3 Feb 2012 01:19:02 +0100
+Subject: [Bitcoin-development] Announcement: libcoin
+In-Reply-To: <4CE9708D-0627-480C-B928-3F812544CD90@ceptacle.com>
+References: <D55C3D18-8286-44E9-B877-6FCE7C05E980@ceptacle.com>
+	<CAJna-HiS34V5rNrRfFOMRJ6JhRmS1aeEE3oA=o07Hgf4S6qNfw@mail.gmail.com>
+	<54950761-EBFB-402E-8D7B-0B54A08260D2@ceptacle.com>
+	<CAD2Ti29cto8wS1jO5yOkORbE48c+t6Of2vysXcA0xM9LKCOCgg@mail.gmail.com>
+	<4CE9708D-0627-480C-B928-3F812544CD90@ceptacle.com>
+Message-ID: <CAPg+sBg16OPdyi3MQ+sfBR+z_ArP6c8KpU36pDA0MEdXpk9fxQ@mail.gmail.com>
+
+> You will also find the RPC server in libcoin blistering fast compared to
+the Satoshi client. (It was actually what got me to write libcoin in the
+first place...). The Satoshi client HTTP server executes all rpc commands
+in its own thread, but to do so, it needs to stop the thread of the Node,
+even though the command executed is just a query (i.e. not a SendTo), you
+hence have two threads blocking each other and when they wait, you wait...
+In libcoin all the query methods access the blockChain as a const object
+and they can hence safely query it without intervening the work of the Node
+thread. The exception are the SendTo methods that first query if a
+transaction can take place, then pushes it to the work-queue of the Node
+thread and again exits immediately. The actual execution then follows once
+the Node has finished its current tasks (e.g. validating a block).
+
+Hello Michael,
+
+I'm impressed by your refactorings, and hope some of them can make it into
+the Satoshi codebase. I am however not sure what you've said above is safe.
+In particular, how do you guarantee that no other thread modifies the
+blockchain structure while you are performing your query on it? Does the
+query code operate on a const copy of the structure, or is there guaranteed
+only one thread accessing it?
+
+I've been thinking about moving to read-write locks that allow multiple
+threads reading the datastructure simultaneously, but removing the locking
+all together sounds wrong to me.
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120203/270a6572/attachment.html>
