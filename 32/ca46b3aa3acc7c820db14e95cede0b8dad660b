@@ -1,0 +1,66 @@
+From: gronager@ceptacle.com (=?iso-8859-1?Q?Michael_Gr=F8nager?=)
+Date: Fri, 3 Feb 2012 10:52:22 +0100
+Subject: [Bitcoin-development] Announcement: libcoin
+In-Reply-To: <CAPg+sBg16OPdyi3MQ+sfBR+z_ArP6c8KpU36pDA0MEdXpk9fxQ@mail.gmail.com>
+References: <D55C3D18-8286-44E9-B877-6FCE7C05E980@ceptacle.com>
+	<CAJna-HiS34V5rNrRfFOMRJ6JhRmS1aeEE3oA=o07Hgf4S6qNfw@mail.gmail.com>
+	<54950761-EBFB-402E-8D7B-0B54A08260D2@ceptacle.com>
+	<CAD2Ti29cto8wS1jO5yOkORbE48c+t6Of2vysXcA0xM9LKCOCgg@mail.gmail.com>
+	<4CE9708D-0627-480C-B928-3F812544CD90@ceptacle.com>
+	<CAPg+sBg16OPdyi3MQ+sfBR+z_ArP6c8KpU36pDA0MEdXpk9fxQ@mail.gmail.com>
+Message-ID: <8CC24D9C-4207-4493-8C95-C5738B65C8B6@ceptacle.com>
+
+> Hello Michael,
+> 
+> I'm impressed by your refactorings, and hope some of them can make it into the Satoshi codebase.
+
+Thanks:)
+
+>  I am however not sure what you've said above is safe. In particular, how do you guarantee that no other thread modifies the blockchain structure while you are performing your query on it? Does the query code operate on a const copy of the structure, or is there guaranteed only one thread accessing it?
+
+The BlockChain class encapsulates all access to the blockchain and only give you access to certain restricted queries on the chain. Actually that was the case already in the satoshi client, I have only tried to formalize and encapsulate these queries in the code instead of having all the code poking around directly in the database and the blockfile.
+
+I should note that the database still keeps a mutex to protect reads from writes.
+
+I agree that constness alone does not guarantee thread safety, it is one of the things to use to get there. Great care should be taken not to read a value that is being changed at the same time, at least if that will render the result unusable.
+
+The list of allowed queries are the const public methods of BlockChain. Some examples :
+1.    bool isSpent(Coin coin) const;
+2.    int getNumSpent(uint256 hash) const ;
+3.    uint256 spentIn(Coin coin) const;
+
+    /// Check if the hash of a block belongs to a block in the main chain:
+4.    bool isInMainChain(const uint256 hash) const;
+    
+    /// Get the best height
+5.    int getBestHeight() const { return _bestIndex->nHeight; }
+
+Or e.g.:
+6.    void getBlock(const uint256 hash, Block& block) const;
+
+1-3. can be used to check if a COutPoint (now Coin) has been spent etc... This will only generate sane results, even if the two threads are both active on the same data structures.
+Same goes for 4. and 6. copies a block from the block file to the Block& provided so no issues here either. 
+
+I do, however, admit, that an extra review of all the public const methods would be wise, to ensure that I have not overlooked something. I'll open an issue on this and use a cold winter night on looking them over again.
+
+Cheers,
+
+Michael
+
+
+> 
+> I've been thinking about moving to read-write locks that allow multiple threads reading the datastructure simultaneously, but removing the locking all together sounds wrong to me.
+> 
+> -- 
+> Pieter
+
+Michael Gronager, PhD
+Director, Ceptacle
+Jens Juels Gade 33
+2100 Copenhagen E
+Mobile: +45 31 45 14 01
+E-mail: gronager at ceptacle.com
+Web: http://www.ceptacle.com/
+
+
+
