@@ -1,0 +1,96 @@
+From: grarpamp@gmail.com (grarpamp)
+Date: Wed, 8 Feb 2012 02:21:51 -0500
+Subject: [Bitcoin-development] Scaling at the end user level
+In-Reply-To: <CAD2Ti2_vGc+SJX_+uTz4ZVk1r5DhCOm6n3yKW16o9QaPKTQkHQ@mail.gmail.com>
+References: <CAD2Ti2_vGc+SJX_+uTz4ZVk1r5DhCOm6n3yKW16o9QaPKTQkHQ@mail.gmail.com>
+Message-ID: <CAD2Ti29UvdVevKvccbA6PbUMcmrgM4LDnL+cxVSaU4Zt3P-mJw@mail.gmail.com>
+
+> I never did track down this exact issue but it's an artificial
+> slowdown.. meaning compression and whatever else wouldn't help much.
+
+I meant for anyone who wanted to distribute the dataset as a project.
+
+> It has something to do with the database file locking and flushing..
+> on some systems I've seen the block chain get fully done in 10-20
+> mins and on others it slows down to the point where it will never
+> catch up.. but not in a way that's related to the age of the computer
+> or anything. You might want to experiment if you want to track this
+> down.. try building your own libs
+
+Rather than use dated/modified packages, I compiled current versions
+of all component sources manually.
+
+> and compare different operating
+> systems, on the same hardware to get a more 'true' comparison maybe.
+
+True. Used them all before, happy with BSD for now. Just knowing
+what the general setup is on those zippy systems should suffice.
+ie: blindly fishing for such a zippy system to compare through various
+install tests doesn't sound too appealing. It's different than benchmarking.
+
+Datapoint: The system below is not zippy.
+
+> I think everyone is vaguely aware of the problem but it has not
+> been tracked down and eliminated. I don't think the problem is
+> within bitcoin itself but in how truthfully the database file is
+> actually written to disk.
+
+Am I correct in guessing that, given a certain height, the data
+in blkindex and blk0001 should be the same across instances?
+
+# file blk*
+blk0001.dat:             data
+blkindex.dat:            Berkeley DB (Btree, version 9, native byte-order)
+
+Pursuant to comparison, what is the format of blk0001.dat?
+
+> If it really gets flushed to disk every
+> block like bitcoin wants it to be, then there is no way that you
+> could get more than 50-60 blocks per second through it (due to
+> rotational latency), but on some operating systems and versions/options
+> it seems to end up caching the writes and flies through it at
+> thousands of blocks per second. The problem is similar to what's
+> mentioned here: http://www.sqlite.org/faq.html#q19
+
+I'm not running Linux with asynchronous data and metadata
+turned on by default if that's what you mean :) ZFS, disk crypto,
+standard drive write cache. Looking at it, I'm largely buried in
+that crypto at 8MB/sec or so.
+
+> Perhaps it's as simple as some default in the db lib.. and it seems
+> to default to different things on different version/operating
+> systems/filesystems.
+
+Hmm, I compiled everything with the defaults. Will go back and
+look at bdb options. I don't think there was anything interesting
+there. I'd bet a lot is tied to the fs and cpu.
+Single core p4 at 1.8 512k/2g isn't much up against ZFS+disk crypto.
+
+It seems to take its time and roll up all but the last database file (of
+a hundred or more) on receiving sigterm. Is it supposed to roll
+and delete the last log too? Can I safely delete everything but
+the blk* files? (wallet excepted of course :)
+
+Currently, in KiB...
+
+running:
+853716  database
+747881  blk0001.dat
+290601  blkindex.dat
+4361    addr.dat
+137     __db.005
+137     __db.004
+137     __db.003
+137     __db.002
+41      __db.006
+25      __db.001
+
+sigterm:
+750569  blk0001.dat
+291497  blkindex.dat
+8465    database/log.0000000nnn
+4361    addr.dat
+
+database/log.0000000133: Berkeley DB (Log, version 16, native byte-order)
+
+
