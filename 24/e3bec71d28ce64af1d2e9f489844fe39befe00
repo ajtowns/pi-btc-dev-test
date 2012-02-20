@@ -1,0 +1,65 @@
+From: gronager@ceptacle.com (=?iso-8859-1?Q?Michael_Gr=F8nager?=)
+Date: Mon, 20 Feb 2012 22:29:57 +0100
+Subject: [Bitcoin-development] BIP-13
+In-Reply-To: <CABsx9T0hCAtJnA9YnmVAMjjSPB5W30e=cp8BX2mO--cWEzuSNQ@mail.gmail.com>
+References: <3DA9C79B-D91D-48B2-9469-37BAA037FC50@ceptacle.com>
+	<CABsx9T0hCAtJnA9YnmVAMjjSPB5W30e=cp8BX2mO--cWEzuSNQ@mail.gmail.com>
+Message-ID: <C0B1418A-11D9-4F4C-8C75-0261AEAD1F4A@ceptacle.com>
+
+> How will the code distinguish between the old scheme:
+> [one-byte-version][20-byte-hash][4-byte-checksum]
+> and the new?
+> 
+> 1 in 256 old addresses will have a first-byte-of-checksum that matches the new address class; I guess the code would do something like:
+> 
+> a) If the 4-byte checksum matches, then assume it is a singlesig address (1 in 2^32 multisig addresses will incorrectly match)
+> b) If the one-byte-address-class and 3-byte checksum match, then it is a valid p2sh
+> c) Otherwise, invalid address
+
+Exactly!
+
+> 
+> The 1 in 2^32 multisig addresses also being valid singlesig addresses makes me think this scheme won't work-- an attacker willing to generate 8 billion or so ECDSA keys could generate a single/multisig collision.  I'm not sure how that could be leveraged to their advantage, but I bet they'd find a way.
+
+Nope - its almost like calling the version:0+5 possible collision with new evil, say "ponzicoin" with version=5 a possible flaw that could be exploited... And you can already create non-existing addresses with a matching checksum...
+
+> I'd also encourage you to actually implement your idea between steps 3 and 4. But in this particular case, I think an attacker being able to create singlesig/p2sh address collisions counts as a major flaw.
+
+I will rest my case, not due to the "flaw", but I got some info on the bitfields of the "version" (thanks Luke!) - this makes the +5 less arbitrary, however, I don't think the bitfield interpretation is that well known, so there might already be "version"-collisions...:
+
+Network class:
+00xxxxxx - main network
+01xxxxxx - reserved
+10xxxxxx - reserved
+11xxxxxx - test network
+
+Network:
+xx00xxxx - bitcoin
+xx01xxxx - reserved
+xx10xxxx - OTHER (next octet)
+xx11xxxx - Namecoin
+
+Network specific:
+xxxx000y - PubKeyHash
+xxxx001y - reserved
+xxxx010y - p2sh
+xxxx011y - public key (raw)
+xxxx100y - signature
+xxxx101y - reserved
+xxxx110y - private key (raw)
+xxxx111y - OTHER (next octet)
+
+y = 0/1 depending on aesthetics (I guess to force the address to be either 1 or 3). 
+
+This also opens up for extensions - (if xx10xxxx or xxxx111x) the next byte will be part of the version.
+
+/M
+
+> 
+> -- 
+> --
+> Gavin Andresen
+
+
+
+
