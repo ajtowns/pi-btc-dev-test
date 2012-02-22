@@ -1,0 +1,91 @@
+From: gronager@ceptacle.com (=?iso-8859-1?Q?Michael_Gr=F8nager?=)
+Date: Wed, 22 Feb 2012 17:29:59 +0100
+Subject: [Bitcoin-development] BIP-13
+In-Reply-To: <CABsx9T0hCAtJnA9YnmVAMjjSPB5W30e=cp8BX2mO--cWEzuSNQ@mail.gmail.com>
+References: <3DA9C79B-D91D-48B2-9469-37BAA037FC50@ceptacle.com>
+	<CABsx9T0hCAtJnA9YnmVAMjjSPB5W30e=cp8BX2mO--cWEzuSNQ@mail.gmail.com>
+Message-ID: <F78AEBDF-F314-4245-B453-8D23C709D226@ceptacle.com>
+
+Hi Gavin / Luke,
+
+BIP-13 again... I started to implement a bitfield based parsing of the version byte using the description I got from Luke, but I then discovered that it does not hold:
+Network class:
+00xxxxxx - main network
+01xxxxxx - reserved
+10xxxxxx - reserved
+11xxxxxx - test network
+
+Network:
+xx00xxxx - bitcoin
+xx01xxxx - reserved
+xx10xxxx - OTHER (next octet)
+xx11xxxx - Namecoin
+
+Network specific:
+xxxx000y - PubKeyHash
+xxxx001y - reserved
+xxxx010y - p2sh
+xxxx011y - public key (raw)
+xxxx100y - signature
+xxxx101y - reserved
+xxxx110y - private key (raw)
+xxxx111y - OTHER (next octet)
+
+However, the definitions en base58.h are:
+
+        PUBKEY_ADDRESS = 0, (00000000)
+        SCRIPT_ADDRESS = 5, (00000101)
+        PUBKEY_ADDRESS_TEST = 111, (01101111) !!!
+        SCRIPT_ADDRESS_TEST = 196, (11000100) !!!
+
+[as a side note litecoin is 48 (00110000) and namecoin is 52 (00110100)]
+
+So there is no logic ?? I have searched the mailing list and the forum for discussions on this but found it hard to find any. If I overlooked something please direct me.
+
+Cheers,
+
+M
+
+PS: I have said so before, but it would *really* be nice if discussions / conclusions / irc-summaries were taking place at one place - e.g. at the bitcoin-dev mailing list, not at 5-10 different threads in bitcointalk or in bip notes or solely on IRC...
+
+
+On 20/02/2012, at 18:17, Gavin Andresen wrote:
+
+> RE:
+> > base58-encode: [one-byte network ID][20-byte hash][one-byte address class][3-byte checksum]
+> 
+> How will the code distinguish between the old scheme:
+> [one-byte-version][20-byte-hash][4-byte-checksum]
+> and the new?
+> 
+> 1 in 256 old addresses will have a first-byte-of-checksum that matches the new address class; I guess the code would do something like:
+> 
+> a) If the 4-byte checksum matches, then assume it is a singlesig address (1 in 2^32 multisig addresses will incorrectly match)
+> b) If the one-byte-address-class and 3-byte checksum match, then it is a valid p2sh
+> c) Otherwise, invalid address
+> 
+> The 1 in 2^32 multisig addresses also being valid singlesig addresses makes me think this scheme won't work-- an attacker willing to generate 8 billion or so ECDSA keys could generate a single/multisig collision.  I'm not sure how that could be leveraged to their advantage, but I bet they'd find a way.
+> 
+> RE: should it be a BIP:  The BIP process is described in BIP 0001, and you're following it perfectly so far:
+> 
+> 1) Post a rough draft of the idea here to see if there's any chance it'll be adopted
+> 2) Assuming a positive response and no major flaws: write up a draft BIP
+> 3) Post the draft BIP here, where it can be picked apart.
+> 4) Assuming no major flaws, ask the BIP editor (Amir) for a BIP number
+> 
+> I'd also encourage you to actually implement your idea between steps 3 and 4. But in this particular case, I think an attacker being able to create singlesig/p2sh address collisions counts as a major flaw.
+> 
+> -- 
+> --
+> Gavin Andresen
+
+Michael Gronager, PhD
+Director, Ceptacle
+Jens Juels Gade 33
+2100 Copenhagen E
+Mobile: +45 31 45 14 01
+E-mail: gronager at ceptacle.com
+Web: http://www.ceptacle.com/
+
+
+
