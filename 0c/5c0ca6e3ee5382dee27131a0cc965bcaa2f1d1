@@ -1,0 +1,53 @@
+From: gronager@ceptacle.com (Michael Gronager)
+Date: Thu, 23 Feb 2012 21:02:46 +0100
+Subject: [Bitcoin-development] BitcoinQt eating 100% CPU
+In-Reply-To: <81E27E9B-BD4B-4429-BF91-FED3505CE6D0@ceptacle.com>
+References: <81E27E9B-BD4B-4429-BF91-FED3505CE6D0@ceptacle.com>
+Message-ID: <3428A99D-3E68-4E06-9DD1-83741C9CDD42@ceptacle.com>
+
+A follow up on my mail from the other day (got it send from the wrong email address...)
+
+I now exit the ipc thread at startup by inserting:
+
+void ipcThread(void* parg)
+{
+   ipcShutdown();
+   return;
+
+Bitcoin-Qt is now running nicely using around 0.9% CPU. So it seems like the culprit was indeed line 31:
+
+if(mq->timed_receive(&strBuf, sizeof(strBuf), nSize, nPriority, d))
+
+Others, who have seen similar issues ?
+
+Cheers,
+
+M 
+
+On 21/02/2012, at 21:33, Michael Gr?nager wrote:
+
+> Hi Wladimir / others,
+> 
+> I just downloaded the latest (0.6 rc1) source of bitcoin-qt and built it using qt-creator on MacOSX 10.7.3. Nice and easy experience, even though I had to change BDB version to 5.1 ;)
+> 
+> However, when running it, it is using 100% CPU (after initial block chain download that is...)
+> * All activity in debug.log seems normal (blocks/txes/addresses are processes and accepted etc) so it is not stuck (at least not in the MessageThread)
+> * Sampling the process shows that the majority of time in each thread is used for:
+> ** __semwait_signal
+> ** kevent
+> ** __select
+> ** mach_msg_trap
+> ** boost::date_time::micro_sec_clock
+> 
+> None of this would usually alert me - sleeping and waiting for conditions should not consume CPU, the only issue seems to be the last line which is called from qtipcserver.cpp line 31:
+> 
+>      if(mq->timed_receive(&strBuf, sizeof(strBuf), nSize, nPriority, d))
+> 
+> As I see it this should not consume cpu either, but, it is the only thing that seems a bit strange..
+> 
+> Have you seen this before?
+> 
+> /M
+
+
+
