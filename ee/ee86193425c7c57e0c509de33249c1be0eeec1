@@ -1,0 +1,45 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Fri, 2 Mar 2012 02:56:34 +0100
+Subject: [Bitcoin-development] Duplicate transactions vulnerability
+In-Reply-To: <CAPg+sBhb+gYMwp1OJuCHYt5=BU63=YBWOFaLLthHBkN_U-scaA@mail.gmail.com>
+References: <CAPg+sBhb+gYMwp1OJuCHYt5=BU63=YBWOFaLLthHBkN_U-scaA@mail.gmail.com>
+Message-ID: <CAPg+sBj_zOvNS91BeAzJ8bFWmyYxk1CUhA=Y2_J8vFt4-fruyg@mail.gmail.com>
+
+On Tue, Feb 28, 2012 at 17:48, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+> I've written about it in BIP30[2]. There is a patch for the reference
+> client, which has been tested and verified to make the attack
+> impossible. The change is backward compatible in the same way BIP16
+> is: if a supermajority of mining power implements it, old clients can
+> continue to function without risk.
+
+After some private discussion, Ben Reeves pointed out two potential
+small weaknesses in the proposed patch, which seem viable to me.
+
+First: disconnecting the same coinbase transaction twice would fail,
+as EraseTxIndex will not find anything the second time. This is
+extremely hard to pull off, as it requires reverting a chain of at
+least 120 blocks long. Still, the fix is very easy imho: allow
+EraseTxIndex to fail.
+
+Second: assume the following order of events: block with coinbase A is
+created, 120 blocks later, A:0 is spent in transaction B. Then, a dupe
+of A is created, and another 120 blocks are waited. At this point, A:0
+and B:0 are still spendable. Now a block is created with two
+transactions: first C which spends B:0, followed by a dupe of B. This
+dupe is accepted, as its former instance is completely spent now.
+However, if this last block is disconnected again, B:0 is not
+spendable anymore, causing a risk for chain split. Ben suggested
+moving the check for dupes up, turning the new network rule into:
+
+  Blocks are not allowed to contain transactions whose hash matches
+that of an earlier transaction in the same chain, unless that
+transaction was already completely spent before said block.
+
+I've updated the patch, and will update the BIP soon.
+
+What do you all think? Can we still move forward with deploying this?
+
+-- 
+Pieter
+
+
