@@ -1,0 +1,90 @@
+From: moon@justmoon.de (Stefan Thomas)
+Date: Sun, 04 Mar 2012 01:18:09 +0100
+Subject: [Bitcoin-development] getmemorypool BIP process
+In-Reply-To: <345337E5-9645-40B7-9A77-F65DD1694CEA@mac.com>
+References: <201202281706.22650.luke@dashjr.org> <4F52294C.8080409@justmoon.de>
+	<201203031000.28760.luke@dashjr.org>
+	<345337E5-9645-40B7-9A77-F65DD1694CEA@mac.com>
+Message-ID: <4F52B4C1.60604@justmoon.de>
+
+
+> Btw - question to Stefan as the JavaScript guru - what do you consider the standard/defacto-standard/right/best-practice way of doing S->C json-rpc, what (javascript) library do you use for this?
+
+As for an explicitly standard way, there is none. The JSON-RPC 1.0 spec 
+<http://json-rpc.org/wiki/specification> says "The specifications do not 
+require a certain transport protocol. The use of TCP/IP socket streams 
+is encouraged. The serialized request and response objects are sent to 
+the peers through the byte streams. " The JSON-RPC 2.0 spec 
+<http://jsonrpc.org/specification> goes out of its way to say "It is 
+transport agnostic in that the concepts can be used within the same 
+process, over sockets, over http, or in many various message passing 
+environments."
+
+The de-facto standard for bidirectional JSON-RPC is plain TCP sockets. 
+BitcoinJS currently implements this - we detect whether an incoming 
+connection is HTTP or raw JSON-RPC based on the first character. (HTTP 
+must start with an uppercase letter, raw JSON-RPC must start with an 
+opening curly bracket.)
+
+There are two things to watch out for with JSON-RPC over plain TCP:
+
+1. Plain TCP sockets (unlike HTTP) have no standardized authentication 
+mechanism, so I added an extra RPC call auth("username", "password").
+
+2. The TCP packets may or may not correspond to JSON-RPC messages. You 
+can either use a streaming JSON parser (yajl in ANSI C, Jackson in Java, 
+etc.), or you can just count (non-string-literal) curly braces to detect 
+when a complete message has arrived.
+
+Many JSON-RPC libraries come with TCP socket support out of the box: 
+http://json-rpc.org/wiki/implementations
+
+We're planning to add more features to our JSON-RPC API in the future, 
+such as:
+
+- JSON-RPC over TLS sockets
+- Challenge-response authentication
+- TLS client handshake (certificate authentication)
+
+As for HTTP Keep-Alive: It works, but I don't think it's very widely 
+supported among client libraries and HTTP isn't really made for this 
+type of thing, so my gut instinct would be to avoid it. That said, it 
+doesn't hurt to offer the option.
+
+On 3/3/2012 6:08 PM, Michael Gr?nager wrote:
+>> HTTP and JSON-RPC are a client-server model; there is no way for the server to
+>> make calls to the client. It's not practical to expect clients to run their
+>> own JSON-RPC server - many cannot listen on WAN ports at all.
+> Well, I think what Stefan had in mind was http keep-alive combined with an event system. So similar to the way a web chat application work, just for json-rpc. BitcoinJS already uses this for realtime updating a webwallet. Libcoin is also prepared for this with a quite advanced, non-blocking, http server so I second Stefan that an update function could indeed be of relevance.
+>
+> Btw - question to Stefan as the JavaScript guru - what do you consider the standard/defacto-standard/right/best-practice way of doing S->C json-rpc, what (javascript) library do you use for this?
+>
+> Cheers,
+>
+> Michael
+>
+>
+>> ------------------------------------------------------------------------------
+>> Virtualization&  Cloud Management Using Capacity Planning
+>> Cloud computing makes use of virtualization - but cloud computing
+>> also focuses on allowing computing to be delivered as a service.
+>> http://www.accelacomm.com/jaw/sfnl/114/51521223/
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+> ------------------------------------------------------------------------------
+> Virtualization&  Cloud Management Using Capacity Planning
+> Cloud computing makes use of virtualization - but cloud computing
+> also focuses on allowing computing to be delivered as a service.
+> http://www.accelacomm.com/jaw/sfnl/114/51521223/
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120304/72c6808b/attachment.html>
