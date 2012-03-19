@@ -1,0 +1,86 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Mon, 19 Mar 2012 12:07:13 -0400
+Subject: [Bitcoin-development] Full disclosure on the Bitcoin-Qt on Windows
+	problem
+Message-ID: <CABsx9T2Mz0CgNyXfWxOmO7Vbr6fyGX34TFA0JkZYvPSozKCObQ@mail.gmail.com>
+
+Reposting from my tech blog:
+  http://gavintech.blogspot.com/2012/03/full-disclosure-bitcoin-qt-on-windows.html
+
+----------------
+
+A major bug in Bitcoin-Qt on Windows went unnoticed for over four
+months. The bug was in the bitcoin-qt.pro file, in these two lines of
+code:
+  windows:LIBS += -lws2_32 -lshlwapi
+  windows:DEFINES += WIN32
+See the bug?
+
+I don't-- I can't see it, because the problem was Bitcoin-Qt on
+Windows should have been linked with the "mingw" multithreading
+library and compiled with the -D_MT to turn on support for
+multithread-safe C++ exception handling in the "mingw" library (you
+can see the 3-line fix here).
+
+There might be developers reading this who have had experience writing
+multithreaded mingw-based C++ applications who will say "Duh! You guys
+are idiots, everybody knows that!"
+
+If that's you and you're interested in Bitcoin:  we need people like
+you to help out! Review the code, review the build process, let us
+know when we're being idiots. There seem to be a lot fewer Windows
+developers willing to help out with Bitcoin than Linux or Mac
+developers, which is unfortunate since a majority of our downloads are
+Windows users.
+
+
+Non-mingw-C++-multithreaded developers are reading this and thinking
+"the bug was THERE?  Not in some #ifdef WINDOWS C++ code or some
+slightly-out-of-date library that you were linking against?"
+
+
+The other reason this bug went unnoticed for so long is because it
+almost never matters. Bitcoin-Qt doesn't throw a lot of exceptions
+normally, and most of the time the single-threaded-application
+exception support in mingw works just fine. I'm still not sure exactly
+what triggers the bug-- probably something like two threads throwing
+exceptions at the same time, or one thread being interrupted while in
+a try{} block and then resuming later and crashing because the
+exception handling code is in a different state.
+
+Matt Corallo deserves a lot of credit for being persistent and finding
+the bug when investigating hard-to-reproduce reports of Bitcoin-Qt
+crashing sometimes when run with the -server flag and handling
+JSON-RPC requests. He was never able to get the code to crash when
+running outside of the debugger, which is typical of bugs related to
+multithreading. But he did see crashes not involving RPC requests, and
+that is why we consider this a critical issue and are telling
+everybody affected to upgrade immediately.
+
+It it exploitable? Could an attacker craft bitcoin protocol messages
+that triggered the bug and compromised Windows computers? Has it
+already been exploited?
+
+We don't know. We think it would be extremely difficult to craft a
+usable exploit, partly because it is hard to even trigger the bug
+reliably but also because Bitcoin-Qt has some security-in-depth to try
+to prevent this type of bug from becoming exploitable.
+
+If we're very careful and extremely lucky, this will be the last time
+we have to tell users to shutdown and upgrade immediately because of
+some potential vulnerability. But there is no such thing as perfect
+security, and I expect that there will be another subtle bug either in
+Bitcoin or in one of the many libraries we link against that becomes a
+potential security issue.
+
+That doesn't mean we give up and go back to paying each other with
+cowrie shells; it means we assume that devices get compromised and
+design around that assumption. I think that is a lesson that the
+entire software industry needs to learn better.
+
+
+-- 
+--
+Gavin Andresen
+
+
