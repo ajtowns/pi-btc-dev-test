@@ -1,0 +1,114 @@
+From: gronager@mac.com (=?iso-8859-1?Q?Michael_Gr=F8nager?=)
+Date: Sat, 31 Mar 2012 13:16:56 +0200
+Subject: [Bitcoin-development] 0.7 merge recommendations/status
+In-Reply-To: <20120331105401.GA14117@vps7135.xlshosting.net>
+References: <201203310003.18599.luke@dashjr.org>
+	<20120331105401.GA14117@vps7135.xlshosting.net>
+Message-ID: <FF86C935-B407-4983-BCB2-61A79DAF8DB8@mac.com>
+
+If you are interested, I could push libcoin to bitcoin (e.g. bitcoin/libcoin) and then you could build bitcoind bitcoin-qt on libcoin.
+
+libcoin solved most of the problems you list below. And if you worry about the copyright/license I am also willing to change that to make it fit.
+
+libcoin have no global thread mutexes and and there is no blocking of the main thread due to rpc methods (except for a sendto), further, e.g. a reorganize only locks the main thread for a split second while the final commit is done. 
+
+The libcoin rpc supports keep_alive and pipelining, runs in its own thread (but can also run in the same thread as the node) and uses async operation. Ipv6 is easy to implement in libcoin as the CAddress/Endpoint class is implemented as a subclass of boost::endpoint, only thing holding back is deciding on an ipv6 format on IRC, and, I then I would really like to reverse the order of the last 12 bytes in the address db (they are opposite to boost).
+
+Cheers,
+
+Michael
+
+On 31/03/2012, at 12:54, Pieter Wuille wrote:
+
+> On Sat, Mar 31, 2012 at 12:03:17AM -0400, Luke-Jr wrote:
+>> NOTE: I've been piecing this together for about a week now, and intended to 
+>> update it when 0.6.0 final was released, but with the timing of it, I just 
+>> won't get the time to update for a while, so here is my last draft...
+> 
+> Nice summary, thanks.
+> 
+>> It seems to me, there is potentially enough ready to merge into 0.7 to start 
+>> the RC process right away if someone wants to... except that the first merge 
+>> will probably require rebasing everything else ;)
+> 
+> I think that's right - for several reasons, the time between 0.5 and 0.6 was 
+> over 4 months. I prefer more frequent releases, as it slows down development
+> this way.
+> 
+>> For similar reasons as CBlockStore, I feel multithreaded JSON-RPC with keep-
+>> alive support (#568) should be merged sooner rather than later. It's long 
+>> overdue for bitcoind having had a lot of testing, and pretty much required for 
+>> any sort of high-volume bitcoind usage (such as solo mining). Some other 
+>> optimizations by Joel such as the optimized ToHex function (#562) and 
+>> FastGetWork (#565) have also had plenty of testing; all combined, these 
+>> optimizations more than double the performance of JSON-RPC.
+>> Details: https://github.com/bitcoin/bitcoin/pull/565#issuecomment-3269334
+> 
+> I'd rather see a decent encapsulation of wallet and blockchain data structures
+> that allow us to make their mutexes private, and let only the code from the
+> respective mutex take locks in it when necessary. That will automatically
+> lead to multithreaded RPC, but in a safe way, without needing guesswork about
+> which two calls may or may not be called simultaneously.
+> 
+> Of course, that requires a lot more work, but at some point that will be needed
+> anyway, imho.
+> 
+>> Pieter's getalltransactions (#841) and my getblock_full (#886) provide what is 
+>> needed to completely replace Jeff's old dumpblock call with bitcoind's new 
+>> getblock. He also put together a -loadblock option (#883) which has proven 
+>> quite handy for development, and -walletupgrade (#974) seems like a good idea.
+> 
+> I've used loadblocks often in my personal branches. At least on Linux it seems
+> to work fine. The data scanning code is mostly Cish though, and there may be
+> more preferrable to use boost or generic C++ solutions.
+> 
+>> Finally, I don't know the status of Pieter's IPv6 support, but I hope it will 
+>> be ready for 0.7. Right now all I see submitted for this is support for 
+>> multiple local IPs (#829) though.
+> 
+> I've already had a fully functional IPv6 node based on 0.3.24. Most of the changes
+> there have since been incorported in netbase (#735), and because of a risk for DoS'es
+> based on the much larger number of addresses an attacker could have under his control,
+> addrman (#787) was necessary before IPv6 could be fully implemented. So, the technical
+> part of supporting IPv6 seems mostly finished - right now, it's mostly just removing
+> some (!IsIPv4()) checks and adding listen/connect code that is IPv6-compatible.
+> I'll do a pullreq for that soon.
+> 
+> There are a few other issues, though. For example: how will relaying work: will IPv4
+> nodes relay IPv6 addresses? If not, the IPv6 bitcoin network will be completely
+> separate from the IPv4 one, though both may overlap in some points. The opposite is
+> also possible: allowing all nodes to relay IPv6 addresses, but only use them in case
+> an IPv6-compatible interface is detected. Any opinions about this?
+> 
+> Something else was suggested by Jeff: what if a node accidentally connects to itself?
+> As we're moving towards multiple local addresses with IPv6, the chances for this
+> become larger. Finally, there are always extra risks involved, as we could unknowingly
+> be opening DoS or others vulnerabilities.
+> 
+> Finally, supporting IPv6 in a somewhat general way would pave the way for bitcoin
+> functioning for example as a Tor or I2P hidden service, by using onioncat-like
+> tor-encoded-in-IPv6 addresses. This way, two bitcoin nodes could connect to eachother
+> without the need for passing any exit node.
+> 
+> -- 
+> Pieter
+> 
+> ------------------------------------------------------------------------------
+> This SF email is sponsosred by:
+> Try Windows Azure free for 90 days Click Here 
+> http://p.sf.net/sfu/sfd2d-msazure
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+Michael Gronager, PhD
+Director, Ceptacle
+Jens Juels Gade 33
+2100 Copenhagen E
+Mobile: +45 31 45 14 01
+E-mail: gronager at ceptacle.com
+Web: http://www.ceptacle.com/
+
+
+
