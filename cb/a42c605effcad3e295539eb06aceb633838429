@@ -1,0 +1,29 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Sat, 31 Mar 2012 14:28:28 +0200
+Subject: [Bitcoin-development] 0.7 merge recommendations/status
+In-Reply-To: <FF86C935-B407-4983-BCB2-61A79DAF8DB8@mac.com>
+References: <201203310003.18599.luke@dashjr.org>
+	<20120331105401.GA14117@vps7135.xlshosting.net>
+	<FF86C935-B407-4983-BCB2-61A79DAF8DB8@mac.com>
+Message-ID: <20120331122827.GA15726@vps7135.xlshosting.net>
+
+On Sat, Mar 31, 2012 at 01:16:56PM +0200, Michael Gr?nager wrote:
+> If you are interested, I could push libcoin to bitcoin (e.g. bitcoin/libcoin) and then you could build bitcoind bitcoin-qt on libcoin.
+> 
+> libcoin solved most of the problems you list below. And if you worry about the copyright/license I am also willing to change that to make it fit.
+
+Thanks for that - without a license change it would not be possible to merge anything.
+
+> libcoin have no global thread mutexes and and there is no blocking of the main thread due to rpc methods (except for a sendto), further, e.g. a reorganize only locks the main thread for a split second while the final commit is done. 
+
+Yes, I like its design and refactorings a lot, but at the same time it's very large change to accept at once. In particular, I'm not entirely convinced yet about its thread-safety. For example, acceptblock is a public method, but it seems (i may be missing something) to grab no lock at all until setBestBlock or reorganize is called. Is it impossible to call acceptBlock twice simultaneously? One may start with a bestblockindex value that gets modified a split second later by a simultaneous call. It may be the case that there are indeed no possibilities for this to happen because of things I'm missing, but although I'm a big fan of well-encapsulated locks and the use of reader-writer locks, it's hard to verify whether you use them enough. My suggestion would be: make each publicly accessible method of BlockChain grab either a reader lock (if it's a const function) or an upgradable lock, and take a writer lock in each method that actually performs changes.
+
+> The libcoin rpc supports keep_alive and pipelining, runs in its own thread (but can also run in the same thread as the node) and uses async operation. Ipv6 is easy to implement in libcoin as the CAddress/Endpoint class is implemented as a subclass of boost::endpoint, only thing holding back is deciding on an ipv6 format on IRC, and, I then I would really like to reverse the order of the last 12 bytes in the address db (they are opposite to boost).
+
+Not sure what you mean: the serialized combination of the 32-bit IPv4 address and 12 bytes padding in CAddress are exactly a bsd socket library in6_addr in network byte order. In 0.6.0, CAddress derives from CNetAddr, which encapsulates these 16 bytes.
+
+-- 
+Pieter
+
+
+
