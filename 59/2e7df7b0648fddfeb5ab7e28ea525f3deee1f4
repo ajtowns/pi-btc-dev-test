@@ -1,0 +1,114 @@
+From: etotheipi@gmail.com (Alan Reiner)
+Date: Mon, 02 Apr 2012 16:55:03 -0400
+Subject: [Bitcoin-development] Signature Blocks and URI Sign Requests
+Message-ID: <4F7A1227.7070306@gmail.com>
+
+I would like to propose two things that are closely related.  I will 
+start making BIPS if there's positive feedback.  Sorry it's so long, but 
+I felt both should be in the same email...
+
+
+_*(1) Signature Blocks*  -- A more-robust, versatile, message-signing 
+exchange_
+
+Satoshi client 0.6.0 introduced message signing, but I've been fairly 
+unimpressed with the implementation.  Strictly speaking, it works, but 
+it's really not intended for "regular users."  There is no indication of 
+what message was signed or what address signed it.  Key recovery works 
+for the computers processing it, but the user has no idea what this 
+chunk of random data is.  They don't even know if the message they 
+thought they signed is what's in the signature (along the lines of the 
+copy&paste virus, the message could be switched out without the user 
+noticing).
+
+I have implemented Signature Blocks 
+<https://bitcointalk.org/index.php?topic=56424.msg776163#msg776163> in 
+Armory (as of v0.55), which is a fully-functional expansion on the 
+idea.  Along the lines of BIP 10, a signature block is a human-readable 
+chunk of data that immediately identifies the address and the message 
+that are being signed.  It is easily copy&pasted via email or text 
+files, and is fairly compact for visual identification.   Click the link 
+above to see an example signature block and an Armory screenshot of the 
+UI (which needs improvement, but still usable).  The verification 
+process will include:
+
+-- Check that the public key (included or recovered) matches the address 
+field.
+-- Verify that the signature matches the included message for this 
+public key
+-- The message is properly formatted with a standardized character set 
+and escape/replacement scheme for things like newlines or double-quotes.
+
+gmaxwell already pointed out that key recovery makes the "Public Key" 
+field pointless.  Okay fine -- I just don't have key recovery 
+implemented yet in Armory, and when I do I can ditch that field (or 
+simply make it optional).  The point is to create a versatile, 
+human-readable standardized form, much like the BIP 0010 
+signature-collection scheme <https://en.bitcoin.it/wiki/BIP_0010>.
+
+
+_*(2) Sign-Message URI scheme***-- Request signed messages from users 
+using URIs_
+
+I had the idea that for certain services, the first funding address 
+could be used to identify the owner of an account, and all account 
+maintenance (such as cashouts) be done through signed messages with this 
+address.  For instance, the user would need both a login password *and* 
+a signed message in order to make a withdrawal or purchase:
+
+     ("Please withdraw 12.3 BTC from acct 1828349132 to address 
+1Hfr3jk2093f")_signed_by_A
+
+This gives the service the ability to use two separate factors to 
+authenticate the request (username&password *and* access to unencrypted 
+wallet).  This /could/ work with manual signature blocks alone... but 
+it's too many steps for regular users.  However, I think it's workable 
+if we expand bitcoin URIs to include "Signature Requests".
+
+The URI scheme would add a few parameters to the scheme, and would have 
+to have further replacement rules to make sure that messages are handled 
+properly.   The general CONOPs would be (*Con*cept of *Op*eration*s*):
+
+     -- User navigates to "Withdraw funds" on webpage
+     -- Webpage has you fill in the details:  from-account, to-address, 
+withdrawal amount
+     -- Webpage produces a clickable URI link that loads all the 
+information into your client, including addr-reqd-for-sig
+     -- Client asks for confirmation and passphrase (if necessary) then 
+produces a signature (and sig block if necessary)
+     -- URI may include reply-to field that tells it where to send the 
+siganture when it's ready
+
+So the extra tags that would be needed would probably be:
+
+         "*requestSig*=True":
+                 Flag to identify that this is a signing request URI
+         "*sigNeeded*=1Qjf3392k31h"
+                 The address that needs to sign the message
+         
+"*message*=Please%20withdraw%2012.3%20BTC%20to%20addr%201Hfr3jk2093f"
+                 Some encoding of the message that can be parsed the 
+same way on all systems
+         "*replyurl*=http://requestor.com/sig_replies.asp?"
+                 (Optional) After signing, application will submit the 
+signature to the replyurl
+
+The reply url could be simply an http URL which will use bitcoin URI 
+syntax, with the fields above copied.  Therefore, to complete the above 
+request, the application handling the request will simply send an HTTP 
+request to:
+
+     
+http://requestor.com/sig_replies.asp?*sigNeeded*=1Qjf3392k31h&*message*=...&*signature*=1fb1893ac193...&*replySig*=True
+
+Any thoughts?  (I have no doubts that there are :) )
+
+-Alan
+
+
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120402/8c315b70/attachment.html>
