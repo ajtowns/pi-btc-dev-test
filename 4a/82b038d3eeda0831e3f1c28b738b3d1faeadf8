@@ -1,0 +1,93 @@
+From: zgenjix@yahoo.com (Amir Taaki)
+Date: Thu, 12 Apr 2012 10:24:18 -0700 (PDT)
+Subject: [Bitcoin-development] Adding request/reply id in messages
+In-Reply-To: <CA+8xBpco-yPYB+cjoi_+srG2BkC2ZQBh-3HGNA5EaSB3FWNgog@mail.gmail.com>
+References: <CA+XhJbpNYUyPm2Ymcpg3grbfGnfERCsUJNJuByEJbJLsMMmMbQ@mail.gmail.com>
+	<CA+8xBpco-yPYB+cjoi_+srG2BkC2ZQBh-3HGNA5EaSB3FWNgog@mail.gmail.com>
+Message-ID: <1334251458.43194.YahooMailNeo@web121005.mail.ne1.yahoo.com>
+
+Jeff elaborated the problems very well, but I just want to add this:
+
+Your change is essentially relying (trusting) the server to track a piece of information (your state). Anytime you start depending on another node in some way, it is opening yourself up to be exploited. Nodes should be doing their owning state maintainance, not relying on external parties.
+
+
+I am very much against the change. As someone who has implemented the complete bitcoin protocol, I had no problems implementing the blockchain download. In fact, I dislike that nodes have to store the last inventory they sent as part of a getblocks in order to trigger the next round. It's be better if there was no state whatsoever.
+
+________________________________
+From: Jeff Garzik <jgarzik at exmulti.com>
+To: sirk390 at gmail.com 
+Cc: bitcoin-development at lists.sourceforge.net 
+Sent: Thursday, April 12, 2012 6:12 PM
+Subject: Re: [Bitcoin-development] Adding request/reply id in messages
+
+On Wed, Apr 11, 2012 at 2:39 PM, Christian Bodt <sirk390 at gmail.com> wrote:
+> Hi,
+>
+> I would like to discuss the following bitcoin protocol improvement proposal:
+>
+> ? ? ? ? ?Adding request/reply id in all messages (in the message header,
+> based on what was done for the "checksum" field)
+>
+> The original reason is that I found it very hard to implement robust
+> blockchain downloading as we are missing context information:
+> The download protocol relies on the other peer sending one (or more) "inv"
+> reponse(s) to "getblocks" and sending the "hashContinue".
+> But if the other peer doesn't send a response to getblock, send a partial
+> response to getblocks, mixes it with some unrelated blocks inventories
+> or?doesn't send the "hashContinue"?it is very hard to detect and handle
+> (e.g. ban the peer and switch to another). ?This could cause some DoS
+> attacks by misbehaving peers.
+
+If the peer is misbehaving, then disconnect.? Your protocol change
+does not offer any clear benefits in this area, as these sorts of
+attacks/misbehaviors/bugs are still just as possible, and just as
+damaging (or not).
+
+Just disconnect the strange peer!
+
+> The problems are that 1/ we don't know how many "inv" messages to wait for
+> after "getblocks"?and 2/ we don't know how to?distinguish between result of
+> "getblocks" and spontaneous "inv" notifications.
+> The same is true for ?"addr" messages (it is both a notification and reply)
+> but this is less of a problem as a lack of response to getaddr
+> doesn't?constitute?a DoS.
+>
+> The idea would be to add a new "requestid" field in messages and define the
+> following:
+
+
+Stateless protocols have a lot of value.? They are easiest to
+implement, and easier to prove correct.? Existing clients like
+ArtForz' half-a-node, variants of which are deployed all over the
+place in bitcoin-land, rely on the stateless-ness to one degree or
+another.
+
+Stateful protocols, too, have their problems as well.? One must add
+code to help remain "synchronized" between local and remote states,
+which your suggested change only hints at.? NFSv4 and RPC have a long
+history of dealing with stateful-ness issues.? Obviously bitcoin P2P
+is nowhere near as complex, but the history of NFS development offers
+several lessons applicable to your proposed change.
+
+Overall, IMO your listed reasons for needing this major change
+(stateless->stateful) do not really justify the change.? Handling
+initial block download can be accomplished in a number of ways, and
+peer(s) may crash or return odd results.? You must handle these cases
+properly, regardless of the presence of req/reply id's.
+
+-- 
+Jeff Garzik
+exMULTI, Inc.
+jgarzik at exmulti.com
+
+------------------------------------------------------------------------------
+For Developers, A Lot Can Happen In A Second.
+Boundary is the first to Know...and Tell You.
+Monitor Your Applications in Ultra-Fine Resolution. Try it FREE!
+http://p.sf.net/sfu/Boundary-d2dvs2
+_______________________________________________
+Bitcoin-development mailing list
+Bitcoin-development at lists.sourceforge.net
+https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
