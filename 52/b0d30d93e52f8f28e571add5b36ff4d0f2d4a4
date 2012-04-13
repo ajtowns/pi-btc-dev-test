@@ -1,0 +1,49 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Fri, 13 Apr 2012 12:04:07 +0200
+Subject: [Bitcoin-development] Bitcoin TX fill-or-kill deterministic
+	behavior
+In-Reply-To: <CA+8xBpc5CZ9Sx4MwPdeS0-5frnV9B+mJ5OwcPoUVrygTawiJBg@mail.gmail.com>
+References: <CA+8xBpc5CZ9Sx4MwPdeS0-5frnV9B+mJ5OwcPoUVrygTawiJBg@mail.gmail.com>
+Message-ID: <CANEZrP28Wf6RVOgd85COkE-vLdtCbyQYa0b9QvPFt9W1DzNJag@mail.gmail.com>
+
+It sounds OK as long as you exclude nLockTimed transactions.
+
+That said, if you broadcast a transaction that does not meet the fee
+rules, you should be able to notice that it wasn't accepted by your
+peers immediately. Today it's painful because the protocol isn't very
+chatty - in bitcoinj I plan to do this by announcing to half the
+connected peers and waiting to see if the transaction comes back on
+the other half. Getting a response from a peer that the TX was dropped
+for reasons {x,y,z} is a better design but needs another protocol
+change.
+
+So having transactions expire would address the case where somebody
+broadcasts a transaction that successfully propagates across the
+network, but then isn't actually accepted by miners for some reason.
+For instance due to a change in the default fee schedules. That risk
+can be mitigated somewhat by being careful about such changes (timed
+phase ins set multiple months out so people have time to upgrade,
+alerts announcing it, etc).
+
+I'm not sure we should be encouraging users to attach fees to
+transactions though. Even if you can replace a transaction after a
+couple of days, the user experience of trying to get the fee "right"
+is atrocious. I don't think any sensible merchant will actually be
+willing to put their customers through this nonsense. If somebody
+broadcasts a transaction that successfully propagates across a big
+chunk of the network but then gets stuck due to lacking sufficient
+fees, the best fix is for the merchant to broadcast another
+transaction that spends the first and increases the fees on it that
+way. After this happens a few times, if I was a merchant I'd be
+tempted to just ask buyers to submit the TX to me directly and I'll
+handle keeping up with what miners currently charge and attaching
+fees. I don't want my customers to have to think about this and have
+trades spuriously fail when they forget.
+
+That design requires a minor change to how fees are calculated inside
+the memory pool, to include fees on un-included dependencies. But that
+seems fairly uncontroversial to me. It's best for users, merchants and
+miners to not leave chains of transactions in limbo when together
+their fees add up to the minimum required amount.
+
+
