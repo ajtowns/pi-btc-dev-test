@@ -1,0 +1,106 @@
+From: jgarzik@exmulti.com (Jeff Garzik)
+Date: Fri, 13 Apr 2012 12:41:19 -0400
+Subject: [Bitcoin-development] Bitcoin TX fill-or-kill deterministic
+	behavior
+In-Reply-To: <CANEZrP28Wf6RVOgd85COkE-vLdtCbyQYa0b9QvPFt9W1DzNJag@mail.gmail.com>
+References: <CA+8xBpc5CZ9Sx4MwPdeS0-5frnV9B+mJ5OwcPoUVrygTawiJBg@mail.gmail.com>
+	<CANEZrP28Wf6RVOgd85COkE-vLdtCbyQYa0b9QvPFt9W1DzNJag@mail.gmail.com>
+Message-ID: <CA+8xBpcNd-s9S-zDGO6gGwnd1sFSUikH1fAnCUoG1WiL5kkmVg@mail.gmail.com>
+
+On Fri, Apr 13, 2012 at 6:04 AM, Mike Hearn <mike at plan99.net> wrote:
+> It sounds OK as long as you exclude nLockTimed transactions.
+
+ACK, agreed
+
+> That said, if you broadcast a transaction that does not meet the fee
+> rules, you should be able to notice that it wasn't accepted by your
+> peers immediately. Today it's painful because the protocol isn't very
+> chatty - in bitcoinj I plan to do this by announcing to half the
+> connected peers and waiting to see if the transaction comes back on
+> the other half. Getting a response from a peer that the TX was dropped
+> for reasons {x,y,z} is a better design but needs another protocol
+> change.
+>
+> So having transactions expire would address the case where somebody
+> broadcasts a transaction that successfully propagates across the
+> network, but then isn't actually accepted by miners for some reason.
+
+Correct.  As mentioned, this change should impact few TXs on the
+existing network.
+
+It's mostly about getting everyone to collectively agree that
+transactions should expire, if they don't make it into a block.
+(excl. nLockTime stuff)  A minor technical step, but also a useful
+policy step.
+
+> For instance due to a change in the default fee schedules. That risk
+> can be mitigated somewhat by being careful about such changes (timed
+> phase ins set multiple months out so people have time to upgrade,
+> alerts announcing it, etc).
+>
+> I'm not sure we should be encouraging users to attach fees to
+> transactions though. Even if you can replace a transaction after a
+> couple of days, the user experience of trying to get the fee "right"
+> is atrocious.
+
+Yes -- I think there is near-universal agreement on this user experience point.
+
+> I don't think any sensible merchant will actually be
+> willing to put their customers through this nonsense. If somebody
+> broadcasts a transaction that successfully propagates across a big
+> chunk of the network but then gets stuck due to lacking sufficient
+> fees, the best fix is for the merchant to broadcast another
+> transaction that spends the first and increases the fees on it that
+> way. After this happens a few times, if I was a merchant I'd be
+> tempted to just ask buyers to submit the TX to me directly and I'll
+> handle keeping up with what miners currently charge and attaching
+> fees. I don't want my customers to have to think about this and have
+> trades spuriously fail when they forget.
+>
+> That design requires a minor change to how fees are calculated inside
+> the memory pool, to include fees on un-included dependencies. But that
+> seems fairly uncontroversial to me. It's best for users, merchants and
+> miners to not leave chains of transactions in limbo when together
+> their fees add up to the minimum required amount.
+
+So, to be specific... a A->B chain of transactions, that collectively
+meet the network's fee requirements?  It seems quite reasonable to
+accept that, sure.  ACK on concept.  A chain of length 2 seems like it
+would be most common, and limiting total chain length (to 10? 100?)
+for any one chain in the memory pool seems prudent.
+
+As to the larger issue of fees...  I will readily admit I have no good ideas.
+
+The user's experience is pretty poor:  while it might make economic
+sense, from the network's standpoint, to charge for the service of
+verifying and storing a transaction, the user has limited means to
+determine an ideal fee.  There are also other valid economic models
+(receiver pays fee) out there that may successfully sustain the
+network.
+
+Ideally the fee, if any, is market based and negotiated.  The current
+method is loose-consensus, mainly aimed at (a) combating dust spam or
+(b) ensuring it becomes increasingly more expensive to fill a block,
+up to the current 1MB maximum.  I think almost everyone agrees the
+current fee system is an ugly, warty hack.  Problem is... like
+democracy, no matter how ugly it is, people have trouble finding a
+better system :)
+
+Furthermore, many of these ideas -- like sending TX's directly to the
+merchant -- involve far more direct payee<->payer communication on the
+part of the wallet client than is currently envisioned by the bitcoin
+P2P network design, which is broadcast-oriented.  So, it remains an
+open question whether we want the base bitcoin layer to even worry
+about real-time fee negotiation and direct TX transmission.
+
+It is possible that an instant-payments layer evolves on top of the
+base bitcoin block chain layer, with bitcoin transactions evolving
+largely into settlements between instant-payment intermediaries large
+and small.
+
+-- 
+Jeff Garzik
+exMULTI, Inc.
+jgarzik at exmulti.com
+
+
