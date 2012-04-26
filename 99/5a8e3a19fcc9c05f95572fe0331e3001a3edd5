@@ -1,0 +1,169 @@
+From: zgenjix@yahoo.com (Amir Taaki)
+Date: Thu, 26 Apr 2012 10:59:45 -0700 (PDT)
+Subject: [Bitcoin-development] Trusted identities
+In-Reply-To: <CAMGNxUs3eDaYHpg=ZqXQPC5+kQXZwhqUngH2t2OFaTa4x7vPcw@mail.gmail.com>
+References: <20120426154928.GA13737@savin.lan>
+	<CAMGNxUs3eDaYHpg=ZqXQPC5+kQXZwhqUngH2t2OFaTa4x7vPcw@mail.gmail.com>
+Message-ID: <1335463185.72832.YahooMailNeo@web121004.mail.ne1.yahoo.com>
+
+look at the first line of the if statement
+
+
+????// Check for conflicts with in-memory transactions
+????CTransaction* ptxOld = NULL;
+????for (unsigned int i = 0; i < tx.vin.size(); i++)
+????{
+????????COutPoint outpoint = tx.vin[i].prevout;
+????????if (mapNextTx.count(outpoint))
+????????{
+????????????// Disable replacement feature for now
+????????????return false;
+
+????????????// Allow replacing with a newer version of the same transaction
+????????????if (i != 0)
+????????????????return false;
+????????????ptxOld = mapNextTx[outpoint].ptx;
+????????????if (ptxOld->IsFinal())
+????????????????return false;
+????????????if (!tx.IsNewerThan(*ptxOld))
+????????????????return false;
+????????????for (unsigned int i = 0; i < tx.vin.size(); i++)
+????????????{
+????????????????COutPoint outpoint = tx.vin[i].prevout;
+????????????????if (!mapNextTx.count(outpoint) || mapNextTx[outpoint].ptx != ptxOld)
+????????????????????return false;
+????????????}
+????????????break;
+????????}
+????}
+
+
+________________________________
+From: Peter Vessenes <peter at coinlab.com>
+To: Peter Todd <pete at petertodd.org> 
+Cc: bitcoin-development at lists.sourceforge.net 
+Sent: Thursday, April 26, 2012 6:11 PM
+Subject: Re: [Bitcoin-development] Trusted identities
+
+
+These are interesting thoughts, karma for bitcoins essentially.
+
+I would like CoinLab to publish a 'cost of subverting 1-n transactions with 90% probability' metric soon, and I think it would help everyone to understand what that number is.
+
+When we started out, you probably needed to wait 5 blocks for $10 or $20 of bitcoin value transfer.
+
+Now, I'd happily accept a $1k transaction with 1 confirmation.?
+
+More difficulty shortens the safe time we can transact large volumes in, which is good for the network.
+
+I'm not sure of the current implementation of replacement transactions, can anyone on the core team speak to this? Can I replace transactions, or is that part of the spec unimplemented or deprecated right now?
+
+Peter
+
+
+
+On Thu, Apr 26, 2012 at 8:49 AM, Peter Todd <pete at petertodd.org> wrote:
+
+It recently occured to me that we can use the public nature of the block
+>chain to create trusted identities, for a specific form of trust.
+>
+>Lets suppose Alice has some bitcoins held at bitcoin address A. She
+>wants to establish trust in the "identity" associated with the ECC
+>keypair associated with A, for instance for the purpose of having other
+>users trust her not to attempt to double spend. Since the trust she
+>seeks is financial in nature, she can do this by valuing the identity
+>associated with A, by delibrately throwing away resources. A simple way
+>to do this would of course be to transfer coins to a null address,
+>provably incurring a cost to her.
+>
+>A more socially responsible way would be for her to create a series of
+>transactions that happen to have large, and equal, transaction fees.
+>Bitcoin makes the assumption that no one entity controls more than 50%
+>of the network, so if she makes n of these transactions consecutively,
+>each spending m BTC to transaction fees, there is a high probability
+>that she has given up at least n/2 * m BTC of value. This of course is
+>all public knowledge, recorded in the block chain. It also increases the
+>transaction fees for miners, which will be very important for the
+>network in the future.
+>
+>Now Bob can easily examine the block chain, and upon verifying Alice's
+>trust purchase, can decide to accept a zero-confirmation transaction at
+>face value. If Alice breaks that promise, he simply publishes her signed
+>transaction proving that Alice is a fraudster, and future Bob's will
+>distrust Alice's trusted identity, thus destroying the value needed to
+>create it.
+>
+>In effect, we now have a distributed green address system.
+>
+>Now Alice could try to mount a double-spend attack on a whole bunch of
+>people at once, hoping to have them all accept the transaction. However
+>as it is the "just trust them" model works pretty well already.
+>
+>
+>A good usecase for this idea, beyond the obvious fast payments
+>application, is a distributed anonymizer. Alice can now publish her
+>request to anonymize coins, and other trusted identities can make their
+>bids. If Alice accepts a bid from Bob, she will want Bob to send her the
+>anonymized coins *prior* to her transaction going through, thus breaking
+>the temporal connection between the transactions. Now Alice can give Bob
+>the signed payment transaction, and Bob can submit his payment
+>transaction to the network first, knowing that Alice isn't going to try
+>to rip him off. Bob can also have a trusted identity which signed the
+>contract for the anonymizer transaction, and similarly if he rips Alice
+>off, she can publish it for the world to see.
+>
+>A more subtle effect, is this makes sybil attacks more difficult. To
+>pretend to be a thousand identities is going to now require 1,000 * n
+>coins, and attempting to pull this attack off inherently strengthens the
+>bitcoin network. Obviously we can apply this principle to other things
+>like tor nodes as well.
+>
+>--
+>http://petertodd.org 'peter'[:-1]@petertodd.org
+>
+>-----BEGIN PGP SIGNATURE-----
+>Version: GnuPG v1.4.10 (GNU/Linux)
+>
+>iQEcBAEBAgAGBQJPmW6EAAoJEH+rEUJn5PoEZfEH/ixptlMX9MzP71bCHMkj7YN1
+>y6GEkc1vNhyHu01NX77vzSqR4trbVnWJeJ5hH8EB5tgYRwmI17XoQW6Iz8yEXXgO
+>JqUKCTBBexGE+F5RfBkizJ9ap5wXwVrAOIMy/KurSdST+PWMXIPQFaGark01uKcG
+>M4VXg3U9fc/0Zz1QyKpRTI5O7ZSBqPzEh/Xf4TujR39nUtaI5mkT/bmA3+Te7oRT
+>34QO7ryF7U001Xz2VJCfm9AE8mPPZjMavLTs/XvPSqTdliVCZpjGGHzcJ2BPrni5
+>LEPBsBBxNsuwFGjnRobQwrkPtmYGFntseMLzCJ3iGXWYwedssBg2LLOx9QaXG04=
+>=PftQ
+>-----END PGP SIGNATURE-----
+>
+>------------------------------------------------------------------------------
+>Live Security Virtual Conference
+>Exclusive live event will cover all the ways today's security and
+>threat landscape has changed and how IT managers can respond. Discussions
+>will include endpoint security, mobile security and the latest in malware
+>threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/
+>_______________________________________________
+>Bitcoin-development mailing list
+>Bitcoin-development at lists.sourceforge.net
+>https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+
+
+-- 
+
+Peter J. Vessenes
+CEO, CoinLab
+M: 206.595.9839
+Skype: vessenes
+Google+ 
+
+------------------------------------------------------------------------------
+Live Security Virtual Conference
+Exclusive live event will cover all the ways today's security and 
+threat landscape has changed and how IT managers can respond. Discussions 
+will include endpoint security, mobile security and the latest in malware 
+threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/
+_______________________________________________
+Bitcoin-development mailing list
+Bitcoin-development at lists.sourceforge.net
+https://lists.sourceforge.net/lists/listinfo/bitcoin-development?
+
+
