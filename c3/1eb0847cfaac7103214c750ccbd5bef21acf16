@@ -1,0 +1,125 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Sun, 10 Jun 2012 01:10:55 +0200
+Subject: [Bitcoin-development] getmemorypool
+Message-ID: <20120609231054.GA16966@vps7135.xlshosting.net>
+
+Hello everyone,
+
+Luke's getmemorypool/BIP22 pull request has been open for a
+long time, and didn't receive too much discussion.
+
+I think that having a stable and flexible API for negotiating
+block generation is important to be standardized. The fact that
+it allows moving block generation to specialized programs is a
+step in the right direction. However, it seems to me that too
+few people (myself included) understand all the details of
+BIP22 (or don't care enough) to judge their necessity. I gave
+up trying to follow all design decisions some time ago, and as
+it seems I'm not alone, nobody liked merging support for it in
+the Satoshi client. This is a pity, and I hope the situation
+can be improved soon.
+
+I'm sorry for being this late with these comments, but I think
+it's essential that the standard is not more complex than
+necessary (making it as easy as possible to write either
+servers or clients for it), and perhaps even more important,
+that its purpose and intended use cases are clear.
+
+>From what I understand, the three subrequests are template,
+proposal and submit. The general idea is that 
+  1) a miner requests a block template
+  2) builds/modifies a block based on this, and optionally
+     uses propose to check whether the server is willing to
+     accept it before doing work
+  3) submits when valid proof-of-work is found
+I'd like to see this process described in the BIP at least,
+it too me way too long to extract this.
+
+Regarding the block template: is there a particular reason
+for sending the full transactions (serialized in hex) both in
+templates and submissions? The server will always need to have
+access to the transaction database anyway, and clients will
+(afaics) rarely care about the actual transactions. My
+suggestion would be to just transfer txids - if the client is
+interested in the actual transactions, we have the
+gettransaction RPC call already. This seems to be captured by
+the several "submit/*" and "share/*" variations, but making
+it optional seems way more complex than just limiting the API
+to that way of working.
+
+That's another thing that bothers me in the standard: too many
+optional features. In particular, I understand the usefulness of
+having some flexibility in what miner clients are allowed to
+modify, but I'm unconvinced we need 10 individually selectable
+variations. In particular:
+* coinbase outputs: can we just add a list of required coinbase
+  outputs (amount + scriptPubKey) to the template? If no
+  generation+fee amount remains, nothing can be added.
+* coinbase input: put the required part in the template;
+  miners can always add whatever they like. Is there any known
+  use case where a server would not allow a client to add
+  stuff to the coinbase?
+* noncerange limiting: if coinbase input variation is not
+  limited, there is certainly no reason to limit nonceranges.
+  This adds unnecessary complexity to clients, in my option.
+* time/*: put a minimum and maximum timestamp in the template
+  (i believe those are already there anyway). Anything in
+  between is valid.
+* transactions/add: what is the use case?
+* transactions/remove: i'd just standarize on having all
+  transactions be removable (perhaps except those marked
+  'required').
+* prevblock: one getmemorypool per new block shouldn't be
+  a problem imho, so do a longpoll instead of having the client
+  able to modify prevblock themselves.
+
+One more thing that I do not like is often several ways for
+specifying the same behaviour. For example, txrequires specifies
+that the first N transactions are mandatory, a 'required' field
+in the transaction list itself specifies that that transaction is
+mandatory, and the lack of transactions as variation means that
+they must not be touched at all. Pick one way that is flexible
+enough, and discard the others.
+
+In summary, I'd like to see the standard simplified. I have
+no problem merging code that makes getmemorypool compliant to
+a standard that is agreed upon, but like to understand it first.
+
+In my opinion - but I'm certainly open to discussion here - the
+standard could be simplified to:
+* getblocktemplate: create a new block template, and return it.
+  The result contains:
+  * bits, previousblockhash, version: as to be used in block
+  * curtime, maxtimeoff, maxtimeoff: client chooses a timestamp
+    between (curtime - local_time_at_receipt + local_time),
+    decreased by mintimeoff and increased maxtimeoff
+  * expires, sigoplimit, sizelimit: unchanged
+  * subsidy: amount generated (5000000000 for now)
+  * coinbaseaux: what generated coinbase's scriptSig must start
+    with
+  * coinbaseoutputs: list of objects, each specifying a required
+    coinbase output. Each has fields:
+    * amount: sent amount
+    * scriptPubKey: hex serialized of the output script
+  * transactions: list of object, each specifying a suggested
+    transaction (except for the coinbase) in the generated block.
+    Each has fields:
+    * txid: transaction id
+    * depends: list of dependencies (txids of earlier objects in
+      this same transactions list).
+    * fee: fee generated by this transaction, which increases the
+      max output of the coinbase.
+    * required: if present, transaction may not be dropped.
+* submitblocktemplate: submit an object containing a hex serialized
+  block header, hex serialized coinbase transaction, and a list of
+  txids. Returns true or string describing the problem. Proof of
+  work is checked last, so that error is only returned if there is
+  no other problem with the suggested block (this allows it to
+  replace both propose and submit).
+
+Are there important use cases I'm missing?
+
+-- 
+Pieter
+
+
