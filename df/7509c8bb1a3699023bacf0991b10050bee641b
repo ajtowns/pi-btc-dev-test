@@ -1,0 +1,52 @@
+From: jgarzik@exmulti.com (Jeff Garzik)
+Date: Wed, 13 Jun 2012 16:46:37 -0400
+Subject: [Bitcoin-development] New P2P commands for diagnostics, SPV clients
+Message-ID: <CA+8xBpecVQcTTbPxUm_3_GWC99dEd4=-VFWb+QT6jUy4rg8U4w@mail.gmail.com>
+
+An IRC discussion today covered additional needs of lightweight
+clients.  Here is a draft of proposed new P2P commands, and associated
+behavior changes.  This is not meant to be a formal, detailed
+specification but rather rough picture of the preferred direction.
+
+     -----
+
+filterinit(false positive rate, number of elements): initialize
+per-connection bloom filter to the given parameters.  if the
+parameters create a too-large table, the operation fails.  returns a
+'filterparams' message, with bloom filter construction details.
+
+filterload(data): input a serialized bloom filter table metadata and data.
+
+filterclear(): remove any filtering associated with current connection.
+
+filteradd(hash data): add a single hash to the bloom filter.  WARNING:
+although easier to use, has privacy implications. filterload shrouds
+the hash list; filteradd does not.  it is also less efficient to send
+a stream of filteradd's to the remote node.
+
+mempool():  list TX's in remote node's memory pool.
+
+     -----
+
+'filterload' and 'filteradd' enable special behavior changes for
+'mempool' and existing P2P commands, whereby only transactions
+matching the bloom filter will be announced to the connection, and
+only matching transactions will be sent inside serialized blocks.
+
+A lightweight ("SPV") client would issue 'filterload', sync up with
+blocks, then use 'mempool' to sync up to current TX's.  The
+'filterload' command also ensures that the client is only sent 'inv'
+messages etc. for the TX's it is probably interested in.
+
+The 'mempool' command is thought to be useful as a diagnostic, even if
+a bloom filter is not applied to its output.
+
+A bloom filter match would need to notice activity on existing coins
+(via CTxIn->prevout) and activity on a bitcoin address (via CTxOut).
+
+-- 
+Jeff Garzik
+exMULTI, Inc.
+jgarzik at exmulti.com
+
+
