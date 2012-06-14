@@ -1,0 +1,153 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Thu, 14 Jun 2012 09:22:08 -0400
+Subject: [Bitcoin-development] Raw Transaction RPC calls for bitcoind
+Message-ID: <CABsx9T0oZvVB1CPfa7Rk3CTnPOx8-CEm4K45pjACSyoqLz6YPA@mail.gmail.com>
+
+I submitted a pull request yesterday that implements low-level "raw"
+transaction, and am looking for feedback on the API and help with
+trying to test/break it.
+
+Design doc:  https://gist.github.com/2839617
+Pull request: https://github.com/bitcoin/bitcoin/pull/1456
+Test plan: https://secure.bettermeans.com/projects/4180/wiki/Raw_Transaction_RPC_Test_Plan
+
+Playing around with this API on the command line I'm pretty happy with
+the level of abstraction and the way it interacts with existing RPC
+commands; for example, "createrawtx" is just like "sendmany" in the
+way outputs are specified.
+
+The signrawtx method is the key new method; it takes a raw
+transaction, signs as many inputs as it can, and returns the same raw
+transaction with signatures. Typical usage would be:
+
+Funds are sitting in a multisignature transaction output, and it is
+time to gather signatures and spend them.
+
+Assumption: you know the multisignature transaction's [txid,
+outputNumber, amount].
+
+Create a raw transaction to spend, using createrawtx.
+Use signrawtx to add your signatures (after unlocking the wallet, if necessary).
+Give the transaction to the other person(s) to sign.
+You or they submit the transaction to the network using sendrawtx.
+I don't imagine anybody but very-early-adopters or ultra-geeks will do
+this by calling these RPC methods at a command-line. They are really
+intended for people writing services on top of bitcoind. The service
+should be careful to include an appropriate transaction fee, or the
+sendrawtx method is likely to fail.
+
+I've been asked a couple of times: why doesn't signrawtx handle the
+BIP 0010 (https://en.bitcoin.it/wiki/BIP_0010) transaction format?
+
+I considered parsing/writing BIP 10 format for raw transactions, but
+decided that reading/writing BIP 10 format should happen at a higher
+level and not in the low-level RPC calls. So 'raw transactions' are
+simply hex-encoded into JSON strings, and encoding/decoding them is
+just a couple of lines of already-written-and-debugged code.
+
+------
+
+Here is the help output and example use for all the new RPC calls:
+
+listunspent [minconf=1] [maxconf=999999]
+Returns array of unspent transaction outputs
+with between minconf and maxconf (inclusive) confirmations.
+Returns an array of 4-element arrays, each of which is:
+[transaction id, output, amount, confirmations]
+
+E.g:  listunspent 1 2
+Returns:
+[
+    [
+        "2881b33a8c0bbdb45b0a65b36aa6611a05201e316ea3ad718762d48ef9588fb3",
+        0,
+        40.00000000,
+        2
+    ],
+    [
+        "894a0fc535c7b49f434ceb633d8555ea24c8f9775144efb42da85b853280bcd7",
+        0,
+        50.00000000,
+        1
+    ]
+]
+
+getrawtx <txid>
+Returns hexadecimal-encoded, serialized transaction data
+for <txid>. Returns an error if <txid> is unknown.
+
+E.g.: getrawtx fce46ea2448820f7bb8091b5f5e3fd75b7b267e60b9a22af88a9eeabfb084233
+Returns:
+01000000016d40da062b6a0edcaf643b6e25b943baf103941589d287e39d6f425d84ae8b1c000000004847304402203fb648ff8381d8961e66ef61ab88afe52826a5179b8a7312742c8d93785ca56302204240ea12de1211fffab49686f13ca0e78011d1985765be6e6aa8e747852f897d01ffffffff0100f2052a0100000017a914f96e358e80e8b3660256b211a23ce3377d2f9cb18700000000
+
+
+createrawtx [["txid",n],...] {address:amount,...}
+Create a transaction spending given inputs
+(array of (hex transaction id, output number) pairs),
+sending to given address(es).
+Returns the same information as gettransaction, plus an
+extra "rawtx" key with the hex-encoded transaction.
+Note that the transaction's inputs are not signed, and
+it is not stored in the wallet or transmitted to the network.
+
+E.g.: createrawtx '[
+["fce46ea2448820f7bb8091b5f5e3fd75b7b267e60b9a22af88a9eeabfb084233",0]
+]' '{"mqYmZSQQuAWNQcdwBrDwmtTXg2TLNz748L":50}'
+Returns:
+{
+    "version" : 1,
+    "locktime" : 0,
+    "size" : 85,
+    "vin" : [
+        {
+            "prevout" : {
+                "hash" :
+"fce46ea2448820f7bb8091b5f5e3fd75b7b267e60b9a22af88a9eeabfb084233",
+                "n" : 0
+            },
+            "scriptSig" : "",
+            "sequence" : 4294967295
+        }
+    ],
+    "vout" : [
+        {
+            "value" : 50.00000000,
+            "scriptPubKey" : "OP_DUP OP_HASH160
+6e0920fc26383dc7e6101bc417cf87169d0cedbd OP_EQUALVERIFY OP_CHECKSIG"
+        }
+    ],
+    "rawtx" : "0100000001334208fbabeea988af229a0be667b2b775fde3f5b59180bbf7208844a26ee4fc0000000000ffffffff0100f2052a010000001976a9146e0920fc26383dc7e6101bc417cf87169d0cedbd88ac00000000"
+}
+
+signrawtx <hex string> [<prevtx1>,<prevtx2>...]
+Sign inputs for raw transaction (serialized, hex-encoded).
+Second argument is an array of raw previous transactions that
+this transaction depends on but are not yet in the blockchain.
+Returns json object with keys:
+  rawtx : raw transaction with signature(s) (hex-encoded string)
+  complete : 1 if transaction has a complete set of signature (0 if not)
+
+E.g.: signrawtx
+"0100000001334208fbabeea988af229a0be667b2b775fde3f5b59180bbf7208844a26ee4fc0000000000ffffffff0100f2052a010000001976a9146e0920fc26383dc7e6101bc417cf87169d0cedbd88ac00000000"
+'["01000000016d40da062b6a0edcaf643b6e25b943baf103941589d287e39d6f425d84ae8b1c000000004847304402203fb648ff8381d8961e66ef61ab88afe52826a5179b8a7312742c8d93785ca56302204240ea12de1211fffab49686f13ca0e78011d1985765be6e6aa8e747852f897d01ffffffff0100f2052a0100000017a914f96e358e80e8b3660256b211a23ce3377d2f9cb18700000000"]'
+Returns:
+{
+    "rawtx" : "0100000001334208fbabeea988af229a0be667b2b775fde3f5b59180bbf7208844a26ee4fc000000009100473044022007f3ba1b8bdc156f2340ef1222eb287c3f5481a8078a8dad43aa09fd289ba19002201cc72e97406d546dc918159978dc78aee8215a6418375956665ee44e6eacc1150147522102894ca6e7a6483d0f8fa6110c77c431035e8d462e3a932255d9dda65e8fada55c2103c556ef01e89a07ee9ba61581658fa007bf442232daed8b465c47c278550d3dab52aeffffffff0100f2052a010000001976a9146e0920fc26383dc7e6101bc417cf87169d0cedbd88ac00000000",
+    "complete" : false
+}
+
+sendrawtx <hex string>
+Submits raw transaction (serialized, hex-encoded) to local node and network.
+E.g.: sendrawtx
+0100000001334208fbabeea988af229a0be667b2b775fde3f5b59180bbf7208844a26ee4fc000000009100473044022007f3ba1b8bdc156f2340ef1222eb287c3f5481a8078a8dad43aa09fd289ba19002201cc72e97406d546dc918159978dc78aee8215a6418375956665ee44e6eacc1150147522102894ca6e7a6483d0f8fa6110c77c431035e8d462e3a932255d9dda65e8fada55c2103c556ef01e89a07ee9ba61581658fa007bf442232daed8b465c47c278550d3dab52aeffffffff0100f2052a010000001976a9146e0920fc26383dc7e6101bc417cf87169d0cedbd88ac00000000
+Returns:
+error: {"code":-22,"message":"TX rejected"}
+
+(Rejected because it doesn't have all required signatures, if it was
+accepted it would return the transaction id)
+
+-- 
+--
+Gavin Andresen
+
+
