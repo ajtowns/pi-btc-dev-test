@@ -1,0 +1,37 @@
+From: luke@dashjr.org (Luke-Jr)
+Date: Thu, 14 Jun 2012 15:00:45 +0000
+Subject: [Bitcoin-development] BIP16 backport bug (0.4.x and 0.5.x stuck on
+	block 177617)
+Message-ID: <201206141500.49573.luke@dashjr.org>
+
+Block 177618 was rejected by BIP16-enabled backports (0.4.x and 0.5.x) due to 
+containing a P2SH redemption with over 200 bytes in. Since the BIP16 code uses 
+IsPushOnly to check the scriptSig for compliance, and IsPushOnly in these 
+versions also enforced the 200-byte "is standard" rule, they were effectively 
+treating it as a network rule. This was not a problem in 0.6 because the 
+original OP_EVAL commit (e679ec9) moved the check outside of IsPushOnly.
+
+This problem could have been avoided if either IsPushOnly was renamed when its 
+semantics/behaviour changed significantly, or I inspected the OP_EVAL commit 
+in detail instead of skipping it over as a new feature and not bugfixes. 
+Additionally, it might have helped, if the commit message mentioned the 
+change, but I'd probably have still missed it as it wasn't relevant until 
+months later.
+
+I will be releasing 0.4.7 and 0.5.6 hopefully in the next 24 hours to address 
+this bug, along with instructions to get unstuck:
+    1. Ensure you have the minimum required 1280 MB memory available
+    2. Create a new file in your bitcoin directory (the same one with
+       wallet.dat) called DB_CONFIG with the following two lines:
+           set_lk_max_locks   1000000
+           set_lk_max_objects 1000000
+    3. Start bitcoind or Bitcoin-Qt
+    4. WAIT AT LEAST SIX HOURS
+       Your client will NOT show any signs of making progress during this time
+    5. When complete, your client should be up-to-date on block count
+    6. At this time, you may wish to delete the DB_CONFIG file and restart
+       your client, to use less memory
+
+Luke
+
+
