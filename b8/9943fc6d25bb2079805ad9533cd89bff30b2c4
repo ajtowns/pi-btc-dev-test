@@ -1,0 +1,99 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Fri, 15 Jun 2012 16:56:25 -0400
+Subject: [Bitcoin-development] Near-term scalability
+In-Reply-To: <CANEZrP3w+AiTXmv9Wb3Zi5yyFmGPk82-ysVo4_DVvtg8HHBCdQ@mail.gmail.com>
+References: <CANEZrP3w+AiTXmv9Wb3Zi5yyFmGPk82-ysVo4_DVvtg8HHBCdQ@mail.gmail.com>
+Message-ID: <CABsx9T0Z3xKGOO=4Tr94cKTBpfUwHQ_qHJPidB_MPYAGCJV=VQ@mail.gmail.com>
+
+> (1) Change the mining code to group transactions together with their
+> mempool dependencies and then calculate all fees as a group.
+
+I think there is general consensus this is a good idea.
+
+> (2) SatoshiDice should use the same fee algorithms as Bitcoin-Qt to
+> avoid paying excessive fees and queue-jumping. Guess that's on my
+> plate.
+
+I don't think the problem is with SatoshiDice, but is with the current
+fixed/inflexible fee rules:
+
+----------------------------
+
+I've been thinking about fees a lot the last couple of days, and I'm
+close to making a formal proposal. Here are my thoughts so far:
+
+It seems to me there are two typical use cases:
+
+Case 1:  I want my transaction to be confirmed quickly, and am willing
+to pay a fee to make that happen.
+
+Case 2: I want my transaction to be confirmed eventually. I'd rather
+not pay, unless I have to.
+
+I don't think the current code handles those two cases as well as it
+could; here's a proposal to fix that:
+
+o Let miners decide on how many free transactions they'll support, by
+letting them specify how much of each block to set aside for 'free'
+transactions (bytes) and what the threshold for 'free' is
+(bitcoins/kilobyte). I think a new RPC call to get/set the parameters
+dynamically is the right way to go.
+
+o Change the block creation code to calculate a
+bitcoin-fee-per-kilobyte for each transaction, where the fee and size
+are both calculated based on the transaction and it's dependent
+descendants (so we get the receiver-can-opt-to-pay-the-fee behavior we
+want). Order transactions so highest-paying get into the non-free
+space first.
+
+o Fill up the "free" space (if any) with the highest-priority
+transactions, where priority is a function of transaction size, age of
+inputs, number of bitcoins... and ratio of inputs to outputs (to
+encourage combining inputs so more pruning is possible).
+
+The fee-paying space in a block lets Use Case #1 users compete to make
+their fees high enough to get into the block.
+
+The free space should let non-spamming Use Case #2 users (who don't
+send a lot of transactions, and so have well-aged, high-priority
+inputs) send transactions for free, at least as long as there are
+miners willing to accept free transactions.
+
+The question is: how do clients suggest fees to users if miners might
+have very different fee policies?
+
+I think full, transaction-verifying clients can watch how long
+transactions stay in the memory pool to figure it out. I'm gathering
+statistics right now to test a couple of simple heuristic algorithms
+for reasonable fee/priority policies.
+
+But that won't work for newly started clients that haven't seen a lot
+of transactions enter/exit the memory pool, or SPV clients that can't
+lookup transaction inputs (so can't calculate what fees are being paid
+-- and once we have bloom filters may not be paying attention anything
+but their own transactions, anyway).
+
+I'm still thinking about that.
+
+Maybe a new p2p network command: you give me a list of block hashes, I
+tell you average fees paid per kilobyte for fee-paying transactions in
+those blocks, and minimum and average priority of free transactions in
+those blocks.
+
+Maybe the big mining pools all publish their fee policies and that
+information somehow gets to clients (encoded in the coinbase? ... but
+they have a strong incentive to lie to try put upward pressure on
+fees... ).
+
+Maybe each client developer runs a "fee policy server" and clients
+periodically ask it for reasonable fee rules (HTTP fetch info from a
+web page that is updated as often or infrequently as is convenient,
+maybe). I think I like this solution the best, it should let clients
+compete to have the smartest/bestest algorithms for saving their
+user's money on transaction fees.
+
+-- 
+--
+Gavin Andresen
+
+
