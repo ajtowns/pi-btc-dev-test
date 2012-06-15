@@ -1,0 +1,309 @@
+From: mike@coinlab.com (Mike Koss)
+Date: Fri, 15 Jun 2012 10:37:04 -0700
+Subject: [Bitcoin-development] Near-term scalability
+In-Reply-To: <4FDB6946.2020400@justmoon.de>
+References: <CANEZrP3w+AiTXmv9Wb3Zi5yyFmGPk82-ysVo4_DVvtg8HHBCdQ@mail.gmail.com>
+	<4FDB6946.2020400@justmoon.de>
+Message-ID: <CAErK2CgODFY7HMC-WZRAmts-6eOE074Tz4nX5Nr6EvB8o-QWJA@mail.gmail.com>
+
+Grouping mempool transactions based on fees of the group seems
+an unnecessary complexity; it makes it harder to predict if an isolated
+transaction has enough "juice" to be included in the next Block.
+
+Given your point about economic actors adapting to conditions, would it not
+be simpler to use a individual "fee per byte" priority algorithm and let
+transaction generators distribute their fees accordingly (and more
+predictably)?
+
+This simpler algorithm will prune arbitrary transactions sub-optimally, but
+has the benefit of being more understandable and predictable from the point
+of view of transaction generators.
+
+On Fri, Jun 15, 2012 at 9:56 AM, Stefan Thomas <moon at justmoon.de> wrote:
+
+> Thanks Mike for the writeup - I'm very sad to have missed the discussion
+> on IRC since fee economics are probably my favorite topic, but I'll try
+> to contribute to the email discussion instead.
+>
+> > (4) Making the block size limit float is better than picking a new
+> > arbitrary threshold.
+>
+> Fees are a product of both real and artificial limits to transaction
+> validation.
+>
+> The artificial limits like the block size limit are essentially putting
+> a floor on prices by limiting supply beyond what it would otherwise be.
+> E.g. the network could confirm more transactions theoretically, but the
+> block size limit prevents it.
+>
+> The real limits are the bandwidth, computing and memory resources of
+> participating nodes. For the sake of argument suppose a 1 TB block was
+> released into the network right now and we'll also assume there was no
+> block size limit of any kind. Many nodes would likely not be able to
+> successfully download this block in under 10-30 minutes, so there is a
+> very good chance that other miners will have generated two blocks before
+> this block makes its way to them.
+>
+> What does this mean? The miner generating a 1 TB block knows this would
+> happen. So in terms of economic self interest he will generate the
+> largest possible block that he is still confident that other miners will
+> accept and process. A miner who receives a block will also consider
+> whether to build on it based on whether they think other miners will be
+> able to download it. In other words, if I receive a large block I may
+> decide not to mine on it, because I believe that the majority of mining
+> power will not mine on it - because it is either too large for them to
+> download or because their rules against large blocks reject it.
+>
+> It's important to understand that in practice economic actors tend to
+> plan ahead. In other words, if there is no block size limit that doesn't
+> mean that there will be constant forks and total chaos. Rather, no miner
+> will ever want to have a block rejected due to size, there is plenty of
+> incentive to be conservative with your limits. Even if there are forks,
+> this simply means that miners have decided that they can make more money
+> by including more transactions at the cost of the occasional dud.
+>
+> Therefore, from an economic perspective, we do not need a global block
+> size limit of any kind. As "guardians of the network" the only thing we
+> need to do is to let miners figure out what they wanna do.
+>
+> HOWEVER, the existing economic incentives won't manifest unless somebody
+> translates them into code. We have to give our users (miners & endusers)
+> the tools to create a genuine fee-based verification market.
+>
+> On the miner side: I would make the block size limit configurable with a
+> relatively high default. If the default is too low few people will
+> bother changing it, which means that it is not worth changing (because a
+> majority uses the default anyway), which means even fewer people will
+> change it and so on.
+>
+> The block size limit should also be a soft rather than a hard limit -
+> here are some ideas for this:
+>
+> - The default limit for accepting blocks from others should always be
+> significantly greater than the default limit for blocks that the client
+> itself will generate.
+>
+> - There should be different size limits for side chains that are longer
+> than the currently active chain. In other words, I might reject a block
+> for being slightly too large, but if everyone else accepts it I should
+> eventually accept it too, and my client should also consider
+> automatically raising my size limit if this happens a lot.
+>
+> The rationale for the soft limit is to allow for gradual upward
+> adjustment. It needs to be risky for individual miners to raise the size
+> of their blocks to new heights, but ideally there won't be one solid
+> wall for them to run into.
+>
+> On the user side: I would display the fee on the Send Coins dialog and
+> allow users to choose a different fee per transaction. We also talked
+> about adding some UI feedback where the client tries to estimate how
+> long a transaction will take to confirm given a certain fee, based on
+> recent information about what it observed from the network. If the fee
+> can be changed on the Send Coins tab, then this could be a red, yellow,
+> green visual indication whether the fee is sufficient, adequate or
+> dangerously low.
+>
+> A criticism one might raise is: "The block size limit is not to protect
+> miners, but to protect end users who may have less resources than miners
+> and can't download gigantic block chains." - That's a viewpoint that is
+> certainly valid. I believe that we will be able to do a lot just with
+> efficiency improvements, pruning, compression and whatnot. But when it
+> comes down to it, I'd prefer a large network with cheap
+> microtransactions even if that means that consumer hardware can't
+> operate as a standalone validating node anymore. Headers-only mode is
+> already a much-requested feature anyway and there are many ways of
+> improving the security of various header-only or lightweight protocols.
+>
+> (I just saw Greg's message advocating the opposite viewpoint, I'll
+> respond to that as soon as I can.)
+>
+>
+> > (1) Change the mining code to group transactions together with their
+> > mempool dependencies and then calculate all fees as a group.
+>
+> +1 Very good change. This would allow miners to maximize their revenue
+> and in doing so better represent the existing priorities that users
+> express through fees.
+>
+>
+> > There was discussion of some one-off changes to address the current
+> > situation, namely de-ranking transactions that re-use addresses.
+>
+> Discouraging address reuse will not change the amount of transactions, I
+> think we all agree on that. As for whether it improves the
+> prioritization, I'm not sure. Use cases that we seek to discourage may
+> simply switch to random addresses and I don't agree in and of itself
+> this is a benefit (see item 4 below). Here are a few reasons one might
+> be against this proposal:
+>
+> 1) Certain use cases like green addresses will be forced to become more
+> complicated than they would otherwise need to be.
+>
+> 2) It will be harder to read information straight out of the block
+> chain, for example right now we can pretty easily see how much volume is
+> caused by Satoshi Dice, perhaps allowing us to make better decisions.
+>
+> 3) The address index that is used by block explorers and lightweight
+> client servers will grow unnecessarily (an address -> tx index will be
+> larger if the number of unique addresses increases given the same number
+> of txs), so for people like myself who work on that type of software
+> you're actually making our scalability equation slightly worse.
+>
+> 4) You're forcing people into privacy best practices which you think are
+> good, but others may not subscribe to. For example I have absolutely
+> zero interest in privacy, anyone who cares that I buy Bitcoins with my
+> salary and spend them on paragliding is welcome to know about it.
+> Frankly, if I cared about privacy I wouldn't be using Bitcoin. If other
+> people want to use mixing services and randomize their addresses and
+> communicate through Tor that's fine, but the client shouldn't force me
+> to do those things if I don't want to by "deprioritizing" my transactions.
+>
+> 5) We may not like firstbits, but the fact remains that for now they are
+> extremely popular, because they improve the user experience where we
+> failed to do so. If you deprioritize transactions to reused addresses
+> you'll for example deprioritize all/most of Girls Gone Bitcoin, which
+> (again, like it or not) is one of the few practical, sustainable niches
+> that Bitcoin has managed to carve out for itself so far.
+>
+>
+> > Having senders/buyers pay no fees is psychologically desirable even
+> > though we all understand that eventually, somebody, somewhere will be
+> > paying fees to use Bitcoin
+>
+> Free is just an extreme form of cheap, so if we can make transactions
+> very cheap (through efficiency and very large blocks) then it will be
+> easier for charitable miners to include free transactions. In practice,
+> my prediction is that free transactions on the open network will simply
+> not be possible in the long run. Dirty hacks aside there is simply no
+> way of distinguishing a spam transaction from a charity-worthy
+> transaction. So the way I envision free transactions in the future is
+> that there may be miners in partnership with wallet providers like
+> BlockChain.info that let you submit feeless transactions straight to
+> them based on maybe a captcha or some ads. (For the purist, the captcha
+> challenge and response could be communicated across the bitcoin network,
+> but I think we agree that such things should ideally take place
+> out-of-band.)
+>
+> That way, the available charity of miners who wish to include feeless
+> transactions would go to human users as opposed to the potentially
+> infinite demand of auto-generated feeless transactions.
+>
+>
+>
+> On 6/15/2012 1:29 PM, Mike Hearn wrote:
+> > I had to hit the sack last night as it was 2am CET, but I'd like to
+> > sum up the discussion we had on IRC about scalability and SatoshiDice
+> > in particular.
+> >
+> > I think we all agreed on the following:
+> >
+> > - Having senders/buyers pay no fees is psychologically desirable even
+> > though we all understand that eventually, somebody, somewhere will be
+> > paying fees to use Bitcoin
+> >
+> > - In the ideal world Bitcoin would scale perfectly and there would be
+> > no need for there to be some "winners" and some "losers" when it comes
+> > to confirmation time.
+> >
+> > There was discussion of some one-off changes to address the current
+> > situation, namely de-ranking transactions that re-use addresses. Gavin
+> > and myself were not keen on this idea, primarily because it just
+> > avoids the real problem and Bitcoin already has a good way to
+> > prioritize transactions via the fees mechanism itself. The real issue
+> > is that SatoshiDice does indeed pay fees and generates a lot of
+> > transactions, pushing more traditional traffic out due to artificial
+> > throttles.
+> >
+> > The following set of proposals were discussed:
+> >
+> > (1) Change the mining code to group transactions together with their
+> > mempool dependencies and then calculate all fees as a group. A tx with
+> > a fee of 1 BTC that depends on 5 txns with zero fees would result in
+> > all 6 transactions being considered to have a fee of 1BTC and
+> > therefore become prioritized for inclusion. This allows a transition
+> > to "receiver pays" model for fees. There are many advantages. One is
+> > that it actually makes sense ... it's always the receiver who wants
+> > confirmations because it's the receiver that fears double spends.
+> > Senders never do. What's more, whilst Bitcoin is designed to operate
+> > on a zero-trust model in the real world trust often exists and it can
+> > be used to optimize by passing groups of transactions around with
+> > their dependencies, until that group passes a trust boundary and gets
+> > broadcast with a send-to-self tx to add fees. Another advantage is it
+> > simplifies usage for end users who primarily buy rather than sell,
+> > because it avoids the need to guess at fees, one of the most
+> > problematic parts of Bitcoins design now.
+> >
+> > The disadvantages are that it can result in extra transactions that
+> > exist only for adding fees, and it requires a more modern payment
+> > protocol than the direct-IP protocol Satoshi designed.
+> >
+> > It would help address the current situation by avoiding angry users
+> > who want to buy things, but don't know what fee to set and so their
+> > transactions get stuck.
+> >
+> > (2) SatoshiDice should use the same fee algorithms as Bitcoin-Qt to
+> > avoid paying excessive fees and queue-jumping. Guess that's on my
+> > plate.
+> >
+> > (3) Scalability improvements seem like a no brainer to everyone, it's
+> > just a case of how complicated they are.
+> >
+> > (4) Making the block size limit float is better than picking a new
+> > arbitrary threshold.
+> >
+> > On the forums Matt stated that block chain pruning was a no-go because
+> > "it makes bitcoin more centralized". I think we've thrashed this one
+> > out sufficiently well by now that there should be a united opinion on
+> > it. There are technical ways to implement it such that there is no
+> > change of trust requirements. All the other issues (finding archival
+> > nodes, etc) can be again addressed with sufficient programming.
+> >
+> > For the case of huge blocks slowing down end user syncing and wasting
+> > their resources, SPV clients like MultiBit and Android Wallet already
+> > exist and will get better with time. If Jeff implements the bloom
+> > filtering p2p commands I'll make bitcoinj use them and that'll knock
+> > out excessive bandwidth usage and parse overheads from end users who
+> > are on these clients. At some point Bitcoin-Qt can have a dual mode,
+> > but who knows when that'll get implemented.
+> >
+> > Does that all sound reasonable?
+> >
+> >
+> ------------------------------------------------------------------------------
+> > Live Security Virtual Conference
+> > Exclusive live event will cover all the ways today's security and
+> > threat landscape has changed and how IT managers can respond. Discussions
+> > will include endpoint security, mobile security and the latest in malware
+> > threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/
+> > _______________________________________________
+> > Bitcoin-development mailing list
+> > Bitcoin-development at lists.sourceforge.net
+> > https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> >
+>
+>
+>
+> ------------------------------------------------------------------------------
+> Live Security Virtual Conference
+> Exclusive live event will cover all the ways today's security and
+> threat landscape has changed and how IT managers can respond. Discussions
+> will include endpoint security, mobile security and the latest in malware
+> threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+
+
+
+-- 
+Mike Koss
+CTO, CoinLab
+(425) 246-7701 (m)
+
+A Bitcoin Primer <http://coinlab.com/a-bitcoin-primer.pdf> - What you need
+to know about Bitcoins.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120615/1bc049d6/attachment.html>
