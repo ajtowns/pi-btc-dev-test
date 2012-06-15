@@ -1,0 +1,165 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Fri, 15 Jun 2012 15:08:55 +0200
+Subject: [Bitcoin-development] Near-term scalability
+In-Reply-To: <CANEZrP3w+AiTXmv9Wb3Zi5yyFmGPk82-ysVo4_DVvtg8HHBCdQ@mail.gmail.com>
+References: <CANEZrP3w+AiTXmv9Wb3Zi5yyFmGPk82-ysVo4_DVvtg8HHBCdQ@mail.gmail.com>
+Message-ID: <1339765735.31489.40.camel@bmthinkpad>
+
+On Fri, 2012-06-15 at 13:29 +0200, Mike Hearn wrote:
+> I had to hit the sack last night as it was 2am CET, but I'd like to
+> sum up the discussion we had on IRC about scalability and SatoshiDice
+> in particular.
+> 
+> I think we all agreed on the following:
+> 
+> - Having senders/buyers pay no fees is psychologically desirable even
+> though we all understand that eventually, somebody, somewhere will be
+> paying fees to use Bitcoin
+> 
+> - In the ideal world Bitcoin would scale perfectly and there would be
+> no need for there to be some "winners" and some "losers" when it comes
+> to confirmation time.
+> 
+> There was discussion of some one-off changes to address the current
+> situation, namely de-ranking transactions that re-use addresses. Gavin
+> and myself were not keen on this idea, primarily because it just
+> avoids the real problem and Bitcoin already has a good way to
+> prioritize transactions via the fees mechanism itself. The real issue
+> is that SatoshiDice does indeed pay fees and generates a lot of
+> transactions, pushing more traditional traffic out due to artificial
+> throttles.
+The idea can be more generalized in that there are many cases where the
+generator of a transaction doesn't care about confirmation times, and
+would really be willing to make their transaction lower priority than
+other 0-fee transactions.  This enables the first point with lower
+confirmation times for a while longer.
+As it turns out, we already have an indication that someone is willing
+to wait longer for confirmations - rapid reuse of an address.  
+1) Green Addresses: The whole point of a green address is that you are
+trusted based on your address, not necessarily based on confirmations of
+your transactions.  In this case, you are generally willing to wait a
+bit longer for confirmations than the average user depositing coins into
+their Mt. Gox account.  
+2) Donation Addresses: If you are using a publicized donation address,
+you probably aren't depending on getting your coins *now* to turn around
+and ship a product and, again, you are a bit more willing to tolerate
+longer confirmation times.
+3) Lazy (or overworked) coders: If, for whatever reason, someone
+designing a bitcoin site decides that it is simply easier to make users
+pay to a single address for everything, such actions should generally be
+discouraged.  Such a setup is worse for end-user privacy.  Also, such
+laziness (or likely just overworked and not having time to fix the
+issue) is likely also laziness across the board including ignoring
+multisend for payouts.  If you discourage such address use forcing site
+designers to implement more sane policies, hopefully they will do enough
+research to also do multisend.  Note that though this is where one
+addresses sites like SatoshiDice, its also the one where we are likely
+to have the least impact...
+
+One of the ways to implement such deprioritization of rapidly-reused
+addresses is to limit the count of address re-uses by default in memory
+pool.  By limiting relaying of such transactions, you a) give nodes
+across the network some small say in the transactions which they have to
+deal with relaying outside of blocks, instead of relying on miners to
+make decisions which are good for the total network load, but which are
+worse for them.  b) You allow sites which wish to re-use addresses to do
+so initially to keep the time-to-launch the same as it is today, but
+force them to re-think their design decisions as they grow to
+(hopefully) decrease their impact on the average Bitcoin full-node
+operator.  Sites which begin to see their transactions rate-limited have
+several options:
+1) Make a deal with a miner to feed them their list of now-non-relayed
+transactions outside of the regular p2p network and have them manually
+added to blocks.  Id argue that such setups are going to become more
+common in the future and such out-of-band transaction relaying should be
+encouraged.  This also shifts the delay for other transactions from a
+constant delay getting into blocks until there is room for additional
+0-fee transactions to a spike on each block from the given miner.  I
+highly prefer this, as you would see usually only one or two block delay
+getting your transaction confirmed at the worst case, instead of a very
+fuzzy unknown delay that could stretch on for some time.
+2) Use rotating addresses.  This is likely the simplest to implement,
+and I would absolutely think this is what most sites would end up doing.
+Though it doesn't result in a decreased load on the transaction-relaying
+nodes, it does at least allow for a minor improvement in user privacy.  
+
+In the end, it boils down to an optional transaction deprioritization.
+> 
+> The following set of proposals were discussed:
+> 
+> (1) Change the mining code to group transactions together with their
+> mempool dependencies and then calculate all fees as a group. A tx with
+> a fee of 1 BTC that depends on 5 txns with zero fees would result in
+> all 6 transactions being considered to have a fee of 1BTC and
+> therefore become prioritized for inclusion. This allows a transition
+> to "receiver pays" model for fees. There are many advantages. One is
+> that it actually makes sense ... it's always the receiver who wants
+> confirmations because it's the receiver that fears double spends.
+> Senders never do. What's more, whilst Bitcoin is designed to operate
+> on a zero-trust model in the real world trust often exists and it can
+> be used to optimize by passing groups of transactions around with
+> their dependencies, until that group passes a trust boundary and gets
+> broadcast with a send-to-self tx to add fees. Another advantage is it
+> simplifies usage for end users who primarily buy rather than sell,
+> because it avoids the need to guess at fees, one of the most
+> problematic parts of Bitcoins design now.
+> 
+> The disadvantages are that it can result in extra transactions that
+> exist only for adding fees, and it requires a more modern payment
+> protocol than the direct-IP protocol Satoshi designed.
+> 
+> It would help address the current situation by avoiding angry users
+> who want to buy things, but don't know what fee to set and so their
+> transactions get stuck.
+> 
+> (2) SatoshiDice should use the same fee algorithms as Bitcoin-Qt to
+> avoid paying excessive fees and queue-jumping. Guess that's on my
+> plate.
+> 
+> (3) Scalability improvements seem like a no brainer to everyone, it's
+> just a case of how complicated they are.
+I think all of the above are largely no brianers to everyone.
+> 
+> (4) Making the block size limit float is better than picking a new
+> arbitrary threshold.
+Definitely something that is very appealing as we need to scale up.
+> 
+> On the forums Matt stated that block chain pruning was a no-go because
+> "it makes bitcoin more centralized". I think we've thrashed this one
+> out sufficiently well by now that there should be a united opinion on
+> it. There are technical ways to implement it such that there is no
+> change of trust requirements. All the other issues (finding archival
+> nodes, etc) can be again addressed with sufficient programming.
+My point was that the easiest way to do it would be to ship a pruned
+snapshot with Bitcoin, and such a system, while verifiable, would
+increase Bitocin's centralization.  Though it is quite possible to prune
+the chain while downloading at checkpoints or when blocks are N deep, it
+complicates the initial download if no one has the chain to begin with. 
+
+Another point I made was that by doing chain pruning by default, we may
+see a decrease in non-fClient nodes (for compatibility, I would assume
+pruned nodes have to set fClient) which is what old clients look for to
+connect to, possibly complicating using Bitcoin for clients that either
+wish to run a full IBD or older clients which need a non-fClient node
+before they are happy (which could be an issue when you look at the very
+poor "upgrade-apathy" in the Bitcoin community with people running
+long-outdated versions because they don't feel like upgrading).
+
+All that said, I do believe pruning will eventually have to come to
+encourage p2pool and other getmemorypool-based pool mining, but
+(obviously) its something that needs careful consideration in its
+overall effects across the network before its applied.
+> 
+> For the case of huge blocks slowing down end user syncing and wasting
+> their resources, SPV clients like MultiBit and Android Wallet already
+> exist and will get better with time. If Jeff implements the bloom
+> filtering p2p commands I'll make bitcoinj use them and that'll knock
+> out excessive bandwidth usage and parse overheads from end users who
+> are on these clients. At some point Bitcoin-Qt can have a dual mode,
+> but who knows when that'll get implemented.
+> 
+> Does that all sound reasonable?
+
+
+
+
