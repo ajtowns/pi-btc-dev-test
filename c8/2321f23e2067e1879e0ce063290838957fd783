@@ -1,0 +1,42 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Fri, 15 Jun 2012 15:43:06 +0200
+Subject: [Bitcoin-development] New P2P commands for diagnostics,
+	SPV clients
+In-Reply-To: <CA+8xBpcwhQPQRe=stYb9xksLsTbiABKLS7PZnRtvPga6AmSg4Q@mail.gmail.com>
+References: <CA+8xBpecVQcTTbPxUm_3_GWC99dEd4=-VFWb+QT6jUy4rg8U4w@mail.gmail.com>
+	<CANEZrP0kNZDByHpK2=UjP+ag0X1KmqHxnJdm=e_pWMitP4QvvA@mail.gmail.com>
+	<CA+8xBpcwhQPQRe=stYb9xksLsTbiABKLS7PZnRtvPga6AmSg4Q@mail.gmail.com>
+Message-ID: <CANEZrP39RHfCDX-x4ARo+oPphLv-70RxuMh3+AJzsNPxzOd=bA@mail.gmail.com>
+
+> Yes, the format is something that must be hashed out (no pun
+> intended). ?Need input from potential users about what information
+> they might need.
+
+Matts point that a branch-per-transaction may duplicate data is well
+made, that said, I suspect a format that tries to fix this would be
+much more complicated.
+
+How about see this project as a three part change?
+
+First step - add the mempool command and make nodes sync up their
+mempools on startup.
+
+Second step - if protocol version >= X, the "block" message consists
+of a header + num transactions + vector<hash>  instead of the full
+transactions themselves.
+
+On receiving such a block, we go look to see which transactions we're
+missing from the mempool and request them with getdata. Each time we
+receive a tx message we check to see if it was one we were missing
+from a block. Once all transactions in the block message are in
+memory, we go ahead and assemble the block, then verify as per normal.
+This should speed up block propagation. Miners have an incentive to
+upgrade because it should reduce wasted work.
+
+Third step - new message, getmerkletx takes a vector<hash> and returns
+a merkletx message: "merkle branch missing the root + transaction data
+itself" for each requested transaction. The filtering commands are
+added, so the block message now only lists transaction hashes that
+match the filter which can then be requested with getmerkletx.
+
+
