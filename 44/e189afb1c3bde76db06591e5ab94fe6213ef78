@@ -1,0 +1,49 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Sun, 17 Jun 2012 20:24:27 -0400
+Subject: [Bitcoin-development] Block preview for faster relaying
+Message-ID: <CAAS2fgR3SGeHOJ5CcnHhM-ETUA7=SwozfZH4yhYpnMFJ5Vm_XA@mail.gmail.com>
+
+Right now we're seeing cases where block propagation is sometimes
+taking minutes.
+This doesn't cause much of a problem for general Bitcoin users but for
+miners its problematic because it potentially increases the risk for
+orphaning.
+
+There are probably many contributing factors which can be improved
+here but one of the most obvious is that nodes fully validate blocks
+before relaying them. The validation is IO intensive and can currently
+take a minute alone on sufficiently slow nodes with sufficiently large
+blocks and larger blocks require more data to be transmitted.  Because
+this slowness is proportional to the size of the block this risks
+creating mismatched incentives where miners are better off not mining
+(many) transactions in order to maximize their income.
+
+The validation speed can and should be improved but there is at least
+one short term improvement that can be made at the protocol level:
+Make it possible to relay blocks to other nodes before fully
+validating them.
+
+This can be reasonable secure because basic validation (such as the
+difficulty, previous block identity, and timestamps) can be done first
+so an attacker would need to burn enormous amounts of computing power
+just to make very modest trouble with it... and it's a change which
+would be beneficial even after any other performance improvements were
+made.
+
+Luke has been working on a patch for this:
+
+https://github.com/luke-jr/bitcoin/commit/0ce6f590dc2b9cbb46ceecd7320220f55d814bca
+
+One aspect of it that I wanted to see more comments on was the use of
+a new message for the preview-blocks instead of just announcing them
+like normal. The reason for this is two-fold: To prevent existing full
+nodes from blacklisting nodes sending a bad preview block due to the
+existing misbehavior checks, otherwise an attacker could burn one
+block to partition the network,  and also so that SPV nodes which
+aren't able to fully validate the block themselves can opt-out or at
+least know that the data is not yet validated by the peer.
+
+I don't see any better way to address this but I thought other people
+might have comments.
+
+
