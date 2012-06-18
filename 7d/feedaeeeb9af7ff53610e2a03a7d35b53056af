@@ -1,0 +1,115 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 18 Jun 2012 06:14:41 -0400
+Subject: [Bitcoin-development] Ultimate Blockchain Compression w/
+ trust-free lite nodes
+In-Reply-To: <CAE98tO2PcxKdz670ptHB=3Pc9JvV_+Wjdt1117M4SA2hANKH+w@mail.gmail.com>
+References: <4FDE2460.5080301@gmail.com> <20120617190511.GA26047@savin>
+	<CAE98tO2PcxKdz670ptHB=3Pc9JvV_+Wjdt1117M4SA2hANKH+w@mail.gmail.com>
+Message-ID: <20120618101441.GB11629@savin>
+
+On Mon, Jun 18, 2012 at 12:46:47AM +0200, Alberto Torres wrote:
+> Hi,
+> 
+> I did describe a very similar thing back in January (also illustrated,
+> and, if I'm not mistaken, more simple and efficient to recalculate),
+> and I wanted to do a prototype, but I have been very busy with other
+> projects since then.
+> 
+> https://en.bitcoin.it/wiki/User:DiThi/MTUT
+> 
+> I just saw Gavin left a comment in the talk page, I'm sorry I haven't
+> seen it earlier.
+> 
+> I think armory is the perfect client to implement such an idea. I sort
+> of waited it to be able to run in my laptop with 2 GB of RAM before
+> being sucked into other projects. I even lost track of its
+> development.
+
+I strongly disagree on that point. What you're proposing needs miner
+support to work, and miners generally run either the satoshi client as a
+daemon, or some other custom code. Implementing the idea in armory
+doesn't give those miners a nice upgrade path.
+
+That said, *using* the hash tree is something that can be implemented in
+any client, but a lot of the code will be shared between calculating it
+and using it anyway, so again implementing in the satoshi client makes
+sense.
+
+> I hope this gets developed. I will be able to help after summer if
+> this is still not done.
+> 
+> DiThi
+> 
+> P.S: Sorry Peter, I've sent you the message privately by mistake.
+> Also, I don't quite understand your concern of "unbalancing" the tree.
+
+Lets suppose we're trying to make a tree consisting of real numbers:
+
+    /\
+   /  \
+   *   \
+  / \   \
+ /   \   \
+ *   *   *
+/ \ / \ / \
+1 2 3 4 5 6
+
+If the numbers are evenly distributed, as will happen with hashes of
+arbitrary data, any number will be at most log(n) steps away from the
+head of the tree.
+
+Suppose though some malicious actor adds the following numbers to that
+tree: 3.001 3.002 3.003
+
+    /\
+   /  \
+   *   \
+  / \   \
+ /   \   \
+ *   *   *
+/ \ / \ / \
+1 2 * 4 5 6
+   / \
+   |  \
+   *   *
+  / \ / \
+  0 1 2 3 <- (3.000 to 3.003)
+
+Ooops, the tree suddenly became a lot higher, with an associated
+decrease in retrieval performance and an increase in memory usage.
+
+Of course the exact details depend on what rules there are for
+constructing the tree, but essentially the attacker can either force the
+a big increase in the depth of the tree, or a large number of vertexes
+to be re-organizationed to create the tree, or both.
+
+Now, to be exact, since the key of each vertex is a transaction hash,
+this malicious actor will need to brute chosen prefix hash collisions,
+but this is bitcoin: the whole system is about efficiently brute forcing
+chosen prefix hash collisions. Besides, you would only need something
+like k*n collisions to product an n increase in tree depth, with some
+small k.
+
+
+My solution was to simply state that vertexes that happened to cause the
+tree to be unbalanced would be discarded, and set the depth of inbalance
+such that this would be extremely unlikely to happen by accident. I'd
+rather see someone come up with something better though.
+
+
+Another naive option would be to hash each vertex key (the transaction
+hash) with a nonce known only to the creator of that particular merkle
+tree, but then the whole tree has to be recreatred from scratch each
+time, which is worse than the problem... Interestingly in a
+*non-distributed* system this idea is actually quite feasible feasible,
+as the nonce could be kept secret.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120618/36d8e486/attachment.sig>
