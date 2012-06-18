@@ -1,0 +1,74 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Mon, 18 Jun 2012 20:41:43 +0200
+Subject: [Bitcoin-development] LevelDB benchmarking
+Message-ID: <CANEZrP2xnsOHyH+a1g6qSNSx_g+TW-yvL0Due7PVr421U6kRLw@mail.gmail.com>
+
+I switched the transaction database to use the Google LevelDB library,
+which is a refactored out part of BigTable.
+
+Here are my results. All tests are done on this hard disk:
+
+  http://wdc.custhelp.com/app/answers/detail/a_id/1409/~/specifications-for-the-500-gb-caviar-blue-and-caviar-se16-serial-ata-drive
+
+which has an average 8.9msec seek time. It is a 6 core Ubuntu machine.
+
+I used -loadblock on a chain with with 185127 blocks in it, so it has
+lots of SatoshiDice traffic.
+
+8.9 ms (average) seek time
+
+>> Regular BDB as we have today:
+real	96m6.836s
+user	49m55.220s
+sys	2m29.850s
+
+Throughput usually 4-5MB/sec according to iotop, pauses of 8-10
+seconds for ?Flushing wallet ...?. 611mb of blkindex.dat
+
+>> BDB without sig checking
+Throughput, 12-17mb/sec
+real	42m51.508s
+user	11m52.700s
+sys	2m36.590s
+
+Disabling EC verification halves running time.
+
+>> LevelDB no customized options
+(I ran the wrong time command here, hence the different format)
+3184.73user 181.02system 51:20.81elapsed 109%CPU (0avgtext+0avgdata
+1220096maxresident)k
+1104inputs+125851776outputs (293569major+37436202minor)pagefaults 0swaps
+
+So, 50 minutes. Throughput often in range of 20-30mb/sec. 397MB of data files.
+
+>> LevelDB w/ 10 bit per key bloom filter
+real	50m52.740s
+user	53m38.870s
+sys	3m4.990s
+
+424mb of data files
+
+No change.
+
+>> LevelDB w/ 10 bit per key bloom filter + 30mb cache (up from 8mb by default)
+real	50m53.054s
+user	53m26.910s
+sys	3m10.720s
+
+No change. The reason is, signature checking is the bottleneck not IO.
+
+>> LevelDB w/10 bit per key bloom filter, 30mb cache, no sigs
+real	12m58.998s
+user	11m42.330s
+sys	2m5.670s
+
+12 minutes vs 42 minutes for BDB on the same benchmark.
+
+
+Conclusion: LevelDB is a clear win, taking a sync in the absence of
+network delays from 95 minutes to 50, at which point signature
+checking becomes the bottleneck. It is nearly 4x as fast when
+signature checks are not done (ie, when receiving a block containing
+only mempool transactions you already verified).
+
+
