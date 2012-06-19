@@ -1,0 +1,103 @@
+From: moon@justmoon.de (Stefan Thomas)
+Date: Tue, 19 Jun 2012 21:22:15 +0200
+Subject: [Bitcoin-development] LevelDB benchmarking
+In-Reply-To: <CANEZrP08NrCJM2gxNitXrLjuY6AusNULvkcheN_0MbgFQV_QXw@mail.gmail.com>
+References: <CANEZrP2xnsOHyH+a1g6qSNSx_g+TW-yvL0Due7PVr421U6kRLw@mail.gmail.com>
+	<CAAS2fgTNqUeYy+oEFyQWrfs4Xyb=3NXutvCmLusknF-18JmFQg@mail.gmail.com>
+	<CANEZrP2q9a_0rFh+oo6iUFF1goWs0OJO1xPvxC9zqNA-6VnFAQ@mail.gmail.com>
+	<CABsx9T3pQFqL0xsvRfnixYEATO61qMCCDdLmtqZkbVLW0Vxytg@mail.gmail.com>
+	<CANEZrP08NrCJM2gxNitXrLjuY6AusNULvkcheN_0MbgFQV_QXw@mail.gmail.com>
+Message-ID: <4FE0D167.7030506@justmoon.de>
+
+Here are my 2 cents after using LevelDB as the default backend for
+BitcoinJS for about a year.
+
+LevelDB was written to power IndexedDB in Chrome which is a JavaScript
+API. That means that LevelDB doesn't really give you a lot of options,
+because they assume that on the C++ layer you don't know any more than
+they do, because the actual application is on the JavaScript layer. For
+example whereas BDB supports hashtables, b-trees, queues, etc., LevelDB
+uses one database type, LSM trees which is an ordered data structure
+that is pretty good at everything.
+
+Another gotcha was the number of file descriptors, LevelDB defaults to
+1000 per DB. We originally used multiple DBs, one for each of the
+indices, but it was easy enough to combine everything into one table,
+thereby solving the fd issue. (Lowering the file descriptor limit also
+works of course, but if you lower it too much, LevelDB will start to
+spend a lot of time opening and closing files, so I believe combining
+your tables into one is the better option.)
+
+Overall, LevelDB is a fantastic solution for desktop software that is
+faced with multiple use cases that aren't known at compile time. It
+isn't really designed for something like Bitcoin which doesn't need
+ordered access, has relatively predictable characteristics and - at
+least some of the time - runs on servers.
+
+That said, it does seem to work well for the Bitcoin use case anyway.
+Thanks to the LSM trees, It's very quick at doing bulk inserts and we
+don't seem to need any of the bells and whistles that BDB offers. So I
+can't think of a reason not to switch, just make sure you all understand
+the deal, LevelDB unlike Tokyo/Kyoto Cabinet is *not* intended as a
+competitor or replacement for BDB, it's something quite different.
+
+
+
+On 6/19/2012 6:06 PM, Mike Hearn wrote:
+>> What problem does it solve?
+> Primarily that block verification and therefore propagation is too
+> slow because it's very CPU and IO intensive. The CPU work can be
+> multi-threaded. The IO work, not as much. As Bitcoin grows we need to
+> scale the nodes. Eventually there may be multi-machine nodes, but for
+> now we can buy more time by making the existing nodes faster.
+>
+> I don't see this as a replacement for moving users to SPV clients.
+> Obviously, otherwise I would not be writing one ;)
+>
+>> If the problem it will solve is the "too easy to get a DB_RUNRECOVERY
+>> error" because bdb is fragile when it comes to its environment... then
+>> LevelDB looks very interesting.
+> I have no experience with how robust LevelDB is. It has an API call to
+> try and repair the database and I know from experience that BigTable
+> is pretty solid. But that doesn't mean LevelDB is.
+>
+>> If the problem is bdb is creaky and old and has obscure semantics and
+>> a hard-to-work-with API, then yes, lets switch (I'm easily seduced by
+>> a pretty API and blazing fast performance).
+> The code is a lot simpler for sure.
+>
+>> As long as it compiles and runs on mac/windows/linux that doesn't
+>> really worry me.
+> It was refactored out of BigTable and made standalone for usage in
+> Chrome. Therefore it's as portable as Chrome is. Mac/Windows/Linux
+> should all work. Solaris, I believe, may need 64 bit binaries to avoid
+> low FD limits.
+>
+>> Lack of infrastructure because it is new does worry me; for example,
+>> could I rework bitcointools to read the LevelDB blockchain?  (are
+>> there python bindings for LevelDB?)
+> Yes: http://code.google.com/p/py-leveldb/
+>
+> First look at the code is here, but it's not ready for a pull req yet,
+> and I'll force push over it a few times to get it into shape. So don't
+> branch:
+>
+> https://github.com/mikehearn/bitcoin/commit/2b601dd4a0093f834084241735d84d84e484f183
+>
+> It has misc other changes I made whilst profiling, isn't well
+> commented enough, etc.
+>
+> ------------------------------------------------------------------------------
+> Live Security Virtual Conference
+> Exclusive live event will cover all the ways today's security and 
+> threat landscape has changed and how IT managers can respond. Discussions 
+> will include endpoint security, mobile security and the latest in malware 
+> threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
+
