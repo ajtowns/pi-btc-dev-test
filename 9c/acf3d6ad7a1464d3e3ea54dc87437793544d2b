@@ -1,0 +1,105 @@
+From: etotheipi@gmail.com (Alan Reiner)
+Date: Tue, 19 Jun 2012 13:33:31 -0400
+Subject: [Bitcoin-development] Ultimate Blockchain Compression w/
+ trust-free lite node
+In-Reply-To: <CAF7tpEyEWCbcB+jSpWOMyeZUBjQ=FbVEC8kLt3j2Yzv3YJOgiA@mail.gmail.com>
+References: <CAF7tpEyEWCbcB+jSpWOMyeZUBjQ=FbVEC8kLt3j2Yzv3YJOgiA@mail.gmail.com>
+Message-ID: <4FE0B7EB.6000100@gmail.com>
+
+
+I hope that someone else here would chime in on the issue raised in the 
+thread, about using a tree-structure that has multiple valid 
+configurations for the same set of unspent-TxOuts.  If you use any 
+binary tree, you must replay the entire history of insertions and 
+deletions in the correct order to get the tree structure and correct 
+root.  Along those lines, using something like a red-black tree, while 
+theoretically well-known, could be subject to implementation errors.  
+One implementation of a red-black tree may do the rebalancing 
+differently, and still work for it's intended purpose in the majority of 
+applications where it doesn't matter.  One app developer updates their 
+RB tree code which updated the RB-tree optimizations/rebalancing, and 
+now a significant portion of the network can't agree on the correct 
+root.  Not only would that be disruptive, it would be a disaster to 
+track down.
+
+If we were to use a raw trie structure, then we'd have all the above 
+issues solved:  a trie has the same configuration no matter how elements 
+are inserted or deleted, and accesses to elements in the tree are 
+constant time -- O(1).  There is no such thing as an unbalanced trie.  
+But overall space-efficiency is an issue.
+
+A PATRICIA tree/trie would be ideal, in my mind, as it also has a 
+completely deterministic structure, and is an order-of-magnitude more 
+space-efficient.  Insert, delete and query times are still O(1).    
+However, it is not a trivial implementation.  I have occasionally looked 
+for implementations, but not found any that were satisfactory.
+
+So, I don't have a good all-around solution, within my own stated 
+constraints. But perhaps I'm being too demanding of this solution.
+
+-Alan
+
+
+
+On 06/19/2012 12:46 PM, Andrew Miller wrote:
+>> Peter Todd wrote:
+>> My solution was to simply state that vertexes that happened to cause the
+>> tree to be unbalanced would be discarded, and set the depth of inbalance
+>> such that this would be extremely unlikely to happen by accident. I'd
+>> rather see someone come up with something better though.
+> Here is a simpler solution. (most of this message repeats the content
+> of my reply to the forum)
+>
+> Suppose we were talking about a binary search tree, rather than a
+> Merkle tree. It's important to balance a binary search tree, so that
+> the worst-case maximum length from the root to a leaf is bounded by
+> O(log N). AVL trees were the original algorithm to do this, Red-Black
+> trees are also popular, and there are many similar methods. All
+> involve storing some form of 'balancing metadata' at each node. In a
+> RedBlack tree, this is a single bit (red or black). Every operation on
+> these trees, including search, inserting, deleting, and rebalancing,
+> requires a worst-case effort of O(log N).
+>
+> Any (acyclic) recursive data structure can be Merkle-ized, simply by
+> adding a hash of the child node alongside each link/pointer. This way,
+> you can verify the data for each node very naturally, as you traverse
+> the structure.
+>
+> In fact, as long as a lite-client knows the O(1) root hash, the rest
+> of the storage burden can be delegated to an untrusted helper server.
+> Suppose a lite-client wants to insert and rebalance its tree. This
+> requires accessing at most O(log N) nodes. The client can request only
+> the data relevant to these nodes, and it knows the hash for each chunk
+> of data in advance of accessing it. After computing the updated root
+> hash, the client can even discard the data it processed.
+>
+> This technique has been well discussed in the academic literature,
+> e.g. [1,2], although since I am not aware of any existing
+> implementation, I made my own, intended as an explanatory aid:
+> https://github.com/amiller/redblackmerkle/blob/master/redblack.py
+>
+>
+> [1] Certificate Revocation and Update
+>      Naor and Nissim. 1998
+>      http://static.usenix.org/publications/library/proceedings/sec98/full_papers/nissim/nissim.pdf
+>
+> [2] A General Model for Authenticated Data Structures
+>      Martel, Nuckolls, Devanbu, Michael Gertz, Kwong, Stubblebine. 2004
+>      http://truthsayer.cs.ucdavis.edu/algorithmica.pdf
+>
+> --
+> Andrew Miller
+>
+> ------------------------------------------------------------------------------
+> Live Security Virtual Conference
+> Exclusive live event will cover all the ways today's security and
+> threat landscape has changed and how IT managers can respond. Discussions
+> will include endpoint security, mobile security and the latest in malware
+> threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
