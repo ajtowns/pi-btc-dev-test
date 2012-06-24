@@ -1,0 +1,142 @@
+From: moon@justmoon.de (Stefan Thomas)
+Date: Sun, 24 Jun 2012 18:51:26 +0200
+Subject: [Bitcoin-development] Enforcing inflation rules for SPV clients
+In-Reply-To: <CANEZrP0nagdAXyMEY5yxyXBjdo78YC16mjUG9=b0AMe4qOS=fA@mail.gmail.com>
+References: <CANEZrP0nagdAXyMEY5yxyXBjdo78YC16mjUG9=b0AMe4qOS=fA@mail.gmail.com>
+Message-ID: <4FE7458E.2020908@justmoon.de>
+
+Very interesting for you to bring this up. I had a similar idea for a
+totally different use case. Greg recently pointed out an interesting
+dilemma saying that (significantly) larger blocks would lead to
+centralization. So I've been working on a design for a decentralized
+pool that can handle gigabyte sized blocks by splitting up the work
+among its members.
+
+At the moment P2Pool nodes all verify all transactions in all blocks.
+But it seems feasible to create a system where miners who have over the
+last 10000 blocks contributed to the pool's proof-of-work are allocated
+a proportional piece of verification work with redundancy and
+deterministic randomness that makes manipulation of the allocation
+extremely difficult. Such a pool would be very unlikely to accept an
+invalid block or transaction in practice.
+
+However, with these block sizes obviously non miners are going to have
+to be SPV, so even just a 0.0001% chance of an invalid block being
+accepted has profound implications for the network. If a decentralized
+pool like that had more than 50% of the hashing power and it accepted a
+single invalid block, that tainted chain would be forever regarded as
+valid by SPV clients. There needs to be some way to recover once an
+invalid block has been accidentally accepted by an imperfect miner.
+
+Based on that I also started to think about proofs of invalidity that
+would circulate. Basically you would add a new network message that
+would contain the proof that a specific signature and therefore the
+whole block is invalid.
+
+As long as the block's proof-of-work is valid and the block's parent is
+one of the last n = 50000 blocks, the message is relayed (subject to a
+cooldown, warnings would be less frequently relayed the older the
+offending block is.)
+
+The mechanism works in exactly the way Mike mentions: It allows even SPV
+clients to punish any miner who is dishonest or negligent with their
+verification work. That gives miners a good reason not to be dishonest
+or negligent in the first place.
+
+
+(Motivation:
+
+Processing more transactions means that hashing is a smaller part of the
+overall cost for miners. For example, paying for 50 BTC worth of hashing
+per block costs 0.05 BTC per tx at 1000 tx/block, but only 0.0005 BTC at
+100000 tx/block.
+
+Number of transactions is a lever that lets us have lower fees and more
+network security at the same time. Like Greg correctly pointed out, this
+is not worth having if we have to sacrifice decentralization. But if we
+don't, it becomes a no-brainer.
+
+My IMTUO proposal [1] showed a way where miners don't need a copy of the
+set of unspent outputs at all. This means the minimum storage
+requirements per node no longer grow with the number of transactions.
+
+However, the price for this was about five times greater bandwidth usage
+per verified transaction. Since every miner still had to verify every
+transaction it looked like bandwidth would become an even bigger problem
+with IMTUO than storage would have been without. However, if a small
+miner can do less than 100% verifications and still contribute, suddenly
+IMTUO may become viable. That would accomplish the holy grail of Bitcoin
+scalability where the network successfully runs on trust-atomic entities
+all of which can choose to store only a small fraction of the block
+chain, verify a small fraction of transactions and perform a small
+fraction of the hashing.)
+
+
+[1] https://en.bitcoin.it/wiki/User:Justmoon/IMTUO
+
+On 6/24/2012 2:45 PM, Mike Hearn wrote:
+> I've been having a discussion with d'aniel from the forums about how
+> to handle the possibility of a majority-miner conspiracy to raise
+> inflation, if most economic actors use SPV clients.
+>
+> Because of how blocks are formatted you cannot check the coinbase of a
+> transaction without knowing the fees in the block, and the fees can
+> only be calculated if you have all the input transactions for every
+> transaction in that block. Because the attack scenario is an attempted
+> takeover of the economy by miners, attempting to put hints into the
+> blocks won't work - we have to assume the hardest chain is in fact
+> wrong according to the rules signed up to by the Bitcoin user.
+>
+> The most obvious goal for a cartel of miners is to change the
+> inflation formula, either for purely selfish reasons (they want more
+> money than can be obtained by fees) or due to coercion by
+> governments/central banks who still subscribe to the "inflation is
+> good" idea.
+>
+> Whilst "good" nodes (still on the old ruleset) won't relay blocks that
+> violate the rules no matter how hard they are, in a situation where an
+> SPV client DOES hear about the bad best chain, it would switch to it
+> automatically. And who knows how the network might look in future -
+> perhaps most nodes would end up run by miners, or other entities that
+> upgrade to the new ruleset for other reasons.
+>
+> d'aniel made a good proposal - having good nodes broadcast
+> announcements when they detect a rule that breaks the rules, along
+> with a proof that it did so. Checking the proof might be very
+> expensive, but it would only have to be done for split points,
+> limiting the potential for DoS. If a node announces that it has a
+> weaker chain and that the split point is a rule-breaker, the SPV
+> client would download the headers for the side chain to verify the
+> split, then download all the transactions in the split block along
+> with all their inputs, and the merkle branches linking the inputs to
+> the associated block headers. In this way the fee can be calculated,
+> the inflation formula applied and the coinbase value checked.
+>
+> If the block is indeed found to be a rule-breaker, it'd be blacklisted
+> and chains from that point forward ignored.
+>
+> Miners may decide to allow themselves to create money with
+> non-index-zero transactions to work around this. In that case the good
+> node can announce that a given tx in the rule-breaker block is
+> invalid. The SPV node would then challenge nodes announcing the longer
+> chain to provide the inputs for the bad tx all the way back to a
+> pre-split coinbase.
+>
+> Doing these checks would be rather time consuming with huge blocks,
+> but it's a last resort only. In the absence of bugs, the mere presence
+> of the mechanism should ensure it never has to be used.
+>
+> ------------------------------------------------------------------------------
+> Live Security Virtual Conference
+> Exclusive live event will cover all the ways today's security and 
+> threat landscape has changed and how IT managers can respond. Discussions 
+> will include endpoint security, mobile security and the latest in malware 
+> threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
+
