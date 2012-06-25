@@ -1,0 +1,220 @@
+From: lidstrom83@gmail.com (Daniel Lidstrom)
+Date: Mon, 25 Jun 2012 16:21:14 -0700
+Subject: [Bitcoin-development] Enforcing inflation rules for SPV clients
+Message-ID: <4FE8F26A.6050103@gmail.com>
+
+Here's the conversation I had with Mike that Gregory requested a link to:
+
+
+Thanks!
+
+Bad or hacked client devs is indeed a huge, worrying problem. The 
+official client is addressing this with a system called gitian, where 
+multiple developers all compile the same source to the same binary and 
+then sign the results. Multi-signatures raise the bar for releasing 
+hacked clients a lot. We're starting to investigate this with bitcoinj 
+too, but it's a lot of work.
+
+Generally, the more people you have to involve in a conspiracy, the less 
+likely it is to succeed. If a few miners started to dominate the system 
+they have strong financial incentives to cheat, alternatively, they may 
+be subjected to government pressure. Having to get the client developers 
+involved too makes it much harder, especially as users have to actually 
+upgrade.
+
+I started a thread on the development mailing list with your suggestion, 
+by the way.
+
+On Mon, Jun 25, 2012 at 1:00 AM, Daniel Lidstrom <lidstrom83 at gmail.com 
+<mailto:lidstrom83 at gmail.com>> wrote:
+
+    Hey Mike,
+
+    I put our conversation in the email for easy reference.
+
+    In the unlikely event of a miner conspiracy to print money, is it
+    really so much of a further stretch to think the developers of a
+    widely used client could also be involved?  (Well, maybe, since
+    miners are unaccountable and developers are not.  OTOH if most users
+    are apathetic...)  Also, isn't the advantage for lightweight clients
+    of SPV over the server-client model that you don't have to trust any
+    operator?  Maybe I'm being too much of a purist here...
+
+    Regarding errors being cheap to send and expensive to verify,
+    compartmentalizing them the way I suggested before would make them
+    individually cheaper to verify.  Just throwing around ideas:
+    requiring the error message be received by a quorum of peers before
+    checking, and dropping misbehaving or unreliable peers could help.
+    Also, not verifying error messages unless the peers relaying them
+    are willing to send all the data necessary to do so would help. 
+    Hashcash could also be used to balance the costs to send and to
+    verify a given type of error message.  I like your idea to only
+    check errors in blocks that are split points, and the length of the
+    split could also be a consideration.
+
+>     Can we move further conversations to email please? SMF kind of
+>     sucks as an inbox.
+>
+>     Anyway, yes, your proposal makes a lot of sense, although I think
+>     in practice this is unlikely to be an issue. If a majority of
+>     miners did start mining on a chain with new rules, even if SPV
+>     clients couldn't detect the switch automatically it's very likely
+>     the developers of those clients would notify the users out of band
+>     in some way. For example, by pushing an update to users that
+>     explains the new rules to them and tells them how they can cash
+>     out of the Bitcoin economy if they disagree with the new consensus.
+>
+>     If users are on the losing side of a rule change and want to stay
+>     there (eg, maybe most non-miners want to stay on the slower
+>     chain), then the client can just checkpoint the first block after
+>     the rule change occurred. Now even though there's a harder chain
+>     with the new rules, the client will stay with the old rules
+>     despite being blind to them. There's nothing that says checkpoints
+>     have to be hard coded - clients could poll the client developers
+>     every day to get new ones. So as long as the SPV devs are on the
+>     ball, most users would stay on the old rules even if the software
+>     can't do it by itself.
+>
+>     All that said, broadcasting messages proving a block broke the
+>     rules is a nice backstop if it can be done without excessive
+>     complexity. There are some details to think about. These messages
+>     would be cheap to create and expensive to verify. There has to be
+>     something that stops me claiming to SPV clients that every single
+>     block is invalid and forcing them to do tons of useless work.
+>     Perhaps only blocks that are split points would be eligible. Also,
+>     currently, SPV clients do not form their own P2P network. They are
+>     always leaves of full nodes. So propagation of the messages might
+>     prove difficult unless that was changed.
+
+>     Hi Mike,
+>
+>     Thanks for your reply.  It was actually an old post of yours on
+>     the forum that made me understand the importance of lightweight
+>     clients being able to audit the coinbase tx.
+>
+>     Re: input tx download, I think that splitting the "invalid
+>     coinbase" error notification into separate "input n in tx m is
+>     invalid" and "invalid fee arithmetic" errors would mean mobile
+>     clients would only ever have to download at most one input tx to
+>     verify an invalid coinbase.
+>
+>     The "invalid fee arithmetic" error could also be compartmentalized
+>     into "invalid fee arithmetic in tx batch n", where the fee
+>     subtotals are recorded in the block, so as to be separately
+>     verifiable.  Then the necessary tx downloads would be completely
+>     capped.
+>
+>     Anyway, I think most of my fears about lifting the block size
+>     limit are put to rest by these lines of thinking Smiley
+
+>     Hey Daniel,
+>
+>     I think you're thinking along the right lines here. We should be
+>     looking at cheap and backwards compatible ways to upgrade the SPV
+>     trust model to more than just going along with the majority consensus.
+>
+>     For the coinbase issue, it's actually really important because if
+>     you can't calculate fees, you can't check the size of the coinbase
+>     value and therefore a conspiracy of miners could try and change
+>     the inflation schedule. The worst that can happen today if miners
+>     decide to try and fork the ruleset against the best interests of
+>     other users, is that they produce chains that are not accepted by
+>     regular merchant/exchange/end-user nodes and tx confirmation slows
+>     down. But if most users are on SPV nodes they will happily accept
+>     the new blocks and the miner conspiracy will have successfully
+>     seized control of the money supply for the majority of end users.
+>
+>     The problem with calculating fees is you actually need not only
+>     every tx in a block, but all the input txns too! You can't know
+>     the fee of a transaction without the input transactions being
+>     available too.
+>
+>     So there's good news and bad news. The good news is you don't have
+>     to actually store every transaction on disk or check signatures,
+>     which is the expensive part, if you're an SPV node - you can still
+>     check the coinbase value asynchronously after receiving a block by
+>     requesting the entire contents and all the input transactions
+>     (+branches, of course). If you are in an environment that is
+>     always-on and not bandwidth constrained this can make a lot of
+>     sense. For example, if you're running an SPV client on a regular
+>     PC that is sitting in a shop somewhere, just downloading a lot of
+>     data is still very cheap compared to indexing it all and verifying
+>     all the signatures. I'm implementing support for this kind of
+>     async verification in bitcoinj at the moment.
+>
+>     Where it doesn't really make sense is mobile clients, and your
+>     ideas of notification can help a lot there. The first type of
+>     error broadcast I'd add is actually for detected double spends
+>     because there's a paper from researchers at ETH which show this is
+>     needed to address a feasible attack on todays infrastructure. But
+>     adding more later to detect invalid blocks is not a bad idea.
+
+>     Hi Mike,
+>
+>     I wanted to post this on the forum and figured that since, based
+>     on the subject, you'd probably end up reading it anyway, I thought
+>     I'd run it by you first to see if there's any merit to it.
+>
+>     Quote
+>     I think similar ideas are currently being tossed around.
+>
+>     The motivation here is to keep rule enforcement maximally
+>     decentralized while scaling Bitcoin. Basically, SPV clients could
+>     subscribe to peers' announcements of /invalid/ blocks + their
+>     specific failure mode.  AFAICT, most of the possible failure modes
+>     are easily verifiable by smart phone SPV clients, even at scale. 
+>     For example, inclusion of double spends or otherwise invalid txs
+>     are easy to verify /given the necessary data/, and Merkle tree
+>     nodes can be deemed invalid /if no peer can produce the data that
+>     hashes to it/ (gotta be careful to detect and deal with false
+>     positives here).  The only failure mode I can think of that isn't
+>     easily verifiable at scale is an invalid quantity of fees spent in
+>     the coinbase tx, since that currently requires the download of the
+>     whole block. (I think I have an idea to fix this below.)
+>
+>     This trust model relies upon having a single fully validating peer
+>     that will reliably announce invalid blocks.  To help this, one or
+>     more peers could be periodically cycled, and new ones asked if the
+>     main chain contains any invalid blocks.  Worst case scenario, an
+>     SPV client reverts to the current trust model, so this idea can
+>     only improve the situation. Best case, it takes advantage of the
+>     fact that public information is hard to suppress.
+>
+>     *Verifying coinbase tx invalidity at scale with SPV clients*
+>
+>     While this is currently not prohibitive for a smart phone if done
+>     only occasionally, this will not be the case if the block size
+>     limit is lifted.  The idea is to split up the summing of the
+>     spendable fees into verifiable pieces.  A new merkle tree is
+>     calculated where the i'th leaf's data is the total fees in the
+>     i'th chunk of 1024 txs, along with these txs' Merkle root (to
+>     prevent collisions).  The Merkle root of this new tree is then
+>     included somewhere in the block.
+>
+>     To verify a claim of invalidity of one of these leaves requires
+>     the download of ~1MB of tx data (along with a small amount of
+>     Merkle tree data to verify inclusion).  If no claims are made
+>     against it, the leaf data is assumed to be valid.  If this is the
+>     case, but shenanigans are called on the coinbase tx, downloading
+>     all of the leaf data, verifying inclusion, and calculating the
+>     total spendable fees is easily doable for a smart phone, even at
+>     very large tx volumes.
+>
+>     Thanks for any thoughts/suggestions!
+>
+>     Cheers,
+>     Daniel
+
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120625/bf142529/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: not available
+Type: image/gif
+Size: 382 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120625/bf142529/attachment.gif>
