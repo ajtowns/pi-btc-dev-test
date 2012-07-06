@@ -1,0 +1,78 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Fri, 6 Jul 2012 18:52:04 +0200
+Subject: [Bitcoin-development] Pruning in the reference client: ultraprune
+	mode
+Message-ID: <20120706165204.GA27215@vps7135.xlshosting.net>
+
+Hello all,
+
+I've implemented a new block/transaction validation system for the 
+reference client, called "ultraprune".
+
+Traditionally, pruning for bitcoin is considered to be the ability to 
+delete full transactions from storage once all their outputs are spent, 
+and they are buried deeply enough in the chain. That is not what this 
+is about.
+
+Given that almost all operations performed on the blockchain do not 
+require full previous transactions, but only their unspent outputs, it 
+seemed wasteful to use the fully indexed blockchain for everything. 
+Instead, we keep a database with only the unspent transaction outputs. 
+After some effort to write custom compact serializations for these, I 
+could reduce the storage required for such a dataset to less than 70 
+MB. This is kept in a BDB database file (coins.dat), and with indexing 
+and overhead, and takes around 130 MB.
+
+Now, this is not enough. You cannot have a full node wit just these 
+outputs. In particular, it cannot undo block connections, cannot rescan 
+for wallet transactions, and cannot serve the chain to other nodes. 
+These are, however, quite infrequent operations. To compensate, we keep 
+non-indexed but entire blocks (just each block in a separate file, for 
+now), plus "undo" information for connected blocks around in addition 
+to coins.dat. We also need a block index with metadata about all stored 
+blocks, which takes around 40 MB for now (though that could easily be 
+reduced too). Note that this means we lose the ability to find an 
+actual transaction in the chain from a txid, but this is not necessary 
+for normal operation. Such an index could be re-added later, if 
+necessary.
+
+Once you have this, the step to pruning is easily made: just delete 
+block files and undo information for old blocks. This isn't implemented 
+for now, but there shouldn't be a problem. It simply means you cannot 
+rescan/reorg/server those old blocks, but once those are deep enough 
+(say a few thousand blocks), we can tolerate that.
+
+So, in summary, it allows one to run a full node (now) with:
+* 130 MB coins.dat
+* 40 MB chain.dat
+* the size of the retained blocks
+  * + +-12% of that for undo information.
+
+Oh, it's also faster. I benchmarked a full import of the blockchain 
+(187800 blocks) on my laptop (2.2GHz i7, 8 GiB RAM, 640 GB spinning 
+harddisk) in 22 minutes. That was from a local disk, and not from 
+network (which has extra overhead, and is limited by bandwidth 
+constraints).
+
+If people want to experiment with it, see my "ultraprune" branch on 
+github: https://github.com/sipa/bitcoin/tree/ultraprune
+
+Note that this is experimental, and has some disadvantages:
+
+* you cannot find a (full) transaction from just its txid. 
+* if you have transactions that depend on unconfirmed transactions, 
+  those will not get rebroadcasted
+* only block download and reorganization are somewhat tested; use at 
+  your own risk
+* less consistency checks are possible on the database, and even fewer 
+  are implemented
+
+Also note that this is not directly related to the recent pruning 
+proposals that use an alt chain with an index of unspent coins (and 
+addresses), merged mined with the main chain. This could be a step 
+towards such a system, however.
+
+-- 
+Pieter
+
+
