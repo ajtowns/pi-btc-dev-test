@@ -1,0 +1,108 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Mon, 23 Jul 2012 18:40:36 +0200
+Subject: [Bitcoin-development] New P2P commands for diagnostics,
+ SPV clients
+In-Reply-To: <500D0348.4010604@petersson.at>
+References: <CA+8xBpecVQcTTbPxUm_3_GWC99dEd4=-VFWb+QT6jUy4rg8U4w@mail.gmail.com>
+	<CANEZrP0kNZDByHpK2=UjP+ag0X1KmqHxnJdm=e_pWMitP4QvvA@mail.gmail.com>
+	<1339766346.31489.49.camel@bmthinkpad>
+	<CANEZrP3jj2ymQPH50g2PvzZhRzTnUnCLUjvBYj8ndBCJsnGJ-w@mail.gmail.com>
+	<1339771184.31489.53.camel@bmthinkpad>
+	<CANEZrP0hTRbE9+VEa3eCzJkbHqa3u8tpdw7eDLBQQR6DBf2adw@mail.gmail.com>
+	<1340132998.6065.7.camel@bmthinkpad>
+	<CANEZrP0ws6bGk5qmDCmRPMbwyNX+3W5BRNzZPn_Av-nqFPAqOw@mail.gmail.com>
+	<500D0348.4010604@petersson.at>
+Message-ID: <1343061636.7486.0.camel@bmthinkpad.lan.bluematt.me>
+
+On Mon, 2012-07-23 at 09:54 +0200, Andreas Petersson wrote:
+> Some concerns regarding Bloom Filters. I talked with Stefan Thomas on 
+> the Hackathon Berlin about this.
+> I tried to follow the discussion closely but i have not taken a look at 
+> the code yet (is there already an implementation?) so please correct me 
+> if i got something wrong.
+AFAIK there was no implementation.  I pushed one for bitcoinj+bitcoind
+today that compiles, but I haven't tested it much further (though its
+really quite a simple implementation):
+https://github.com/TheBlueMatt/bitcoin/commits/bloom
+http://code.google.com/r/bluemattme-bitcoinj/source/list?name=bloomfilter
+
+> The way the Bloom filters are planned now this requires a complicated 
+> setup. basically the client will ask the server to replay the whole 
+> blockchain, but filtered.
+> This is not optimal for the following reasons:
+> This will require the server to do a full scan of his data and only 
+> filter out non-matching entries.
+My implementation has yet to implement block filtering, for now its only
+tx inv filtering.  However, its really not that complicated and doing a
+scan of any individual transaction is very fast.  So during the download
+phase, it really isn't much of any extra load on block chain providers
+(aside from having to load inputs in the current implementation, but
+that could be optimized some).
+
+> Really lightweight clients (like Bitcoincard), clients with shared 
+> private keys (electrum-style), or brainwallets - will ask the following 
+> question quite often to "supernodes": Given my public keys/addresses, 
+> what is the list of unspent outputs. i think it would make sense to 
+> include such a command, instead or in addition to the filterload/filterinit.
+
+> And perhaps more severe: as far as i understand classic bloom filters, 
+> the server has no method of indexing his data for the expected requests. 
+> There is simply no data structure (or maybe it has to be invented) which 
+> allows the use of an index for queries by bloom filters of *varying 
+> length* and a generic hashing method.
+
+> im not sure what a really efficient data structure for these kinds of 
+> query is. but i think it should be possible to find a good compromise 
+> between query flexibility, server load, client privacy.
+
+> one possible scheme, looks like this:
+
+> the client takes his list of addesses he is interested in. he hashes all 
+> of them to a fixed-length bit array (bloom filter) of length 64KiB (for 
+> example), and combines them with | to add more 1's with each address.
+> the server maintains a binary tree data structure of unspent outputs 
+> arranged by the Bloom filter bits.
+> to build the tree, the server would need to calculate the 64KiB bits for 
+> each address and arrange them in a binary tree. that way he can easily 
+> traverse the tree for a given bloom query.
+> if a client whishes to query more broadly he can calculate the bloom 
+> filter to 64KiB and after that fill up the last 50% of the Bits with 1. 
+> or 95%. the trailing 1 bits even don't need to be transmitted to the 
+> server when a client is querying. of course, if the client is more 
+> privacy-concerned he could also fill up random bits with 1, which would 
+> not change much actually.
+> 
+> the value of 64KiB is just out of thin air.
+> according to my experimentation using BloomFilter from Guava - 
+> currently, also 8KiB would be sufficient to hava a 3% false positive 
+> rate for the 40000 active addresses we have right now.
+> 
+> someone more familiar with hashing should please give his opinion if 
+> cutting a bloom filter in half has any bad consequences.
+> 
+> Andreas
+Though I like the idea of having a "give me all unspent outputs for my
+pubkeys" command, I see quite a future for clients somewhere between "I
+store nothing but pubkeys and don't know about the chain" and "I store a
+full chain" and the bloom filters as described are pretty useful for
+many clients in that in between.  Also, for clients that are "Really
+lightweight clients" (given that they don't know about the chain) should
+probably just stick with an electrum-style server-client system with
+specialized servers (IMHO) instead of relying on P2P nodes to provide
+them with a list of unspent outputs/etc.
+
+In response to Mike's what-the-filter-should-match:
+The way it is now, it just checks each input+output to see if the
+hash160 of the dest addr, hash160 of the pubkey or hash160 of the p2sh
+sh matches the filter as-is.
+>From the list provided, I think adding a check to allow adding a
+specific outpoint to a filter would be nice.
+However, in terms of data elements in txes, Im not so sure.
+Its by no means a bad idea, and it wouldnt be too much overhead, but
+making filters match a very broad set of criteria seems like a bit much
+to me, but maybe others disagree?
+
+Matt
+
+
+
