@@ -1,0 +1,63 @@
+From: luke@dashjr.org (Luke-Jr)
+Date: Mon, 23 Jul 2012 00:57:48 +0000
+Subject: [Bitcoin-development] Reconsidering block version number use
+In-Reply-To: <CABsx9T0JK9qBKZu7YWeQCBAjT1Ur05BQ26A5NdLCwD6Wuyc0nQ@mail.gmail.com>
+References: <201207222052.28579.luke@dashjr.org>
+	<CABsx9T0JK9qBKZu7YWeQCBAjT1Ur05BQ26A5NdLCwD6Wuyc0nQ@mail.gmail.com>
+Message-ID: <201207230057.50735.luke@dashjr.org>
+
+On Monday, July 23, 2012 12:41:15 AM Gavin Andresen wrote:
+> > The current block height in coinbase addition currently proposes to use
+> > block version 2. However, the protocol change is in fact to the coinbase
+> > transaction, not the block itself (which really doesn't have any
+> > extensibility without a hardfork anyway). Perhaps we should consider
+> > bumping the coinbase transaction version number to 2 for this instead?
+> 
+> I'd thought about bumping the coinbase transaction version, but the
+> problem is if we want a smooth rollout then, during the rollout, every
+> time a new block comes in the percentage of the last 1,000 blocks that
+> support the new version has to be computed.
+> 
+> If that means looking in the coinbase transaction, then either the
+> last 1,000 coinbases have to be stored in memory or they have to be
+> fetched from disk. Which isn't a huge deal, unless we start
+> aggressively pruning spent transactions, and that coinbase 900 blocks
+> back got spent and pruned.
+
+Any reason CBlockIndex couldn't cache the coinbase version?
+
+> On Sun, Jul 22, 2012 at 4:52 PM, Luke-Jr <luke at dashjr.org> wrote:
+> > It just occurred to me that the block version number could easily be used
+> > as a cheap "extra nonce" right now. Considering that we will probably
+> > see lots of ASIC miners running at 1 TH/s per rig before the end of
+> > 2012, it might be desirable to save the block version for this purpose.
+> 
+> Hmm...  I think it'd be ok to give 3 of the 4 block version bytes as a
+> simple extranonce, so version=0x00000001 is what we have now, version
+> 2 blocks are any with 0x02 in the low byte, 0x03 is version 3, etc.  I
+> don't think we'll go through 253 block versions before we're all dead.
+> 
+> That'd be 7 bytes of nonce in the block header, which is
+>   72,057,594,037,927,936  ~ 72 petahashes = 72,000 terahashes
+> 
+> So: the changes for version 2 blocks would be "has height in the
+> coinbase, and has a 1-byte version number with a 3-byte extranonce."
+
+That sounds workable.
+
+> > Also, Jeff noticed that block 190192 has version==2 without a valid block
+> > height in the coinbase. I suspect this may be the result of combining the
+> > current blockheight-in-coinbase pullreq with P2Pool. This means that if
+> > we go forward with the version==2 marker, we will forever need to make
+> > an exception for that block.
+> 
+> No, the rules are "enforce the rules when the chain has a
+> super-majority."  Since block 190192 is in a part of the chain with
+> zero other version==2 blocks, the height-in-the-coinbase rule will not
+> be enforced.
+
+I was thinking more of the end-game of changing the rule to simply "if 
+version==2, require the height in coinbase" after the point of no return is 
+met without any infringement.
+
+
