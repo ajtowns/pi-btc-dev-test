@@ -1,0 +1,61 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Tue, 24 Jul 2012 10:16:12 +0200
+Subject: [Bitcoin-development] New P2P commands for diagnostics,
+	SPV clients
+In-Reply-To: <500D0348.4010604@petersson.at>
+References: <CA+8xBpecVQcTTbPxUm_3_GWC99dEd4=-VFWb+QT6jUy4rg8U4w@mail.gmail.com>
+	<CANEZrP0kNZDByHpK2=UjP+ag0X1KmqHxnJdm=e_pWMitP4QvvA@mail.gmail.com>
+	<1339766346.31489.49.camel@bmthinkpad>
+	<CANEZrP3jj2ymQPH50g2PvzZhRzTnUnCLUjvBYj8ndBCJsnGJ-w@mail.gmail.com>
+	<1339771184.31489.53.camel@bmthinkpad>
+	<CANEZrP0hTRbE9+VEa3eCzJkbHqa3u8tpdw7eDLBQQR6DBf2adw@mail.gmail.com>
+	<1340132998.6065.7.camel@bmthinkpad>
+	<CANEZrP0ws6bGk5qmDCmRPMbwyNX+3W5BRNzZPn_Av-nqFPAqOw@mail.gmail.com>
+	<500D0348.4010604@petersson.at>
+Message-ID: <CANEZrP3UyqM0sVP2shqLQJ62KGnrtB5v6dEU1Asjb3W_r-cGnQ@mail.gmail.com>
+
+> Really lightweight clients (like Bitcoincard), clients with shared
+> private keys (electrum-style), or brainwallets - will ask the following
+> question quite often to "supernodes": Given my public keys/addresses,
+> what is the list of unspent outputs. i think it would make sense to
+> include such a command, instead or in addition to the filterload/filterinit.
+
+Ultra-lightweight clients like Electrum or smart cards have a
+fundamentally different security model to SPV clients, which mean they
+cannot connect directly to the P2P network no matter what commands or
+db indexes are added.
+
+This seems to be a common point of confusion. Andreas brought up
+something similar in a chat yesterday.
+
+To connect to the P2P network, you MUST understand how to walk the
+block chain and handle re-orgs. This is not optional. The reason is
+that you are connected to random arbitrary nodes who can and maybe
+will lie to you. The block chain is a self-proving data structure, a
+node cannot lie about it or make you believe garbage unless they can
+outrun the rest of the miners combined.
+
+If all you're doing is asking a remote node to tell you about what
+coins are available, that node can simply say "guess what, you're a
+millionaire!" and you have no way to discover it's wrong. This can be
+dangerous in the case where you think you've received a payment but
+actually did not, eg, because your internet connection got tampered
+with in some way. SPV clients have the same issue for zero-confirmed
+transactions, but once you see confirmations at high speeds you can be
+pretty sure the network accepted the transaction. For clients that
+don't understand the block chain confirmations don't have any meaning.
+
+That's why Electrum requires a trusted server and connects to it via SSL.
+
+> And perhaps more severe: as far as i understand classic bloom filters,
+> the server has no method of indexing his data for the expected requests.
+
+It doesn't matter. CPU wise Bloom filtering of blocks is very cheap
+and can be trivially parallelised in the unlikely event it's
+necessary. The expensive part of serving a Bloom filtered chain to an
+SPV client is simply moving the disk head into the right position and
+waiting for the platter to rotate. Blocks are stored sequentially and
+modern hard disks transfer data once positioned at gigabit speeds so
+requesting 1 or 2000 blocks is not significantly different.
+
+
