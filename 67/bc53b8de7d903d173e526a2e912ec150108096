@@ -1,0 +1,111 @@
+From: moon@justmoon.de (Stefan Thomas)
+Date: Mon, 13 Aug 2012 22:00:36 +0200
+Subject: [Bitcoin-development] BIP: Custom Services
+In-Reply-To: <CANEZrP0BqPNQ_rMcb=_0mwV6avnWdokkkJZEb1s=bHku1a=ocg@mail.gmail.com>
+References: <5028AFBE.8070104@justmoon.de>
+	<CANEZrP0BqPNQ_rMcb=_0mwV6avnWdokkkJZEb1s=bHku1a=ocg@mail.gmail.com>
+Message-ID: <50295CE4.5040606@justmoon.de>
+
+> More elaboration of the use cases might therefore be useful.
+
+I'm implementing a DHT, rather than storing the whole blockchain index
+locally, a future version of BitcoinJS will store only a user defined
+percentage (anywhere from 0-100%.) Any misses will be resolved by
+querying the network.
+
+Thanks to ultraprune, we no longer need a full index for verification.
+And for all the other use cases like lightweight server queries and
+block explorer queries a bit of latency is acceptable in exchange for
+scalability and decentralization. This feature will give people to
+option to run anywhere from a large BitcoinJS node (100% index) to a
+small one (20% index) to a lightweight one (0% index.) All of them are
+equally queryable, so if you're just trying out BitcoinJS you won't have
+to download the block chain just to run the block explorer example. Only
+when your block explorer's traffic grows will you need to contribute
+some query services back to the network in order not to get rate-limited.
+
+
+> these capabilities are not advertised with
+> CAddress, so how does one usefully discover and make use of them?
+
+Pieter brought up this very point when he reviewed an earlier draft.
+This prompted the creation of the second BIP I mentioned:
+
+https://en.bitcoin.it/wiki/User:Justmoon/BIP_Draft:_Custom_Service_Discovery
+
+The basic principle is quite simple - prefix the standard addr message
+with a service-specific message to mark off service support. It's easy
+to implement and very efficient (without compression it's 1.288 bits per
+node, with compression it's quite possibly more efficient than the
+services field.) Because this stuff is a bit more complex and because it
+requires no changes to the Bitcoin protocol, Amir and I chose to split
+it off into a separate BIP and I want to work on it a little more. But
+if you are wondering how peer exchange might work for these custom
+services, please do take a look at it.
+
+
+> you may as well just form an entirely independent network
+
+When I designed the DHT, I did just that. Later I was working on a
+concept for a decentralized pool and I noticed I was solving the same
+problems again. And with all three services running a node might be
+maintaining three separate TCP connections to the exact same peer.
+
+So then I considered making the DHT network extensible, so that the
+decentralized pool protocol could live in there. But, well if I'm doing
+that, why not just make the regular Bitcoin protocol extensible and let
+both extensions live in there.
+
+For a custom service you DO need the following:
+
+- service-specific DNS seeds
+- service announcement (BIP: CS)
+- service-specific messages (BIP: CS)
+- service-specific peer exchange (BIP: CSD)
+
+And those four things cover a lot of what Bitcoin does. But once you're
+thinking about n custom services it starts to look easier to add
+semantics for "some nodes support some things" in one network rather
+than instantiating n networks.
+
+On the opposite end of the spectrum there are very simple services.
+Consider a WebSocket transport. Some nodes might offer
+Bitcoin-over-WebSocket, for example to implement an SPV client in the
+browser. But they don't connect to each other via WebSocket, since they
+prefer plain TCP. So in this case you need peer exchange, but not much
+else. You could create a new P2P network for the sole purpose of
+exchanging peers, but again it seems much easier if there were ways to
+do this on the Bitcoin network.
+
+One final point: A major focus of this BIP is to make it easy to
+canonicalize custom services if we choose to do so. The idea is that
+custom services get to prove themselves in the wild - those that work
+well may be added to the standard protocol. That's a good reason to 1)
+encourage custom services to live in-band and 2) recommend compatibility
+with Bitcoin's standard mechanisms (12 byte command names, 1 bit service
+announcement, 1 bit peer exchange etc.)
+
+On 8/13/2012 3:15 PM, Mike Hearn wrote:
+> I think it's pretty reasonable, although people will want to use node
+> flags to get into the addr broadcasts anyway.
+>
+> That said, I suspect (based on previous discussions) that there would
+> be quite some pushback against putting extra functionality into the
+> core Bitcoin network. Most likely people will re-use the code with
+> different peer discovery seeds and bootstrap similar but unrelated P2P
+> networks for doing new applications.
+>
+> For instance, what if we want to do the language translation app I've
+> talked about a few times before? You need a way to floodfill broadcast
+> invalid transactions to interested parties. The pubsub mechanism in
+> the Bitcoin protocol was an interesting way to do that, but I think it
+> got removed. To broadcast to interested nodes now, you'd have to find
+> them via addr broadcasts and then connect directly. And if you're
+> going to do that, you may as well just form an entirely independent
+> network.
+>
+> More elaboration of the use cases might therefore be useful.
+>
+
+
+
