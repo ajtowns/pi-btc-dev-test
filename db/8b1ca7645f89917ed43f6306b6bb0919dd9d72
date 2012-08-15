@@ -1,0 +1,51 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Wed, 15 Aug 2012 02:26:31 +0200
+Subject: [Bitcoin-development] Bloom Filter Implementation
+Message-ID: <1344990391.4355.21.camel@bmthinkpad.lan.bluematt.me>
+
+I spend some time implementing some of the changes discussed in the
+previous thread "New P2P commands for diagnostics, SPV clients", and
+wanted to field comments before I write up a BIP.
+
+I have implemented a simple bloom filter that works on transactions as
+well as a new block relay type which relays blocks as header+coinbase tx
++vector<tx hash> which allows for faster relay for clients which already
+have transactions in memory pool.
+
+In order to request that all future MSG_TX inv messages and blocks (only
+those relayed in the new format) are filtered, SPV clients will send a
+filterload message with a serialized bloom filter.  Nodes can also send
+filteradd messages which add particular data blocks to the filter (not
+recommended for anonymity) and call filterclear which disables filtering
+on a node's connection until re-enabled.
+
+The filter will match any tx which:
+     1. Has a script data element in either a scriptPubKey or scriptSig
+        which matches the filter.
+     2. Spends an input who's COutPoint is in the filter.
+     3. Has a hash in the filter (see #4 for why this matters).
+     4. Has a script data element in a prevout's scriptPubKey.  This
+        allows for matching pay-to-pubkey transactions without sending a
+        new filter after each transaction which matched (which would
+        cause some nasty timing issues where you may miss transactions
+        if you get transactions back-to-back before you can send a new
+        filter).  Matching of prevouts only occurs on free txes, not
+        those in blocks.  Thus, before requesting a block, SPV clients
+        should update the remote node's filter, if required, to be sure
+        it includes the hash of any transaction which would not
+        otherwise match the filter so that the node knows when its
+        transactions are included in blocks.
+
+I can't say I'm a big fan of requiring SPV nodes constantly update the
+filter when they learn about new transactions (could get nasty during
+IDB, if the node has a lot of transactions, as you could end up
+re-requesting blocks many times), but I really don't think its worth
+loading all prevouts when a node is in IBD to fix it.
+
+The branch can be found at
+https://github.com/TheBlueMatt/bitcoin/compare/master...bloom
+
+Matt
+
+
+
