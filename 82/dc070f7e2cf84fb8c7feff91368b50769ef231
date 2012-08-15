@@ -1,0 +1,42 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Wed, 15 Aug 2012 12:07:14 +0200
+Subject: [Bitcoin-development] Bloom Filter Implementation
+In-Reply-To: <1344990391.4355.21.camel@bmthinkpad.lan.bluematt.me>
+References: <1344990391.4355.21.camel@bmthinkpad.lan.bluematt.me>
+Message-ID: <CANEZrP1BtD6Ps5h2zaxE5ePVhXtT6bXmpRw54+Fg7yWtJFD+=A@mail.gmail.com>
+
+This is great, thanks!
+
+A few remarks:
+
+If you have to update the filter after every block, IBD will require a
+round-trip after every single block download instead of doing bulk
+requests with getblocks. That sounds like it'd kill any performance
+gains won by the feature. There needs to be a way to do bulk getblocks
+on hundreds/thousands of blocks at a time and then have the data
+stream in. Perhaps the server node can update the filter for you, as
+the rules are deterministic?
+
+As you know the remote end will request the transactions given their
+hashes anyway, why not save the bandwidth for the hashes and the
+network round-trip by just providing the transactions immediately in
+the block? I was imagining something like:
+
+// A CMerkleTx without the redundant block hash
+class CLiteMerkleTx : public CTransaction {
+  std::vector<uint256> vBranch;
+  int nIndex;
+}
+
+class CMerkleBlock {
+    int nVersion;
+    uint256 hashPrevBlock;
+    uint256 hashMerkleRoot;
+    unsigned int nTime;
+    unsigned int nBits;
+    unsigned int nNonce;
+
+    std::vector<CLiteMerkleTx> vMatchedTxns;
+}
+
+
