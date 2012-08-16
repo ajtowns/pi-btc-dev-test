@@ -1,0 +1,113 @@
+From: zgenjix@yahoo.com (Amir Taaki)
+Date: Thu, 16 Aug 2012 13:57:40 -0700 (PDT)
+Subject: [Bitcoin-development] BIP 35: add mempool message
+In-Reply-To: <502D482A.2090609@justmoon.de>
+References: <CA+8xBpcfxdpg-z4OQab3379amznM30Ae-Kurko0BKuySwfBy+Q@mail.gmail.com>
+	<20120816175637.GA13454@vps7135.xlshosting.net>
+	<502D482A.2090609@justmoon.de>
+Message-ID: <1345150660.5139.YahooMailNeo@web121003.mail.ne1.yahoo.com>
+
+MSG_MEMTX solves the issue of not knowing whether a given inv is in response to a "mempool" command or not.
+
+I don't buy the argument that always sending a response "inv" makes things easier because code should always be able to handle misbehaviour from the remote node (ommiting the "inv"). However I would argue that it is good to have it, as it makes designing flows of logic much easier (first send this, wait for response, do this, ...).
+
+
+
+----- Original Message -----
+From: Stefan Thomas <moon at justmoon.de>
+To: bitcoin-development at lists.sourceforge.net
+Cc: 
+Sent: Thursday, August 16, 2012 8:21 PM
+Subject: Re: [Bitcoin-development] BIP 35: add mempool message
+
+> This seems safe, although it forces other full implementations that want to
+> expose protocol version 60002 (or later) to also implement this. What do they
+> think about this?
+
+BitcoinJS will implement it, it's a useful feature and there is no
+reason not to support it.
+
+Two comments from my end:
+
+- This is just a thought, but I wouldn't mind using a new inv_type for
+this, e.g. MSG_MEMTX. I could conceivably see a future where broadcast
+and relay txs are stored in a very fast local cache whereas the general
+mempool is stored in a slower data structure. By being able to
+distinguish incoming getdata requests I can save a few milliseconds by
+querying the right storage right away. Might also help with things like
+telling apart broadcast/relayed transactions from the response to a
+mempool request for purposes like DoS scoring etc.
+
+Not a big deal by any means, but I also don't see a downside to it.
+inv_types are not a scarce resource, we have four billion of them available.
+
+For now clients would just treat MSG_TX and MSG_MEMTX interchangeably.
+
+- If a node doesn't have anything in it's mempool it sends back an empty
+inv message. This is either ambiguous (if other things also send empty
+inv messages in the future) or arbitrary (why should an empty inv be
+associated with a mempool request of all things.) Instead why not
+respond with an inv message that contains a single element of type
+MSG_MEMTX and hash 0. That would a very direct way to indicate that this
+response is associated with a mempool request.
+
+
+I'm not married to either suggestion, just trying to add my perspective.
+One thing you notice when reimplementing Bitcoin is that Bitcoin's
+protocol leaves out a lot of information not for space reasons, but
+because the reference client's implementation doesn't happen to need it.
+Sometimes however this locks other clients into doing things the same
+way. If we can make the protocol a bit richer, especially if this
+doesn't cost any extra bytes, then we should consider it as it might
+help some implementation down the road make a neat optimization.
+
+
+On 8/16/2012 7:56 PM, Pieter Wuille wrote:
+> On Thu, Aug 16, 2012 at 01:32:04PM -0400, Jeff Garzik wrote:
+>> Consensus was we should do a BIP for all P2P changes, so here it is...
+>>? feedback requested.
+>>
+>> https://en.bitcoin.it/wiki/BIP_0035
+> I like the idea of being able to query the memory pool of a node; the
+> implementation is straightforward, which is good. Maybe effectively using the
+> command can be added? I suppose it is interesting in general for nodes to
+> get a memory pool refill at startup anyway.
+>
+>> 1) Upon receipt of a "mempool" message, the node will respond
+>>? ? with an "inv" message containing MSG_TX hashes of all the
+>>? ? transactions in the node's transaction memory pool.
+>>
+>>? ? An "inv" message is always returned, even if empty.
+> I'm not sure about this last. What is it good for? inv packets can always be
+> sent, even not in response to others, so it is not that this gives you an
+> acknowledgement the mempool is updated?
+>
+>> 3) Feature discovery is enabled by checking two "version" message attributes:
+>>
+>>? ? a) Protocol version >= 60002
+>>? ? b) NODE_NETWORK bit set in nServices
+> This seems safe, although it forces other full implementations that want to
+> expose protocol version 60002 (or later) to also implement this. What do they
+> think about this?
+>
+> I would like to suggest to allocate an extra service bit for this. We still
+> have 63 left, and this is a well-defined and useful extra service that was
+> not yet provided by any earlier node. Doing that would also mean that
+> mempool-providing survices may be discovered before connecting to them, as
+> the service bits are carried around in addr messages. Any opinions about that?
+>
+
+
+------------------------------------------------------------------------------
+Live Security Virtual Conference
+Exclusive live event will cover all the ways today's security and 
+threat landscape has changed and how IT managers can respond. Discussions 
+will include endpoint security, mobile security and the latest in malware 
+threats. http://www.accelacomm.com/jaw/sfrnl04242012/114/50122263/
+_______________________________________________
+Bitcoin-development mailing list
+Bitcoin-development at lists.sourceforge.net
+https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
