@@ -1,0 +1,33 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Mon, 20 Aug 2012 12:06:14 -0400
+Subject: [Bitcoin-development] Warning to rawtx creators: bug in
+	SIGHASH_SINGLE
+Message-ID: <1345478774.3471.4.camel@bmthinkpad.lan.bluematt.me>
+
+If you are playing around with the current rawtx API, be careful using
+SIGHASH_SINGLE:
+
+When parsing a transaction input, which uses a SIGHASH_SINGLE signature,
+and the given input's index is >= the total number of outputs in the
+current transaction, bitcoind doesn't sign anything useful, it signs the
+constant 1.
+
+Thus, if anyone were to create such an invalid transaction, any future
+outputs to the public key which created the signature would be
+immediately steal-able by anyone.
+
+The conclusion on how to fix the issue was to fix the rawtx API to block
+such transactions instead of creating a hardfork-risk or further
+complicating transaction verification.
+
+Code (in script.cpp:SignatureHash, under SIGHASH_SINGLE):
+        if (nOut >= txTmp.vout.size())
+        {
+            printf("ERROR: SignatureHash() : nOut=%d out of range\n", nOut);
+            return 1;
+        }
+
+Matt
+
+
+
