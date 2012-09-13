@@ -1,0 +1,57 @@
+From: matthewmitchell@godofgod.co.uk (Matthew Mitchell)
+Date: Thu, 13 Sep 2012 18:49:49 +0100
+Subject: [Bitcoin-development] Segmented Block Relaying BIP draft.
+In-Reply-To: <CAAS2fgQi8QFwU2M=wLiDodt3SmO48vUV5Sp3YCb1OmGJ5m=E7Q@mail.gmail.com>
+References: <2104FC7F-0AE0-4C55-9987-B20EFCE19FC3@godofgod.co.uk>
+	<CAAS2fgSymOJ=cQnNwK9+nvRYszHHH4vtUpoQYWNNYoVaYB5Gpg@mail.gmail.com>
+	<19ED4257-0BCA-41C5-A533-B0AB9B500181@godofgod.co.uk>
+	<CAAS2fgRfXBrsFm_zdNFe7Z4FN7uQ5zSg++scng=hNrHZZV93VQ@mail.gmail.com>
+	<CANEZrP0HHhSXyN9pWODtTxHMfRB4B0w-eSdvNHH13WwLVgECrw@mail.gmail.com>
+	<FC0AF926-2CBD-49BA-A3B7-AF9D70A83CE4@godofgod.co.uk>
+	<CAAS2fgSd6t038Yzb-Vy34J61xob+kVqA8pK+w1+ZwJ6XtQRJww@mail.gmail.com>
+	<2B95CF41-4304-4D2A-9ABF-198D97B7449B@godofgod.co.uk>
+	<CAAS2fgQi8QFwU2M=wLiDodt3SmO48vUV5Sp3YCb1OmGJ5m=E7Q@mail.gmail.com>
+Message-ID: <A1DC7DE8-F355-4B61-AF18-94F07DF6421E@godofgod.co.uk>
+
+
+On 13 Sep 2012, at 16:51, Gregory Maxwell <gmaxwell at gmail.com> wrote:
+
+> I thoroughly understand the value of tree hashes. That wasn't what I
+> was asking about.
+> 
+> If you're validating a block you need all the transactions, once you
+> have them or their hashes you can build the tree without transferring
+> more, e.g. what a fully validating node needs. If you're checking a
+> single transaction to need the path from the transaction to the root
+> (what a SPV nodes need, for example).
+> 
+> Can you spell out the 'end user'ish application for fetching a tree level?
+
+A merkle tree root is found by hashing the two children together and those children are found the same way until you get to the greatest level down the tree. This means you can validate children as being correct as long as they hash together to form the root. This means you do not need all the transaction hashes to validate segments of the block, you only need the root hashes for all the segments you want. Let's say there are 8 transactions and you want to verify 4 segments (2 transactions each), The merkle tree looks like this (Might not work depending on the font):
+
+Level 0:               *
+                      / \
+                     /   \
+                    /     \
+                   /       \
+                  /         \
+                 /           \
+                /             \
+Level 1:       *               *
+              / \             / \
+             /   \           /   \
+            /     \         /     \
+Level 2:   *       *       *       *
+          / \     / \     / \     / \
+Level 3: *   *   *   *   *   *   *   *
+
+When you look at any non-leaf node you can see a separate merkle tree where the root can be found exactly the same as any other merkle tree. In this example you want four segments, so you ask for level 2. Now imagine a tree without level 3, you can validate the root with level 2. In fact you can validate that the root exists for any level. So you first check that the level 2 hashes do indeed calculate to the root. Once this is done you can now use these hashes to validate the segments. When you receive a segment, you check that segment against the segment's root. So you've validated the segment transactions for the segment root and the segment root was validated for the entire tree's root. You validate the segments for each segment root and this way you know all the transactions are valid for the four segments and thus are valid for the entire tree. This way you have downloaded 4 hashes instead of 8. 
+
+Downloading the transactions hashes are therefore not necessary only the level for the segment roots. You might for instance want to divide the block into two segments in which case you ask for level 1 and download 2 hashes.
+
+I hope that made sense.
+
+And yes the merkle tree is particularly useful for validating a single transaction exists in a block as that saves a large proportion of the data required. The redundant data removed in the proposal here is smaller as a proportion of the total data (Because most of the data is the actual transactions themselves), so you might argue it's not worth it but it's simple to implement.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20120913/5e035fd4/attachment.html>
