@@ -1,0 +1,58 @@
+From: matthewmitchell@godofgod.co.uk (Matthew Mitchell)
+Date: Thu, 13 Sep 2012 21:24:35 +0100
+Subject: [Bitcoin-development] Segmented Block Relaying BIP draft.
+In-Reply-To: <20120913185900.GA393@vps7135.xlshosting.net>
+References: <2104FC7F-0AE0-4C55-9987-B20EFCE19FC3@godofgod.co.uk>
+	<CAAS2fgSymOJ=cQnNwK9+nvRYszHHH4vtUpoQYWNNYoVaYB5Gpg@mail.gmail.com>
+	<19ED4257-0BCA-41C5-A533-B0AB9B500181@godofgod.co.uk>
+	<CAAS2fgRfXBrsFm_zdNFe7Z4FN7uQ5zSg++scng=hNrHZZV93VQ@mail.gmail.com>
+	<CANEZrP0HHhSXyN9pWODtTxHMfRB4B0w-eSdvNHH13WwLVgECrw@mail.gmail.com>
+	<FC0AF926-2CBD-49BA-A3B7-AF9D70A83CE4@godofgod.co.uk>
+	<CAAS2fgSd6t038Yzb-Vy34J61xob+kVqA8pK+w1+ZwJ6XtQRJww@mail.gmail.com>
+	<2B95CF41-4304-4D2A-9ABF-198D97B7449B@godofgod.co.uk>
+	<CAAS2fgQi8QFwU2M=wLiDodt3SmO48vUV5Sp3YCb1OmGJ5m=E7Q@mail.gmail.com>
+	<A1DC7DE8-F355-4B61-AF18-94F07DF6421E@godofgod.co.uk>
+	<20120913185900.GA393@vps7135.xlshosting.net>
+Message-ID: <9F7EFD92-B922-45E9-97A8-03FFC811502D@godofgod.co.uk>
+
+
+On 13 Sep 2012, at 19:59, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+
+> You want to parallellize block downloads, while at the same time preventing re-download of transactions that are already known.
+> To do so, a requesting node would first request (for example) the 8 level-3 hashes, then start 8 parallel threads to download the
+> transactions from presumably 8 different peers. Each thread then fetches the transaction id's that correspond to its own 1/8th of
+> the block, and requests the transactions whose txid is not yet known.
+> Comparing this with Gregory's own suggestion (just fetch the entire txid list at first, and then (again as parallellized as needed)
+> fetch the unknown transactions from several peers), this does indeed have an advantage: you need to download (relatively) far less
+> data before the threaded part can start. If this is what you propose, it is certainly meaningful, but the gains aren't very large,
+> in my opinion.
+
+This is not fully correct. I propose downloading the roots of the segments when you are not looking to remove redundant transaction downloads. This would be the case when the node is not up-to-date and is unlikely to have transactions in the required blocks. When a node is up-to-date and can benefit from removing redundant transaction downloads it can switch to downloading all the transactions hashes by specifying a high level number. Also I wouldn't recommend using one thread per connection, I'd recommend using one thread for all connections.
+
+> However, my impression while reading your proposal was at times that you intend to process the different layers of the
+> Merkle tree iteratively after starting the initial parallel segments. I don't think that is useful, as you'll need the actual
+> txids anyway before deciding whether they need to be downloaded at all, it adds several round-trips, and once you have downloaded
+> the intermediate merkle hashes for about 8 levels, you've already transferred more data than the transactions themselves. I think
+> Gregory also assumed something like this, making him question why it's useful. Anyway, this whole paragraph is one assumption, so
+> if it's not the case, ignore me.
+
+This isn't what I was suggesting. I was suggesting you only need to download one level. Once you have done that you verify everything for the hashes on that level.
+
+> 
+> Can you clarify what you mean? Preferably by giving a concrete sequence of exchanged messages, with a given purpose?
+
+Well you will need to ask for the headers first. Once you do that you can start downloading the full blocks for the headers.  The node should use "get blocks" to find nodes with segments of the blocks they need. Now for each block:
+
+1. Send getsiginv to a number of peers to know the segments of the blocks they have. 
+2. Send gettreelevel requesting a level of the merkle tree from a peer that can provide it. When up-to-date use a high level to get the transaction hashes to find redundant data.
+3. Validate the treelevel response
+4. Send getsegment for each segment wanted (at the same time where possible) to the peers that have these segments. Skip transactions already known.
+5. Validate the transactions in each segment received. Stop if the block is invalid and disconnect peers that give transactions which do not fit the merkle tree.
+6. Revert to getdata if peers using the protocol cannot satisfy the block download.
+
+When a valid block segment is received, include the block in inv and headers messages for other peers using the protocol. Thus relaying can begin before the entire block is downloaded.
+
+I'm thinking about improvements to this proposal. I'll get to that tomorrow perhaps?
+
+Thank you everyone for the replies.
+
