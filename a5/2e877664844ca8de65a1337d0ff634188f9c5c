@@ -1,0 +1,57 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Thu, 13 Sep 2012 20:59:02 +0200
+Subject: [Bitcoin-development] Segmented Block Relaying BIP draft.
+In-Reply-To: <A1DC7DE8-F355-4B61-AF18-94F07DF6421E@godofgod.co.uk>
+References: <2104FC7F-0AE0-4C55-9987-B20EFCE19FC3@godofgod.co.uk>
+	<CAAS2fgSymOJ=cQnNwK9+nvRYszHHH4vtUpoQYWNNYoVaYB5Gpg@mail.gmail.com>
+	<19ED4257-0BCA-41C5-A533-B0AB9B500181@godofgod.co.uk>
+	<CAAS2fgRfXBrsFm_zdNFe7Z4FN7uQ5zSg++scng=hNrHZZV93VQ@mail.gmail.com>
+	<CANEZrP0HHhSXyN9pWODtTxHMfRB4B0w-eSdvNHH13WwLVgECrw@mail.gmail.com>
+	<FC0AF926-2CBD-49BA-A3B7-AF9D70A83CE4@godofgod.co.uk>
+	<CAAS2fgSd6t038Yzb-Vy34J61xob+kVqA8pK+w1+ZwJ6XtQRJww@mail.gmail.com>
+	<2B95CF41-4304-4D2A-9ABF-198D97B7449B@godofgod.co.uk>
+	<CAAS2fgQi8QFwU2M=wLiDodt3SmO48vUV5Sp3YCb1OmGJ5m=E7Q@mail.gmail.com>
+	<A1DC7DE8-F355-4B61-AF18-94F07DF6421E@godofgod.co.uk>
+Message-ID: <20120913185900.GA393@vps7135.xlshosting.net>
+
+On Thu, Sep 13, 2012 at 06:49:49PM +0100, Matthew Mitchell wrote:
+> A merkle tree root is found by hashing the two children together and those children are found the same way until you get to the greatest level down the tree. This means you can validate children as being correct as long as they hash together to form the root. This means you do not need all the transaction hashes to validate segments of the block, you only need the root hashes for all the segments you want. Let's say there are 8 transactions and you want to verify 4 segments (2 transactions each), The merkle tree looks like this (Might not work depending on the font):
+
+> I hope that made sense.
+
+I'm quite sure Gregory thoroughly understands how Merkle trees work and why they are useful.
+
+His question was about the use case. Let me try to answer his question, by making some assumptions about your intentions. Correct me if I'm wrong - I haven't read all details.
+
+You want to parallellize block downloads, while at the same time preventing re-download of transactions that are already known.
+To do so, a requesting node would first request (for example) the 8 level-3 hashes, then start 8 parallel threads to download the
+transactions from presumably 8 different peers. Each thread then fetches the transaction id's that correspond to its own 1/8th of
+the block, and requests the transactions whose txid is not yet known.
+Comparing this with Gregory's own suggestion (just fetch the entire txid list at first, and then (again as parallellized as needed)
+fetch the unknown transactions from several peers), this does indeed have an advantage: you need to download (relatively) far less
+data before the threaded part can start. If this is what you propose, it is certainly meaningful, but the gains aren't very large,
+in my opinion.
+
+However, my impression while reading your proposal was at times that you intend to process the different layers of the
+Merkle tree iteratively after starting the initial parallel segments. I don't think that is useful, as you'll need the actual
+txids anyway before deciding whether they need to be downloaded at all, it adds several round-trips, and once you have downloaded
+the intermediate merkle hashes for about 8 levels, you've already transferred more data than the transactions themselves. I think
+Gregory also assumed something like this, making him question why it's useful. Anyway, this whole paragraph is one assumption, so
+if it's not the case, ignore me.
+
+Can you clarify what you mean? Preferably by giving a concrete sequence of exchanged messages, with a given purpose?
+
+PS: the reason Satoshi used a Merkle tree for the transactions in a block was to allow a short piece of data (the hashes along a
+path in the tree) to prove a transaction belongs to it - I doubt he intended it for parallellizing downloads (though it certainly
+opens some opportunities here).
+
+-- 
+Pieter
+
+
+
+
+
+
+
+
