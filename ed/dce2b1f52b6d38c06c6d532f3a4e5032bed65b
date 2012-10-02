@@ -1,0 +1,136 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Tue, 2 Oct 2012 18:38:12 +0200
+Subject: [Bitcoin-development] Payment protocol thoughts
+Message-ID: <CANEZrP3aArZV1jCL8OsksGxQO03Cs=CKM_4L3NB1=qGo=GMHdA@mail.gmail.com>
+
+I've been thinking about the requirements for a payment protocol
+lately. It seems we have consensus that we need one of these. Pieter
+has a gist on the topic here: https://gist.github.com/1237788
+
+IMHO we'll want to move away from "send X BTC to address Y" and more
+towards "upload to me transactions that send X BTC to outputs
+A,B....F,G". In this context by output I mean the obvious
+interpretation of script+value.
+
+The reasons are privacy and security. Privacy: you don't want people
+to find out if you have an unexpectedly large balance (from the block
+chain). Example worst case scenarios
+
+- in a hypothetical Bitcoin-using country, as most people receive
+income exactly once a month from their employer, you could potentially
+find out other peoples salaries. Drama ensues.
+
+- business partners could find out their counterparty has an
+unexpectedly good financial position, messing up negotiations
+
+Security:
+
+- some of the outputs could be in a hot wallet, others in cold
+wallets, helping you maintain correct balances between them in real
+time
+
+- the outputs can be multi-sig scripts
+
+Wallets would then craft a series of transactions to try and somewhat
+balance the size of inputs vs outputs. Because they are separate
+transactions and all the keys are fresh, there's no way to link them
+together into a single payment, especially not if they're broadcast in
+random order with some jitter.
+
+The upside of this is better privacy. The downside is obviously more
+transactions and therefore more overhead. In theory the sum of tx
+outputs would end up converging to a reasonable "coin size" for the
+recipients, eg, businesses might be happy to receive a lot of money in
+a single output, individuals less, children or very poor people maybe
+much less.
+
+Let's call payment requests invoices. Here is a brainstorm on other
+features that may be desirable. I'm not suggesting they're all in v1,
+just that we think about them a bit to ensure we don't paint ourselves
+into a corner.
+
+- Optional list of {signature, certificate} pairs. SSL certs can be
+embedded into the payment request file itself so they can be checked
+instantly for wallets that want to show a verified identity, but you
+can also provide other certificates issued outside the regular SSL CA
+system. For example maybe MtGox issues you a "trusted vendor"
+certificate. Maybe the better business bureau issues you a cert, etc.
+
+- Optional expiry time (from sipas gist) so outputs that were never
+sent to can be recycled
+
+- Upload target (URI), where to send the created transactions
+
+- Optional message and branding image/icon that a wallet can display
+to make the transaction history a bit prettier
+
+- Opaque token that the wallet is supposed to copy into the payment.
+The merchant can use to link invoice with payment. It's technically
+redundant, the output set would identify the invoice too, as could a
+token in the upload target URL, but it may be simpler for some
+merchant implementations
+
+- Ability to specify payment amount[s] in terms of other currencies.
+If the amount is specified statically it can just be recorded in the
+wallet for informational purposes. If there's a URL provided also, it
+is an endpoint where quotes can be obtained. This allows merchants to
+make long-lived invoices which are protected against FX volatility.
+Downside: complicates wallets. Upsides: invoices can be kept around
+for longer.
+
+- Web/human-usable URL for the order so users can, eg, send messages
+to the merchant specific to an order, post a review of the merchant,
+etc
+
+- Support for setting up 2-of-3 dispute mediation. Invoices should be
+able to name a list of acceptable mediators and the wallet software
+can intersect this with a list of mediators acceptable to the user, to
+find one that works best. The whole mechanism by which merchants and
+users agree on mediators isn't designed yet but we can at least think
+about it now. It may be there's a simple design everyone agrees on
+already.
+
+- Support for requesting recurring payments. Eg, I should be able to
+provide N sets of M outputs, one set for each payment with a payment
+schedule. Wallets can then ensure they run at the appropriate times to
+keep up the subscription.
+
+- Suggested tip/service charge. Wallet would give a simple UI to
+adjust this up/down by X percentage points
+
+- Request to sign inputs with SIGHASH_ANYONECANPAY, allowing the
+payment to be a pledge for an assurance contract
+
+- Ability to specify minimum confirmation level of coins that will be
+spent. Some merchants may be OK with you immediately re-spending
+unconfirmed coins. Other merchants will care more and might want you
+to take on the burden of getting your transactions into the chain.
+
+
+On the payment upload side:
+
+- An optional signature under a stable user key that lets users
+optionally link their payments across merchants. In this way a user
+can build cross-market reputation which may help them in future, by
+relaxing confirmation requirements or reducing the chance of being
+asked to enter dispute mediation. Needs more thought.
+
+- Optionally, an invoice for a refund if the merchant chooses to
+refund the money in the absence of dispute mediation.
+
+- A list of Bitcoin transactions that make payments to the outputs
+requested in the invoice
+
+- The opaque token provided in the invoice
+
+
+
+Re: format. I would (surprise) strongly suggest protocol buffers over
+JSON. I cannot think of any justification for using JSON (for
+anything) but especially not for data structures that mostly contain
+binary data like hashes or keys. Protobufs are easier to work with in
+code, have a more efficient encoding, can be printed/parsed from ASCII
+if you need to (eg for debugging purposes) and have fewer sharp edges
+than JSON does.
+
+
