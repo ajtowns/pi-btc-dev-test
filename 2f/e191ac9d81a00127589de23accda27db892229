@@ -1,0 +1,68 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Sat, 20 Oct 2012 19:55:43 +0200
+Subject: [Bitcoin-development] Public key and signature malleability
+Message-ID: <CAPg+sBgBtYUHtHq1MnKuFJHc=NGZ4t+SxHDs0TLKmzf8bSig=g@mail.gmail.com>
+
+Hello all,
+
+as some may be aware, OpenSSL accepts several encodings for the same
+public key or the same signature. It even accepts encodings that fail
+to conform to the SEC and DER specification by which they are defined.
+As it perfectly capable of parsing every standard-compliant encoding,
+this is not a problem on itself. However, as near every full Bitcoin
+node in existence uses OpenSSL, they will accept such non-standard
+encodings in transactions, and even let them into blocks.
+
+In order to make the Bitcoin network rules more well-defined, I'd like
+to propose strict rules about what is acceptable, and which do not
+depend on OpenSSL's implementation. This would make it easier for
+alternative full node implementations, and prevent "malleability
+attacks".
+
+For that, I've submitted a pull request some time ago (see
+https://github.com/bitcoin/bitcoin/pull/1742). The specific rules are
+these:
+ * For public keys (SEC compressed or uncompressed EC points)
+   * First byte is either 0x02, 0x03 or 0x04
+   * If the first byte is 0x02 or 0x03, exactly 32 bytes follow
+   * If the first byte is 0x04, exactly 64 bytes follow
+ * For signatures (DER encoded integer pairs)
+   * Format is 0x30 <total len> 0x02 <len R> <R> 0x02 <len S> <S> <hashtype>
+   * R and S are MSB encoded integers, which encode a non-negative
+integer without excessive zero bytes in front. This implies they do
+not start with a 0x00 unless the next byte has its highest bit set
+(>=0x80) or are 0, in which case exactly one 0x00 is required. Their
+length is thus between 1 and 33 bytes.
+   * <hashtype> is a single byte that is either 0x01, 0x02, 0x03,
+0x81, 0x82 or 0x83.
+
+All these are rules that are followed by almost all clients already
+(including Armory and Bitcoin-js, which until recently didn't).
+
+Sergio Lerner recently discovered that one can take the
+secp256k1-field-size complement of the S value in the signature
+without invalidating it. The easiest solution to prevent this, would
+be to require that the lowest bit of the S value is always even (as
+taking the complement changes this). This would require some
+coordination, as no client currently enforces this, but it is easy to
+implement.
+
+The reason malleability can be a problem, is that a malicious relayer
+can modify transactions in-transit without invalidating them. This
+will not cause any loss of coins, but a lot of wallet software
+wouldn't deal gracefully with a modified version of their transactions
+that gets accepted in a block.
+
+What do you think about these rules? If people want these rules,
+nothing would happen for now - just start try to find software that
+doesn't produce complying data. In a second step, these could be
+enabled as check similar to IsStandard() - making it hard for them to
+get into blocks, but still be accepted when they aren't standard.
+Finally, when no significant amount of non-standard transactions are
+seen anymore, we can write a BIP and start enforcing this as a network
+rule.
+
+-- 
+Pieter
+
+
