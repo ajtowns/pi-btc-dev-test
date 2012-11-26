@@ -1,0 +1,54 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Tue, 27 Nov 2012 00:02:14 +0100
+Subject: [Bitcoin-development] Payment Protocol Proposal:
+	Invoices/Payments/Receipts
+In-Reply-To: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+References: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+Message-ID: <CANEZrP1MOabVfzdf5P-ODyG8igazWOo0B64cMj7dnvnqtiVpSA@mail.gmail.com>
+
+Obviously this LGTM :)
+
+Minor caveat, IMHO we should support all CAs used by the popular
+browsers. This ensures no merchant ever finds that their SSL cert they
+already own is OK for the web but not for Bitcoin. I don't see a need
+to be stricter here, given all it achieves is signing some data in a
+way linked with a domain name.
+
+X.509 is pretty baroque indeed, for our use cases it'd not be hard to
+do better. In particular, the inability to delegate properly rather
+defeats the benefits of chained certificates. For the payment
+processor case what you really want to do is take your keys, then
+issue a new cert that is specific to signing Bitcoin transactions and
+give that to the payment processor secure in the knowledge that they
+cannot MITM your secure connections. Unfortunately X.509 wasn't
+designed for the web and thus certificates you buy are marked such
+that they are not allowed to sign for other certs (due to lack of real
+namespace support).
+
+This leads to the idea of redefining the cert chain part of the
+protocol like this:
+
+  repeated bytes x509_chain = 1;
+
+becomes
+
+  message Certificate {
+    enum Type {
+      X509 = 1;
+    }
+    required Type type = 1;
+    required bytes data = 2;
+  }
+
+  repeated Certificate cert_chain = 1;
+
+Then if later we want to introduce our own minimal certificate formats
+which include features we want, we can add new enum types to do so.
+
+Note that if an old client encounters an invoice with a cert type it
+doesn't recognize, it will abort parsing of the message entirely. So
+the request to download the invoice should probably include a protocol
+version number of some kind so the server knows when it's safe to use
+new invoice features.
+
+
