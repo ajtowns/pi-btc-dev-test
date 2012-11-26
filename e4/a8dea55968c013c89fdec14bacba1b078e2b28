@@ -1,0 +1,443 @@
+From: rick@support-intelligence.com (Rick Wesson)
+Date: Mon, 26 Nov 2012 15:38:31 -0800
+Subject: [Bitcoin-development] Payment Protocol Proposal:
+	Invoices/Payments/Receipts
+In-Reply-To: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+References: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+Message-ID: <CAJ1JLtvab1Mopd56NK+m6zeEqgdRyL0AkB4DnH=HYNkm4Qshsg@mail.gmail.com>
+
+X.509 has some problems we have recent experience with. I'd prefer to
+leverage something like DANE which looks to help with assertions
+around certificates and creates an option around the CAs and x.509
+roots.
+
+-rick
+
+
+On Mon, Nov 26, 2012 at 2:37 PM, Gavin Andresen <gavinandresen at gmail.com> wrote:
+> This is the next big "lets all agree to do things the same way" thing
+> I think we should tackle. I'm particularly looking for feedback from
+> other bitcoin client developers, even if it is just a quick "looks
+> reasonable, if everybody else is going to do it then I will
+> (eventually) too..."
+>
+> Thanks to Pieter Wuille and Mike Hearn for lots of feedback and
+> suggestions and brainstorming.
+>
+> This document is online at https://gist.github.com/4120476
+>
+> If you respond to this message, please be considerate of people who
+> subscribe to the digest version of this mailing list and trim your
+> response.
+>
+>
+> Invoices, Payments and Receipts for Bitcoin Transactions
+> ========================================================
+>
+> This document proposes protocol buffer-based formats for signed,
+> authenticated "invoices" and "receipts" -- requests for payment, and
+> proof-of-payment.
+>
+> Separate documents propose an extension to the Bitcoin URI syntax and
+> new MIME types to support them.
+>
+> Motivation
+> ==========
+>
+> The idea of a "payment protocol" to improve on Bitcoin addresses has
+> been around for over a year. Users have been asking for some features
+> in this proposal (like the ability to provide a refund address so
+> overpayments or refunds can be returned to customers without the need
+> to ask them for their address) for two or three years, and have
+> started to work around shortcomings in the Bitcoin payment process
+> with creative (but inefficient) uses of transactions.
+>
+> The key features of this proposal are:
+>
+> + Requests for payment (Invoices) are tied to authenticated identities
+> using the only widely-deployed identity authentication system we have
+> right now (X.509 certificates signed by root certificate authorities)
+> + Invoices include a user-friendly description of what the payment is for
+> + Payments include where refunds should be sent
+> + At the end of the payment process, the customer holds a
+> cryptographically signed Receipt that can be used as proof-of-payment
+> if there is any dispute with the merchant.
+>
+>
+> Specification
+> =============
+>
+> Invoice/SignedInvoice
+> ---------------------
+>
+> An Invoice is a request for payment from a merchant to a customer:
+>
+> ::
+>
+>     message Output {
+>         optional uint64 amount = 1;
+>         required bytes script = 2;
+>     }
+>
+> amount: Number of satoshis (0.00000001 BTC) to be paid. If not given
+> or zero, then the customer will be asked how much to pay.
+>
+> script: a "TxOut" script to which the customer should direct payment.
+> This will normally be one of the standard Bitcoin transaction script
+> (e.g. pubkey OP_CHECKSIG).
+>
+> ::
+>
+>     message Invoice {
+>         repeated bytes x509chain = 1;
+>         repeated Output outputs = 2;
+>         required uint64 time = 3;
+>         optional uint64 expires = 4;
+>         optional bool single_use = 5 [default = true];
+>         optional string memo = 6;
+>         optional string receiptURI = 7;
+>         optional bytes merchant_data = 8;
+>     }
+>
+> outputs: one or more outputs where Bitcoins are to be sent.
+>
+> x509chain: one or more DER-encoded X.509 certificates that identifies
+> the merchant. See the "Certificates" section below for details.
+>
+> time: Unix timestamp (seconds since 1-Jan-1970) when the Invoice was created.
+>
+> expires: Unix timestamp after which the Invoice should be considered
+> invalid. If not given, the Invoice may be re-used until the earliest
+> certificate expiration date in the X509chain.
+>
+> single_use: If true, this Invoice should be used for only one payment.
+> If false, it may be added to the user's address book and used
+> repeatedly until it expires (e.g. for donations or a recurring
+> payment).
+>
+> memo: UTF-8 encoded, plain-text (no formatting) note that should be
+> displayed to the customer, explaining what this Invoice is for.
+>
+> receiptURI: Secure (https) URI where a Payment message (see below) may
+> be sent to obtain a SignedReceipt as proof-of-payment.
+>
+> merchant_data : Arbitrary data ignored by the client that may be used
+> by the merchant to identify the Invoice.
+>
+> ::
+>
+>     message SignedInvoice {
+>         required Invoice invoice = 1;
+>         required bytes signature = 2;
+>     }
+>
+> A SignedInvoice is an Invoice signed using the private key
+> corresponding to the public key in the first certificate in the
+> x509chain and the HMAC SHA-256 algorithm.
+>
+> When a Bitcoin client receives a SignedInvoice, it must authorize
+> payment by doing the following:
+>
+> 1. Validate the x509chain certificate chain up to it's list of root
+> certificate authorities
+> 2. Validate that the time on the customer's system is before Invoice.expires
+> 3. Display the "Common Name" (CN) string from the first x509chain
+> certificate and ask the customer if they would like to submit payment
+>
+> Payment
+> -------
+>
+> ::
+>
+>     message Payment {
+>         required Invoice invoice = 1;
+>         repeated bytes transactions = 2;
+>         repeated Output refund_to = 3;
+>         optional string memo = 4;
+>     }
+>
+> invoice : the invoice received from the merchant. A merchant must
+> validate the Invoice and may reject the Payment if the Invoice was
+> altered by the customer.
+>
+> transactions : One or more valid, signed Bitcoin transactions that
+> fully pay the Invoice
+>
+> refund_to : One or more outputs where the merchant may return funds,
+> if necessary.
+>
+> memo : UTF-8 encoded, plain-text note from the customer to the merchant.
+>
+> If the customer authorizes payment, then the Bitcoin client:
+>
+> 1. Creates and signs a transaction with one output sending the Invoice.script
+> 2. If there is no Invoice.receiptURI, then the transaction is
+> broadcast on the Bitcoin p2p network.
+> 3. Else POST a Payment message to Invoice.receiptURI and expect a
+> SignedReceipt in response.
+>
+> Invoice.receiptURI must be secure against man-in-the-middle attacks
+> that might alter Payment.refund_to.
+>
+> *Note: an alternative would be a SignedPayment message that ties the
+> signatures in Payment.transactions to a signature for the entire
+> Payment message. Spending multisig inputs that may be controlled by
+> more than one person or spending arbitrary non-standard transactions
+> makes that non-trivial.*
+>
+> Receipt/SignedReceipt
+> ---------------------
+>
+> ::
+>
+>     message Receipt {
+>         required Payment payment = 1;
+>         required bool accepted = 2;
+>         optional string memo = 3;
+>     }
+>
+> accepted : true if the Payment is accepted and will be broadcast on
+> the Bitcoin p2p network.
+>
+> memo : UTF-8 encoded note that should be displayed to the customer
+> indicating that the transaction is complete.
+>
+> ::
+>
+>     message SignedReceipt {
+>         required Receipt receipt = 1;
+>         required bytes signature = 3;
+>     }
+>
+> A SignedReceipt is a Receipt signed using the private key
+> corresponding to the public key in the first certificate in the
+> Receipt->Payment->Invoice.x509chain and the HMAC SHA-256 algorithm.
+>
+> Upon receiving a SignedReceipt, a Bitcoin client should validate the
+> signature and, if valid, display the Receipt.memo and store the
+> SignedReceipt as proof-of-payment.
+>
+> If a SignedReceipt is not received for any reason (timeout, error) and
+> Payment.transactions has not been broadcast by the merchant on the
+> Bitcoin p2p network, then the Bitcoin client should assume that the
+> payment failed, inform the customer that the payment failed, and
+> return coins involved in the transaction to the customer's wallet.
+>
+>
+> Certificates
+> ============
+>
+> The Invoice.x509chain (X.509 Certificate Chain) field contains the
+> X.509 public key certificate or certificate chain [RFC5280]
+> corresponding to the key used to digitally sign the Invoice and
+> Receipt. The certificate or certificate chain is represented as an
+> array of DER [ITU.X690.1994] PKIX certificate value. The certificate
+> containing the public key of the entity that digitally signed the
+> Invoice MUST be the first certificate. This MAY be followed by
+> additional certificates, with each subsequent certificate being the
+> one used to certify the previous one. The recipient MUST verify the
+> certificate chain according to [RFC5280] and reject the payment
+> request if any validation failure occurs.
+>
+> *What should we say about root certificates and certificate management
+> in general? Any requirements, or leave it up to each Bitcoin client to
+> determine which root CA's are trustworthy, as happens with web
+> browsers? Gavin suggests trusting only (say) ten of the Extended
+> Validation authorities:
+> http://en.wikipedia.org/wiki/Extended_Validation_Certificate#Extended_Validation_certificate_identification
+> *
+>
+> *X.509 is widely criticised for doing too much. However, it is the
+> Public Key Infrastructure (PKI) system we're stuck with. Do web
+> browsers / certificate authorities support the full X.509 spec, or
+> only a subset? Should Bitcoin clients only support some well-defined
+> subset of X.509 ? More research needed here... *
+>
+> Use Cases
+> =========
+>
+> Merchant Payment Service
+> ------------------------
+>
+> A merchant payment service (like Paysius or bit-pay.com) would use
+> Invoices and Receipts as follows:
+>
+> 1. Merchant pays for a certificate from a certificate authority, and
+> then gives the payment service the certificate and their private key.
+> This could be the same certificate and private key as is used for the
+> merchant's web site, but best security practice would be to purchase a
+> separate certificate for authenticating Invoices. Very successful
+> merchant payment services might act as intermediate certificate
+> authorities, issuing certificates for their merchants.
+> 2. Customer goes through the checkout process on either the merchant's
+> or payment service's web site.
+> 3. At the end of the checkout process, a SignedInvoice is generated
+> and sent to the customer's Bitcoin client.
+> 4. Customer's Bitcoin client displays the Invoice, showing that the
+> payment is for the merchant.
+> 5. On customer approval, a Payment is sent to the payment service's
+> paymentURI. The merchant is notified of the payment, and the customer
+> receives a SignedReceipt as proof-of-payment.
+>
+> SatoshiDice
+> -----------
+>
+> SatoshiDice (www.satoshidice.com) is an extremely popular game that
+> uses tiny transactions for some customer/service communications. In
+> particular, customers can add an extra output to their transactions to
+> indicate where winnings should be sent. And SatoshiDice creates tiny
+> transactions to let their customers know that a bet was received, but
+> lost.
+>
+> Assuming Bitcoin clients upgrade to support this proposal, a bet on
+> SatoshiDice would proceed as follows:
+>
+> 1. Customer clicks on a link on SatoshiDice.com and their Bitcoin
+> client receives a SignedInvoice.
+> 2. Customer authorizes payment, and their Bitcoin client creates a
+> Payment message and submits it directly to
+> https://satoshidice.com/something
+> 3. The SatoshiDice web server checks to make sure the transaction is
+> valid, broadcasts it, and determines whether the customer wins or
+> loses. It returns a SignedReceipt with either a "You win" or "You
+> lost" memo.
+> 4. If the customer won, it broadcasts a transaction to pay them using
+> Payment.refund_to
+> 5. Customer's Bitcoin client displays the win/lose memo, and if they
+> won the winnings appear in their wallet when received over the p2p
+> network.
+>
+> Multiperson Wallet
+> ------------------
+>
+> This use case starts with a multi-signature Bitcoin address or wallet,
+> with keys held by two different people (Alice and Bob). Payments from
+> that address/wallet must be authorized by both Alice and Bob, and both
+> are running multi-signature-capable Bitcoin clients.
+>
+> Alice begins the payment process by getting a SignedInvoice from a
+> merchant that needs to be paid. She authorizes payment and her Bitcoin
+> client creates a Payment message with a partially-signed transaction,
+> which is then sent to Bob any way that is convenient (email
+> attachment, smoke signals...).
+>
+> Bob's Bitcoin client validates the SignedInvoice and asks Bob to
+> authorize the transaction. He says OK, his Bitcoin client completes
+> the transaction by providing his signature, submits the payment to the
+> merchant, and then sends a message to Alice with the SignedReceipt he
+> received from the merchant, completing the payment process.
+>
+>
+> Design Notes
+> ============
+>
+> Why X.509 Certificates?
+> -----------------------
+>
+> This proposal uses X.509 certificates as the identity system for
+> merchants because most of them will have already purchased a
+> certificate to secure their website and will be familiar with the
+> process of proving their identity to a certificate issuing authority.
+>
+> Implementing a better global PKI is outside the scope of this
+> proposal. If a better PKI is adopted, the only change to this proposal
+> would be to replace the Invoice.x509chain with whatever that better
+> infrastructure uses to identify entities.
+>
+>
+> Why not JSON?
+> -------------
+>
+> Invoice, Payment and Receipt messages could all be JSON-encoded. And
+> the Javascript Object Signing and Encryption (JOSE) working group at
+> the IETF has a draft specification for signing JSON data.
+>
+> But the spec is non-trivial. Signing JSON data is troublesome because
+> JSON can encode the same data in multiple ways (whitespace is
+> insignificant, characters in strings can be represented escaped or
+> un-escaped, etc.), and the standards committee identified at least one
+> security-related issue that will require special JSON parsers for
+> handling JSON-Web-Signed (JWS) data (duplicate keys must be rejected
+> by the parser, which is more strict than the JSON spec requires).
+>
+> A binary message format has none of those complicating issues. Which
+> encoding format to pick is largely a matter of taste, but Protocol
+> Buffers is a simple, robust, multi-programming-language,
+> well-documented, easy-to-work-with, extensible format.
+>
+> What about a merchant-pays-fee feature?
+> ---------------------------------------
+>
+> It is desireable to allow a merchant to pay the cost of any Bitcoin
+> network transaction processing fees, so if a customer is paying for a
+> 1 BTC item they pay exactly 1 BTC.
+>
+> One way of accomplishing that is to add a 'maxfee' field to the
+> Invoice, and have the Bitcoin client construct a transaction that pays
+> the merchant (amount-maxfee).
+>
+> Another way of accomplishing that is to change the transaction
+> selection code used by Bitcoin miners, so that dependent transactions
+> are considered as a group. Then a merchant with several unconfirmed
+> zero-fee transaction from customers can create a pay-to-self
+> transaction with a large enough fee to pay for the set of transactions
+> to be confirmed.
+>
+> A third way of accomplishing that is for the Bitcoin client to sign
+> Payment.transactions[0] using the SIGHASH_ANYONECANPAY flag, and for
+> the merchant to add an additional, small-BTC-value input to the
+> transaction before broadcasting it. That additional input would go
+> directly to miners as a fee. *Note: Gavin is not sure if he loves or
+> hates this idea.*
+>
+> Checking for revoked certificates
+> ---------------------------------
+>
+> The Online Certificate Checking Protocol (OCSP) is supposed to be a
+> quick and easy way for applications to check for revoked certificates.
+>
+> In practice, it doesn't work very well. Certificate Authorities have
+> no financial incentive to support a robust infrastructure that can
+> handle millions of OCSP validation requests quickly.
+>
+> Ideally, Bitcoin clients would use OCSP to check certificate statuses
+> every time they received or re-used an Invoice. But if that results in
+> long pauses or lots of false-positive rejections (because an OCSP
+> endpoint is offline or overwhelmed, perhaps) then merchants and
+> customers might revert to just using "never fails" Bitcoin addresses.
+>
+>
+>
+> References
+> ==========
+>
+> Public-Key Infrastructure (X.509) working group :
+> http://datatracker.ietf.org/wg/pkix/charter/
+>
+> RFC 2560, X.509 Internet Public Key Infrastructure Online Certificate
+> Status Protocol - OCSP : http://tools.ietf.org/html/rfc2560
+>
+> Protocol Buffers : https://developers.google.com/protocol-buffers/
+>
+> See Also
+> ========
+>
+> Javascript Object Signing and Encryption working group :
+> http://datatracker.ietf.org/wg/jose/
+>
+> sipa's payment protocol proposal: https://gist.github.com/1237788
+>
+> ThomasV's "Signed Aliases" proposal : http://ecdsa.org/bitcoin_URIs.html
+>
+> ------------------------------------------------------------------------------
+> Monitor your physical, virtual and cloud infrastructure from a single
+> web console. Get in-depth insight into apps, servers, databases, vmware,
+> SAP, cloud infrastructure, etc. Download 30-day Free Trial.
+> Pricing starts from $795 for 25 servers or applications!
+> http://p.sf.net/sfu/zoho_dev2dev_nov
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
