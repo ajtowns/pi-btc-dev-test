@@ -1,0 +1,61 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 27 Nov 2012 22:10:23 +0100
+Subject: [Bitcoin-development] Draft BIP for Bloom filtering
+In-Reply-To: <1353523117.1085.14.camel@localhost.localdomain>
+References: <CANEZrP0XALwBFJyZTzYd5xBp4MRrjv0s_y2tOXbO7UgjWF2HzA@mail.gmail.com>
+	<20121121151534.GA5540@vps7135.xlshosting.net>
+	<1353523117.1085.14.camel@localhost.localdomain>
+Message-ID: <20121127211019.GA22701@vps7135.xlshosting.net>
+
+On Wed, Nov 21, 2012 at 01:38:37PM -0500, Matt Corallo wrote:
+> On Wed, 2012-11-21 at 16:15 +0100, Pieter Wuille wrote:
+> > On Wed, Oct 24, 2012 at 05:56:07PM +0200, Mike Hearn wrote:
+> > > I've written a draft BIP describing the bloom filtering protocol
+> > > extension developed by myself and Matt.
+> > > 
+> > > https://en.bitcoin.it/wiki/BIP_0037
+> > 
+> > Two comments I made on the pullreq page, which are probably better discussed here:
+> > * The 0xFFFFFFFF/(n-1)*i seed value seems intended to result in large bit
+> >   differences between the different hash function's seeds. Together with the tweak,
+> >   however, the first and the last now get seeds tweak and tweak-1. I think
+> >   something simpler like k1*i+k2*n+tweak is better (with k1 and k2 arbitrary large
+> >   odd 32-bit integers).
+> Meh, sure, whatever...I dont really think the seed values matter
+> significantly (Murmur3 isnt that bad of a hash function...) (and the
+> original algorithm wont result in a significant bit difference between
+> the seeds in many cases).
+
+Sure, it's nothing important, but it seems like it fails to do what it was intended for.
+
+How about just this: tweak + i*0xFBA4C795 (number optimized to give large seed
+differences for every tweak). If you want variation when changing the number of hash
+functions, just choose a different seed. 
+
+> > Maybe the actual filter data in filterload can be made optional:
+> >   if it is omitted, it's assumed to be all zeroes (though that would mean the size
+> >   has to be specified).
+> > 
+> I'm not sure here, if you are sending a filter just to use filteradd to
+> add things to it manually, you are doing something very, very, very
+> wrong... Though we could certainly do some kind of compressed bloom
+> filter encoding to allow for small filter loads (loading the few things
+> you need to filteradd right away) where you anticipate adding
+> significantly more filter elements down the road (can anyone even come
+> up with a case where you anticipate doing this?), the filter is small
+> enough (max 36kB) that I see little benefit for the large increase in
+> complexity (or is this another repeat of the merkle branch discussion?)
+
+It's probably not worth it for something that is max 36 kilobytes. If ever
+necessary, we can define a new message type that just lists a number of bits to
+be set in the server-side filter.
+
+For now, I agree that you should just send the filter as intended, and not expect to
+do many filteradds (though you should take the implicitly-added txids into
+accounted when computing the filter size).
+
+-- 
+Pieter
+
+
+
