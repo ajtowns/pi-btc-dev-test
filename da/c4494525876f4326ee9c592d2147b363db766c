@@ -1,0 +1,71 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Wed, 28 Nov 2012 11:43:19 +0100
+Subject: [Bitcoin-development] Payment Protocol Proposal:
+	Invoices/Payments/Receipts
+In-Reply-To: <CABsx9T13C4eFC9caTmCRm==YAESknX8xhhumb7Mg0mZNdzEosQ@mail.gmail.com>
+References: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+	<201211271703.39282.andyparkins@gmail.com>
+	<CANEZrP0NZykzrvC1=YZv4czbu+EPaR3qpjQ2WZDsA8DhroR2_g@mail.gmail.com>
+	<201211271726.56370.andyparkins@gmail.com>
+	<CANEZrP2xww7=y0gSyW=oB734UJu2K1f5wB+UuovPO8mCENRzmA@mail.gmail.com>
+	<CABsx9T13C4eFC9caTmCRm==YAESknX8xhhumb7Mg0mZNdzEosQ@mail.gmail.com>
+Message-ID: <CANEZrP1wgMgo8N5f97KF6zNaPzoYVDU9Q=YABkz=jvTpM10jKQ@mail.gmail.com>
+
+The current spec is ambiguous in the case of what to do if the invoice
+contains one output of a fixed amount and one or more outputs of an
+unspecified amount. Should the user be prompted once per output? That
+seems suboptimal. Prompted once for a value that's then randomly
+distributed between all open-value outputs? It seems this ability of
+the protocol is somewhat more complex than it appears. The ability to
+have open outputs is nice for tips though.
+
+You could consider moving pki_type and pki_data into a separate
+message and making both fields required, then making the pki message
+optional. Otherwise you can have pki_type set but no data or
+vice-versa. It doesn't make much difference in the end, just slightly
+improves the automatic sanity checks produced by the proto compiler.
+
+w.r.t SIGHASH_ANYONECANPAY. I think it's best not to use this
+routinely as it relaxes the signature checks in ways that may open
+non-obvious holes when combined with other features. I thought we
+pretty much had consensus on recursively calculating fees including
+dependents in the memory pool?
+
+Peter is correct that there are a few degrees of freedom in protobuf
+serialization, though far fewer than with JSON. I'd like to think
+upstream would be open to resolving these ambiguities.
+Re-serialization of an Invoice message in the Payment message is a
+potential source of mistakes. There's no need to ever concatenate
+these messages and alternative implementations that don't order
+serialized fields by tag number are missing an important optimization,
+so they could be fixed. The main issue is treatment of unknown fields.
+If/when the Invoice message is extended with other fields that are
+round-tripped through an old client, the data may get lost. JSON
+doesn't help resolve that either, of course. There are a few
+solutions:
+
+1) Change the type of the Invoice field in Payment to be "bytes" and
+set it to be the hash of the originally received binary Invoice
+message. Downside, requires merchants to track all outstanding
+invoices.
+2) Ask protobufs upstream to modify the spec/implementations so
+ordering of unknown fields is specified. The Python implementation
+could be extended to support them so Python implementors don't end up
+with accidental message downgrades.
+3) Language of the spec could be changed to explicitly state that the
+received Invoice may not be binary-identical to the one that was sent,
+in the case of a client that incorrectly downgrades the message. Thus
+you'd be expected to check what the Invoice was using merchant_data
+which is opaque and could just be, eg, a database key on your own end.
+4) Instead of submitting the entire Invoice back to the merchant, just
+the merchant_data could be in the Payment message.
+
+Of the four options I prefer the last. What is the use case for
+resubmitting the entire invoice anyway? Even if protobufs are improved
+so handling of round-tripping new messages through old [Python]
+clients is more rigorous, some implementors will probably convert the
+protobuf objects into some internal forms for whatever reason (or
+serialize them to a database, etc) and they're very likely to mess up
+the handling of unknown fields when they do it.
+
+
