@@ -1,0 +1,82 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 28 Nov 2012 03:33:06 -0500
+Subject: [Bitcoin-development] Payment Protocol Proposal:
+ Invoices/Payments/Receipts
+In-Reply-To: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+References: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+Message-ID: <20121128083306.GA13919@savin>
+
+On Mon, Nov 26, 2012 at 05:37:31PM -0500, Gavin Andresen wrote:
+> Why not JSON?
+> -------------
+> 
+> Invoice, Payment and Receipt messages could all be JSON-encoded. And
+> the Javascript Object Signing and Encryption (JOSE) working group at
+> the IETF has a draft specification for signing JSON data.
+> 
+> But the spec is non-trivial. Signing JSON data is troublesome because
+> JSON can encode the same data in multiple ways (whitespace is
+> insignificant, characters in strings can be represented escaped or
+> un-escaped, etc.), and the standards committee identified at least one
+> security-related issue that will require special JSON parsers for
+> handling JSON-Web-Signed (JWS) data (duplicate keys must be rejected
+> by the parser, which is more strict than the JSON spec requires).
+> 
+> A binary message format has none of those complicating issues. Which
+> encoding format to pick is largely a matter of taste, but Protocol
+> Buffers is a simple, robust, multi-programming-language,
+> well-documented, easy-to-work-with, extensible format.
+
+I'm not sure this is actually as much of an advantage as you'd expect. I
+looked into Google Protocol buffers a while back for a timestamping
+project and unfortunately there are many ways in which the actual binary
+encoding of a message can differ even if the meaning of the message is
+the same, just like JSON.
+
+First of all while the order in which fields are encoded *should* be
+written sequentially, parsers are also required to accept the fields in
+any order. There is also a repeated fields feature where the
+fields can either be serialized as one packed key-list pair, or multiple
+key-value(s) pairs; in the latter case the payloads are concatenated.
+
+The general case of how to handle a duplicated field that isn't supposed
+to be repeated seems to be undefined in the standard. Yet at the same
+time the standard mentions creating messages by concatenating two
+messages together. Presumably parsers treat that case as an error, but I
+wouldn't be surprised if that isn't always true.
+
+Implementations differ as well. The current Java and C++ implementations
+write unknown fields in arbitrary order after the sequentially-ordered
+known fields, while on the other hand the Python implementation simply
+drops unknown fields entirely. As far as I know no implementation
+preserves order for unknown fields.
+
+Finally, while not a Protocol Buffers specific problem, UTF8 encoded
+text isn't guaranteed to survive a UTF8-UTFx-UTF8 round trip.  Multiple
+code point sequences can be semanticly identical so you can expect some
+software to convert one to the other. Similarly lots of languages
+internally store unicode strings by converting to something like UTF16.
+One solution is to use one of the normalization forms such as NFKD - an
+idempotent transformation - although I wouldn't be surprised if
+normalization itself is complex enough that implementation bugs exist,
+not to mention the fact that the normalization forms have undergone
+different versions.
+
+I think the best way(1) to handle (most) the above by simply treating the
+binary message as immutable and never re-serializing a deserialized
+message, but if you're willing to do that just using JSON isn't
+unreasonable either.
+
+
+1) Of course I went off an created Yet Another Binary Serialization for
+my project, but I'm young and foolish...
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20121128/ac1eb23f/attachment.sig>
