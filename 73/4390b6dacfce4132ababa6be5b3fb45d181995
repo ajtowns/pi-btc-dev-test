@@ -1,0 +1,62 @@
+From: roy@gnomon.org.uk (Roy Badami)
+Date: Wed, 28 Nov 2012 18:36:19 -0500
+Subject: [Bitcoin-development] Payment Protocol Proposal:
+ Invoices/Payments/Receipts
+In-Reply-To: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+References: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+Message-ID: <20121128233619.GA6368@giles.gnomon.org.uk>
+
+> If a Receipt is not received for any reason (timeout, error) and
+> Payment.transactions has not been broadcast by the merchant on the
+> Bitcoin p2p network, then the Bitcoin client should assume that the
+> payment failed, inform the customer that the payment failed, and
+> return coins involved in the transaction to the customer's wallet.
+
+I'm not sure I understand the rationale for this.  In the above
+scenario the buyer has no way to determine whether the merchant still
+has a copy of the transaction that they could broadcast in future.
+Maybe there is simply a systems problem at the merchant which has
+temporarily delayed the transaction broadcast. Or maybe a dishonest
+merchant deliberately engineered this situation in an attempt to
+mislead the buyer as to the status of their payment.
+
+Either way, having the buyer think the coins have been returned to
+their wallet - only to disappear from their wallet again at some later
+time - would seriously damage user confidence in Bitcoin IMHO.
+
+It seems to me that the first thing the buyer should do given the
+protocol as it stands is simply resend the Payment message - if there
+was a temporary problem then resending the payment message (with the
+same signed transation) might resolve the sitution.
+
+If after several retries the status of the transaction is still
+undefined then it's really not clear what to do, but it seems
+desireable to have the client take steps so that it can return to a
+state of certainly about its wallet balance as quickly as possible.
+Two things I can imagine that the buyer might want their client to do
+at this point are:
+
+ * broadcast the transaction itself, so they are sure the payment
+   transaction will make it into the blockchain without any further
+   action on their part, or
+
+ * invalidate the transaction by immediately broadcasting a
+   pay-to-self transaction that spends one or more of the same outputs
+   that the payment transaction spends (and treat the funds as part of
+   the unconfirmed balance until this pay-to-self transaction
+   confirms).  This ensures the merchant can't subsequently use a
+   transaction which the buyer thinks has failed
+
+It seems to me it would be simpler and cleaner if the buyer just
+always broadcasted the transaction on the p2p network, regardless of
+whether the Invoice includes a receiptURI.  If a receiptURI is
+included, the buyer's client would also include the transaction in the
+Purchase message.  The merchant then tries to broadcast the
+transaction as well (unless their bitcoind has already seen it, which
+may well be the common case).  This approach seems to me to have fewer
+nasty edge cases.s
+
+roy
+
+
+
