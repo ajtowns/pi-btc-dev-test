@@ -1,0 +1,128 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 28 Nov 2012 07:57:10 -0500
+Subject: [Bitcoin-development] Payment Protocol Proposal:
+ Invoices/Payments/Receipts
+In-Reply-To: <CANEZrP1wgMgo8N5f97KF6zNaPzoYVDU9Q=YABkz=jvTpM10jKQ@mail.gmail.com>
+References: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+	<201211271703.39282.andyparkins@gmail.com>
+	<CANEZrP0NZykzrvC1=YZv4czbu+EPaR3qpjQ2WZDsA8DhroR2_g@mail.gmail.com>
+	<201211271726.56370.andyparkins@gmail.com>
+	<CANEZrP2xww7=y0gSyW=oB734UJu2K1f5wB+UuovPO8mCENRzmA@mail.gmail.com>
+	<CABsx9T13C4eFC9caTmCRm==YAESknX8xhhumb7Mg0mZNdzEosQ@mail.gmail.com>
+	<CANEZrP1wgMgo8N5f97KF6zNaPzoYVDU9Q=YABkz=jvTpM10jKQ@mail.gmail.com>
+Message-ID: <20121128125710.GA9893@savin>
+
+On Wed, Nov 28, 2012 at 11:43:19AM +0100, Mike Hearn wrote:
+> Peter is correct that there are a few degrees of freedom in protobuf
+> serialization, though far fewer than with JSON.
+
+FWIW I re-read the specs again and turns out my memory was wrong. (I
+last looked at this about four months ago) Duplicated fields are handled
+in a defined manner, with the last field seen in the serialization being
+the one whose value is used. Again, repeated fields are treated as
+elements of a list, preserving order.
+
+It does raise the interesting question do the implementations that don't
+preserve order of unknown fields, preserve the order of multiple unknown
+fields, either repeated or not?
+
+> I'd like to think upstream would be open to resolving these
+> ambiguities.
+
+I gotta admit, I suspect they won't be that open. Protocol buffers was
+designed because Google needed a fast serialization method suitable for
+many different internal projects. Needing round-trip idempotence seems
+like a rare requirement to me, especially for internal use.
+
+> Re-serialization of an Invoice message in the Payment message is a
+> potential source of mistakes. There's no need to ever concatenate
+> these messages and alternative implementations that don't order
+> serialized fields by tag number are missing an important optimization,
+> so they could be fixed. The main issue is treatment of unknown fields.
+> If/when the Invoice message is extended with other fields that are
+> round-tripped through an old client, the data may get lost. JSON
+> doesn't help resolve that either, of course. There are a few
+> solutions:
+
+Well, actually you can take advantage of the message concatination
+ability of protocol buffers to extend a message by simply appending the
+new fields to the existing thus either defining new fields, or
+overriding old values as required. If you want to de-duplicate though
+you run into the problem all over again.
+
+On the other hand JSON handles this case fine too provided that your
+JSON implementation supports dictionary objects with arbitrary fields.
+Just use the object as is and the unknown fields will be re-serialized
+properly at the other end. Some implementations will have to be careful
+to handle collisions with existing keys in the namespace. (consider in
+Python what would happen if you mapped your object to a class instance,
+and the serialization included the key "__init__")
+
+That said, JSON is quite problematic with numbers. For instance, you
+have to be careful to keep integers represented as pure integers below
+what Javascript can handle, the maximum integer exactly representable in
+a double float, or the JSON won't be parsable in Javascript even if many
+other languages handle it fine. Protocol buffers is at least pretty
+explicit about what size integers are.
+
+> 1) Change the type of the Invoice field in Payment to be "bytes" and
+> set it to be the hash of the originally received binary Invoice
+> message. Downside, requires merchants to track all outstanding
+> invoices.
+> 2) Ask protobufs upstream to modify the spec/implementations so
+> ordering of unknown fields is specified. The Python implementation
+> could be extended to support them so Python implementors don't end up
+> with accidental message downgrades.
+> 3) Language of the spec could be changed to explicitly state that the
+> received Invoice may not be binary-identical to the one that was sent,
+> in the case of a client that incorrectly downgrades the message. Thus
+> you'd be expected to check what the Invoice was using merchant_data
+> which is opaque and could just be, eg, a database key on your own end.
+> 4) Instead of submitting the entire Invoice back to the merchant, just
+> the merchant_data could be in the Payment message.
+> 
+> Of the four options I prefer the last. What is the use case for
+> resubmitting the entire invoice anyway? Even if protobufs are improved
+
+Note that I think the SignedInvoice message itself is broken, because
+protobuf implementations have no reason to guarantee that they can give
+you the serialized bytes of the Invoice sub-message. It's a quite
+specific use-case that isn't needed for pretty much anything but crypto.
+FWIW I took a quick look at the official API's, C++, Java and Python,
+and as far as I can tell none of them support accessing the binary
+serialization of a message field other than by re-serializing the
+message.
+
+Really the invoice field should be declared as bytes serialized_invoice,
+as inconvenient as that is to work with.
+
+> so handling of round-tripping new messages through old [Python]
+> clients is more rigorous, some implementors will probably convert the
+> protobuf objects into some internal forms for whatever reason (or
+> serialize them to a database, etc) and they're very likely to mess up
+> the handling of unknown fields when they do it.
+
+Since the Payment message includes an *untrusted* Invoice that the
+vendor needs to authenticate the whole invoice no matter what on Payment
+reception. In many cases that implies they have to keep some sort of
+database of "quotes" or similar anyway as the client can change anything
+they want otherwise. Again that leads back to the argument of why not
+just stick with the merchant_dat as you suggest, which will usually be
+some short invoice number attached to a database? A vendor that wants to
+operation a stateless invoicing system can just stuff a HMAC-protected
+serialized invoice into the merchant_data
+
+I guess you could use a mutable invoice field as a way of achieving some
+sort of negotiation protocol, but I think it's better to stick to the
+original concept of just ensuring that the user is really paying the
+right amount to the right address.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20121128/46255e3d/attachment.sig>
