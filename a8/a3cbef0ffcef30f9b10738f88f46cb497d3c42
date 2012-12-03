@@ -1,0 +1,64 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Mon, 3 Dec 2012 10:51:41 -0500
+Subject: [Bitcoin-development] Chain dust mitigation: Demurrage based
+ Chain Vacuuming
+In-Reply-To: <50BCC28A.4060503@gmail.com>
+References: <80648682-E34A-455E-B34A-6BC24652C3EA@ceptacle.com>
+	<CAPg+sBi25xP8R03y1VR=q4ZJaeT6FAuV=hXsq_7niSHycpnPuA@mail.gmail.com>
+	<9CEDE4D4-3685-4F70-953E-15CC50A8AA3F@ceptacle.com>
+	<CAAS2fgTL=s-vvGsubUu9ZBMidd0wzZdVPb6rEUg+eTMaiipRbA@mail.gmail.com>
+	<50BCC28A.4060503@gmail.com>
+Message-ID: <CAAS2fgRTHwTUADF+909zztv6_mXsmsT+obZ0X=qjNZ2=yWsD5Q@mail.gmail.com>
+
+On Mon, Dec 3, 2012 at 10:17 AM, Alan Reiner <etotheipi at gmail.com> wrote:
+> Perhaps it could be improved by cleaning up dust from any address by default
+> (not just ones already included in the tx), with the option for the user to
+> disable that behavior.  After all, anonymity was never a core feature of the
+> network -- I think it makes sense that the logic would reduce anonymity by
+> default in exchange for a cleaner network, with a clear option to "opt-out"
+> of that logic if user cares.  I think most users don't actually care...
+
+Yea, the obvious case would look for exact matches?  but because sane
+software pays change to fresh addresses I expect this to trigger an
+unfortunately infrequent amount of time.
+
+Why do you bother with the 5 input limit?  The way I'd handle this in
+the reference client is as a pure post-processing step. E.g. take any
+w/ change transaction formed and try adding small inputs in a greedy
+fashion until the next would change the fees. Do you see a reason not
+to do this?
+
+A next step up in infrequency is to use input taint tracking
+information to gather up coins from all inputs which are already
+crosslinked.  In the reference client, which doesn't avoid
+crosslinking, this would likely be quite effective but I worry about
+having an O(N^2)-ish algorithm as part of coin selection. And so I
+think it would require maintaining in the wallet the cross link
+history for each address rather than building it on the fly. This
+seems like a lot of changes for a relatively modest optimization.
+
+Another possibility would be to not apply the privacy rule to very
+small inputs or to addresses which have only ever received a very
+small sum total. But I don't know how to define very small in a robust
+way, and I think that the privacy behavior of the software being
+"inconsistent" from the users perspective would be somewhat
+unfortunate.  Perhaps a setting for the value considered very small
+for this purpose which defaults to the relay MINFEE?   (And also
+include larger outputs when they're address matches).
+
+The the problem with this is this:  Say I have an address 1GMaxwellFOO
+ that everyone knows belongs to me. Someone who wants to identify all
+my transactions sends me a constant spray of 1e-8 inputs to
+1GMaxwellFOO.  If the address association is ignored (even for only
+very small inputs) then all my transactions become rapidly
+identifiable.    Privacy, of at least a basic form, is an important
+element of the system, if it's not preserved than bitcoin is inferior
+to traditional value transfer systems in an additional way.
+
+(And FWIW, I've seen self-appointed sluths on IRC trying to catch
+trouble makers by paying tiny amounts to their extortion addresses;
+with the incorrect expectation that it would taint their other
+transactions. So even when it doesn't usually work people have tried
+using this to attack people)
+
+
