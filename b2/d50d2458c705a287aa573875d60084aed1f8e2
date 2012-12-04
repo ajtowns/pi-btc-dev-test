@@ -1,0 +1,76 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Tue, 4 Dec 2012 18:06:05 +0100
+Subject: [Bitcoin-development] Payment Protocol Proposal:
+	Invoices/Payments/Receipts
+In-Reply-To: <CABsx9T35qD_xJEVw002eAhJ1kr6x5aMU7RpD+U84XEOZXmXcYw@mail.gmail.com>
+References: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+	<20121128233619.GA6368@giles.gnomon.org.uk>
+	<CABsx9T09FYf2RTaMpmujt3qwTFc2JgnREH_7Hyk2mnCgb3CvAw@mail.gmail.com>
+	<20121129170713.GD6368@giles.gnomon.org.uk>
+	<CANEZrP233CytLs3PWBQ1TyuBTMv4sLGJkEMeGWYq5xRi+iLKew@mail.gmail.com>
+	<20121129185330.GE6368@giles.gnomon.org.uk>
+	<CABsx9T35qD_xJEVw002eAhJ1kr6x5aMU7RpD+U84XEOZXmXcYw@mail.gmail.com>
+Message-ID: <CANEZrP2riPBViBqAOWfY9uSQwoEm=gN108JU988XvouMbai1Ug@mail.gmail.com>
+
+> So, if a bitcoin client is getting Invoice messages via email or from
+> a web server, the version will be specified as part of the MIME type;
+> for example:
+>    Content-Type: application/x-bitcoin-invoice; version=1
+> The version= syntax is part of the MIME standard.
+
+I think that's OK. However, you should only be getting the version you
+expect because when you request an invoice, your client should be
+telling the merchant what protocol version you implement.
+
+Does it make sense to have this spec not include the details of
+bootstrapping? It's not complicated - we extend the URI spec in a
+backwards compatible way:
+
+   bitcoin:1AbCdEfG?value=10.0&label=Pay%20for%20Foo&invoice=https://merchant.com/inv/aB425az
+
+When a compatible client sees the invoice param, it ignores the rest
+of the URI and downloads the URL
+https://merchant.com/inv/aB425az?ver=1.0
+
+A server on merchant.com sees that the client expects a version 1.0
+invoice and vends it. If ver=2.0 or whatever, it knows it can use 2.0
+features. If extensions are supported, add new query params.
+
+We should define a simple mechanism for extending the protocol now, so
+people who want to make proprietary extensions don't conflict. The
+simplest is to just say, if you want to add new fields to an Invoice
+message, please update a wiki page with the tag numbers you're going
+to use, and start from number X. Protobufs have a simple way to
+formalize this in the language:
+
+   https://developers.google.com/protocol-buffers/docs/proto#extensions
+
+message Invoice {
+  extensions 1000 to max;
+}
+
+The point of this is to allow you to define new parts of the messages
+in separate .proto files. It's only a minor convenience but it means
+if you want to use, say, two extensions that weren't yet folded into
+the main spec, you can more easily do so without having to do a manual
+merge of the message definitions together.
+
+For instance, if you wanted to extend the protocol to support
+specification of recurring billing, you could make a file called
+recurring-invoices.proto containing:
+
+message Recurrences {
+  required uint32 every_seconds = 1;
+  optional uint32 start_time = 2;
+}
+
+extend Invoice {
+  optional Recurrences recurrences = 1005;
+}
+
+then you update the wiki page to claim tag number 1005 and apps can
+easily use your new features. If/when the feature gets standardized
+via a BIP, the core .proto definition can be extended to include these
+messages and the extensions can go away.
+
+
