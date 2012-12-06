@@ -1,0 +1,101 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 6 Dec 2012 18:55:46 +0100
+Subject: [Bitcoin-development] Payment Protocol Proposal:
+	Invoices/Payments/Receipts
+In-Reply-To: <CABsx9T2UBQXzDPj0zHio+9i0uKNqiPYwL=kYgWKSirXRvckQ4g@mail.gmail.com>
+References: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+	<20121128233619.GA6368@giles.gnomon.org.uk>
+	<CABsx9T09FYf2RTaMpmujt3qwTFc2JgnREH_7Hyk2mnCgb3CvAw@mail.gmail.com>
+	<20121129170713.GD6368@giles.gnomon.org.uk>
+	<CANEZrP233CytLs3PWBQ1TyuBTMv4sLGJkEMeGWYq5xRi+iLKew@mail.gmail.com>
+	<20121129185330.GE6368@giles.gnomon.org.uk>
+	<CABsx9T35qD_xJEVw002eAhJ1kr6x5aMU7RpD+U84XEOZXmXcYw@mail.gmail.com>
+	<CANEZrP2riPBViBqAOWfY9uSQwoEm=gN108JU988XvouMbai1Ug@mail.gmail.com>
+	<CABsx9T023aw11cq6iiZhT3cgfNYJXr=qG40Fzc7rYZOimJ=62w@mail.gmail.com>
+	<50C03BDA.6010600@petersson.at>
+	<CANEZrP1iS4_MFi2=3Qa4_rSGXe5EK8B0wWy43hXJOeKp-SfpPg@mail.gmail.com>
+	<CABsx9T2UBQXzDPj0zHio+9i0uKNqiPYwL=kYgWKSirXRvckQ4g@mail.gmail.com>
+Message-ID: <CANEZrP2VLsh0mi=saQ0ZOnjVijUHoqEMxTG3LHcaCb2Ua-f-gQ@mail.gmail.com>
+
+Re: the newest spec. Rather than make the signature over the
+"concatenation of", why not just make it a signature over the
+serialized protobuf minus the signature field (as I did in my demo
+code). Otherwise it seems like we'd need more code than really
+necessary. We can state explicitly tags must be ordered if you want,
+even though all implementations should do that already.
+
+> Thumbnail sketch:  escrow service or participant sends around an
+> EscrowProposal, gets EscrowProposalACK's with public keys to use, then sends
+> all participants an EscrowEstablished message with the final multisig script
+> or address.
+
+Yeah, that sounds reasonable. Not that we should really design it now,
+but let's use the term "mediation" rather than "escrow", which has
+connotations of depositing funds with the escrow service.
+
+I think it's best to see the existing payment messages as structures
+that'll get filled out with more features over time. So rather than
+have a separate EscrowProposal message, you would integrate it with
+payment requests. Older clients that don't understand mediation would
+just ignore the extra data they don't recognize.
+
+message PaymentRequest {
+   ....
+
+  // One per mediator acceptable to the seller.
+  repeated MediationProposal mediation_data = 10;
+}
+
+message MediationProposal {
+  required SignedMediatorIdentity identity = 2;
+
+  // Opaque bytes that the mediator can be asked to turn into a human
+readable description
+  // of how disputes will be mediated. The merchant sets this to
+describe whatever policy it
+  // is willing to go along with, so policies may be arbitrarily complicated.
+  required bytes policy = 3;
+}
+
+message SignedMediatorIdentity {
+  required MediatorIdentity identity = 1;
+  // If the identity data is signed ...
+  optional string pki_type = 2;
+  optional bytes pki_data = 3;
+  optional bytes pki_signature = 4;
+}
+
+message MediatorIdentity {
+  // Name of the mediator to be displayed to the user.
+  required string friendly_name = 1;
+  // PNG image that can be used to represent the mediator to the user.
+  optional bytes logo = 2;
+  // Some text shown to the user under the name explaining the
+mediators policies, why they should be chosen, etc.
+  optional string blurb = 3;
+
+  // An HTTP URL where a mediator can be reached to do things like
+prove ownership of pubkeys, initiate the protocols, etc.
+  required string contact_url = 4;
+}
+
+... etc ....
+
+So the user experience would be that when a payment request is received:
+
+- older clients ignore the mediation_data field and do a direct
+payment as normal
+- newer clients ask the user to pick a mediator (if they want to) and
+if mediation is requested, the PaymentRequest is then discarded and
+the next step of the mediation protocol begins.
+
+The old request has to be discarded because the outputs would have
+been written on the assumption of no mediation being in use (for
+backwards compatibility).
+
+Anyway, though I'm awfully guilty, let's not get off track. Just that
+this is how I imagined new payment features being done - as new
+extensions to the payment protocol, which would be a living document
+amended by BIPs.
+
+
