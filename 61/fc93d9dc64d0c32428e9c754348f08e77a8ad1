@@ -1,0 +1,146 @@
+From: stephen@bitpay.com (Stephen Pair)
+Date: Thu, 20 Dec 2012 11:53:22 -0500
+Subject: [Bitcoin-development] Payment Protocol Proposal:
+	Invoices/Payments/Receipts
+In-Reply-To: <CABsx9T1QjDfg-hKorJCk8Sdhf0fw9qQjV8R8EPNvU0m0nQF3tw@mail.gmail.com>
+References: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+	<20121128233619.GA6368@giles.gnomon.org.uk>
+	<CABsx9T09FYf2RTaMpmujt3qwTFc2JgnREH_7Hyk2mnCgb3CvAw@mail.gmail.com>
+	<20121129170713.GD6368@giles.gnomon.org.uk>
+	<CANEZrP233CytLs3PWBQ1TyuBTMv4sLGJkEMeGWYq5xRi+iLKew@mail.gmail.com>
+	<20121129185330.GE6368@giles.gnomon.org.uk>
+	<CABsx9T35qD_xJEVw002eAhJ1kr6x5aMU7RpD+U84XEOZXmXcYw@mail.gmail.com>
+	<CAErK2ChjAm-Zf11YXuBQeTQvahOEJNGiPSZaD-CQ=OU9K6HtZA@mail.gmail.com>
+	<CAKaEYh+OUD4kfxwSNQBCJXmj6Kwb8jy9Au=Mfrqr2sKv7SuHpg@mail.gmail.com>
+	<CA+8xBpeya92UR60_ba+xYycjONOOvYUcW4Fe+SNdWwpg7aWEHw@mail.gmail.com>
+	<CAKaEYh+jJn0dPsGn_RnOy3NmWMc0F12Dffx2jYBUA=z+W45fWA@mail.gmail.com>
+	<CANEZrP1v9E1S1VA2p-pCzrobp8ueWZTf0r0stZ3JyJ==u_Zgxg@mail.gmail.com>
+	<CAKaEYhLbeBfJeLtBJTkX6S-MbqdWuQrcpNKpY2Czhhk3T6frmA@mail.gmail.com>
+	<CABsx9T1QjDfg-hKorJCk8Sdhf0fw9qQjV8R8EPNvU0m0nQF3tw@mail.gmail.com>
+Message-ID: <CADb9v0K9xD+ndB-dJDkmPOuo1omrtMk3WTo238OjVcWoQ-CmXA@mail.gmail.com>
+
+Here are my (mostly half baked) thoughts on the payments protocol proposal.
+
+My first observation is that the proposal is too heavily oriented around a
+merchant/customer interaction.  I think it's equally important to consider
+the person to person scenarios.  It would be very cool if people could
+send/receive payments by copying and pasting stuff on facebook or email
+(you can kind of do it now, but it's not safe unless you go to
+extraordinary lengths using PGP signatures and the like).
+
+Protobufs vs JSON: Protobufs are fine, although I will mention that the
+serialization/JOSE arguments are irrelevant...you only need that if you
+need a reliable way of signing an in memory object structure...in this case
+you would be signing a serialized form of the object...the recipient
+doesn't have to be able to reproduce the serialized form, they only need to
+verify the signature on the already serialized bytes...I see protobufs as a
+good serialization format for storage, while JSON being more practical for
+communications in a web oriented environment...with protobufs & a web
+wallet, you may find yourself in a situation needing to parse a protobuf
+message in a web browser...the protobuf parsing and serializing code is
+just going to add bloat to the web page...personally, I probably would have
+gone with JSON, but hey, I'm not writing the code.
+
+X.509 - nasty, but maybe ok ...as long as you can add root CAs to your
+Bitcoin client or explicitly trust a certificate, I don't see that it poses
+any privacy issues...but there are some other things to think about here
+...like what about the casual user that wants to create a payment request
+to send to their friend over email (wrapped in a clear text block similar
+to PGP...it could also be sent as a file attachment)?  Are you now
+requiring them to go and setup a certificate?  Btw, I really like the use
+of a payment request in this manner because you have a signed payment
+request that can be verified against an address book of known identities.
+ This could be much safer than simply emailing an unsigned bitcoin address
+around.
+
+Refund addresses...this is not going to be as useful as people might
+think...most refunds that bitpay needs to process happen days or even
+months after the initial purchase...in that span of time, people can change
+wallets, rendering such a refund address useless...so, as I think about the
+situation, we would still need to contact the buyer to confirm a refund
+address anyway.  What we really need is to verify the identity of the
+person we're potentially sending the refund to...we need a way of
+determining that the person we're sending the refund to is the same person
+that paid the original invoice.  Bitcoin addresses are identities, but they
+are too low level.  HD wallets come to mind...the top level or intermediate
+levels of a deterministic hierarchy could be used for identity
+purposes...but it also seems like it might be conflating payments and
+identity (which for many reasons you might want to keep separate).  What if
+bitcoin clients could manage one or more identities used for the purpose of
+communications?  You could have a bitcoin identity file that could be used
+by multiple wallets.  These identities would be used for signing messages
+and verifying the authenticity of communications...when sending a payment,
+instead of a refund address, you would include one of these identities
+which could later be used to confirm a refund address.  In fact, the refund
+would be processed by the buyer generating another payment request message
+signed by the identity used in the original payment.
+
+People would understand that their identities are important for
+communications and they would keep those even when changing to new wallets
+and such (identities could be stored in ~/.bitcoin/id or something
+(encrypted of course)).
+
+There are some other interesting possibilities if messaging and identities
+are done right...for example, I could add "check" feature (analogous to
+paper checks).  It would work like this...you create a transaction that
+spends to a newly generated address...you put that transaction, along with
+the private key into an encrypted container (sent to the identity of the
+person you want to pay).  The recipient can open it and their wallet would
+go ahead and generate and broadcast a transaction moving the funds into
+their wallet (optionally including a fee).  But, if the recipient never
+cashes the check, the sender could pull those funds back after a certain
+period of time.  This also eliminates the possibility of accidentally
+sending the funds to the wrong address (or an old address) and the bitcoins
+being forever lost...the recipient can sweep the transaction into any
+wallet of their choice.
+
+As I'm writing this, I'm beginning to wonder if the identity management
+problem is unavoidable.  Maybe that needs to be dealt with first.  It would
+enable so many other interesting possibilities.
+
+I like the use of merchant_data...this means that you no longer will need a
+unique bitcoin address for every invoice.
+
+In the signed invoice structure, why embed the serialized invoice?  Why not
+make that a reference using a hash?  Generally speaking, I'm not a fan of
+embedding things like that.  You could have an over-arching structure
+called Message which is just "repeated bytes objects" (in protobuf lingo)
+...references between objects would use a hash and the first object would
+be treated as the message.  In a payment request message, the
+SignedPaymentRequest would be the first object, the PaymentRequest the
+second.
+
+I think the Payment structure should refer to the SignedPaymentRequest (by
+its hash) instead of the merchant_data...you can of course access the
+merchant_data through the SignedPaymentRequest.  I suppose you could always
+index payment requests based on the merchant_data, but it just seems
+cleaner to refer back the the signed payment request when sending a payment.
+
+You might want to include an optional memo for each output...I could
+imagine including one output that says "Don't forget to tip your
+waiter"...any amount sent to that address could go directly to the waiter's
+wallet.
+
+What about payments from multiple wallets?  We see this a lot.  I think
+this scheme would handle it ok, but just want to mention it.  I can imagine
+someone paying first from one wallet, then the invoice webpage updates with
+a clickable link to a new PaymentRequest for the remaining amount.
+
+The Receipt should be signed...it could be used as proof of payment by
+wallets.
+
+Finally, I've seen seen suggestions to tack on a payment request URI to the
+current bitcoin: URI for backward compatibility...I say no.  A bitcoin URI
+already has a lot of data (especially if it includes a memo)...this makes
+QR codes more dense and hence more difficult to scan...I say we stake a
+claim on the "pay" URI .... pay:https://somewhere.com/payment/94kd83  ...or
+for a clickable link, you could embed it right on the web page, eliminating
+the need for a second https request... pay:data:<PaymentRequestMessage>
+ ...and finally, to further shorten the URI, https could be assumed if the
+protocol is omitted ... pay:somewhere.com/payment/94kd83
+
+We can deal with backward compatibility by including a link on invoices to
+display an old style bitcoin payment address.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20121220/0cc1e450/attachment.html>
