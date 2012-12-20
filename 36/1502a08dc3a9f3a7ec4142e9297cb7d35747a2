@@ -1,0 +1,109 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 20 Dec 2012 18:43:34 +0100
+Subject: [Bitcoin-development] Payment Protocol Proposal:
+	Invoices/Payments/Receipts
+In-Reply-To: <CADb9v0K9xD+ndB-dJDkmPOuo1omrtMk3WTo238OjVcWoQ-CmXA@mail.gmail.com>
+References: <CABsx9T0PsGLEAWRCjEDDFWQrb+DnJWQZ7mFLaZewAEX6vD1eHw@mail.gmail.com>
+	<20121128233619.GA6368@giles.gnomon.org.uk>
+	<CABsx9T09FYf2RTaMpmujt3qwTFc2JgnREH_7Hyk2mnCgb3CvAw@mail.gmail.com>
+	<20121129170713.GD6368@giles.gnomon.org.uk>
+	<CANEZrP233CytLs3PWBQ1TyuBTMv4sLGJkEMeGWYq5xRi+iLKew@mail.gmail.com>
+	<20121129185330.GE6368@giles.gnomon.org.uk>
+	<CABsx9T35qD_xJEVw002eAhJ1kr6x5aMU7RpD+U84XEOZXmXcYw@mail.gmail.com>
+	<CAErK2ChjAm-Zf11YXuBQeTQvahOEJNGiPSZaD-CQ=OU9K6HtZA@mail.gmail.com>
+	<CAKaEYh+OUD4kfxwSNQBCJXmj6Kwb8jy9Au=Mfrqr2sKv7SuHpg@mail.gmail.com>
+	<CA+8xBpeya92UR60_ba+xYycjONOOvYUcW4Fe+SNdWwpg7aWEHw@mail.gmail.com>
+	<CAKaEYh+jJn0dPsGn_RnOy3NmWMc0F12Dffx2jYBUA=z+W45fWA@mail.gmail.com>
+	<CANEZrP1v9E1S1VA2p-pCzrobp8ueWZTf0r0stZ3JyJ==u_Zgxg@mail.gmail.com>
+	<CAKaEYhLbeBfJeLtBJTkX6S-MbqdWuQrcpNKpY2Czhhk3T6frmA@mail.gmail.com>
+	<CABsx9T1QjDfg-hKorJCk8Sdhf0fw9qQjV8R8EPNvU0m0nQF3tw@mail.gmail.com>
+	<CADb9v0K9xD+ndB-dJDkmPOuo1omrtMk3WTo238OjVcWoQ-CmXA@mail.gmail.com>
+Message-ID: <CANEZrP162Q=hoqBQvLPm6rT=xNHMOtau42gDzRS4ddEtMFk5Uw@mail.gmail.com>
+
+Thanks for the thoughts. For those who don't know, Stephen works for BitPay.
+
+> My first observation is that the proposal is too heavily oriented around a
+> merchant/customer interaction.
+
+The term "merchant" is just being used to mean the entity requesting
+the payment. I'm hopeful that in future mobile wallets will be
+creating these messages where today they'd make URLs and QRcodes. So
+it's definitely intended for person to person payments too.
+
+> you may find yourself in a situation needing to parse a protobuf
+> message in a web browser
+
+Nothing stops you converting them into whatever form you want on the
+server side. If you don't care about the signature checking then it's
+no problem to use a server. If you do then you'd need to ship all the
+code for verifying signatures that to the client anyway, at which
+point a small protobuf parser is hardly a deal killer.
+
+> ...like what about the casual user that wants to create a payment request to
+> send to their friend over email
+
+They can send an unsigned payment request. Note that if you mail it as
+an attachment from a competent, up to date email provider then the
+attachment isn't really unsigned. The whole thing is covered by the
+emails DKIM signature which is applied transparently by the ESP. If
+the signature fails to verify then the mail client can show that or
+treat the mail differently (as Gmail does). This is easy to use for
+the end user - they don't have to think about cryptography or PKI. As
+long as their email account is secure then they can send signed mails
+asserting to their identity.
+
+> Refund addresses...this is not going to be as useful as people might
+> think...most refunds that bitpay needs to process happen days or even months
+> after the initial purchase
+
+Useful feedback, thanks. Still, there may be other types of merchants
+for whom it's useful, and many users won't change their wallet. It
+certainly simplifies things if you can present the refund address and
+give a one-click option to use it. If the user wants to use a
+different address, then they can go onto the slow/complicated path.
+
+This current spec deliberately punts on the topic of identifying end
+users. It's a difficult problem. Whereas many merchants have SSL
+certs, most end users don't have published keys in any useful form. By
+far the easiest way for 99% of people to generate a signed message is
+to send email that's signed by DKIM (from gmail, hotmail, yahoo, other
+providers etc). Then it's all transparent and behind the scenes. Their
+identity is their email address.
+
+So for BitPays scenario, you could require an email to be sent by the
+end user containing new instructions. Your MTA can show you whether
+the mail is correctly DKIM signed or not when deciding whether to
+follow the instructions.
+
+> But, if the recipient never cashes the check, the sender could pull those
+> funds back after a certain period of time.
+
+Yeah, I like the term "check"/"cheque" for that concept of a reversible payment.
+
+> I like the use of merchant_data...this means that you no longer will need a
+> unique bitcoin address for every invoice.
+
+It's still a good idea to use one for privacy reasons. The merchant
+data is there so you can stuff whatever state you want into it. So
+it's like cookies. You don't have to keep state on the server side.
+Just encrypt/sign it, put it in the invoice, and when you get a
+payment message back there's no need to do database lookups or
+anything, you can just do some crypto and know who is submitting it.
+
+> Generally speaking, I'm not a fan of embedding things like that
+
+What's wrong with it? Isn't your proposal more complex? I don't see
+why it's better than just embedding it.
+
+> The Receipt should be signed...it could be used as proof of payment by
+> wallets.
+
+There's no Receipt message, a SignedPaymentRequest + transactions that
+pay to the requested outputs are together the proof of payment.
+
+Re a new URI scheme. Interesting idea, thanks for the suggestion. It
+seemed like it'd be easier for merchants to integrate if a single
+linked worked for all wallet implementations/versions. But I guess we
+could do both schemes, even.
+
+
