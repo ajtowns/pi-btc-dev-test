@@ -1,0 +1,46 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 10 Jan 2013 16:21:14 +0100
+Subject: [Bitcoin-development] Draft BIP for Bloom filtering
+In-Reply-To: <20121127211019.GA22701@vps7135.xlshosting.net>
+References: <CANEZrP0XALwBFJyZTzYd5xBp4MRrjv0s_y2tOXbO7UgjWF2HzA@mail.gmail.com>
+	<20121121151534.GA5540@vps7135.xlshosting.net>
+	<1353523117.1085.14.camel@localhost.localdomain>
+	<20121127211019.GA22701@vps7135.xlshosting.net>
+Message-ID: <CANEZrP0w052ebao-04H4Wduerm86o6RKBY=ObnJXBX22k--zMA@mail.gmail.com>
+
+Here's a quick update on where we're up to.
+
+Thanks to Matts excellent work, I was able to test his bitcoinj and
+bitcoin-qt work together today. There are a few minor tweaks needed,
+but I feel like we're maybe a week away from having all the code in a
+mergeable state. Here is the remaining work:
+
+- There are a couple of bugfixes needed on the bitcoinj side: the
+fallback to downloading full blocks is problematic and needs to be
+deleted, there's an API change we want
+
+- Adjust the default FP rate requested by BCJ to be 0.0001, this is
+appropriate for the latest blocks in the chain and yields 0-5 false
+positives per block
+
+- Introduce a new part to the filter protocol that allows clients to
+control auto-expansion. This turned out to be very volatile, we saw
+jumps from 0-3 FPs per block to 500 in the space of 1 block, perhaps
+if a SatoshiDice transaction got into the filter. A simple yes/no flag
+can suffice for now, but a better solution would be for the client to
+submit templates for output scripts that would trigger auto-adding the
+matched outpoint - autoexpansion is only needed in the case where the
+input script doesn't contain any predictable data. For pay-to-address
+and P2SH it does, so expansion doesn't help. Matt said he'd hopefully
+try to look at this soon.
+
+With auto-expansion disabled, the FP rate adjusted and a bugfix on the
+bcj side I was able to sync a wallet using a bloom filtered chain.
+
+Although it's tight, I think this work should go into 0.8 - it'll be
+much more compelling to advertise it this way, we can say "Upgrade to
+0.8 and help network performance for everyone". And in the case that
+we discover a showstopper problem, we just don't deploy the code that
+uses the new messages into clients.
+
+
