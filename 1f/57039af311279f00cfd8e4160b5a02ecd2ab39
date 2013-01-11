@@ -1,0 +1,70 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Fri, 11 Jan 2013 15:13:15 +0100
+Subject: [Bitcoin-development] Draft BIP for Bloom filtering
+In-Reply-To: <CANEZrP2k30UsWFYSZ7Bh5Hm4LJ9vEAMEUgYSrYkcXcDTY2Z79Q@mail.gmail.com>
+References: <CANEZrP0XALwBFJyZTzYd5xBp4MRrjv0s_y2tOXbO7UgjWF2HzA@mail.gmail.com>
+	<20121121151534.GA5540@vps7135.xlshosting.net>
+	<1353523117.1085.14.camel@localhost.localdomain>
+	<20121127211019.GA22701@vps7135.xlshosting.net>
+	<CANEZrP0w052ebao-04H4Wduerm86o6RKBY=ObnJXBX22k--zMA@mail.gmail.com>
+	<1357876751.1740.4.camel@localhost.localdomain>
+	<CA+8xBpcB6kXWyRbeUknK6gkcrFMV6YtrDk0c938q1_32U6GtRw@mail.gmail.com>
+	<CANEZrP2k30UsWFYSZ7Bh5Hm4LJ9vEAMEUgYSrYkcXcDTY2Z79Q@mail.gmail.com>
+Message-ID: <CANEZrP3KKGOPM7BzWAr1xGqh96iEzJ+Ki2hdUTe0Gvv51pJ23w@mail.gmail.com>
+
+Oh, one last stat - syncing the entire chain with a wallet containing
+two keys and a 0.0001 FP rate (one or two FPs every 5 blocks or so)
+resulted in a download of about 46mb of data.
+
+On Fri, Jan 11, 2013 at 3:11 PM, Mike Hearn <mike at plan99.net> wrote:
+> I did some very rough initial performance tests.
+>
+> Syncing from a local peer gives me about 50 blocks per second in the
+> later parts of the chain (post SD), which is about a 10-20x speedup
+> over what I could do before. This is on a MacBook Pro. But at those
+> points it's clearly bottlenecked by bitcoind which has saturated its
+> CPU core. This makes sense - the filtering is much more server than
+> client intensive because every transaction in every block has to be
+> loaded and checked.
+>
+> I think filtering can be fairly well parallelized on the server side.
+> So the current 10-20x speedup could potentially be larger if the
+> server becomes more efficient at scanning and filtering blocks. It's
+> still a very nice win for now, especially bandwidth wise. And if Matt
+> makes the mempool command filtered it solves a common usability
+> problem as well.
+>
+> Once we get this code in, merged and rolled out I think what we need
+> for bloom v2 is clear:
+>
+>  - Multi-thread the filtering process in bitcoind so transactions can
+> be checked in parallel. A 4-core server would then get 4x faster at
+> filtering blocks and assuming it's not too busy doing other stuff we
+> could maybe sync at more like 200 blocks per second, which is cool ...
+> more than a days worth of history for each second of syncing.
+>
+>  - Make the client smarter so the FP rate is adapted during the sync
+> process. An FP rate that makes sense post-SD results in no false
+> positives pre-SD, more or less.
+>
+>  - Make the client shard its wallet keys over multiple peers, for
+> better privacy.
+>
+>  - Make the client suck down filtered blocks in parallel from multiple
+> peers, for better speed.
+>
+> As it seems the bottleneck for chain sync is now CPU time, the latter
+> point may be the most important from a practical perspective.
+>
+> On Fri, Jan 11, 2013 at 6:02 AM, Jeff Garzik <jgarzik at exmulti.com> wrote:
+>> On Thu, Jan 10, 2013 at 10:59 PM, Matt Corallo <bitcoin-list at bluematt.me> wrote:
+>>> Ive been missing lately, when is 0.8 targeted for freeze?
+>>
+>> 0.8rc1 will probably happen when the core ultraprune/leveldb stuff is stable.
+>>
+>> --
+>> Jeff Garzik
+>> exMULTI, Inc.
+>> jgarzik at exmulti.com
+
+
