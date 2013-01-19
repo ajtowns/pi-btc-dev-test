@@ -1,0 +1,88 @@
+From: andreas@schildbach.de (Andreas Schildbach)
+Date: Sat, 19 Jan 2013 10:51:04 +0100
+Subject: [Bitcoin-development] Draft BIP for Bloom filtering
+In-Reply-To: <CANEZrP3FMbCZzT0Lfajv7T=F=Sjv1pNW-f3JVyrZLH5tQxYfmw@mail.gmail.com>
+References: <CANEZrP0XALwBFJyZTzYd5xBp4MRrjv0s_y2tOXbO7UgjWF2HzA@mail.gmail.com>
+	<20121121151534.GA5540@vps7135.xlshosting.net>
+	<1353523117.1085.14.camel@localhost.localdomain>
+	<20121127211019.GA22701@vps7135.xlshosting.net>
+	<CANEZrP0w052ebao-04H4Wduerm86o6RKBY=ObnJXBX22k--zMA@mail.gmail.com>
+	<1357876751.1740.4.camel@localhost.localdomain>
+	<CA+8xBpcB6kXWyRbeUknK6gkcrFMV6YtrDk0c938q1_32U6GtRw@mail.gmail.com>
+	<CANEZrP2k30UsWFYSZ7Bh5Hm4LJ9vEAMEUgYSrYkcXcDTY2Z79Q@mail.gmail.com>
+	<CANEZrP3KKGOPM7BzWAr1xGqh96iEzJ+Ki2hdUTe0Gvv51pJ23w@mail.gmail.com>
+	<CANEZrP2q=Kvk8DRRjB7mtw7QF8xDTAFYPVRCDW60tJn4A67LYQ@mail.gmail.com>
+	<1358348447.1048.0.camel@localhost.localdomain>
+	<CANEZrP3FMbCZzT0Lfajv7T=F=Sjv1pNW-f3JVyrZLH5tQxYfmw@mail.gmail.com>
+Message-ID: <50FA6C88.1030102@schildbach.de>
+
+Matt, I saw your commit and immediately started using it for testing.
+Now I think the bitcoinj side needs some love because not one
+transaction is being confirmed (all just pending) when replaying the
+blockchain.
+
+
+On 01/18/2013 05:38 PM, Mike Hearn wrote:
+> I'm thinking we should actually make the change we talked about before
+> and have the filtered block sent before the transaction data.
+> 
+> For one, it's not intuitive (API wise) that you'd get a callback
+> saying "new pending tx" immediately before another callback saying "tx
+> was confirmed", but that's what the current setup makes most natural.
+> To fix it we'd have to notice that a tx message wasn't requested by
+> us, buffer it, and wait for the corresponding filteredblock message.
+> It seems cleaner to receive a filteredblock and then for any tx that
+> matches it, attach it to the FilteredBlock object and wait until it is
+> full up, then pass it to the wallet code all at once.
+> 
+> Another issue is that to risk analyze unconfirmed transactions you
+> really have to download all dependencies. That has to be triggered by
+> seeing an unconfirmed transaction. It's dumb to start this process for
+> a tx that is actually in the chain, so you need to have some notion of
+> whether it came from a filtered block anyway. I only realized this
+> today.
+> 
+> I think when we discussed this before, the justification for having it
+> work the current way was that it was simpler to integrate with the SPV
+> client code if it was done this way around. But I don't think it's
+> really simpler. There are enough odd side effects of doing it this
+> way, that I feel it'd be better to tweak the protocol now whilst we
+> have the chance.
+> 
+> On Wed, Jan 16, 2013 at 4:00 PM, Matt Corallo <bitcoin-list at bluematt.me> wrote:
+>> Actually, there is one more minor algorithmic change I would like to
+>> make to the way the hash function is computed really quick before it
+>> gets merged, I'll have that finished up by the end of today.
+>>
+>> Matt
+>>
+>> On Wed, 2013-01-16 at 11:43 +0100, Mike Hearn wrote:
+>>> Matts latest code has been tested by Andreas and seems to work
+>>> correctly. He had to extend the client a bit to refresh the filter
+>>> every 25k blocks because even with the extra flag, eventually the
+>>> filter degrades into uselessness, but it did still improve the
+>>> situation quite a bit.
+>>>
+>>> Because it's unit tested, been reviewed by me several times, has an
+>>> interoperable implementation that has also been tested by Andreas in a
+>>> build of his smartphone app,  I'm going to ACK the current code and
+>>> request that it be merged in to 0.8. What do you say Gavin?
+>>>
+>>> The next step after that would be profiling. It's a big performance
+>>> improvement for SPV clients already, but not as much as I anticipated.
+>>> I suspect there's a simple bottleneck or missed optimization
+>>> somewhere. But that can obviously come post-0.8
+>>
+>>
+> 
+> ------------------------------------------------------------------------------
+> Master HTML5, CSS3, ASP.NET, MVC, AJAX, Knockout.js, Web API and
+> much more. Get web development skills now with LearnDevNow -
+> 350+ hours of step-by-step video tutorials by Microsoft MVPs and experts.
+> SALE $99.99 this month only -- learn more at:
+> http://p.sf.net/sfu/learnmore_122812
+> 
+
+
+
+
