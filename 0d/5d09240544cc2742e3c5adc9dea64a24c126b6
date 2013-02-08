@@ -1,0 +1,66 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 8 Feb 2013 06:01:08 -0500
+Subject: [Bitcoin-development] Blockchain as root CA for payment protocol
+In-Reply-To: <20130208100354.GA26627@crunch>
+References: <20130208100354.GA26627@crunch>
+Message-ID: <20130208110108.GA6893@savin>
+
+On Fri, Feb 08, 2013 at 11:03:54AM +0100, Timo Hanke wrote:
+> First, we have drafted a quite general specification for bitcoin certificates (protobuf messages) that allow for a variety of payment protocols (e.g. static as well as customer-side-generated payment addresses).
+> This part has surely been done elsewhere as well and is orthogonal to the goal of this project.
+> What is new here is the signatures _under_ the certificates.
+> 
+> We have patched the bitcoind to handle certificates, submit signatures to the blockchain, verify certificates against the blockchain, pay directly to certificates (with various payment methods), revoke certificates.
+> Signatures in the blockchain are stored entirely in the UTXO set (i.e. the unspend, unprunable outputs). 
+> This seems to make signature lookup and verification reasonably fast: 
+> it took us 10s in the mainnet test we performed (lookup is instant on the testnet, of course).
+
+Why don't you use namecoin or another alt-chain for this?
+
+The UTXO set is the most expensive part of the blockchain because it
+must be stored in memory with fast access times. It's good that you have
+designed the system so that the addresses can be revoked, removing them
+from the UTXO set, but it still will encourage the exact same type of
+ugly squatting behavior we've already seen with first-bits, and again
+it'll have a significant cost to the network going forward for purposes
+that do not need to be done on the block chain.
+
+In https://github.com/bcpki/bitcoin/wiki/Technical you say that you have
+a minimum amount required for an outpoint to be valid, set at 0.05BTC.
+That's a nice touch, and sort of works because this is a consensus
+protocol, but if the exchange rate climbs significantly there will be a
+lot of pressure to reduce that value. (setting minimum value by chain
+height) What will happen then is there will be a mad rush to squat on
+previously unaffordable domains, further disrupting Bitcoin's purpose as
+a financial network.
+
+In addition you'll also have a second problem: squatting of subsequent
+transactions, particularly for valuable bcvalues. Basically if someone
+already has "microsoft" insert bcvalues after their tx in case they
+accidentally spend it. Of course, this will be done by people buying
+bcvalues as well. Again, all this further clogs up the UTXO set.
+
+I also can't figure out why you say signature lookup and verification
+takes 10s - this should be an O(1) operation if you maintain a mapping
+of candidate pubkeys to linked-lists of sorted applicable transactions.
+
+Finally, why is this implemented within the reference client? Use the
+raw transaction API and make up your own database. If you want, create a
+RPC command that allows you to query the UTXO set directly; this would
+be a useful feature to have. This patch will never be accepted to the
+reference client, so you'll just wind up having to maintain a fork. Even
+for a prototype this approach is ill-advised - prototypes have a bad way
+of turning into production code.
+
+
+In short, please don't do this.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130208/8b7a97fa/attachment.sig>
