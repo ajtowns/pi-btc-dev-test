@@ -1,0 +1,125 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 11 Feb 2013 06:21:03 -0500
+Subject: [Bitcoin-development] Blockchain as root CA for payment protocol
+In-Reply-To: <20130209143325.GA3998@crunch>
+References: <20130208100354.GA26627@crunch> <20130208110108.GA6893@savin>
+	<20130209143325.GA3998@crunch>
+Message-ID: <20130211112103.GA7346@savin>
+
+On Sat, Feb 09, 2013 at 03:33:25PM +0100, Timo Hanke wrote:
+> > Why don't you use namecoin or another alt-chain for this?
+> 
+> Because namcoin tries to solve a different problem, DNS, whereas I want
+> to establish an identity for a payment protocol. Your incoming payments
+> will land on addresses that are derived (regardless which way) from this
+> idenity. This makes your identity as important (securitywise) as
+> anything else involved in the bitcoin protocol. Therefore I would not
+> want to have payment-ids rely on anything _less_ than bitcoin's own
+> blockchain. In particular not on PKI with centralized root CAs. But also
+> not on namecoin or any other (weaker) alt-chains.
+
+In what way are you not solving the same problem as DNS? I don't mean
+the Luke-Jr's (quite correct) technical point about key-value maps, I
+mean the human problem that I have these unique numbers that I can't
+memorize, and I have some non-unique names that I can.
+
+By creating Yet Another Totally Different System you are just creating
+another way that users can be confused into thinking some name snatched
+up by some scammers in some little-used PKI system is who they are
+supposed to be communicating with. Fortunately your PKI system isn't
+actually used and probably never will be, so it's not a big deal yet,
+but ultimately you are adding to the problem.
+
+Go work on namecoin and make it more usable. Then add some PKI to it
+using the *same* domain names so when I see a PKI certificate for "foo"
+I know it must be the same "foo" website I just visited and the same
+"foo at foo" I just emailed.
+
+> You can argue that alt-chains _can_ be as strong as bitcoin, but they
+> don't _have to_ be. There is no guarantee how many people will
+> cross-mine. The alt-chain could even disappear at some point. If at some
+> point your alt-chain is no longer being worked on, then how do you prove
+> that some old bitcoin transaction went to an address for which there was
+> a valid id/certificate at the time of sending? If the certificate is
+> based inside bitcoin's blockchain then you will have a proof for the
+> correct destinations of all your old transactions as long as bitcoin
+> exists.
+
+Alt-chains don't have to be based on mining you know. Your proof-of-work
+can be replaced by proof-of-sacrifice, specifically Bitcoins. A
+particularly nice scheme is to use transaction fees and Bitcoin block
+height. Specifically every block in your alt-chain will have a merkle
+path to a transaction in a Bitcoin block. Of course there can be more
+than one such block, so you introduce a tie-breaker rule: the
+transaction with the highest mining fee wins.
+
+The reason why this is nice is because it becomes really easy to be sure
+that a better chain won't turn up after the fact - make sure the
+transaction linking the alt-chain to the Bitcoin block has the highest
+fee in the block. Thus if you want to, say, register a domain name, do
+so in the alt-chain, then "mine" the block by creating a suitable
+transaction. Make sure it's the biggest fee, wait a few confirmations,
+and you're good to go with the same level of security as Bitcoin proper.
+
+Because the rule is that a merkle *path* exists, multiple alt-chains can
+use this mechanism at the same time, with the exact same security
+guarantee re: max fees. (note that you're chain needs to store copies of
+the txin's for the tx sacrificing the fee, transactions by themselves do
+not prove fees) Multiple parties can also colaborate to create the
+transaction, each providing, and signing for, an input for their portion
+of the total fee.
+
+
+There is the problem that miners get to keep the fee, thus they can
+create these special proof-of-sacrifice transactions at low cost, and
+potentially make it difficult to get a block mined, or to be sure a
+block won't be undone later. This problem can be solved with my
+"two-step sacrifice" protocol.(1) Essentially you create a transaction
+that is invalid until some time in the future and sacrifices Bitcoins to
+mining fees, then create a second transaction that includes the first
+one as data. You publish the second in the block chain, proving the
+whole world had an opportunity to mine it. Eventually the first is in
+fact mined, thus sacrificing Bitcoins to a miner you have no control
+over. For a alt-chain you would consider the sacrifice to be a "balance"
+and then spend that balance as required in later blocks in a way that is
+guaranteed to be public so you can still check the security guarantee of
+knowing your tx had the max fee. For instance with the contract protocol
+I describe in (1), shave off what ever percentage of the original
+sacrifice, linking the merkle-root of the merkel tree of alt-chains at
+the same time. Anyone can still monitor the set of all two-step
+sacrifices and associated contract movements and check that their one in
+a block was the largest possible. Finally if you want to be nice, modify
+the contract value rules so only the successful max contract value tx
+has it's balance decreased.
+
+1) https://github.com/petertodd/trustbits/blob/master/fidelitybond.md
+
+Actually, you know gmaxwell, the above would be a great way to run the
+alt-chain I'm probably going to need for the fraud proofs in Trustbits.
+Although it does have the minor problem of being ludicrously complex...
+
+> > The UTXO set is the most expensive part of the blockchain because it
+> > must be stored in memory with fast access times. It's good that you have
+> > designed the system so that the addresses can be revoked, removing them
+> > from the UTXO set, but it still will encourage the exact same type of
+> > ugly squatting behavior we've already seen with first-bits, and again
+> > it'll have a significant cost to the network going forward for purposes
+> > that do not need to be done on the block chain.
+> 
+> You are probably right that storing this in the _spent outputs_ would be
+> better. There doesn't seem to be any type of client out there that would
+> benefit from having to search UTXO only. 
+
+The blockchain grows at a maximum rate of 55GiB/year. Do you think your
+users will all want to have that available just to validate some PKI
+certificates?
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130211/5aef0b59/attachment.sig>
