@@ -1,0 +1,167 @@
+From: timo.hanke@web.de (Timo Hanke)
+Date: Mon, 11 Feb 2013 20:12:59 +0100
+Subject: [Bitcoin-development] Blockchain as root CA for payment protocol
+In-Reply-To: <201302091901.49930.luke@dashjr.org>
+References: <20130208100354.GA26627@crunch> <20130208110108.GA6893@savin>
+	<20130209143325.GA3998@crunch> <201302091901.49930.luke@dashjr.org>
+Message-ID: <20130211191259.GA22257@crunch>
+
+On Sat, Feb 09, 2013 at 07:01:48PM +0000, Luke-Jr wrote:
+> On Saturday, February 09, 2013 2:33:25 PM Timo Hanke wrote:
+> > namcoin tries to solve a different problem, DNS, whereas I want
+> > to establish an identity for a payment protocol.
+> 
+> What is the technical difference here? Namecoin ties names to data; DNS is a 
+> specific namespace in it. There is no reason I know of that this identity 
+> stuff cannot be a new namespace.
+
+It's not about technical differences, but about the different use or
+purpose, which can result in different security demands. I argue that
+DNS has a lower demand in this respect than payment ids have. So DNS
+data can be in a chain with a hashrate lower than bitcoin's hashrate but
+payment ids _for_ bitcoin have to be in a chain with equal hashrate.
+
+> > You can argue that alt-chains _can_ be as strong as bitcoin, but they
+> > don't _have to_ be. There is no guarantee how many people will
+> > cross-mine.
+> 
+> This is true of namecoin, but it does not have to be true of new merged-mined 
+> data. You could very well require the Bitcoin proof-of-work to be valid and 
+> the master header to be in the Bitcoin blockchain.
+
+Ok, true. This does the trick. If few miners merge-mine then the new
+chain just becomes slower. But is this still an alt-chain? It is not
+independently verifiable anymore, like the alt-chains described in the
+wiki are. Instead, you need to refer to the bitcoin's chain to see if
+the target is correct. Not sure if I got you right on this. But it seems
+to be essentially a more efficient version of what I proposed, rather
+than a true alt-chain.
+
+I suppose you suggest to place the master header hash into the coinbase.
+A drawback may be that it puts miners at a great advantage over regular
+users. This could (but doesn't have to) become relevant depending on
+your counter-measures against excessive alias registration. I think
+Peter addressed this (below). 
+
+On Fri, Feb 08, 2013 at 06:01:08AM -0500, Peter Todd wrote:
+> Finally, why is this implemented within the reference client? Use the
+> raw transaction API and make up your own database. If you want, create a
+> RPC command that allows you to query the UTXO set directly; this would
+> be a useful feature to have. This patch will never be accepted to the
+> reference client, so you'll just wind up having to maintain a fork. Even
+> for a prototype this approach is ill-advised - prototypes have a bad way
+> of turning into production code.
+
+This was not intended to be a prototype and will certainly not be
+maintained. It is a demo to be run on the testnet to get a feel of how
+the user interface (RPC) and the "work flow" could look like, starting
+from the creation of a certificate all the way to paying to a
+customer-derived payment addresses (pay-to-contract) when the merchant's
+base address is defined in the certificate. There's an appeal to be able
+to issue
+./bitcoind sendtoalias foo deadbeef 10
+and being sure that 10 BTC go, e.g., to a unique P2SH multisig address
+that is derived for order number 'deadbeef' from the two pubkeys that
+foo defined in his certificate. And having the certificate verification
+happen automatically in the background. The demo is in the reference
+client a) to simulate this feel, b) because it was the fastest way to
+code it. Apart from that, it could have just as well been separate, and
+an UTXO query-RPC would certainly be nice.  
+
+Another reason for this demo was the fun of devising a certificate that
+can handle all this. 
+
+BTW, I'm sure that some form of certificate handling will find its way
+directly into the reference client. The user will want to trust only one
+piece of software running on one piece of dedicated hardware. 
+
+On Mon, Feb 11, 2013 at 06:21:03AM -0500, Peter Todd wrote:
+> In what way are you not solving the same problem as DNS? I don't mean
+> the Luke-Jr's (quite correct) technical point about key-value maps, I
+> mean the human problem that I have these unique numbers that I can't
+> memorize, and I have some non-unique names that I can.
+> 
+> By creating Yet Another Totally Different System you are just creating
+> another way that users can be confused into thinking some name snatched
+> up by some scammers in some little-used PKI system is who they are
+> supposed to be communicating with. Fortunately your PKI system isn't
+> actually used and probably never will be, so it's not a big deal yet,
+> but ultimately you are adding to the problem.
+
+What exactly is the problem, the "little-used"? Otherwise it's the same
+as it is now, you pick up an interesting domain name on the street, type
+it in, and start communicating with who you think it is, and maybe even
+pay them. The EV that centralized PKI offers prevents only some attacks,
+and may even create a false sense of security.
+
+> Go work on namecoin and make it more usable. Then add some PKI to it
+> using the *same* domain names so when I see a PKI certificate for "foo"
+> I know it must be the same "foo" website I just visited and the same
+> "foo at foo" I just emailed.
+
+No. I outlined above why I think namecoin is unsuitable (but Luke's
+suggestion for a new alt-chain may be). BTW, if you want to link aliases
+of some "bitcoin PKI" and "domain names", they should not correspond
+bijectively to each other. The "bitcoin alias" corresponds to a payment
+base address, which I see as a more universal identifier than a domain
+name. First, bitcoin alias foo can have several domains foo.com,
+foo.co.uk, etc. but still only one "bitcoin certificate". This can be
+achieved by either writing the domain names directly into the
+certificate, or better, by having the "bitcoin certificate" sign an SSL
+sub-certificate and tell your browser to ask bitcoind to verify it.
+Second, a bitcoin alias can be meaningful without any domain names, e.g.
+it can be a certificate for all vending machines of a certain seller,
+with who you interact directly, say NFC. To summarize, I would either
+not link bitcoin aliases with domain names, or put SSL certificates
+"below" bitcoin certificates in the verification chain.
+
+Also BTW, it is the beauty of the pay-to-contract principle that
+authenticated communication is not even required. This means that if you
+know you have the correct "bitcoin certificate" stored with your
+bitcoind and you pay to it, then it doesn't matter if you ordered on a
+wrong or fake website. The worst-case scenario is that you have to call
+in via another channel and re-submit your order, but funds are never
+lost.
+
+> Alt-chains don't have to be based on mining you know. Your proof-of-work
+> can be replaced by proof-of-sacrifice, specifically Bitcoins. 
+> [...]
+> 1) https://github.com/petertodd/trustbits/blob/master/fidelitybond.md
+
+Yes, I already read your discussing of sacrifice-methods after your
+first reply and found it interesting.. The problem I see is to
+dynamically (and automatically) adjust the minimum sacrifice amount. A
+strict limit on the number of registrations like namecoin has is not
+desirable. A constant sacrifice, as you mentioned earlier, is also
+undesirable. A good measure could be the average transaction fee taken
+over several blocks. Maybe the minimum sacrifice should be a constant
+times that. 
+
+> > You are probably right that storing this in the _spent outputs_
+> > would be better [than UTXO]. There doesn't seem to be any type of
+> > client out there that would benefit from having to search UTXO only. 
+> 
+> The blockchain grows at a maximum rate of 55GiB/year. Do you think your
+> users will all want to have that available just to validate some PKI
+> certificates?
+
+Actually yes. They are also willing to do that to verify their payments,
+so why not for the certificate? But true, this was the reason why I
+thought of putting it in the UTXO. To enable some future dedicated
+"hardware wallet" to keep only the UTXO and to verify against it. Where
+would you store you alt-chain block header hashes? UTXO? 
+
+BTW, suppose you avoid any squatting (there would certainly be ways to
+do that). Then with my original proposal of one transaction per
+registration you would grow the UTXO by O(n), n is the number of users.
+Each user would create a small constant number of aliases. This number
+will certainly be dwarfed by the number of unspend outputs that each
+user keeps anyway as a result of their regular transactions. So it would
+not present a problem for the UTXO. Actually, anything above the dust
+threshold should not be a problem, or the system is misdesigned.  But of
+course the alt-chain header hashes would only take O(1), much better.
+
+Timo
+
+
+
