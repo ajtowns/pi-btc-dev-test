@@ -1,0 +1,87 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 12 Feb 2013 10:11:08 -0500
+Subject: [Bitcoin-development] RFC: empty scriptPubKeys and OP_RETURN for
+	marking unspendable txouts
+Message-ID: <20130212151108.GA639@savin>
+
+In my fidelity bond protocol (1) I'm proposing the use of two possible
+new features:
+
+The first is the use of OP_RETURN at the end of a scriptPubKey to
+designate that the txout can be immediately pruned as it is obviously
+unspendable. My use-case is the publish part of the two-step
+publish-sacrifice protocol. I specifically want to use OP_RETURN rather
+than a spendable scriptPubKey like <serialized tx> <pubkey> OP_CHECKSIG
+so that implementors can not get lazy and fail to actually write the
+code to spend the non-standard outputs created, thus polluting the UTXO
+set. Simply using <serialized tx> by itself as the scriptPubKey -
+spendable with an empty scriptSig - is another possiblity, but I suspect
+no-one will want to spend the tx fees to clean up those txouts; note how
+long it took for someone to bother doing that with p2pools share chain
+hash txout, and the effort(2) seems to have been a one-time experiment.
+Of course, P2Pool itself could use this mechanism too.
+
+OP_RETURN marks the script as invalid upon execution, and since a script
+is invalid if an OP_IF or OP_ELSE is not terminated with OP_ENDIF it is
+guaranteed to execute. (there is no op-code that marks a script as valid
+and returns immediately) OP_FALSE is another possibility too; I don't
+see clear advantages for one or the other modulo OP_FALSE's more
+intuitive name.
+
+Finally OP_VERIF and OP_VERNOTIF say that "Transaction is invalid even
+when occuring in an unexecuted OP_IF branch" on the wiki, although a
+look at EvalScript() leaves me less than convinced this is true.  More
+to the point, the mechanism should be something that is as unlikely as
+possible to have different behavior in alternate implementations.
+(remember that often only valid transactions are put in unittests by
+lazy implementors)
+
+OP_RETURN doesn't need any special support in the reference client yet
+nor am I suggesting to make it a standard transaction type, but I would
+like some feedback on if the idea itself is reasonable.
+
+
+The second idea is the use of an empty scriptPubKey to create trivially
+spendable outputs; provide the the scriptKey OP_TRUE or similar. For
+fidelity bonds the advantage is to create a mechanism where even
+non-miners have a chance at taking the funds sacrificed, and thus
+increase the incentive to scan the blockchain for sacrifices and makes
+it more likely for the sacrifice to be a true sacrifice of value. An
+additional advantage is you avoid having to provide the txin to prove
+the value of the mining fee. The advantage over just using a pubkey with
+a known secret key is that the transaction size is shorter; remember
+that the sacrifice transaction has to be published as serialized data in
+a prior transaction.
+
+In the future another use would be as a way of multiple parties to
+collectively sign an assurance contract(3) donating to miners. This is
+effectively a mining fee because miners who chose to include the
+transaction can always chose to include an additional transfer from the
+txout to a scriptPubKey only they can spend.
+
+For the purpose of fidelity bonds ideally an empty scriptPubKey spent by
+the scriptSig OP_TRUE would be made a standard transaction type to make
+collecting the funds as easy as possible until miners start doing so
+themselves. Having it a standard transaction type would also make it
+easier for miners to implement the code to do this themselves; in
+particular this discourages them from just allowing all non-standard
+transactions. The main disadvantage I see is that it makes it easier for
+people with buggy custom transaction code to accidentally lose their
+funds.
+
+Again, thoughts?
+
+
+1) https://github.com/petertodd/trustbits/blob/master/fidelitybond.md
+2) See the transactions associated with 1HfA1KHC7bT1hnPPCjpj9CB4koLM4Hz8Va
+3) https://en.bitcoin.it/wiki/Contracts#Example_3:_Assurance_contracts
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130212/c1200d14/attachment.sig>
