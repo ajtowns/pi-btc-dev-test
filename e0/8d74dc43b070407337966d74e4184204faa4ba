@@ -1,0 +1,124 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 12 Feb 2013 23:12:09 -0500
+Subject: [Bitcoin-development] RFC: empty scriptPubKeys and OP_RETURN
+ for marking unspendable txouts
+In-Reply-To: <CABsx9T1P=OC7amNeZivTVcQSb0+=FSKhvAB-XjDzkqq6bc07-g@mail.gmail.com>
+References: <20130212151108.GA639@savin>
+	<CABsx9T1P=OC7amNeZivTVcQSb0+=FSKhvAB-XjDzkqq6bc07-g@mail.gmail.com>
+Message-ID: <20130213041209.GA28202@savin>
+
+On Tue, Feb 12, 2013 at 12:42:37PM -0500, Gavin Andresen wrote:
+> On Tue, Feb 12, 2013 at 10:11 AM, Peter Todd <pete at petertodd.org> wrote:
+> 
+> > .... Again, thoughts?
+> >
+> 
+> First: I really like the fidelity bond concept, and want to see it happen.
+> 
+> RE: OP_RETURN : I've got a knee-jerk opposition to the OP_RETURN opcode,
+> because it was the cause of the nastiest bug ever Bitcoin history. So I'd
+
+So what exactly was the OP_RETURN bug anyway? I know it has something to
+do with not executing the scriptSig and scriptPubKey separately
+(https://bitcointalk.org/index.php?topic=58579.msg691432#msg691432) but
+commit 7f7f07 that you reference isn't in the tree, nor is 0.3.5 tagged.
+
+> be more comfortable using either OP_FALSE or OP_INVALIDOPCODE for the
+> "provably unspendable" transaction.
+
+You know, come to think of it, OP_FALSE doesn't get used by standard
+transactions either, and it's behavior is a little odd in how it does
+push to the stack. So lets make the standard OP_INVALIDOPCODE,
+specifically 0xFF, and put it at the start of the scriptPubKey.
+
+> RE: anyone-can-spend transactions:  Thinking aloud... I wonder if we might
+> inadvertently cause "spend storms" on the network; if suddenly there are 11
+> BTC sitting in an anybody-can-spend txout, I could imagine EVERYBODY on the
+> network trying to race each other to spend it (maybe assuming that there
+> are a few miners on old versions of the software who are too dumb to claim
+> it for themselves).
+
+That's a good point. It would encourage efforts to identify as many
+Bitcoin nodes as possible, particularly miners, and I don't think we
+really want to incentivise that. It's not a problem unique to this
+proposal - compromised private keys and SIGHASH_NONE (1) - but
+fidelity bonds will give people incentive to develop the infrastructure
+to exploit it.
+
+    1) Speaking of, maybe I'm missing something, but if I have a
+    transaction with one or more txin's and sign every signature with
+    SIGHASH_SINGLE, what stops an attacker from adding their own txout
+    at the end and diverting the mining fee to themselves?
+
+Having said that, if we both make empty scriptPubKeys standard, and add
+code so that miners will always try to spend the outputs for themselves
+at the same time, we can get rid of this problem by removing the
+incentive. It would also still make non-fidelity-bond uses viable as
+well.
+
+Of course, if you want to go down that path, we might as well add code
+to detect and spend fidelity bonds too, and make the publish
+transactions IsStandard(). Basically for every script in a confirmed
+block check if any pushdata op happens to be a script that we would be
+willing to add to the mempool at nBlockHeight + N. (assuming current
+utxo set) If so, add it to the mempool now. N should be at least 100
+blocks I think for the same reason that coinbase tx's take 100 blocks to
+spend. The limit also means the size of the mempool can't get larger
+than MAX_BLOCK_SIZE * N. Meanwhile IsStandard() would allow the
+scriptPubKey OP_INVALIDOPCODE <valid serialized tx>
+
+P2SH already treats data as scripts, so treating data as entire tx's
+isn't that big of a leap. Also since the txout is unspendable, the
+Satoshi criteria that block-reorgs should not make child tx's vanish is
+still met. (though tx mutability sort of breaks this anyway)
+
+
+We would however open quite a few cans of worms:
+
+1) We just made non-final !IsStandard() for a reason.
+
+2) What if there are transactions already in the mempool that spend the
+txin's of the sacrifice? If we ignore them, we've just created another
+way to double-spend unconfirmed transactions. On the other hand, if we
+don't ignore them, we've just created a way to give us a chance to mine
+the sacrifice for ourselves.
+
+Personally I'm with you Gavin and think assuming miners are greedy is
+best, but lets just say I probably shouldn't write an implementation
+with a function named IsTxOutStealable()?
+
+2a) What if multiple sacrifice publications exist spending the same
+txin's? We should have deterministic behavior and mine the most valuable
+one. If you don't do that, the attackers effective hashpower is
+increased. (and thus the true sacrifice value of the bond decreases)
+
+2b) ...but this is actually an annoying optmization problem. You could
+create a whole bunch of sacrifices, each spending two or more inputs,
+one small, one large. Then create one large sacrifice, that spends all
+the *small* inputs. If the value of the large sacrifice is less than the
+combined totals of the smaller sacrifices, you should be mining the
+small ones rather than the large for maximum return.
+
+3) With the 10KB limit on scripts, a naive IsStandard() could wind up
+recursing about 200 times; we probably should say recursive publish
+transactions are non-standard.
+
+3b) ...on the other hand, if they are non-standard, implementations that
+use fidelity bonds better make sure they don't accept such monsters.
+
+We probably should just define one standard sacrifice tx form with one
+txin, one txout, and a standard P2SH scriptPubKey, but miners can still
+do their own thing and cause problems in determining the true value
+sacrificed if they don't get the optimization problem right.
+
+Fidelity bonds needs a lot more thought, and a testnet implementation...
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130212/373103cc/attachment.sig>
