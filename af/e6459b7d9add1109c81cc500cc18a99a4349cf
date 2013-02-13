@@ -1,0 +1,45 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Wed, 13 Feb 2013 11:00:35 +0100
+Subject: [Bitcoin-development] RFC: empty scriptPubKeys and OP_RETURN
+ for marking unspendable txouts
+In-Reply-To: <20130213041209.GA28202@savin>
+References: <20130212151108.GA639@savin>
+	<CABsx9T1P=OC7amNeZivTVcQSb0+=FSKhvAB-XjDzkqq6bc07-g@mail.gmail.com>
+	<20130213041209.GA28202@savin>
+Message-ID: <CANEZrP3qgo-VC5YHTSLOH5rGdv5PP4e2V6qECQVfvMgJXFbx-g@mail.gmail.com>
+
+> So what exactly was the OP_RETURN bug anyway? I know it has something to
+> do with not executing the scriptSig and scriptPubKey separately
+> (https://bitcointalk.org/index.php?topic=58579.msg691432#msg691432) but
+> commit 7f7f07 that you reference isn't in the tree, nor is 0.3.5 tagged.
+>
+
+It was fixed by Satoshi long ago, back when we used CVS I think.
+
+The problem was how scripts were executed. They were concatenated together
+and then run as a single unit. The now obsolete OP_CODESEPARATOR was put
+between them to control what was hashed and what wasn't.
+
+The obvious problem with that arrangement being that scriptSig ran first
+(it has to, to push the signatures onto the stack), so nothing stopped you
+setting a scriptSig to OP_RETURN and making the script evaluate to true,
+always. A pretty amazing oversight given the thought and care that went
+into Bitcoin generally, and its robustness since then.
+
+The fix was to move to the current system whereby the two scripts are
+executed independently but sharing a stack, and it's only the return value
+of the scriptPubKey that matters.
+
+The scripting system always struck me as a rather late addition to the
+design. Satoshi admitted as much when he said that he added it after
+encountering an explosion of special cases as he designed various types of
+contracts. The fact that there's an obvious bug in CHECKMULTISIG is more
+evidence of this part being a general rush job, along with Satoshis
+willingness to disable much of its functionality later with the IsStandard
+checks. Also the design of CHECKSIG is an obvious retrofit, it would have
+made far more sense to decompose it, and we never found a use case for 99%
+of the opcodes despite having successfully designed (redesigned?) all the
+contract types he ever mentioned.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130213/de524999/attachment.html>
