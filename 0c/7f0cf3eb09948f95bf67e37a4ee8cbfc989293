@@ -1,0 +1,115 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 14 Feb 2013 01:07:44 -0500
+Subject: [Bitcoin-development] Incorporating block validation rule
+ modifications into the block chain
+In-Reply-To: <CADb9v0Kf1TfzWnUb3J8YNsLUxsbkeFX2nZXRnW5JJnmfDV9psQ@mail.gmail.com>
+References: <CAN1xFdrX61HsRxsXxXW+i0FzjQkoNVRaDG-2yJNOfYUi5FnsPA@mail.gmail.com>
+	<CAAS2fgTwjXCGFS-N8a8Ro80ahxXT01dCfqWYOqmwCkdRramaMg@mail.gmail.com>
+	<CAN1xFdrGiWmn_EaBNMXXZAV38oeqP14YiMzMZQrkA+WL9QEMfA@mail.gmail.com>
+	<CAAS2fgR5=nLTBQUBzjZQs91AVw5XSTiqe-KB_T9R9wKfBrOq6Q@mail.gmail.com>
+	<CABsx9T2RWamFxebVJExo_4NT4WPPE=Fd4deG1AFmT=GqjD=vwQ@mail.gmail.com>
+	<CADb9v0L9RgfK8=FaM-tZm7AcYMhP6+OAyWu4x+3pLrrQ8yoeLw@mail.gmail.com>
+	<CAAS2fgQRineAXRs9uaLRv-YaXMfjd+ietzd1aRmYV98N0y=OuQ@mail.gmail.com>
+	<CADb9v0Kf1TfzWnUb3J8YNsLUxsbkeFX2nZXRnW5JJnmfDV9psQ@mail.gmail.com>
+Message-ID: <20130214060744.GA15157@savin>
+
+On Wed, Feb 13, 2013 at 09:44:11PM -0500, Stephen Pair wrote:
+> One of the beauties of bitcoin is that the miners have a very strong
+> incentive to distribute as widely and as quickly as possible the blocks
+> they find...they also have a very strong incentive to hear about the blocks
+> that others find.  There will not be an issue with blocks being "jealously
+
+The idea that miners have a strong incentive to distribute blocks as
+widely and as quickly as possible is a serious misconception. The
+optimal situation for a miner is if they can guarantee their blocks
+would reach just over 50% of the overall hashing power, but no more. The
+reason is orphans.
+
+Here's an example that makes this clear: suppose Alice, Bob, Charlie and
+David are the only Bitcoin miners, and each of them has exactly the same
+amount of hashing power. We will also assume that every block they mine
+is exactly the same size, 1MiB. However, Alice and Bob both have pretty
+fast internet connections, 2MiB/s and 1MiB/s respectively. Charlie isn't
+so lucky, he's on an average internet connection for the US,
+0.25MiB/second. Finally David lives in country with a failing currency,
+and his local government is trying to ban Bitcoin, so he has to mine
+behind Tor and can only reliably transfer 50KiB/second.
+
+Now the transactions themselves aren't a problem, 1MiB/10minutes is just
+1.8KiB/second average. However, what happens when someone finds a block?
+
+So Alice finds one, and with her 1MiB/second connection she
+simultaneously transfers her new found block to her three peers. She has
+enough bandwidth that she can do all three at once, so Bob has it in 1
+second, Charlie 4 seconds, and finally David in 20 seconds. The thing
+is, David has effectively spent that 20 seconds doing nothing. Even if
+he found a new block in that time he wouldn't be able to upload it to
+his other peers fast enough to beat Alices block. In addition, there was
+also a probabalistic time window *before* Alice found her block, where
+even if David found a block, he couldn't get it to the majority of
+hashing power fast enough to matter. Basically we can say David spent
+about 30 seconds doing nothing, and thus his effective hash power is now
+down by 5%
+
+
+However, it gets worse. Lets say a rolling average mechanism to
+determine maximum block sizes has been implemented, and since demand is
+high enough that every block is at the maximum, the rolling average lets
+the blocks get bigger. Lets say we're now at 10MiB blocks. Average
+transaction volume is now 18KiB/second, so David just has 32KiB/second
+left, and a 1MiB block takes 5.3 minutes to download. Including the time
+window when David finds a new block but can't upload it he's down to
+doing useful mining a bit over 3 minutes/block on average.
+
+Alice on the other hand now has 15% less competition, so she's actually
+clearly benefited from the fact that her blocks can't propegate quickly
+to 100% of the installed hashing power.
+
+
+Now I know you are going to complain that this is BS because obviously
+we don't need to actually transmit the full block; everyone already has
+the transactions so you just need to transfer the tx hashes, roughly a
+10x reduction in bandwidth. But it doesn't change the fundemental
+principle: instead of David being pushed off-line at 10MiB blocks, he'll
+be pushed off-line at 100MiB blocks. Either way, the incentives are to
+create blocks so large that they only reliably propegate to a bit over
+50% of the hashing power, *not* 100%
+
+Of course, who's to say Alice and Bob are mining blocks full of
+transactions known to the network anyway? Right now the block reward is
+still high, and tx fees low. If there isn't actually 10MiB/second of
+transactions on the network it still makes sense for them to pad their
+blocks to that size anyway to force David out of the mining business.
+They would gain from the reduced hashing power, and get the tx fees he
+would have collected. Finally since there are now just three miners, for
+Alice and Bob whether or not their blocks ever get to Charlie is now
+totally irrelevant; they have every reason to make their blocks even
+bigger.
+
+Would this happen in the real world? With pools chances are people would
+quit mining solo or via P2Pool and switch to central pools. Then as the
+block sizes get large enough they would quit pools with higher stale
+rates in preference for pools with lower ones, and eventually the pools
+with lower stale rates would probably wind up clustering geographically
+so that the cost of the high-bandwidth internet connections between them
+would be cheaper. Already miners are very sensitive to orphan rates, and
+will switch pools because of small differences in that rate.
+
+Ultimately the reality is miners have very, very perverse incentives
+when it comes to block size. If you assume malice, these perverse
+incentives lead to nasty outcomes, and even if you don't assume malice,
+for pool operators the natural effects of the cycle of slightly reduced
+profitability leading to less ability invest in and maintain fast
+network connections, leading to more orphans, less miners, and finally
+further reduced profitability due to higher overhead will inevitably
+lead to centralization of mining capacity.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130214/ca84c238/attachment.sig>
