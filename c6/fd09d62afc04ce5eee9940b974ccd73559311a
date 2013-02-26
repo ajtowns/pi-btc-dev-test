@@ -1,0 +1,252 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 25 Feb 2013 21:44:58 -0500
+Subject: [Bitcoin-development] Fidelity-bonded ledgers
+Message-ID: <20130226024458.GA25903@savin>
+
+Lets suppose we take away everything but the transaction/scripting
+system from Bitcoin. What is left is basically a way for to prove that a
+set of pubkeys authorized the movement of coins from one place to
+another. Of course, such a system is flawed as a currency because of the
+double spend problem - specifically the need to know that there exists
+global consensus on what particular set of transactions is the accepted
+state.
+
+However, in the event that a party commits double-spend fraud, it is
+trivial to prove to others that they did so. Thus if a way to punish
+that party can be found, we can give them an incentive to behave
+honestly.
+
+Consider the following new opcode and scriptPubKey:
+
+    <genesis hash> n <ledger pubkeys> m CHECK_DOUBLE_SPEND_PROOF
+
+spent with the following scriptSig:
+
+    {transaction 1} {transaction 2}
+
+where where both transactions are part of the block chain starting at
+the given genesis hash, and whose blocks are signed by n of m ledger
+pubkeys; the ledger is the entity entrusted to keep the ledger accurate
+and not allow double-spends to occur.
+
+Anyone with proof of a double-spend attempt made in the blockchain
+starting at a given genesis hash can collect a reward. In essence, the
+txout is the fidelity bond holding the ledger accountable.
+
+Of course, the devil's in the details...
+
+
+Transactions and blocks
+-----------------------
+
+Transactions themselves can follow the Bitcoin system of scripts,
+scriptPubKeys, and scriptSigs and re-use the existing validation
+machinery.
+
+A so-called block however is reduced to the simpliest possible form:
+
+    <signatures> <block hash> <transaction>
+
+where the signatures are that of the ledger. The block hash is optional
+and provides a way to further link a block into some sort of system to
+make double-spend fraud detectable. Importantly the Bitcoin validation
+machinery itself only needs to know that the double-spend happened at
+all, not how it was detected.
+
+Note how had the string manipulation opcodes not been disabled, in
+particular SUBSTR, and had CHECKSIG not been designed as a single
+opcode, it might have even been possible to create the double-spend
+detector using the existing scripting system. Equally with just a set of
+ECDSA opcodes one could probably construct a double-spend detector using
+non-Bitcoin compatible transactions, but alas, things didn't work out
+that way.
+
+
+Moving funds in and out of fidelity-bonded ledgers
+--------------------------------------------------
+
+First the depositor informs the ledger of the amount they wish to
+deposit, and one txin that will be used for that deposit.
+
+Nex the ledger first creates a ledger-only transaction with the the
+following scriptPubKey:
+
+    <confirmations> <value> <txin hash> <scriptPubKey hash> CHECK_PAYMENT VERIFY <pubkey> CHECKSIG
+
+spendable with the following scriptSig:
+
+    <signature> <transaction> <merkle path to block header>
+
+The CHECK_PAYMENT opcode returns true if provided with a proof that a
+transaction with a txout of the correct value and scriptPubKey spending
+the given txin exists in the Bitcoin blockchain. The ledger should
+ensure that a different scriptSig is created for every deposit. The txin
+is provided to allow the ledger to use the same scriptPubKey for all
+deposits and thus make external audits easier. (note that an UTXO merkle
+sum proof system is most likely to index by scriptPubKey)
+
+The ledger gives the depositor the fully signed transaction, and the
+depositor makes it valid by broadcasting that transaction and getting it
+confirmed in the block chain.
+
+Withdrawls from the ledger to the blockchain proper can happen the same
+way, but this time it's the ledger that provides the transaction, and
+the transaction owner that spends the transaction to an address of the
+ledger's choosing.
+
+
+Detecting double-spends
+-----------------------
+
+>From the point of view of the Bitcoin validation machinery, double-spend
+detection is undefined. Thus multiple systems are possible without
+changing the validation rules.
+
+One simple method would be for the ledger to maintain a publicly
+accessible website, in particular publically accessible over Tor.
+Transactions would be incorporated into a single log, and clients would
+expect to be able to get copies of that log at any time anonymously. If
+their transaction did not appear in the log, they could immediately
+prove the double spend. (going as far back as the genesis block) The
+optional block hash signed by every transaction would be incorporated
+into the audit logs.
+
+Equally trusted computing technologies can also be used instead of, or
+in conjunction with, the ledger audit logs.
+
+
+Ensuring the bond can-not be collected by the ledger
+----------------------------------------------------
+
+The simplistic scriptPubKey presented in the introduction allows for the
+ledger to create their own fraud proof and run with the funds. What we
+actually need is a way to constrain the destination of those spend
+funds. Consider the following scriptPubKey:
+
+    {bond ops omitted} <txouts hash> GET_TXOUTS HASH160 EQUAL
+
+GET_TXOUTS would put a serialized version of each scriptPubKey, value,
+and so on on the stack. (ideally using the existing CHECKSIG machinery;
+CHECKSIG decomposed) Thus the txouts of any transaction allowed to spend
+the scriptPubKey are constrained.
+
+The scriptPubKey of the allowed transaction output can include a
+mechanism such as the following:
+
+    n GET_BLOCKS_SINCE_TXIN LESSTHAN
+
+Essentially the number of blocks that have been confirmed since the transaction input was
+confirmed in the chain are put on the stack, and the scriptPubKey is
+only spendable if that number is sufficiently large. Essentially it's
+the same underlying idea as publish-commit fidelity bond sacrifices, but
+done with explicit scripting support.
+
+As an aside, all these GET_FOO opcodes would use a lot of opcode space,
+thus they should all be combined into a single GET_INFO opcode, which
+would take a single argument specifying what information should be
+placed onto the stack.
+
+
+Chaum Token Support
+-------------------
+
+Auditing chuam token creating and redemption is made difficult by the
+fact that the two acts are separated from each other. However, while it
+isn't possible to audit any particular token issue/redemption, it is
+possible to audit the sum of all tokens issued.
+
+Specifically now every transaction involving tokens contains a number V,
+which represents the total value of all tokens of that denomination. A
+token creation transaction would look like the following:
+
+    <ledger signature> <prev hash> V+1 <inputs> <blinded token>
+
+with the rule that if two transactions exist with the same prev hash,
+both creating a token, fraud has occured. Equally if the total token
+value is not incremented, fraud has also occured. Similarly token
+redemption can look like the following:
+
+    <ledger signature> <token signature> <prev hash> V-1 <unblinded token> <outputs>
+
+Note that here tokens themselves are pubkeys, which authorize their own
+redemption.
+
+Token to token transactions do not change V, but they still require
+signatures, and thus still can be used as fraud proofs.
+
+Of course the ledger can still run with all the funds deposited, but if
+clients never deposit more funds than the fidelity bond is worth, the
+ledger is still unable to profit from fraud as any client can show that
+either their redemption request has not been honored, or that the value
+of outstanding tokens does not match up.
+
+
+Forcing redemptions
+-------------------
+
+There needs to be some way of forcing the ledger to redeem a withdrawl
+request, on pain of losing their fidelity bond. This can be done by
+allowing the creation of a special unspent txout, which can only be
+spent by the creation of the requested txout, thus transfering the funds
+to the rightful owner. Clients would scan the UTXO set to ensure that
+no outstanding UTXO's of that special form exist before depositing funds
+with the ledger. This solution could also be combined with time-lock
+mechanisms that return funds to their owners, perhaps combined with some
+sort of replacement mechanism.
+
+Further work needs to be done here.
+
+
+Summary
+-------
+
+Bitcoin provides an excellent transferable proof of work that can be
+used to make certain actions expensive, including fraud. By the addition
+of a relatively small number of opcodes to the existing scripting
+language, opcodes that can be used for other purposes, we can create a
+ledger built on top of Bitcoin whose honesty and performance are
+incentivised by the prospect of losing something of value.
+
+
+
+Extending the scripting language
+--------------------------------
+
+I'm not sure the following has been proposed before; my apologies if it
+has.
+
+Invalid opcodes do not make a transaction invalid if they are part of an
+unexecuted IF/ELSE/ENDIF block. Previously it has been proposed to
+carefully use the ten NOP opcodes as a way to extend the scripting
+language - remember that an extension is a soft fork only if existing
+clients consider the transaction valid - however we can instead redefine
+just one NOP opcode to get access to all of the invalid opcodes.
+Specifically consider the following scriptPubKey:
+
+    <version> CHECK_SCRIPT_VERSION NOTIF <ops> ENDIF
+
+The CHECK_SCRIPT_VERSION, NOP10, would essentially put the supported
+script version on the stack, followed by the LESSTHANOREQUAL opcode.
+Thus if the script version is supported, zero is placed on the stack,
+and the NOTIF/ENDIF block is executed. Otherwise non-zero is left on the
+stack, and the block is not executed, resulting in the script succeeding
+unconditionally. Equally for non-supporting miners, the NOP10 does
+nothing, non-zero is left on the stack, and the script succeeds.
+
+Alternatively the comparison could be done as an XOR, and the "version"
+actually being a set of capabilities. This has the advantage that
+different versions could use the same invalid opcodes for different
+purposes. (the context would remain until the end of the ENDIF block)
+However I'm not sure that allowing a full-on "flag" system is worth the
+complexity, and in any case if versions are assigned sequentially
+essentially the same idea can be done later anyway.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130225/8d005f68/attachment.sig>
