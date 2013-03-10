@@ -1,0 +1,139 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 9 Mar 2013 23:31:55 -0500
+Subject: [Bitcoin-development] Blocking uneconomical UTXO creation
+Message-ID: <20130310043155.GA20020@savin>
+
+As discussed endlessly data in the UTXO set is more costly, especially
+in the long run, than transaction data itself. The fee system is per KB
+in a block, and thus doesn't properly capture the long-term costs of
+UTXO creation.
+
+It's also been suggested multiple times to make transaction outputs with
+a value less than the transaction fee non-standard, either with a fixed
+constant or by some sort of measurement.
+
+https://github.com/petertodd/bitcoin/tree/block-uneconomic-utxo-creation
+
+The above patch that implements the latter approach, and thus will not
+accept into the mempool any txout whose value is <= the fee per KB paid
+by the transaction. That fee is then bounded between MIN_TX_FEE and
+COIN_DUST, 0.0005BTC and 0.01BTC respectively. The former due to the
+fact that the fee can be zero, and the latter so that delibrate high-fee
+creation is still allowed. (provably unspendable txouts can of course be
+handled specially later)
+
+By basing the calculation on the fee per KB the transaction itself pays
+the limit automatically adjustes as the market for blockchain space
+changes, and the value of Bitcoins change.
+
+Since scriptSigs greater than 500 bytes are non-standard the marginal
+bytes required to spend a txout is always less than 540 bytes. For
+standard transactions the marginal cost is usually just a 80+1 byte
+signature, and a 33+1 byte pubkey, or 155 bytes. Thus the choice of the
+fee for 1000bytes allows a margin to ensure a net positive return, even
+if tx fees become more expensive. In particular I think a reasonable
+margin is important to deter users from simply deleting wallets filled
+with dust-spam, something which gets reported as happening frequently.
+It also protects users who do not understand how Bitcoin works from
+thinking that repeated small amounts of coins collected from sites
+giving away small amounts will add up to an amount that they can
+usefully use, and equally protects the long-term health of the network
+from those services.
+
+By basing the threshold for what is considered a too-low output value on
+ensuring that spending outputs has a net positive return, rather than
+trying to come up with some sort of model of UTXO cost, we make the
+logic significantly easier to reason about. In particular, it means that
+Bitcoin clients can use an unchanging rule based on fees paid, rather
+than some constant subject to change as the economics of UTXO costs
+change. Note how the total cost of maintaining the UTXO set is
+determined by the number of validating nodes, and what that number will
+be in the future heavily debated with a possible range spanning many
+orders of magnitude.
+
+
+Short-term
+----------
+
+SatoshiDice will have to change their betting system to have their
+"failed bet" messages return enough coins to be economically spendable.
+It's notable that Satoshidice seems to have already changed their system
+to return what appear to be randomly chosen amounts, likely to get
+around the users who have applied custom patches to consider 1 satoshi
+output values non-standard. Because this patch does not block
+SatoshiDice, nor do I expect it to result in less SatoshiDice traffic, I
+expect pool operators to be open to applying it.
+
+Other services such as CoinAd will also have to make changes to either
+collect multiple payments together, or use off-chain transactions. I've
+spoken with a person who runs one of these sites, CoinAd IIRC, and he
+was open to opening an instawallet or easywallet account and using it to
+do direct off-chain transactions for users who wanted to be paid
+immediately.
+
+Part of the patch includes code that sends change to fees if creating a
+change output would produce an uneconomic txout. This will likely
+occasionally generate confusion from users, especially as it will only
+happen if they try to send almost all of their wallet.
+
+
+Security
+--------
+
+For a non-upgraded client, accepting zero-confirmation transactions
+becomes more risky as the change represents yet another way of creating
+a transaction that won't be mined. Fortnately the nLockTime problem has
+served to warn people yet again about those dangers.
+
+
+Long-term
+---------
+
+If fees required on transactions go up in numerical value, the patch
+adapts the minimum output size as required.
+
+If fees go down numerically, the minimum output size is also adjusted as
+required. If they go down sufficiently that MIN_TX_FEE requires
+changing, only one constant needs to change. In particular, the
+MIN_RELAY_TX_FEE blocks relaying small output values with small fees
+anyway, and it's set to one fifth of MIN_TX_FEE. Additionally most
+miners follow the MIN_TX_FEE default, so using that value ensures that
+the logic holds true for the more likely case that fees numerically stay
+stable or rise. In any case, Bitcoin will never be a good
+microtransaction system.
+
+
+Ouputs representing other assets; "colored coins" and "smartcoins"
+------------------------------------------------------------------
+
+The colored coin ideas being passed around on the forums often used
+fixed representations of assets, that is 1 bond unit == 1 satoshi or
+similar. Since proving the state of a colored coin to an SPV client
+requires providing the full transaction history changing these protocols
+to allow a floating numerical ratio Bitcoins to assets is always
+possible by allowing for ordinary, non-marked, transaction inputs and
+outputs to add or remove coins as required. This has the additional
+advantage of making divisibility easy.
+
+If the asset itself is worth less than a tx fee, moving it will still
+incur a net loss. Equally if the asset is worth more than a tx fee, the
+quickly the burden of requiring an additional tx fee to be locked up by
+the asset becomes minor.
+
+
+
+Testing Required
+----------------
+
+To be written after more consensus. Essentially a UI testing script, and
+unittests in wallet_tests.cpp need to be written.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130309/b11db46f/attachment.sig>
