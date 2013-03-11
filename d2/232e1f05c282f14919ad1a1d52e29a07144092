@@ -1,0 +1,41 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Mon, 11 Mar 2013 23:19:07 +0100
+Subject: [Bitcoin-development] Blocking uneconomical UTXO creation
+In-Reply-To: <513E2BC6.2050102@gmail.com>
+References: <20130310043155.GA20020@savin>
+	<CABOyFfp9Kd+y=SofWfq6TiR4+xeOhFL7VVHWjtrRn83HMsmPBA@mail.gmail.com>
+	<CABsx9T1rt+7BQHz1S=NVtL_YV7kfCapQ+3MEf+xyXT7pZOfq7w@mail.gmail.com>
+	<CABOyFfrO9Xpc=Pdh_6AM1yoHRCeuHxzqL02F-ALkimmsGbheiA@mail.gmail.com>
+	<CABOyFfqh_VixG7SQMaQUkxU40MGY1f9JO3=OqwitHa1YoT4chQ@mail.gmail.com>
+	<CANEZrP0gsrd2W3ODfQRSc2k5V7GotJ0vzEAxcAjnaMtDHZ9_JA@mail.gmail.com>
+	<75F78378-7580-4D69-A5EA-E943AF7CEB0C@benlabs.net>
+	<513E2BC6.2050102@gmail.com>
+Message-ID: <CANEZrP1tYTDf6k76=jcBL+10MpCgemV2TP=wZiRuA02vhUP78A@mail.gmail.com>
+
+> This would be bloating UTXO data at a speed of 52 GB/year. That's a very
+> big memory leak. And this is just the unspendable outputs.
+
+Firstly, the UTXO set is a LevelDB, it's not stored in memory. Outputs
+that never get spent are not in the working set by definition, after a
+while they just end up in the bottom levels and hardly ever get
+accessed. If need be we can always help LevelDB out a bit by moving
+outputs that we suspect are unlikely to get spent into a separate
+database, but I doubt it's needed.
+
+Secondly, if an output can be proven unspendable it can be pruned
+immediately. We already reached consensus on adding some standard
+template using OP_RETURN that results in insta-pruning. So people who
+want to create unspendable outputs can do so with the only side-effect
+being long term chain storage. It would be effectively "free" to
+pruning nodes.
+
+So the issue is not really with unspendable outputs but with low-value
+spendable outputs. Wallets with lots of tiny outputs end up generating
+large transactions that take a long time to verify, in situations
+where the network redlines those transactions would end up at the
+bottom of the priority queue and might take longer to confirm. So
+wallet apps already have incentives to try and find a good balance in
+output sizes and defragment themselves if their average output gets
+too low in value, eg, by send-to-self transactions at night.
+
+
