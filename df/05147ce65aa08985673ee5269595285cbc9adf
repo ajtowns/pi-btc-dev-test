@@ -1,0 +1,155 @@
+From: gronager@ceptacle.com (Michael Gronager)
+Date: Tue, 12 Mar 2013 11:13:09 +0100
+Subject: [Bitcoin-development] Warning: many 0.7 nodes break on large
+	number of tx/block; fork risk
+In-Reply-To: <CANEZrP2V9uDQ-dmyaUBbsCuj5u3Mrh+jvU9RDpYkrKQV6+t0tQ@mail.gmail.com>
+References: <CAPg+sBip_4Jtxhq+rm-na2=RSJ_PuoZt+akGgJyo0b_Bwbr1Dw@mail.gmail.com>
+	<CAPg+sBjm+e=A+edSRHXU7JSqyfSc4hou_SRdQHF48xhKQGA4zA@mail.gmail.com>
+	<CANEZrP2V9uDQ-dmyaUBbsCuj5u3Mrh+jvU9RDpYkrKQV6+t0tQ@mail.gmail.com>
+Message-ID: <FB4ED2C4-8B65-438B-8B77-44234A644051@ceptacle.com>
+
+Yes, 0.7 (yes 0.7!) was not sufficiently tested it had an undocumented and unknown criteria for block rejection, hence the upgrade went wrong.
+
+More space in the block is needed indeed, but the real problem you are describing is actually not missing space in the block, but proper handling of mem-pool transactions. They should be pruned on two criteria:
+
+1. if they gets to old >24hr
+2. if the client is running out of space, then the oldest should probably be pruned 
+
+clients are anyway keeping, and re-relaying, their own transactions and hence it would mean only little, and only little for clients. Dropping free / old transaction is a much a better behavior than dying... Even a scheme where the client dropped all or random mempool txes would be a tolerable way of handling things (dropping all is similar to a restart, except for no user intervention).
+
+Following that, increase the soft and hard limit to 1 and eg 10MB, but miners should be the last to upgrade.
+
+/M
+
+
+On 12/03/2013, at 10:10, Mike Hearn <mike at plan99.net> wrote:
+
+> Just so we're all on the same page, can someone confirm my
+> understanding  - are any of the following statements untrue?
+> 
+> BDB ran out of locks.
+> However, only on some 0.7 nodes. Others, perhaps nodes using different
+> flags, managed it.
+> We have processed 1mb sized blocks on the testnet.
+> Therefore it isn't presently clear why that particular block caused
+> lock exhaustion when other larger blocks have not.
+> 
+> The reason for increasing the soft limit is still present (we have run
+> out of space).
+> Therefore transactions are likely to start stacking up in the memory
+> pool again very shortly, as they did last week.
+> There are no bounds on the memory pool size. If too many transactions
+> enter the pool then nodes will start to die with OOM failures.
+> Therefore it is possible that we have a very limited amount of time
+> until nodes start dying en-masse.
+> Even if nodes do not die, users have no way to find out what the
+> current highest fees/bids for block space are, nor any way to change
+> the fee on sent transactions.
+> Therefore Bitcoin will shortly start to break for the majority of
+> users who don't have a deep understanding of the system.
+> 
+> 
+> If all the above statements are true, we appear to be painted into a
+> corner - can't roll forward and can't roll back, with very limited
+> time to come up with a solution. I see only a small number of
+> alternatives:
+> 
+> 1) Start aggressively trying to block or down-prioritize SatoshiDice
+> transactions at the network level, to buy time and try to avoid
+> mempool exhaustion. I don't know a good way to do this, although it
+> appears that virtually all their traffic is actually coming via
+> blockchain.infos My Wallet service. During their last outage block
+> sizes seemed to drop to around 50kb. Alternatively, ask SD to
+> temporarily suspend their service (this seems like a long shot).
+> 
+> 2) Perform a crash hard fork as soon as possible, probably with no
+> changes in it except a new block size limit. Question - try to lift
+> the 1mb limit at the same time, or not?
+> 
+> 
+> 
+> 
+> On Tue, Mar 12, 2013 at 2:01 AM, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+>> Hello again,
+>> 
+>> block 000000000000015c50b165fcdd33556f8b44800c5298943ac70b112df480c023
+>> (height=225430) seems indeed to have cause pre-0.8 and 0.8 nodes to fork (at
+>> least mostly). Both chains are being mined on - the 0.8 one growing faster.
+>> 
+>> After some emergency discussion on #bitcoin-dev, it seems best to try to get
+>> the majority mining power back on the "old" chain, that is, the one which
+>> 0.7 accepts (with
+>> 00000000000001c108384350f74090433e7fcf79a606b8e797f065b130575932 at height
+>> 225430). That is the only chain every client out there will accept. BTC
+>> Guild is switching to 0.7, so majority should abandon the 0.8 chain soon.
+>> 
+>> Short advice: if you're a miner, please revert to 0.7 until we at least
+>> understand exactly what causes this. If you're a merchant, and are on 0.8,
+>> stop processing transactions until both sides have switched to the same
+>> chain again. We'll see how to proceed afterwards.
+>> 
+>> --
+>> Pieter
+>> 
+>> 
+>> 
+>> On Tue, Mar 12, 2013 at 1:18 AM, Pieter Wuille <pieter.wuille at gmail.com>
+>> wrote:
+>>> 
+>>> Hello everyone,
+>>> 
+>>> ?'ve just seen many reports of 0.7 nodes getting stuck around block
+>>> 225430, due to running out of lock entries in the BDB database. 0.8 nodes do
+>>> not seem to have a problem.
+>>> 
+>>> In any case, if you do not have this block:
+>>> 
+>>>  2013-03-12 00:00:10 SetBestChain: new
+>>> best=000000000000015aab28064a4c521d6a5325ff6e251e8ca2edfdfe6cb5bf832c
+>>> height=225439  work=853779625563004076992  tx=14269257  date=2013-03-11
+>>> 23:49:08
+>>> 
+>>> you're likely stuck. Check debug.log and db.log (look for 'Lock table is
+>>> out of available lock entries').
+>>> 
+>>> If this is a widespread problem, it is an emergency. We risk having
+>>> (several) forked chains with smaller blocks, which are accepted by 0.7
+>>> nodes. Can people contact pool operators to see which fork they are on?
+>>> Blockexplorer and blockchain.info seem to be stuck as well.
+>>> 
+>>> Immediate solution is upgrading to 0.8, or manually setting the number of
+>>> lock objects higher in your database. I'll follow up with more concrete
+>>> instructions.
+>>> 
+>>> If you're unsure, please stop processing transactions.
+>>> 
+>>> --
+>>> Pieter
+>> 
+>> 
+>> 
+>> ------------------------------------------------------------------------------
+>> Symantec Endpoint Protection 12 positioned as A LEADER in The Forrester
+>> Wave(TM): Endpoint Security, Q1 2013 and "remains a good choice" in the
+>> endpoint security space. For insight on selecting the right partner to
+>> tackle endpoint security challenges, access the full report.
+>> http://p.sf.net/sfu/symantec-dev2dev
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>> 
+> 
+> ------------------------------------------------------------------------------
+> Symantec Endpoint Protection 12 positioned as A LEADER in The Forrester  
+> Wave(TM): Endpoint Security, Q1 2013 and "remains a good choice" in the  
+> endpoint security space. For insight on selecting the right partner to 
+> tackle endpoint security challenges, access the full report. 
+> http://p.sf.net/sfu/symantec-dev2dev
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
