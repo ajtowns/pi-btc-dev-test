@@ -1,0 +1,53 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 12 Mar 2013 05:47:00 -0400
+Subject: [Bitcoin-development] Changing the fee on already sent transactions
+Message-ID: <20130312094700.GA8130@savin>
+
+We can allow for transaction replacement for the purpose of adding fees
+to existing transactions safely, and while not increasing the risk of
+double-spends by taking advantage of the stubbed out replacement code.
+
+Specifically the replacement code allows for the replacement of a
+transaction if a transaction spending the tx that is being replaced is
+not in the mempool. Specifically:
+
+664     // Check for conflicts with in-memory transactions
+665     CTransaction* ptxOld = NULL;
+666     for (unsigned int i = 0; i < tx.vin.size(); i++)
+667     {
+668         COutPoint outpoint = tx.vin[i].prevout;
+669         if (mapNextTx.count(outpoint)){
+
+Followed by the actual replacement logic. We could change this logic to
+instead evaluate if the candidate replacement does not remove or
+decrease the value of any existing outputs. Adding outputs is ok.
+Changing the set of inputs is also ok, provided that there are no
+conflicts with other spent transactions. DoS attacks would be prevented
+by only forwarding/accepting into the mempool replacements that increase
+the fees paid by at least MIN_RELAY_TX_FEE * size - essentially the same
+decision to allow the broadcast of the transaction in the first place.
+
+Because a transaction can not be replaced if another transaction already
+depends on it the change would not increse double-spend risks for
+unconfirmed transactions.
+
+Along with this change code can be added to clients to examine the
+mempool and recent blocks to determine what fee would be required to get
+a transaction confirmed in what time.
+
+
+Of course, considering our recent "fun" last night, I'll be the first to
+admit that this change needs a lot of testing and careful thought.
+However the ability to increase fees on already broadcast transactions
+would be very valuable to users as competition for blockchain space
+increases.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130312/f5b5dbc0/attachment.sig>
