@@ -1,0 +1,58 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Fri, 5 Apr 2013 10:42:22 -0700
+Subject: [Bitcoin-development] Integration testing for BitCoin
+In-Reply-To: <CAKuKjyUFBuPMPRV6R-u0iTa=8DWMN9vqdOxnr8o8kxg9rJtVBA@mail.gmail.com>
+References: <CAKuKjyUFBuPMPRV6R-u0iTa=8DWMN9vqdOxnr8o8kxg9rJtVBA@mail.gmail.com>
+Message-ID: <CAAS2fgT71s0EgF055wyqcCdXmMtY-=q0pQDh9P8pRgKJcELOQg@mail.gmail.com>
+
+On Fri, Apr 5, 2013 at 10:24 AM, Adam Ritter <aritter at gmail.com> wrote:
+> Hey guys,
+>
+> I just bought some BitCoins after being lazy to do it for the last few
+> years, but also looked at the client code and the messages that are
+> going on this mailing list.
+> I saw that there are quite some unit tests, but I didn't find
+> integration test for BitCoin, and I believe that it's quite important
+> for the future of BitCoin (making the current code more stable,
+> testing attack scenarios, refactoring and extending code).
+[...]
+> Tests that simulate multiple bitcoin users and can verify that the
+> whole network of bitcoin clients work together
+> to achieve the goals of Bitcoin. Also maybe [System
+> testing](http://en.wikipedia.org/wiki/System_testing)
+> would be a better name for the tests, but I'm not sure.
+
+I prefer to call them system tests.
+
+We use a system called blocktester that Matt Corallo wrote,
+https://code.google.com/r/bluemattme-bitcoinj/source/browse/core/src/test/java/com/google/bitcoin/core/FullBlockTestGenerator.java?name=fullverif&r=874c5904b12d1fcec5b556429cf208f63cd4e1bc
+
+It's based on BitcoinJ and works by simulating a peer against a
+slightly instrumented copy of Bitcoin(d/-qt) (modified to avoid
+computationally expensive mining).  The tests simulates many
+complicated network scenarios and tests the boundaries of many
+(hopefully all) the particular rules of the blockchain validation
+protocol.  We can use these tests to compare different versions of the
+reference software to each other and to bitcoinj (or other full node
+implementations) as well as comparing them to our abstract
+understanding of what we believe the rules of the protocol to be.
+
+These tests are run as part of the automated tests on every proposed
+patch to the reference software. Via a robot called pulltester which
+comments on github requests and produces logs like this:
+http://jenkins.bluematt.me/pull-tester/92a129980fb9b506da6c7f876aa8adb405c88e17/.
+Pulltester also performs automatic code coverage measurements.
+
+Additionally, we run a public secondary test bitcoin network called
+'testnet', which can be accessed by anyone by starting the reference
+software with testnet=1.  Testnet operates the same as the production
+network except it allows mining low difficulty blocks to prevent it
+going for long times without blocks, and some of the protective
+relaying rules against "non standard" transaction types are disabled.
+
+Most of this testing work has been centered around validating the
+blockchain behavior because thats what has serious systemic risk.
+Measuring the json rpc behavior is strictly less interesting, though
+interesting too.
+
+
