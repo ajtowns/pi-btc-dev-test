@@ -1,0 +1,58 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Mon, 15 Apr 2013 13:51:02 +0200
+Subject: [Bitcoin-development] Who is creating non-DER signatures?
+In-Reply-To: <CAAS2fgS-zaX+imRccY2TtjDxgR+4kgNkmYy0EAN4FJgect2+rA@mail.gmail.com>
+References: <CAPg+sBhYuK79Gost2p1ksytNUTjAHz1REC1DRQaP2UD=cjRA0g@mail.gmail.com>
+	<CAPg+sBiPe25byk4UjMdUtBH-4wArgSVFGVnJgfyzMgjCn82Jxw@mail.gmail.com>
+	<CAAS2fgS-zaX+imRccY2TtjDxgR+4kgNkmYy0EAN4FJgect2+rA@mail.gmail.com>
+Message-ID: <20130415115100.GA31477@vps7135.xlshosting.net>
+
+On Sat, Apr 13, 2013 at 02:58:21PM -0700, Gregory Maxwell wrote:
+> I think the latter is unlikely right now? but if the network doesn't
+> stop relaying these transactions it seems inevitable.
+
+A patch was just merged in git head to enforce strict encodings for accepting
+transactions into the memory pool. As miners and other nodes don't upgrade
+immediately (and 0.8.2 isn't even released yet), this means such transactions
+will likely still make it into blocks, but will have an increasingly harder
+time doing so.
+
+When the rate of non-standard encodings in the block chain has dropped far
+enough, we can attempt scheduling a soft forking change to make it required.
+At that point, the network rules will no longer depend on OpenSSL's parsers.
+
+As a summary, here are the rules now enforced for acceptance into the memory
+pool:
+* 0. These rules are only applied for _evaluated_ scripts, as there is no
+     guaranteed way to know which data is supposed to be interpreted as a
+     public key or signature before actually evaluating the script. This
+     means that for example a 1-of-2 multisig can have an incorrectly-
+     encoded public key, but still be redeemed if a valid (and correctly
+     encoded) signature is given for the other key.
+* 1. Public keys are either compressed (0x02 + 32 bytes, or 0x03 + 32 bytes)
+     or uncompressed (0x04 + 64 bytes). The non-standard "hybrid" encoding
+     supported by OpenSSL is not allowed.
+* 2. Signatures are strictly DER-encoded (+ hashtype byte). The format is:
+     0x30 <lenT> 0x02 <lenR> <R> 0x02 <lenS> <S> <hashtype>
+     * R and S are signed integers, encoded as a big-endian byte sequence.
+       They are stored in as few bytes as possible (i.e., no 0x00 padding in
+       front), except that a single 0x00 byte is needed and even required
+       when the byte following it has its highest bit set, to prevent it
+       from being interpreted as a negative number.
+     * lenR and lenS are one byte, containing the length of the R and S
+       records, respectively.
+     * lenT is one byte, containing the length of the complete structure
+       following it, starting from the 0x02, up to the S record. Thus, it
+       must be equal to lenR + lenS + 4.
+     * The hashtype is one byte, and is either 0x01, 0x02, 0x03, 0x81, 0x82
+       or 0x83.
+     * No padding is allowed before or after the hashtype byte, thus lenT
+       is equal to the size of the whole signature minus 3.
+* 3. These rules also apply to testnet.
+
+Cheers,
+
+--
+Pieter
+
+
