@@ -1,0 +1,90 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 16 Apr 2013 07:28:14 -0400
+Subject: [Bitcoin-development] [bitcoin] Enable tx replacement on
+	testnet. (#2516)
+In-Reply-To: <bitcoin/bitcoin/pull/2516/c16418736@github.com>
+References: <bitcoin/bitcoin/pull/2516@github.com>
+	<bitcoin/bitcoin/pull/2516/c16418736@github.com>
+Message-ID: <20130416112814.GA22859@savin>
+
+On Mon, Apr 15, 2013 at 04:59:33PM -0700, Pieter Wuille wrote:
+> How about: keep a counter in the mempool, remembering the sum of the sizes of all replacements a transaction has had. When deciding whether to accept a transaction as a replacement, increase this number and then check whether its fee is enough for that size. That's certainly overkill, as it will correctly count network and processing overhead, but not blockchain or UTXO burdening (as those only happen after finalizing). In any case, it's easy to implement, seems safe to me, and would at least allow experimenting with this on testnet.
+
+Thoughts:
+
+1) IsNewerThan() returns false if vin.size() != old.vin.size(), or if any of
+   the prevouts (txhash/vout #) don't match. In other words the inputs to a
+   transaction can't be changed by the current transaction replacement
+   mechanism.
+
+2) If not for transaction replacement, nSequence could have been a boolean flag
+   called fIgnoreLockTime.
+
+3) The nSequence part of IsNewerThan() is essentially just another type of
+   zero-conf transaction where you trust miners and relaying nodes to do what
+   you tell them too. We shouldn't encourage zero-conf transactions.
+
+4) Testnet may be for testing, but we know tx-replacement is trivially DoS-able
+   right now. Those who want to experiment with attacks and counter measures
+   should do so in a way that doesn't disrupt testnet for everyone - setting up
+   their own tx-replacement enabled nodes is easy to do.
+
+5) Zero-conf transactions, replacement or otherwise, have issues with consensus
+   failure when network bandwidth is limited. In particular even if we require
+   each re-broadcast of a transation to be accompanied by an increase in the
+   fees it pays, fees += new tx size * MIN_RELAY_FEE has been proposed by a few
+   people for instance, the cost to different nodes for that bandwidth is different.
+
+   While less of an issue with 1MB blocks, with large blocks, especially blocksizes
+   only limited by what miners think is reasonable considering available
+   network bandwidth, lots of nodes and miners will be bandwidth starved
+   and transaction fees will fall to the marginal cost of the network
+   bandwidth and processing power to handle them. That cost is different
+   for different parties - you definitely won't get consensus and thus
+   zero-conf security in that scenario.
+
+6) Finally zero-conf transactions have issues with consensus failures
+   caused by limited mempool sizes.
+
+
+In any case, the more pressing issue re: replacement is changing fees
+attached to transactions after they have been broadcast. Lots of users
+are getting their transactions stuck with few options to fix them.
+
+
+The more I think about the issue the more I think we should nip this
+zero-conf madness in the bud: change the relay rules so that
+transactions are replaced based on fees regardless of how that changes
+transaction outputs. Of course, this does make double-spending an
+unconfirmed transaction trivial. On the other hand, this makes changing
+fees after the fact trivial, and it lets us implement a limited 'undo'
+button for when people screw up. It also allows for many of the
+applications transaction replacement was meant for in the first place
+anyway, and all the applications where it's actually secure.
+
+We keep saying over and over again to stop accepting zero-conf
+transactions, but people do it anyway because it seems secure. It's a
+very dangerous situation because the security of zero-conf transactions
+can change overnight simply by some fraction of the hashing power
+implementing that exact change.
+
+Some thought is required as to exactly what "replace by fees" looks
+like, economically optimal is a bit complex due to it's dependency on
+overall mempool backlog, but a rough first version should be easy to
+hammer out.
+
+
+Funny enough though: I'm working on a trusted-third-party ledger design,
+intentially made to be close to 100% compatible with standard Bitcoin,
+and in that system tx-replacement by nSequence will be a perfectly
+reasonable thing to do.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130416/35286cda/attachment.sig>
