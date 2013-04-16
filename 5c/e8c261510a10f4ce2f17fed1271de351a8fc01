@@ -1,0 +1,206 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 16 Apr 2013 14:43:56 -0400
+Subject: [Bitcoin-development] Anti DoS for tx replacement
+In-Reply-To: <CANEZrP1yKeQMayFHsEUWtA3=q+v5rPAutjzEFVVHopPGNZ4jGQ@mail.gmail.com>
+References: <CANEZrP1yKeQMayFHsEUWtA3=q+v5rPAutjzEFVVHopPGNZ4jGQ@mail.gmail.com>
+Message-ID: <453bfc69-b2ab-4992-9807-55270fbda0db@email.android.com>
+
+Post tge malicious miners and other bits so we can evaluate the system as a whole. 
+
+Mike Hearn <mike at plan99.net> wrote:
+
+>This was previously discussed on the forums a bunch of times, but in
+>particular here:
+>
+>  https://bitcointalk.org/index.php?topic=91732.0
+>
+>BTW, I don't think all this has to be solved to re-activate replacement
+>on
+>testnet. It's useful for people to be able to develop apps that use
+>this
+>feature, indeed, it helps build the case for re-activating it on the
+>main
+>network after the necessary work is done. Otherwise there'll inevitably
+>be
+>people who say "why re-activate something even though we think it's
+>safe
+>when there are no use cases for it". Letting people develop and deploy
+>interesting prototypes in parallel solves that catch-22.
+>
+>  ---
+>
+>Refresher: since the first release Bitcoin has had the ability to
+>replace
+>transactions that sit in the memory pool if the transaction is
+>non-final,
+>the inputs are the same and the replacement is newer than the replacee.
+>Being non-final means not having reached the nLockTime threshold, and
+>having at least one input with a sequence number < UINT_MAX. Around the
+>time of the bugs in various opcodes being found, Satoshi disabled the
+>feature because nothing was using it - it was something he'd planned
+>for
+>the future, it had no utility in the Bitcoin of 2010.
+>
+>The purpose of tx replacement is to implement high frequency trading,
+>according to material Satoshi sent me when I asked him what it was all
+>for
+>(I wanted to know why sequence numbers were a property of inputs not
+>the
+>transaction).
+>
+>It's very important to understand that this does *NOT* mean
+>high-frequency
+>from the networks perspective. In normal operation, tx replacement is
+>not
+>actually intended to be used at all. Sort of like double-spending
+>protection, it's a code path that's only meant to be triggered when one
+>or
+>the other party is maliciously trying to roll back a negotiated
+>contract.
+>And when a party is trying to do that, you don't need lots of
+>replacements.
+>A single replacement is enough.
+>
+>To see why this is the case please review the micropayment channel
+>protocol
+>here:
+>
+>https://en.bitcoin.it/wiki/Contracts#Example_7:_Rapidly-adjusted_.28micro.29payments_to_a_pre-determined_party
+>
+>This isn't the only use of contractual HFT in Bitcoin, it's a
+>deliberately
+>simplified and stripped down example (eg, that only uses two parties).
+>The
+>example Satoshi gave me was more abstract and actually had N parties in
+>it
+>- it left me puzzled for a while and struggling to see practical
+>application. The "billing for a metered resource" use case is easier to
+>understand.
+>
+>Now the obvious problem is that even though the feature is only
+>intended to
+>be used occasionally or never, nothing in the existing code stops you
+>using
+>it as fast as possible and exhausting nodes CPU time and bandwidth.
+>
+>What's more, solving this is not as easy as it looks. Most proposed
+>solutions will not work:
+>
+>1) Requiring higher fees for each replacement means that a
+>channel/contract
+>has to be torn down and rebuilt much, much faster than before because
+>otherwise the amount of money lost to fees quickly becomes the entire
+>size
+>of the channel (or you can't update it very often). Remember, you'd
+>have to
+>increase the fee for each replacement regardless of whether it's
+>presented
+>to the network or not. As the whole point of the setup is to avoid
+>putting
+>lots of transactions on the network, anything that pushes you back
+>towards
+>doing that undermines the entire utility of the system.
+>
+>2) Refusing to update the transaction after certain thresholds are
+>reached,
+>having cooldown periods, etc also won't work because the replacement
+>mechanism is there to protect each counter-party in the HFT contract.
+>Simply converting a DoS on the network to a DoS on the participants
+>means
+>one malicious party can break the mechanism that protects all the
+>others by
+>broadcasting the initial set of updates all at once and deliberately
+>tripping the thresholds.
+>
+>OK, let's take a step back. What is the purpose of abusing this
+>feature?
+>It's to mount a denial of service attack - either against the entire
+>Bitcoin network, or against the other participants in the contract. But
+>someone, somewhere has to be denied service, otherwise the attack is
+>pointless.
+>
+>We can exploit this fact by realising that typically anti-DoS is a
+>prioritisation problem. It doesn't usually matter if you serve some
+>abusive
+>traffic if all legitimate traffic gets served first because it removes
+>the
+>denial of service from the attack, and usually there are lots of ways
+>to
+>attack someone with methods that don't work - real world experience
+>indicates that people don't pointlessly mount attacks over and over
+>again
+>if there's nothing to be gained by doing so.
+>
+>So we can do the following - multi-thread verification of transactions
+>that
+>are trying to enter the memory pool, and order them such that high
+>priority
+>transactions are verified first, low priority next, and then
+>replacements
+>of transactions sorted by age of last replacement. Same thing for
+>relaying
+>- faced with getdatas, service the new transactions first, replacements
+>with whatever is left over. Drop whatever doesn't make it into the
+>nodes
+>available resources.
+>
+>Handling DoS as a prioritisation problem has a number of advantages,
+>most
+>obviously not introducing new hard coded magic numbers that may or may
+>not
+>stay up to date with changing conditions.
+>
+>This setup means someone can force CPU/bandwidth usage to whatever the
+>node
+>operators have configured as their max allowed across the network for a
+>while, but doing so won't actually disrupt normal transactions. It'll
+>just
+>result in the replacements getting dropped. It slightly increases the
+>risk
+>of a malicious counter-party in an HFT contract trying to take
+>advantage of
+>the saturation to themselves execute an attack on the contract, but I
+>doubt
+>it'd be a problem in practice -  you'd need to write your software to
+>be
+>able to perform such an attack, most of the time it wouldn't work, and
+>if
+>people saturate the network with low priority easily dropped
+>transactions
+>so that it would work then nodes/apps could just warn users not to take
+>advantage of the feature whilst the flood is in progress.
+>
+>I know that some people will object to such a design on principle, but
+>I
+>think this is a good balance - the only attacks that exist aren't
+>profitable and the worst case outcome in the face of continual
+>profitless
+>abuse is we switch the feature off and end up no worse off than today.
+>
+>I haven't touched on the topic of cartels of malicious miners or other
+>topics, just DoS. This email is long enough already and handling
+>malicious
+>miners (if necessary) can be done at the application protocol level, it
+>doesn't need any changes to the core tx replacement / locktime
+>mechanism.
+>
+>
+>------------------------------------------------------------------------
+>
+>------------------------------------------------------------------------------
+>Precog is a next-generation analytics platform capable of advanced
+>analytics on semi-structured data. The platform includes APIs for
+>building
+>apps and a phenomenal toolset for data science. Developers can use
+>our toolset for easy data analysis & visualization. Get a free account!
+>http://www2.precog.com/precogplatform/slashdotnewsletter
+>
+>------------------------------------------------------------------------
+>
+>_______________________________________________
+>Bitcoin-development mailing list
+>Bitcoin-development at lists.sourceforge.net
+>https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
