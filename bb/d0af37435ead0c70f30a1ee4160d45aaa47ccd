@@ -1,0 +1,107 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 18 Apr 2013 06:08:06 -0400
+Subject: [Bitcoin-development] Anti DoS for tx replacement
+In-Reply-To: <CANEZrP0AYaWnVhrAbMXP0BGhb=CZMg_-PYVzwKbcCoRKC9V2rw@mail.gmail.com>
+References: <CANEZrP1yKeQMayFHsEUWtA3=q+v5rPAutjzEFVVHopPGNZ4jGQ@mail.gmail.com>
+	<453bfc69-b2ab-4992-9807-55270fbda0db@email.android.com>
+	<CANEZrP0z6W0ZDsytQ7Rcqb5L6rswn1wv8cbR7c383Dmpzu+gyg@mail.gmail.com>
+	<CAPaL=UVJd3mdd0bs6Oo9vFHnv_6RbFowjmp0tD-ZbOzZxJEJ3g@mail.gmail.com>
+	<CANEZrP3ocAJNoQ3xJqRTL8Gz3_T8xsCPPAvSfEOYpPo76wgbig@mail.gmail.com>
+	<20130418090444.GA30995@savin>
+	<CANEZrP0AYaWnVhrAbMXP0BGhb=CZMg_-PYVzwKbcCoRKC9V2rw@mail.gmail.com>
+Message-ID: <20130418100806.GA13908@savin>
+
+On Thu, Apr 18, 2013 at 11:28:48AM +0200, Mike Hearn wrote:
+> Let's include bandwidth. Say the contract (multi-sig input + the outputs)
+> is about 700 bytes. 43,200 transactions is then about 29 megabytes of data.
+> On a fairly normal 10mbit connection that would take about 23 seconds to
+> transfer. Of course the real number is a bit higher because of latency
+> introduced by the inv/tx round-tripping. So the time window of the attack
+> is dominated by bandwidth but it's still quite small compared to the block
+> solving window.
+
+Mike, for the love of god, it's not acceptable to require Bitcoin
+validating and mining nodes to buy unlimited bandwidth. The attacker
+just has to spend more outgoing bandwidth than some fraction of the
+network hashing power has incoming bandwidth (individually speaking) for
+convergence to fail.
+
+But anyway, as I said in my follow up email, with correct prioritization
+it's probably a tractable problem.
+
+> It's *easily* DoSable, not trivially.
+> >
+> 
+> What I meant is - find some open DNS resolvers, start firing packets at
+> testnet nodes, done. You don't have to do protocol level attacks to just
+> render nodes useless.
+
+Testnet has 40 nodes online right now that can be seen by my seeder. To
+shut down all those nodes with a standard DoS attack would take at least
+40 times more bandwidth than required by a tx-replacement DoS attack.
+
+> Having a single multi-sig input means you can't do that because both
+> parties co-operate to update the single input, but schemes that use
+> multiple inputs do seem posible.
+
+You can always add dummy inputs.
+
+> > How exactly do you envision replacement working with non-final ==
+> > non-standard anyway?
+> >
+> 
+> As I said at the bottom of my second mail, it means making non-final
+> transactions relayable again, but only to nodes that advertise a high
+> enough version number. Those nodes are expected to do something intelligent
+> with them, like just not put them in the wallet (unless the user has opted
+> in and ticked the "i know what i'm doing" box, perhaps).
+
+Well, all that making them relayable enables is letting all parties to a
+transaction be offline when the nLockTime expires, so I'm not really
+sure it's worth doing, at least immediately. Weakening the non-final ==
+non-standard test to give a window of, say, 3 blocks, would be fine I
+think.
+
+> Well, it depends on your use case - you need to cast the (fixed) algorithm
+> into a network protocol, manage the interactions between the parties,
+> monitor the network for malicious broadcasts so you can replace them, fix
+> the code so the wallets don't accept non-final transactions except when
+> taking part in your contract, etc. If you do it all with Bitcoin-Qt it's
+> easier but then your app can't easily run in places that can't afford a few
+> hundred megs of ram (like wifi hotspots). The devil is in the details.
+
+The whole point of tx-replacement by fee is that the algorithm doesn't
+need to be fixed. It makes it very clear that unconfirmed transactions
+aren't trustworthy, and levels the playing field between you and people
+posessing lots of hashing power. Nodes can independently choose their
+replacement policy and the system still works. It also makes adjusting
+fees after the fact easy, again, functionality that we really need right
+now.
+
+John's adjusting micropayments proposal would work best in conjuction
+with some reputation stuff, like buying a fidelity bond promising you
+will play nice with tx replacement. Implementing such bonds is a bit
+subtle, because random chance can cause an earlier tx to be mined rather
+than a latter, but you can, for instance, rebut accusations of fraud in
+that case by simply creating an additional tx that pays the full amount
+if a partial tx accidentally gets mined. Come to think of it, such a
+system could be useful for inter-bank settlement, providing a security
+guarantee somewhere between a standard transaction and a fully off-chain
+transaction, at the cost of a single transaction fee.
+
+More importantly, it's not subject to sudden "oh shit, slush's pool got
+hacked and is doing double spends!" disasters. People should not be
+trusting multiple mining pools run by individuals as hobbies on insecure
+VPS services with the security of their payments, and zero-conf
+transactions do exactly that. Not to mention the ~25% of hashing power
+controlled by parties of unknown origin.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130418/9d9429a4/attachment.sig>
