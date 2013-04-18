@@ -1,0 +1,153 @@
+From: john.dillon892@googlemail.com (John Dillon)
+Date: Thu, 18 Apr 2013 06:07:23 +0000
+Subject: [Bitcoin-development] Anti DoS for tx replacement
+In-Reply-To: <CANEZrP0z6W0ZDsytQ7Rcqb5L6rswn1wv8cbR7c383Dmpzu+gyg@mail.gmail.com>
+References: <CANEZrP1yKeQMayFHsEUWtA3=q+v5rPAutjzEFVVHopPGNZ4jGQ@mail.gmail.com>
+	<453bfc69-b2ab-4992-9807-55270fbda0db@email.android.com>
+	<CANEZrP0z6W0ZDsytQ7Rcqb5L6rswn1wv8cbR7c383Dmpzu+gyg@mail.gmail.com>
+Message-ID: <CAPaL=UVJd3mdd0bs6Oo9vFHnv_6RbFowjmp0tD-ZbOzZxJEJ3g@mail.gmail.com>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+On Wed, Apr 17, 2013 at 9:48 AM, Mike Hearn <mike at plan99.net> wrote:
+> So it'd be nice if this ended up not being necessary. Experience indicates that rational miners typically don't pursue a short-termist profit-at-any-cost agenda - free transactions have always been included in blocks, miners include transactions even though you could avoid a lot of complexity by just not including any at all, etc. Some miners like BTC Guild have actually sacrificed significant amounts of money for the good of the system. You can see this in terms of rational self interest - miners earn Bitcoins thus it's in their interest for Bitcoins to be as useful as possible, as that is what gives them value. Or you can see it in terms of ideologically-driven altruism. Or both.
+
+Please don't say Gavin agrees with you. This reminds me of discussing
+security in the early days of the internet when the general assumption
+that everyone played nice was still correct.
+
+We're seeing huge, expensive, DoS attacks against mining pools,
+exchanges, information sites, stores etc. Bitcoin has enemies. Peter
+Todd is 100% correct, tx replacement is another form of zero
+confirmation transaction and all that has to happen is some subset of
+mining power start doing replace by tx fee for it to have no security
+while with your proposed implementation opening up a DoS attack
+vector.
+
+You also see the DoS attack vector as unimportant and suggest to
+handle it as a prioritization problem. "real world experience
+indicates that people don't pointlessly mount attacks over and over
+again if there's nothing to be gained by doing so." <- of course there
+is something to be gained, shutting down a service dependent on tx
+replacement, as seen by all the DoS attacks we are seeing. If I were
+deciding if my service should use tx replacement and I understood that
+it could be trivially shut down, I sure wouldn't be happy I could
+"just warn users not to take advantage of the feature whilst the flood
+is in progress"
+
+Gavin do you actually agree with Mike on this stuff like he implies?
+Because if you do, I think people should know. Myself I wouldn't want
+to be contributing to your salary as a foundation member if you don't
+take Bitcoin security seriously.
+
+
+The rapidly-adjusted payments stuff on the Contracts page of the wiki
+is broken in multiple ways:
+
+1. (known) Requires DoS vulnerable infrastructure.
+2. (known) TX mutability
+3. (unknown?) Just doesn't work. Step 5 is to check that T2 is signed
+correctly by the access point, and if so, sign T1 and T2. But the
+signature of T2 includes the txid of T1 and that isn't known until T1
+is fully signed.
+
+That #3 has not been noticed before shows that for all this hot air
+no-one has ever bothered making an implementation of the idea. So
+Mike, why are you happy to make testnet vulnerable to an unusually
+easy DoS attack for an idea you haven't even tried on your own private
+testnet with replacement enabled?
+
+
+Anyway, with Peter Todd's much saner tx-replacement-by-fee the
+following can be done:
+
+1. Create a new public key PK1
+
+2. Request a public key PK2 from the access point.
+
+2. Create TX1 with two inputs and two outputs. Both parties sign it
+and broadcast it.
+
+access point input -> 2 PK1 PK2 checkmultisig, value = input #1 - fee
+you input -> 2 PK1 PK2 checkmultisig, value == input #2 - fee
+
+3. Create TX2.
+
+TX1 #1 -> pay to access point PK2
+TX1 #2 -> pay to yourself PK1 (change)
+
+Set TX2 nLockTime to some time in the future.
+
+4. Set the initial value's of TX2 out #1 and out #2 to the value the
+access point and you committed in TX1. Both parties sign with
+SIGHASH_SINGLE. (which means both parties are signing for both inputs)
+
+5. Update TX2 as required and sign both inputs. The access point
+doesn't need to sign TX2 or give the updated copy of TX2 to the other
+party. The TX is not broadcast when updated (like the earlier contract
+proposal) although doing so harms no-one.
+
+When the session ends with both parties online, do the following:
+
+1. You sign a version of TX2 with the final output values and nLockTime=0
+
+2. If the final output values are acceptable to the access point, they
+sign the other half of the 2-of-2 inputs and broadcast. (with whatever
+fees required)
+
+If the buyer quits the session abruptly:
+
+1. Access point signs the last (most funds) version of TX2 given to
+them, waits until the nLockTime expires, and broadcasts. This also
+gets their TX1 input back.
+
+If the access point quits abruptly they can do the above when they go
+back online. The buyer has the first, signed, version of TX2 and at
+worst can broadcast it eventually to get their deposit back.
+
+Attacks:
+
+After TX1 is signed and broadcast both parties are in on the contract
+together, so the funds can't move without the consent of the other.
+Both parties can block the movement of the other's deposit, but they
+lose their deposit too. With tx mutability there is a small window of
+time for a technical mistake, but that should be very, very rare.
+
+You can broadcast an earlier version of the transaction where you pay
+less than you were supposed too. However if you do this, the access
+point can broadcast a new version of the transaction, splicing
+together your signature on the correct output value, with your
+signature on an earlier version of the access point's output, thus
+paying miners a higher fee than the transaction you broadcast.
+Rational miners will chose the latter version rather than your one.
+This bidding process can continue until you are out the full amount
+you were supposed to pay, with the whole payment going to fees, so why
+bother? With nLockTime you don't have a better chance of mining the
+transaction than any other miner.
+
+I apologize if the above has already been discussed. I only looked at
+the wiki and source code and don't waste too much time reading the
+endless bitcointalk forums. The wiki should be updated with these
+ideas as they are developed by people and vetted.
+
+
+Strict replacement by fee should be written so it can be tested
+properly and people in the Bitcoin ecosystem use proper security
+practices with regard to unconfirmed transactions. I'm willing to
+pledge $500USD to anyone who implements it. That is write the core
+functionality that does replacement by fee, and a simple 'undo' RPC
+command. I would do it myself but my programming is rusty.
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.11 (GNU/Linux)
+
+iQEcBAEBAgAGBQJRb4vZAAoJEEWCsU4mNhiPRNoH/jGcGw2NBUcIh0/HT70nnwU+
+deaXcdYp9RhDlSf0VGvPwwEAnjWBFc+pYVC+vtL4XEvWR+5PC7FcOrRrv/+sTDPs
+YwPkCIwvXJizFe5pAhXOde4EdibXU0WXTLonMNUeZkwhxUfrczURm2tgmJlNE7nA
+3PBun4c4r7EcdRHuh9SiK0C4RgB5w63t/qyFVUfqwhyKYiS55K/2t2mVLLxcPWkY
+8nxlYlese5eZZJBTfiePtPOqTd43DHOkN+4Iu5XXQIH7v2QHf50DMqgI3iVLVe08
+c2i9GutwX+2MevSMe/S57952BCjBq4zF0nBpaAfIFCVHDDZ6bDbgA7fUjDtLVds=
+=1Tc0
+-----END PGP SIGNATURE-----
+
+
