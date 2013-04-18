@@ -1,0 +1,101 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 18 Apr 2013 11:28:48 +0200
+Subject: [Bitcoin-development] Anti DoS for tx replacement
+In-Reply-To: <20130418090444.GA30995@savin>
+References: <CANEZrP1yKeQMayFHsEUWtA3=q+v5rPAutjzEFVVHopPGNZ4jGQ@mail.gmail.com>
+	<453bfc69-b2ab-4992-9807-55270fbda0db@email.android.com>
+	<CANEZrP0z6W0ZDsytQ7Rcqb5L6rswn1wv8cbR7c383Dmpzu+gyg@mail.gmail.com>
+	<CAPaL=UVJd3mdd0bs6Oo9vFHnv_6RbFowjmp0tD-ZbOzZxJEJ3g@mail.gmail.com>
+	<CANEZrP3ocAJNoQ3xJqRTL8Gz3_T8xsCPPAvSfEOYpPo76wgbig@mail.gmail.com>
+	<20130418090444.GA30995@savin>
+Message-ID: <CANEZrP0AYaWnVhrAbMXP0BGhb=CZMg_-PYVzwKbcCoRKC9V2rw@mail.gmail.com>
+
+> An attack still shuts down useful tx replacement though. For instance in
+> the adjusting payments example an attacker sets up a legit adjusting
+> payment channel, does a bunch of adjustments, and then launches their
+> attack. They broadcast enough adjustments that their adjustment session
+> looks like part of an attack, and then don't have to pay for the full
+> adjusted amount.
+>
+
+It's possible, but let's do some back of the envelope calculations to look
+at how quickly such an attack can exhaust itself.
+
+Consider a contract that has a time window of 12 hours and is adjusted once
+per second for that duration. That's 43,200 adjustments. It sounds sort of
+ballpark-ish for micropayments. If you end up losing 1 seconds worth of
+service, well, probably that's no big deal. As the contract reaches its
+nLockTime, the attacker starts broadcasting all of the adjustments in
+sequence in the hope that an earlier version will be being processed as the
+lock time expires and a block is solved, so the latest version (the one
+that gives him the least money) ends up not being included in the chain.
+
+The input is a multi-signature transaction, so to process every single
+adjustment created would take 86,400 signature verifications. With the
+sipaspeed patches it seems ECDSA can be processed on modern cores at
+something like 20,000 signatures per second. So it'd take a bit over 4
+seconds to process all of them (cpu time).
+
+That gives the attacker a less than 4 second window in which to try and
+roll back the contract to an earlier time before he reaches the last
+version and things are as they should be. Given that a block is solved on
+average every 10 minutes, you'd have to get very lucky indeed to succeed
+with such an attack. It's probably easier to try and find a corrupt miner
+who is willing to bend the rules for you.
+
+Let's include bandwidth. Say the contract (multi-sig input + the outputs)
+is about 700 bytes. 43,200 transactions is then about 29 megabytes of data.
+On a fairly normal 10mbit connection that would take about 23 seconds to
+transfer. Of course the real number is a bit higher because of latency
+introduced by the inv/tx round-tripping. So the time window of the attack
+is dominated by bandwidth but it's still quite small compared to the block
+solving window.
+
+It's *easily* DoSable, not trivially.
+>
+
+What I meant is - find some open DNS resolvers, start firing packets at
+testnet nodes, done. You don't have to do protocol level attacks to just
+render nodes useless.
+
+
+> You would need some way of determining which input was responsible for a
+> replacement though - I can't think of an obvious way to within the
+> current transaction format, but I haven't thought hard about it yet.
+>
+
+Ah, I think it actually is possible and this is an intriguing idea. Each
+input has its own sequence number. Look at the definition of IsNewerThan()
+- to make a newer version you increment your inputs sequence number in a
+particular manner whilst leaving the others alone.
+
+Having a single multi-sig input means you can't do that because both
+parties co-operate to update the single input, but schemes that use
+multiple inputs do seem posible.
+
+
+> How exactly do you envision replacement working with non-final ==
+> non-standard anyway?
+>
+
+As I said at the bottom of my second mail, it means making non-final
+transactions relayable again, but only to nodes that advertise a high
+enough version number. Those nodes are expected to do something intelligent
+with them, like just not put them in the wallet (unless the user has opted
+in and ticked the "i know what i'm doing" box, perhaps).
+
+
+> If he's reasonable about the scope, IE just a initial implementation for
+> further evaluation, I figure it's about two days work.
+
+
+Well, it depends on your use case - you need to cast the (fixed) algorithm
+into a network protocol, manage the interactions between the parties,
+monitor the network for malicious broadcasts so you can replace them, fix
+the code so the wallets don't accept non-final transactions except when
+taking part in your contract, etc. If you do it all with Bitcoin-Qt it's
+easier but then your app can't easily run in places that can't afford a few
+hundred megs of ram (like wifi hotspots). The devil is in the details.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130418/ae6ae0d0/attachment.html>
