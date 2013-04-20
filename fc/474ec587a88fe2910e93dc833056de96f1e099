@@ -1,0 +1,72 @@
+From: jeremy.spilman@gmail.com (Jeremy Spilman)
+Date: Fri, 19 Apr 2013 18:48:11 -0700
+Subject: [Bitcoin-development] Anti DoS for tx replacement
+Message-ID: <CA+CODZEQX_xiaJE7WtFZC2qfVfDqZAgg-ydU5Q73O-QTkXJpPw@mail.gmail.com>
+
+ I?m not sure I followed John?s proposal fully, why would a user sign TX1
+committing funds to the MULTISIG they may never get back? I also don?t see
+the problem with getting a signed TX2 back from the AP before releasing
+TX1... see the sequence below. But more importantly, we only need exactly
+one replacement, so for starters we could anti-DoS by allowing only
+nSequence of 0 or MAX.
+
+ If this was enabled on test-net, I would be including a link to
+transactions that implement the following proposal. At the moment, the best
+I can do is unit test and generate the rawtransaction output at each step ?
+you can find source code and test output here:
+https://gist.github.com/jspilman/5424310
+
+ The initial funding transaction and time-locked refund is pretty annoying
+to setup, if you want to support the general case of coins from arbitrarily
+sized inputs. You will have:
+ - 1 or more inputs from the user, 0 or 1 change outputs
+ - 0 or more inputs from the AP, 0 or 1 change outputs
+ - 1 output to ?2 PK1 PK2 2 CHECKMULTISIG?
+
+ This precludes using SIGHASH_SINGLE except for the special cases where
+inputs are perfectly sized (i.e. they are created in a prior step).
+
+ 0. User and AP negotiate how much to escrow, who pays the fees, and how
+far in the future nLockTime will be set (how long user?s funds will be tied
+if AP doesn?t close the channel)
+
+ 1. User creates an unsigned TX1 with 1 or more inputs from user?s
+?listunspent?, change going back to user (if any), and a single output of
+?FundAmount? with scriptPubKey of ?2 PK1 OP_0 CHECKMULTISIG?, and sends to
+the AP
+
+ 2. AP adds to TX1; their inputs (if any), their change (if any), replaces
+OP_0 in the scriptPubKey with a PK they control, and signs SIGHASH_ALL, and
+returns TX1 to User.
+
+ 3. User verifies TX1 is as agreed, and signs it SIGHASH_ALL, but keeps it
+to himself. User, having completed TX1, knows its TxID and can now create
+TX2-Locked spending TX1 back to themselves. User sets nLockTime to the
+agreed point, signs SIGHASH_ALL, and sends TX2-Locked to AP.
+
+ 4. AP verifies TX2-Locked and adds their signature, and returns TX2-Locked
+to User. User can now broadcast TX1 and TX2-Locked.
+
+ 5. At each payment milestone, user creates TX2-Final; TX1 as input, final
+nSequence, no lock time, with a single output going back to to the user,
+and an amount equal to the remaining balance of the channel. User signs
+with SIGHASH_SINGLE and sends to the AP.
+
+ 6. AP can add an output to TX2-Final sending their portion of the coins
+where ever they want, sign it SIGHASH_ALL, and broadcast it at any point,
+closing the channel. AP must broadcast TX2-Final before nLockTime, but has
+no guarantee the user hasn?t offered a bribe for miners by spending
+TX2-Locked with a large fee, e.g. a pissed off user spends TX2-Locked
+entirely to fees just to see if they can convince miners to wait for it.
+
+ The alternative to the TX2-Locked is a 3rd party in the MULTISIG who is
+trusted to close the channel at the request of either party, based on the
+latest TX2-Final which was sent by the user. In this case there is no
+TX2-Locked, only a single boardcast version of TX2-Final, and you do not
+need transaction replacement at all.
+
+ Thanks,
+--Jeremy
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130419/858beba2/attachment.html>
