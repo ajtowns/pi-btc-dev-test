@@ -1,0 +1,49 @@
+From: jeremy.spilman@gmail.com (Jeremy Spilman)
+Date: Sat, 20 Apr 2013 13:51:23 -0700
+Subject: [Bitcoin-development] Anti DoS for tx replacement
+Message-ID: <CA+CODZF_kVoKcPjPgpfnEH4PBFfLJqS7SuvsRG_DRJroo3gcLA@mail.gmail.com>
+
+I was discussing this with petertodd a couple days ago and we were thinking
+the sequence I sent yesterday was usable today.  I tried getting it to work
+on test-net but the final transaction closing the channel was not being
+accepted into the mempool beacause "ERROR: CTxMemPool::accept() : inputs
+already spent"
+
+But I was talking with sipa and gmaxwell on IRC about it, and sipa reminded
+me; Test-Net implements IsStandard() to allow the non-final "refund" TX
+into the mempool, but then doesn't allow it to be replaced, Main-Net
+implements IsStandard() to *reject* non-final transactions in the first
+place.
+
+Therefore, this actually will work on Main-Net today, since the refund TX
+won't even be allowed into the mempool until it's final, the AP is free to
+sign and broadcast its final TX without any replacement. Of course, if the
+AP waits too long, the user can get their Refund into the mempool and the
+AP's [higher seq] version will be locked out.
+
+This may be a case where Test-Net is in a "bad" state, by allowing
+non-final TXs into the pool, but not allowing replacement, you get an
+intermediate state which neither matches Main-Net behavior, nor implements
+behavior which would ever be deployed to Main-Net as-is.
+
+The current Main-Net behavior is actually very well suited for this
+application. Any application that can be reduced to two instances of a Tx,
+namely one non-final, and one final which is updated internally between the
+parties, works very well under the current Main-Net rules.
+
+If you set the nLockTime of the refund to be several days after the
+scheduled closing time of the channel, it would be quite challenging to get
+the Refund TX into the blockchain *despite* a final broadcast TX from the
+AP. Since the vast majority of Main-Net won't even accept it, the attacker
+would have to distribute the TX to any miner who could include the AP's
+transaction in a block between now and when the refund becomes final, and
+convince them all to not include the perfectly valid, fees paid, final,
+nSeq=MAX, nLockTime=0 transaction from the AP. Demonstrating that level of
+coordination would act substantially against the best interests of the
+miners, to say the least.
+
+This proposal still suffers from any malleability weakness, where the
+user's refund could be invalidated by a miner changing the TxID of TX1.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130420/28205bfd/attachment.html>
