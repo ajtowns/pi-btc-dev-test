@@ -1,0 +1,51 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Wed, 24 Apr 2013 17:09:32 -0400
+Subject: [Bitcoin-development] [RFC] Fees/Minimum Priorities based on
+ Mempool and Memory-Limited Mempool
+Message-ID: <1366837772.6035.19.camel@localhost.localdomain>
+
+I hacked together a new min fee/prio calculator and memory-limited
+mempool a while back and figured Id post the code here to get some
+comments.  Its more of a discussion-starter than a strict proposal and
+has a few obvious holes (hence posting here instead of pull-requesting).
+
+It works as such (note that all constants are really place-holders, so
+please recommend reasonable constants):
+
+1) Watches when transactions enter mempool and calculates minimum
+fee/priority based on a fairly dumb algorithm... It finds the highest
+FEE_POLICY_TOP_N_TX (10) fee/prio transactions in mempool that have been
+in mempool at least FEE_POLICY_DETERMINATION_BLOCKS (6) blocks and
+averages together their fee/prio then multiplies by FEE_POLICY_FACTOR
+(1.1).
+
+2) It limits mempool size to a default of 10*MAX_BLOCK_SIZE (bringing it
+down to 9*MAX_BLOCK_SIZE each time it has to throw out transaction).
+When transactions are throw out, it keeps 2/9 of the mempool size in
+highest-prio transactions and 7/9 of the mempool in highest-fee
+transactions.  
+
+3) Any transactions which have a fee lower than the lowest-fee
+transaction thrown out of the mempool and a priority lower than the
+lowest-priority transaction thrown out of the mempool will not be
+accepted into the mempool at all.  
+
+Obvious bugs:
+1) It doesnt yet do anything for minimum fee/prio when it hasnt seen at
+least FEE_POLICY_TOP_N_TX (10) transactions sitting in mempool for at
+least FEE_POLICY_DETERMINATION_BLOCKS (6) blocks (ie hasnt been running
+for 6 blocks or blocks are being filled completely).  The likely way to
+address this is to look at previous blocks and find the lowest fee/prio
+transactions included in them.
+
+2) It will relay all transactions until the mempool has filled up (or if
+the mempool never fills).  Something should be done initially to limit
+DoS potential.
+
+Code is at
+https://github.com/TheBlueMatt/bitcoin/commits/fees
+
+Matt
+
+
+
