@@ -1,0 +1,60 @@
+From: etotheipi@gmail.com (Alan Reiner)
+Date: Wed, 24 Apr 2013 19:07:59 -0400
+Subject: [Bitcoin-development] Cold Signing Payment Requests
+In-Reply-To: <CA+CODZFNo6KRW-wKvVbnesQMEm9k5MEoTPEPXepCKKnzt+1E6g@mail.gmail.com>
+References: <CA+CODZFNo6KRW-wKvVbnesQMEm9k5MEoTPEPXepCKKnzt+1E6g@mail.gmail.com>
+Message-ID: <517865CF.9050306@gmail.com>
+
+There's some good discussion about that here:
+
+https://bitcointalk.org/index.php?topic=130749.msg1398972#msg1398972
+
+thanke came up with this first, and then I reinvented it, and now you
+have.  But the thread has some good discussion about how to move
+forward.  I'm a big fan of putting the lower-case root hash160 in your
+subdomain and getting and SSL cert for that.  Feel free to contribute to
+that thread if you find it compelling.
+
+-Alan
+
+
+On 04/24/2013 07:01 PM, Jeremy Spilman wrote:
+> Payment Protocol uses x509 certs to sign a Payment Request. This allows wallets to display meta-data from the cert to the payer instead of the address, which should make it easier to verify where money is being sent, and make it harder for an attacker to change the address displayed to a user so that coins are not sent to the wrong place.
+>
+> The difficulty is that Payment Requests must be generated live, and therefore the key used to sign those requests must also be live, exposing the key to theft similar to a hot wallet. Steal the key, forge payment requests, and the payer sees a 'green box' but the coins go to the attacker. The question... is there a way to sign something once, with a key kept offline, which verifies the address in the Payment Request belongs to the payee?
+>
+> 1) Given a 'parent' cert which is kept offline, and a child certificate of 'parent' which is kept hot on the payment server.
+>
+> 2) Given a public key and chain code { pubKey, code } under BIP32 we generate child keys as I = HMAC(code, Kpar || i), Ki = I[0:32] * Kpar.
+>
+> 3) If we sign Kpar with the parent cert's key offline, we can sign the remaining less critical data (address, I[0:32], amount, description, etc.) with the child cert's key.
+>
+> 4) The payer verifies Kpar, and verifies the address by calculating Hash160(Kpar * I[0:32])
+>
+> In fact, there's no requirement to use BIP32 to calculate I[0:32], it could also just be randomly generated.
+>
+> Any I[0:32] included in the Payment Request, even if it is tampered with, will correspond to an address for which the payee can calculate the corresponding private key.
+> So the idea is your 'most trusted' cert would be used offline only to sign a Kpar once, and a 'less trusted' cert would be used to sign the other stuff, like 'amount', 'description', 'merchant-data', and the 'I[0:32]' as well.
+> I'm not an expert on x509, but I imagine the trouble is, how does the payer know which cert is which? I was originally thinking the parent cert would be an intermediate CA cert used to sign the child cert, but I guess good look getting one of those, even with a name constraint, from a Root CA. I'm not sure if you can do better than just a 'convention' such as one is an EV cert and one is not. Perhaps the less trusted cert is actually self-signed using the EV cert, but that requires special validation, since its no longer a standard certificate chain. I would love to hear a better idea.
+>
+> Any comments if this is something worth pursuing? I think there are definitely benefits if merchants can keep the key signing the address offline.
+> Thanks,
+> --Jeremy
+>
+>
+> ------------------------------------------------------------------------------
+> Try New Relic Now & We'll Send You this Cool Shirt
+> New Relic is the only SaaS-based application performance monitoring service 
+> that delivers powerful full stack analytics. Optimize and monitor your
+> browser, app, & servers with just a few lines of code. Try New Relic
+> and get this awesome Nerd Life shirt! http://p.sf.net/sfu/newrelic_d2d_apr
+>
+>
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130424/b1b5ba11/attachment.html>
