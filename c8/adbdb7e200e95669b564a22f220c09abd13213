@@ -1,0 +1,38 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 25 Apr 2013 11:08:26 +0200
+Subject: [Bitcoin-development] Cold Signing Payment Requests
+In-Reply-To: <517865CF.9050306@gmail.com>
+References: <CA+CODZFNo6KRW-wKvVbnesQMEm9k5MEoTPEPXepCKKnzt+1E6g@mail.gmail.com>
+	<517865CF.9050306@gmail.com>
+Message-ID: <CANEZrP2ynYUE8=8afKbbQVgJWoA5hRjV=nyT0Bmu-SAi1E1wOw@mail.gmail.com>
+
+(for background: I did a lot of the design work with Gavin on the payment
+protocol and suggested/prototyped using x.509 in the way we do).
+
+So, I'm not a fan of weird hacks involving non-existent domain names.
+There's a clean way to implement this and we decided to punt on it for v1
+in order to get something shippable, but if you're volunteering ... :) then
+indeed having a custom cert type that chains onto the end is the way to go.
+
+It doesn't have to be X.509. It can just be a regular protocol buffer. Even
+if we re-used X.509 it wouldn't be accepted by OpenSSL or any other SSL
+stack, so it wouldn't buy us anything and it's not like ASN.1 is easy to
+work with. Chaining an additional Bitcoin-specific cert onto the end also
+solves the problem of delegation ... a lot of merchants are using BitPay
+but probably don't want to share their SSL private keys with a third party.
+That means today the payments would show up as paid to BitPay Inc which is
+misleading and weird, they're just an intermediary. So if the merchant can
+run a simple command line tool that you point to the private key, and it
+spits out a signed protobuf that contains a new (ecdsa) public key and
+saves the private key to a file, then you can send that cert and key off to
+your payment processor. The identity is still taken from your CA cert but
+the actual signing keys used are different.
+
+Another use case - a company has a lot of roving sales agents, like in a
+supermarket or waiters at a restaurant. The company wants the agents to be
+able to sign with their corporate EV identity but the agents are not highly
+trusted. So they can be issued a 24-hour expiring Bitcoin-specific cert at
+the start of each working day and then they sign payment requests with that.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130425/389eb004/attachment.html>
