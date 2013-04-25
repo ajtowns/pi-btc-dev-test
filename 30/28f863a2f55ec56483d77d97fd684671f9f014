@@ -1,0 +1,65 @@
+From: jeremy.spilman@gmail.com (Jeremy Spilman)
+Date: Thu, 25 Apr 2013 12:12:37 -0700
+Subject: [Bitcoin-development] Cold Signing Payment Requests
+In-Reply-To: <CANEZrP0FS5CZaqEEwCZM-nfPB9D2TfC_moX3BE+TEnfWtc=aOg@mail.gmail.com>
+References: <mailman.38128.1366844895.4905.bitcoin-development@lists.sourceforge.net>
+	<20130425095855.GA30535@crunch>
+	<CANEZrP3EhS3-HnPT_exc9MjZn-ywZggSzqSHPzHU5J2EZuLQtg@mail.gmail.com>
+	<20130425102853.GA31573@crunch>
+	<CANEZrP1343gX-utnbO16Z6axMDMmvYpiGXW8_Vc-yec03ip=1g@mail.gmail.com>
+	<FDF215AE-F9A4-4EE3-BDC9-0A4EF027423A@swipeclock.com>
+	<CANEZrP0FS5CZaqEEwCZM-nfPB9D2TfC_moX3BE+TEnfWtc=aOg@mail.gmail.com>
+Message-ID: <CA+CODZFpS2DWaC0KRghymOXKQdNhhxAty_5eW0XZJ8Sg5s1bGQ@mail.gmail.com>
+
+There are definitely ways to keep the pay-to address secure even if the web
+server is compromised, just perhaps not perfectly clean standard X.509 ways
+under the current ecosystem which would be easier for everyone to agree on.
+
+ - If a more trusted cert is an EV end cert, and a less trusted is a DV end
+cert (not chained off the EV) then it's easy for the wallet to distinguish
+between the two, and they are both valid certs. EV signs pubKey offline, DV
+used hot on the web server.
+ - If the more trusted cert is an EV or DV end cert, and the less trusted
+cert is chained off that end cert, it's technically 'invalid' so again its
+obvious which one is more/less trusted, but it's easier for an attacker to
+get their own DV end cert for your domain.
+ - The third way is getting the pubKey into the cert attributes, such as
+encoding the pubKey, or a fingerprint of the pubKey, as a Subject Alternate
+Name, so the attacker would need to get their own cert to change the
+address, meaning it's not as critical if your cert key is stolen.
+
+On the wallet side, it comes down to additional validation code paths which
+get triggered by some detection logic. For example, if you pass PubKey and
+InvoiceID in the Payment Request, the wallet needs to know if it should
+check for a Subject Alternate Name in the cert for a fingerprint of the
+PubKey, how the fingerprint is calculated, and then verify the Address is
+indeed PubKey * InvoiceID.  I think falsely rejecting a legacy Payment
+Request would get the extra validation code path commented out pretty
+quickly.
+
+I really like Mike Hearn's idea of 'You have paid this recipient 4 times'
+but also agree completely on the crying wolf due to expiration or
+revocation. At least such a message could be based on the domain name only,
+to try to prevent phishing with similar domain names, then there's no
+expiration issue. Slightly more restrictive would be domain + CA, again not
+considering expiration, but pinning the pay count to the CA seems to have
+little downside and makes it harder for an attacker to get their own cert
+for your domain if you choose your CA 'wisely'.
+
+I assume the ship has sailed on v1, but if we can get consensus on how we
+want this to work in the near-term, we can start prototyping it and maybe
+get this available sooner than later. In any case we should be confirm v1
+doesn't do anything to prevent this from working in a clean, extensible
+manor, which I think means prototyping it and seeing the new Payment
+Request is handled transparently by v1 code.
+
+Right now I'm leaning towards writing a prototype using a single cert with
+a fingerprint of PubKey in the Subject Alternate Name, and getting PubKey
+and InvoiceID in the Payment Request.  Gavin, would the best way to work on
+this be to just fork your code on Github?
+
+Thanks,
+--Jeremy
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130425/c74f1e00/attachment.html>
