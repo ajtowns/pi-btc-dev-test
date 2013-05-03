@@ -1,0 +1,86 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Fri, 3 May 2013 14:30:19 +0200
+Subject: [Bitcoin-development] Service bits for pruned nodes
+In-Reply-To: <CANEZrP2X9A0kBvN8=+G+dn_uqbSYfNhw7dm4od_yfJqDUoxHWg@mail.gmail.com>
+References: <CAPg+sBjSe23eADMxu-1mx0Kg2LGkN+BSNByq0PtZcMxAMh0uTg@mail.gmail.com>
+	<CANEZrP3FA-5z3gAC1aYbG2EOKM2eDyv7zX3S9+ia2ZJ0LPkKiA@mail.gmail.com>
+	<CAPg+sBjz8SbqU=2YXrXzwzmvz+NUbokD6KbPwZ5QAXSqCdi++g@mail.gmail.com>
+	<CANEZrP2X9A0kBvN8=+G+dn_uqbSYfNhw7dm4od_yfJqDUoxHWg@mail.gmail.com>
+Message-ID: <CAPg+sBgz2pLOkc3WL1sG3pJpdVqUZRwEfO9YaC-62vQyWLLW2Q@mail.gmail.com>
+
+(generic comment on the discussion that spawned off: ideas about how to
+allow additional protocols for block exchange are certainly interesting,
+and in the long term we should certainly consider that. For now I'd like to
+keep this about the more immediate way forward with making the P2P protocol
+not break in the presence of pruning nodes)
+
+On Sun, Apr 28, 2013 at 6:57 PM, Mike Hearn <mike at plan99.net> wrote:
+
+> That's true. It can be perhaps be represented as "I keep the last N
+> blocks" and then most likely for any given node the policy doesn't change
+> all that fast, so if you know the best chain height you can calculate which
+> nodes have what.
+>
+
+Yes, I like that better than broadcasting the exact height starting at
+which you serve (though I would put that information immediately in the
+version announcement). I don't think we can rely on the addr broadcasting
+mechanism for fast information exchange anyway. One more problem with this:
+DNS seeds cannot convey this information (neither do they currently convey
+service bits, but at least those can be indexed separately, and served
+explicitly through asking for a specific subdomain or so).
+
+So to summarize:
+* Add a field to addr messages (after protocol number increase) that
+maintains number of top blocks served)?
+* Add a field to version message to announce the actual first block served?
+* Add service bits to separately enable "relaying/verifying node" and
+"serves (part of) the historic chain"? My original reason for suggesting
+this was different, I think better compatibility with DNS seeds may be a
+good reason for this. You could ask the seed first for a subset that at
+least serves some part of the historic chain, until you hit a node that has
+enough, and once caught up, ask for nodes that relay.
+
+Disconnecting in case something is requested that isn't served seems like
+>> an acceptable behaviour, yes. A specific message indicating data is pruned
+>> may be more flexible, but more complex to handle too.
+>>
+>
+> Well, old nodes would ignore it and new nodes wouldn't need it?
+>
+
+I'm sure there will be cases where a new node connects based on outdated
+information. I'm just stating that I agree with the generic policy of "if a
+node requests something it should have known the peer doesn't serve, it is
+fair to be disconnected."
+
+
+>  The reason for splitting them is that I think over time these may be
+>> handled by different implementations. You could have stupid
+>> storage/bandwidth nodes that just keep the blockchain around, and others
+>> that validate it. Even if that doesn't happen implementation-wise, I think
+>> these are sufficiently independent functions to start thinking about them
+>> as such.
+>>
+>
+> Maybe so, with a "last N blocks" in addr messages though such nodes could
+> just set their advertised history to zero and not have to deal with serving
+> blocks to nodes.
+>
+> If you have a node that serves the chain but doesn't validate it, how does
+> it know what the best chain is? Just whatever the hardest is?
+>
+
+Maybe it validates, maybe it doesn't. What matters is that it doesn't
+guarantee relaying fresh blocks and transactions. Maybe it does validate,
+maybe it just stores any blocks, and uses a validating node to know what to
+announce as best chain, or it uses an SPV mechanism to determine that. Or
+it only validates and relays blocks, but not transactions. My point is that
+"serving historic data" and "relaying fresh data" are separate
+responsibilities, and there's no need to require them to be combined.
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130503/9a6e4327/attachment.html>
