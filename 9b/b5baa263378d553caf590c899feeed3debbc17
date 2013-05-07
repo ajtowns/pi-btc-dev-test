@@ -1,0 +1,100 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Tue, 7 May 2013 11:17:17 +0200
+Subject: [Bitcoin-development] limits of network hacking/netsplits (was:
+	Discovery/addr packets)
+In-Reply-To: <CAAS2fgQU5yHFEUfzVwco=L2YKU=Ci0Od+4w59o1wx5UUf1w3VQ@mail.gmail.com>
+References: <CANEZrP1YFCLmasOrdxdKDP1=x8nKuy06kGRqZwpnmnhe3-AroA@mail.gmail.com>
+	<20130506161216.GA5193@petertodd.org>
+	<CA+8xBpfdY7GsQiyrHuOG-MqXon0RGShpg2Yv-KeAXQ-503kAsA@mail.gmail.com>
+	<20130506163732.GB5193@petertodd.org>
+	<CANEZrP2WqXZVRJp6ag=RC4mSkt+a6qTYYpvE=DW_0Rdr=_BBHA@mail.gmail.com>
+	<20130506180418.GA3797@netbook.cypherspace.org>
+	<CAAS2fgSh+dYxSak8HvE0Sr4=zxzRc=3dMQ6X_nD_a+OdacUBZQ@mail.gmail.com>
+	<20130506225146.GA6657@netbook.cypherspace.org>
+	<CAAS2fgQU5yHFEUfzVwco=L2YKU=Ci0Od+4w59o1wx5UUf1w3VQ@mail.gmail.com>
+Message-ID: <CANEZrP1unq_36p0_VJ6CnHof2Sxb4B8go3BK6tPzEMbSLQBBtg@mail.gmail.com>
+
+> Seems like the website redesign managed to hide the signatures pretty
+> good. They're in the release announcements in any case, but that
+> should be fixed.  Even when they were prominently placed, practically
+> no one checked them. As a result they are mostly security theater
+
+Security theater indeed - even if people check the signatures, where
+did they get the identities of the signers/developers from?  Oh right,
+the same website that served them the binary.
+
+The signatures are useful for verifying the integrity of our mirrors.
+The verify-bitcoin.sh script does this. Unfortunately it's not good
+enough. I run it daily and from time to time it fails and says the
+hashes don't match, which I assume means we may have a corrupted
+mirror somewhere or the script itself is flaky. But the output is too
+sparse to investigate. I modified it to print more data and am waiting
+for it to fail again, unfortunately, I can't make it fail on demand.
+
+Anyway. I've been thinking about this problem a fair bit. It's easier
+to solve on some platforms than on others.
+
+On Android, the Bitcoin Wallet app is protected by a few things:
+
+1) Once installed, the device will only accept updates that were
+signed by the same key as the original. So the auto update mechanism
+is secure (including I believe against an attack by the store
+operator, which is usually Google).
+
+2) It appears at the top of the Play Store when you search for
+"Bitcoin". Unfortunately the Store is somewhat gameable at the moment,
+but that's getting fixed and more importantly over the long term, app
+store operators have the right incentives to crack down on gaming of
+search results. This combined with the reviews, ratings and social
+recommendations of real users provides a series of signals that are
+hard for an attacker/phisher to replicate. You can say to someone "Go
+get the app called Bitcoin Wallet by Andreas Schildbach from the
+store" and the chances they get the right thing, signed by the right
+person, are very high.
+
+3) I never got around to trying it, but the threshold RSA library I
+obtained is theoretically capable of splitting the RSA keys used to
+protect updates. I've talked to Andreas about this a little bit, and I
+think he's open to the idea of splitting the Android signing key so it
+requires a quorum of developers to release an update. This is Shoup
+threshold RSA, not a Shamir secret share of the key bits.
+
+4) The OS sandboxes apps from each other. That sandbox doesn't have a
+great track record outside of Google-controlled devices because OEMs
+and carriers don't have the right incentives to actually ship OS
+security updates, but it's still a lot better than nothing and
+hopefully over time these issues will get resolved.
+
+All together this means users on phones and tablets have a somewhat
+convincing security solution that fights against phishing and malware.
+
+On MacOS X the binaries are signed under the legal identity of the
+Bitcoin Foundation. Jim has started signing MultiBit with his legal
+identity too (this is required to make Gatekeeper happy on recent
+versions of MacOS). Unsigned binaries will not run by default on 10.8,
+but anyone with a developer certificate can sign any binary. So whilst
+a hacked bitcoin.org or a phishing site can distribute malware, at
+least on OS X 10.8 it will require the user to override the built in
+security systems, or it will require the malware author to steal a
+developer certificate - probably not very hard but definitely raises
+the bar.
+
+On Windows antivirus companies operate what is effectively a form of
+binary whitelisting. The new MultiBit release triggered AV warnings
+for a few days until it got enough reputation to stop triggering. The
+goal of these systems is to fight polymorphic viruses and they
+understand code signing. If you reliably sign your binaries, positive
+binary reputation accrues to your signing identity and not the binary
+itself, so you can release updates and not get harassed.
+
+On Linux we're actually the most exposed. It has by far the worst
+situation of all - a culture in which man-in-the-middle attacks by
+package maintainers are not only common but actively encouraged. The
+Debian OpenSSL fiasco showed the critical danger this can place people
+in. I believe we should have a health warning on the website telling
+people to only get binaries from us unless they are on a distribution
+that we are verifying doesn't apply any patches. But that's a ton of
+work and I long ago burned out on the politics of Linux software
+distribution.
+
+
