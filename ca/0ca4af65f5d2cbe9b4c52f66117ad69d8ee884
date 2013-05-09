@@ -1,0 +1,128 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 8 May 2013 21:57:31 -0400
+Subject: [Bitcoin-development] 32 vs 64-bit timestamp fields
+In-Reply-To: <CAPaL=UW_uvMpLx2sv4o3yONcAnY8xwLQWT2Act6por7CdHBJNw@mail.gmail.com>
+References: <CAA3bHnwWHAmvF3vWwakJXKBt9y6b1u0cc7j4AbQBCOy-h3a1XA@mail.gmail.com>
+	<20130508234422.GA30870@savin>
+	<CAPaL=UVNSM1W-vDt_kWUprMCt_LVTHfdiUkf0Aem1FAoD+4Qxw@mail.gmail.com>
+	<CA+8xBpf-A7z8ffbLjoRRuK56KHJ4xHUyNSca5yOJHx6tQB=T7A@mail.gmail.com>
+	<20130509011338.GA8708@vps7135.xlshosting.net>
+	<CAPaL=UW_uvMpLx2sv4o3yONcAnY8xwLQWT2Act6por7CdHBJNw@mail.gmail.com>
+Message-ID: <20130509015731.GA26423@savin>
+
+On Thu, May 09, 2013 at 01:27:33AM +0000, John Dillon wrote:
+> > There's also no need: 32 bits is plenty of precision. Hell, even 16 bits would
+> > do (assuming there's never more than a 65535s (about 18 hours) gap between two
+> > blocks). Just assume the "full" 64-bit time is the smallest one that makes
+> > sense, given its lower 32 bits.
+> 
+> I feel somewhat uncomfortable about the "after-the-fact" auditing possible in
+> this scenario. Besides the timestamping provided by the block headers appears
+> to be useful in some payment protocols, not to mention in general.
+
+Remember that interpreting the timestamp on a block for the purposes of
+timestamping is a lot more subtle than it appears at first.
+
+Any node will accept a block with a timestamp no more than two hours
+ahead of what it thinks the current time is. That time is adjusted by
+the median of the timestamps reported by your peers. For instance the
+RPC call getinfo returns, among other things:
+
+{
+    "timeoffset" : -1,
+}
+
+That is saying my node's wall clock time is 1 second behind the median
+reported by it's peers - pretty good!
+
+
+Naively you might think this means block timestamps are accurate to
+within 2 hours right? Well, it's not so simple. Nodes will accept any
+block with any timestamp *after* the median of the last 11 blocks. From
+CBlock::AcceptBlock():
+
+    // Check timestamp against prev
+    if (GetBlockTime() <= pindexPrev->GetMedianTimePast())
+        return state.Invalid(error("AcceptBlock() : block's timestamp is too early"));
+
+So in theory a miner could prevent that block from moving forward,
+although if they do they drive up the difficulty, so all miners have an
+incentive to set the timestamp accurately.
+
+There are two types of timestamps possible: proofs that data existed
+before a time, and proofs that data existed after. With the former type
+the *later* the proof says the data existed, the more conservative the
+assumptions behind the proof. So simply adding two hours to the block's
+timestamp is relatively reasonable. (this assumes the attack managed to
+mine a single block, and all nodes have accurate clocks)
+
+
+The latter type, where you prove data existed after a given time, is a
+much more tricky thing to apply. The genesis block is a great example
+with that famous newspaper headline:
+
+    The Times 03/Jan/2009 Chancellor on brink of second bailout for
+    banks
+
+As I mentioned in my other (private) email to you a few minutes ago, the
+sig of my emails has the latest block hash in each one. The basic idea
+is called a random beacon; NIST has a good description and a project to
+create one:
+
+http://www.nist.gov/itl/csd/ct/nist_beacon.cfm
+
+Now technically speaking a random beacon is actually a more
+sophisticated concept than just timestamping, the random beacon's value
+is public and distributed widely, but for timestamping the idea is
+basically to have an unpredictable number known to have been produced at
+a certain time.
+
+So you know this email was written after block #235235, timestamp
+2013-05-09 01:21:52 right? Not so fast. All you actually know is the PGP
+*signature* was created after that time, because the actual text of the
+email is independent of the beacon nonce. (dunno if I have the correct
+terminology here FWIW)
+
+For a blockchain it's easy enough, the blocks naturally depend on a
+genesis block, but applying the concept more generally is tricky and
+application dependent; consider for example proving you created a
+keypair after some data, which might be a useful thing to prove if the
+secret key was created in some tamperproof hardware that you know has
+left the factory and is in your possesion. It's easy to see how to do
+this with ECC: just use the same techniques as in HD wallets to derive
+keys.
+
+To use the blockchain as a secure random beacon you need to make two
+assumptions, 50% of the hashing power is controlled by honest miners,
+and those honest miners have accurate clocks. With those assumptions you
+can work out what is the minimum possible time the block could have been
+accepted by the GetMedianTimePast() function and you are good to go.
+
+What do people do in practice? Well look at
+http://vog.github.io/bitcoinproof/, they just give the timestamp and
+nothing else. Same for OpenTimestamps. (although I'm adding this email
+to my notes, half the reason it's so detailed...)
+
+
+Back to the block header time... Frankly, the easiest thing to do is
+just have a flag day where blocks after a certain height are considered
+to have a different epoch from the standard 1970 one when computing
+their time. Boring, but it works fine and only needs to be updated every
+few decades.
+
+
+You're midstate idea is very clever though and could come in handy in
+the future for different purposes. Eventually we should discuss this
+with the ASIC manufacturers - if it can be implemented as a firmware or
+FPGA upgrade in the field all the better.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000010a10e05e172442e0675a818d17b62c1ed041a4572002ca051e
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130508/7266c7bf/attachment.sig>
