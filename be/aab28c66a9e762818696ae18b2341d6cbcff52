@@ -1,0 +1,288 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 11 May 2013 00:53:42 -0400
+Subject: [Bitcoin-development] Coinbase TxOut Hashcash
+Message-ID: <20130511045342.GA28588@petertodd.org>
+
+It has been previously(1) proposed that hashcash using the same PoW
+function as the Bitcoin block hashing algorithm be used to create
+hashcash whose value is denominated in Bitcoins. This poses two problems
+however: widespread use of such hashcash would harm overall network
+security and determining the value of the hashcash requires knowing the
+revenue miners can gain from transaction fees at a given block height -
+a non-computable function. However, with some modifications we can
+extend the idea to directly denominate the hashcash in Bitcoins at the
+cost of a small increase in proof size.
+
+Recall that the fundemental problem is the need to do some work to make
+digest D have value V, resulting in a proof that can be given to a third
+party. We want V to be denominated in Bitcoins, and we want the actual
+economic cost to create P to be as close as possible to the face-value
+V. Finally should computing P result in a valid Bitcoin block header,
+the creator of the proof should have a strong incentive to publish their
+header to the P2P network and extend the current best chain.
+
+
+# Proof structure
+
+Lets look at the elements of the proof from the block header to the
+digest.
+
+
+## PoW Block Header
+
+This must be a valid block header. It is particularly important to
+ensure that the header can be linked to the actual blockchain, although
+the header itself does not need to be a part of the chain, and hence the
+block hash does not need to meet the difficulty requirements.
+
+
+### Previous Block Headers
+
+The proof may optionally include one or more previous block headers in
+the event that the PoW block header's previous block is an orphan.
+Unlike the PoW block header, these block headers MUST meet the
+difficulty requirements although an implementation MAY skip actually
+checking the difficulty if a difficulty retarget has not happened or the
+PoW is timestamped. (see below)
+
+
+## Partial Transaction and Merkle Path
+
+The partial transaction consists of a SHA256 midstate followed by
+exactly one transaction output. The merkle path to the PoW block header
+MUST prove the transaction was the coinbase transaction and not any
+other transaction.
+
+
+## Transaction Output
+
+The last transaction output must have a scriptPubKey consisting of
+exactly one PUSHDATA op which pushes H(D | N) to the stack. Its value,
+V', is the basis for determining the value of the proof of work. V' must
+satisfy V' < k*Vi(h) where Vi is the inflation reward for the PoW block
+height and k < 1 For a number of reasons, including making sure there
+are strong incentives for broadcasting succesful PoW solutions, the
+value of k should be chosen fairly conservatively; the author suggests k
+= 1/10 as a ballpark figure. Finally N is some fixed value specific to
+hashcash of this form to ensure the txout proof can-not be reused.
+
+Vi can also be calculated as the median of the last n "anyone-can-spend"
+outputs seen in coinbases when the value of the inflation reward falls
+low enough that using the inflation reward is impractical.
+
+
+## Timestamp
+
+If the proof-of-work is used after a difficulty retarget the PoW needs
+to be timestamped in the block chain with a merkle path leading to a
+valid block header. The difficulty used for calculating the value of the
+PoW then becomes the minimum of the difficulties of the PoW previous
+block and the timestamp.
+
+
+# Determining the actual value of the PoW
+
+The proof proves that work was done to find a valid block header. That
+block header, had it met the difficulty threshhold, could have created a
+valid block worth at least the inflationary reward Vi(h) to the miner.
+
+The coinbase transaction output and merkle path shows that were such a
+block found, the miner would have then given away V' to whomever managed
+to create a transaction spending it when the coinbase matured. The
+coinbase takes 100 block to mature, so the chance of any one miner
+collecting it is proportional to the hashing power they control.(*)
+
+*) As with fidelity bonds we make the assumption that no party controls
+more than 50% of the hashing power - the assumption underlying Bitcoin's
+security anyway. If this assumption is proven incorrect or
+insufficiently strong, possibly due to a cartel of miners banding
+together to create low-cost PoW's, the output can use the provably
+unspendable/prunable OP_RETURN <digest> scriptPubKey instead with a
+non-zero value.
+
+With P(block hash, target), the expected probability of a valid PoW
+being found given the work required to create the block hash with the
+given difficulty target, we can finally calculate the value of the PoW
+in terms of expected cost: V = P(hash, target) * V'
+
+
+# Pool implementation and 51% attack security
+
+Because doing the work required to create coinbase txout hashcash is
+sufficient to also create a valid block a pool can safely rent out
+hashing power to create hashcash of this form on demand without making
+it possible to rent large amounts of hashing power directly on short
+notice. (though some extensions to GetBlockTemplate for hashers
+verifying it may be required)
+
+Because the anyone-can-spend txout is the basis for the value of the
+hashcash the value remains computable even if transaction fees become a
+larger proportion of the block reward in the future.
+
+Unlike announce-commit sacrificies(2) proofs with very small values can
+be easily created; the pool operator can make a trade-off between the
+profit varience - remember that a block header with a valid PoW
+represents a loss - and latency by adjusting the proof of work
+difficulty and V'.
+
+As an aside, note how the mechanism of a anyone-can-spend txout in a
+coinbase can replace the announce portion of an announce-commit
+sacrifice; a coinbase transaction is the only case where a single merkle
+path proves that the transaction output was possible to spend in a
+subsequent block, but was not yet spent; also an argument for allowing
+coinbase transaction inputs.
+
+
+# Application: Paying for additional flood-fill bandwidth
+
+Additional messaging applications built on top of the Bitcoin P2P
+network would be useful, yet there needs to be some general mechanism to
+make DoS attacks expensive enough that they are impractical. For
+instance a useful P2P network feature would be a mechanism to propose
+trust-free coin mixes transaction outputs, propose specific txout sets,
+and finally a mechanism to broadcast valid ANYONECANPAY signatures so
+the inputs and outputs can become a valid transaction. By separating the
+txout and signature broadcasts, who is paying for what output is made
+very difficult to determine.
+
+Of course such a mechanism will likely come under attack by those trying
+to combat anonymity. However with the coinbase txout hashcash mechanism
+those attackers are forced to either contribute to the security of the
+Bitcoin network or incur much higher opporuntity costs for conducting
+their attack than honest nodes pay. (remember how the choice of k = 10
+makes for a large ratio of maximum V' value to Vi(h) inflation reward)
+
+To reduce amortized proof size one proof can be used for multiple
+payments with Rivest PayWords and similar techniques.
+
+
+# PowPay - Off-chain, anonymous, probabalistic payments
+
+By setting the special txout to a scriptPubKey spendable by the
+recipient we can prove to a third party that work was done that with
+probability P(hash,target) could have resulted in a txout spendable by
+them of value V' Thus the expected value of the payment is V = P(h,t)*V'
+The recipient needs to make the proof non-reusable, either by recording
+all proofs submitted, or by requiring a nonce in the scriptPubKey: (*)
+
+    <nonce> DROP {additional ops}
+
+*) Note the implications for the IsStandardInput() test.
+
+Because the recipient has no way of knowing how the sender paid to have
+the hashing done on their behalf the source of the funds is unknown to
+them. Additionally the payment can be of any amount less than a full
+block reward, and the time varient between actual payments can be
+reduced to, in theory, as little as the block interval itself with 100%
+miner participation.
+
+
+## Maximum Payment amount
+
+Unlike coinbase txout hashcash the maximum value of a PowPay transaction
+is strictly limited by the inflation reward; the trick of calculating
+actual cost by prior sacrifices doesn't work because no honest sacrifice
+is involved. In any case it is desirable for the mechanism to account
+for a large percentage of total transaction value.
+
+The issue is that should a valid block be found either the miner must
+still have a strong incentive to broadcast that block that can be proven
+to the recipient, or the miner must not be the one who controls that
+decision.
+
+The latter option is possible by inverting the relationship: now the
+recipient constructs the block, and the sender simply arranges for a
+valid PoW to be created - essentially the recipient acts as a mining
+pool with an extremely high minimum work, and the sender provides
+hashing power. With the 1MB blocksize the cost to operate the full
+validating node required is low and attacks on block propagation are
+difficult to successfully pull off.
+
+
+### Supporting PowPay volume in excess of inflation reward + tx fees
+
+To support overall PowPay volumes that are in excess of the inflation
+reward and transaction fees the sender can provide the recipient with
+signed transaction inputs subject to the constraint that only blocks
+with PoW's generated by the sender can be used to spend them. For
+instance a nonce in a well-known place can be provided by the sender and
+included in a modified block header. By modifying the block hashing
+algorithm so that PoW-withholding is not possible - a significantly more
+serious problem in this application - the sender still is forced to send
+all potential solutions to the recipient, including possible winning
+ones. Provided that attacking block propagation is difficult the sender
+can't prevent the reciver from spending their transaction inputs.
+
+
+## Scalability
+
+PowPay can provide much greater scalability than Bitcoin itself, in
+terms of payments per second, however it is still limited in terms of
+actual fund transfers to recipients per second. A naive implementation
+would give a actual transfer every ten minutes maximum, and a highly
+sophisticated solution 7/second. (albeit probably requiring a hardfork
+to solve PoW withholding and/or use of third parties)
+
+At the same time the proofs required become large with an increased
+blocksize, and in the case of the inverted "recipient builds blocks"
+mode the recipients either incur large costs running full nodes, or
+greatly disrupt transaction flow for on-chain users by mining blocks
+with no transactions in them at all. (remember that a recipient who
+trusts someone else to construct the blocks for them is trusting that
+third-party to do so correctly)
+
+The latter is especially problematic because as the blocksize is
+increased a higher percentage of the cost of mining goes to the overhead
+required to run a validating node, rather than hashing, which has the
+perverse effect of decreasing the cost of mining blocks with no
+transactions in them at all. (or transactions that the miner knows have
+not been revealed to other miners)
+
+The analysis of this strange mixed bag of incentives is highly complex.
+
+
+# Paying for mining
+
+TxOut HashCash and PayPow both require the sender to somehow get someone
+to mine on their behalf. The exact nature of these relationships will
+vary and are beyond the scope of this paper.
+
+
+# Eliminating PoW withholding
+
+While the above examples have used economic incentives possible within
+the existing Bitcoin system a structural incentive is possible as well.
+A nonce N is chosen by the party paying for the PoW, such as a pool or
+PowPay recipient, and H(n) is included in the block header.(*) The PoW
+function is then modified to consider the PoW valid if the sum of the
+expected hashes required to find H(B) and H(B | n) exceeds the current
+difficulty target.
+
+*) Note how the block header can be extended, while remaining fairly compatible
+with existing ASIC mining hardware, by taking advantage of the fact that
+ASIC's use the SHA256 midstate at a starting point for their PoW
+calculations.(3)
+
+
+
+
+1) "Re: [Bitcoin-development] Discovery/addr packets (was: Service bits
+for pruned nodes)" - 2013-06-06 - Peter Todd <pete at petertodd.org> -
+bitcoin-development email list
+
+2) "Purchasing fidelity bonds by provably throwing away bitcoins" -
+https://bitcointalk.org/index.php?topic=134827.0 - Peter Todd
+
+3) "Re: 32 vs 64-bit timestamp fields" - 2013-06-09 - John Dillon
+<john.dillon892 at gmail.com> - bitcoin-development email list
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000039e49118426bbe6739360d35116e920d6502dcacd8e51bc74c
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130511/70986c05/attachment.sig>
