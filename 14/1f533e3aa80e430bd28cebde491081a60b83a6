@@ -1,0 +1,91 @@
+From: john.dillon892@googlemail.com (John Dillon)
+Date: Mon, 13 May 2013 08:19:03 +0000
+Subject: [Bitcoin-development] P2P non-blockchain message proposal
+Message-ID: <CAPaL=UXcE1be9EMe_A1g5je6b7F6H_3S5dduMV=GXq24YAOdRw@mail.gmail.com>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Peter's "Coinbase TxOut Hashcash" scheme mentions in passing anti-DoS
+protection on the P2P flood-fill network for non-transaction messages, and an
+application to use those messages, trust-free mixing. I did some review of the
+source code and I think we can create a generalized P2P flood-fill message
+system without difficulty.
+
+First of all like Mike Hearn suggested in the tx-replacement (satoshi's
+version) thread we can easily prioritize, or I should say deprioritize
+non-essentially traffic with a simple "allocated bandwidth" scheme where nodes
+set how many KB/second of bandwidth they want to give to P2P network messages.
+
+Next out of that allocation use a priority scheme where higher priority
+messages get put ahead of lower priority ones in the queue for retransmission.
+Messages of too low a priority are dropped, and in general they basically just
+don't get good network propagation, much like transactions with dust outputs
+will increasingly face.
+
+How do you determine priority? Why simply a genuine bitcoin sacrifice!
+Previously that would have been some big bulky fidelity bond scheme, but now we
+can use Peter's Coinbase TxOut Hashcash, or PowPos (proof-of-work
+proof-of-sacrifice) as he mentioned in the forums. (and privately) I'll jump
+the gun a bit and call it PowPos, it's a nice name as you say. :) We already
+relay transactions based on 1mBTC/KB, so a similar per KB message cost is
+reasonable.
+
+Peter suggested using PayWords to amortize the cost of transmitting the PowPos
+initial proof, which of course needs to be paid for. Storing original proofs
+should be pretty cheap, so lets make the default to store them on disk, like
+the UTXO set, with per-node settings for just how many of these proofs we are
+willing to store. We can treat them kinda like accounts, and old enough
+accounts simply get deleted, with a per-node configuration on how old is too
+old. It's best effort, not permanent like the UTXO set. Nodes should be able to
+ask their peers for the actual proof corresponding to a payment attempt if they
+need it. (maybe a general delta compression system could do this and other
+stuff?)
+
+Nitty gritty: define either NODE_P2PMSG for "supports P2P messages" or a more
+general NODE_SELECTIVE_RELAY to advertise general limitations on what a node
+relays. (min txout value, replace-by-fee, p2p message etc?)
+
+Define MSG_FLOOD_MSG inventory type. The logic is that flood-fill messages
+*are* something you can have in your "inventory" of data, even though they are
+still things that expire. Again nodes can set message expiration and prune them
+in some sane way, a days worth of messages is probably fine for the vast
+majority of nodes.
+
+Each flood fill message needs a header with the sacrifice proof, either a full
+PowPos, or a PayWord linked to a PowPos, followed by a type disambiguator
+(64-bit uuid?) followed by the data payload. Limiting the payload to 100K by
+default seems fine to me, same limit as on transactions.
+
+The PowPos initial proof could also be it's own message type, MSG_POWPOS, and
+again it's something you would have in your "inventory"
+
+
+I haven't written up a formal trust-free-mix message proposal. Peter do you
+have one? Seems to me negotiating transaction fees could be a bit tricky as you
+want people to somehow at least say that yes they are willing to pay
+transaction fees of X for the outputs they want, without revealing what those
+inputs are. At the same time opportunistic mixing is cool, where you say "make
+these coins available to be mixed if it doesn't cost me anything" and duplicate
+other's txout values on the fly to make determining what is what as difficult
+as possible, as well as occasionally broadcasting requests for random, or even
+*common* txout values. (don't forget about zipfs law!)
+
+Anti-anti-propagation DoS prevent is going to be hard too. You can rank nodes
+based on the sum of genuine Bitcoin, or in this case genuine sacrifice activity
+they are broadcasting to you. Tricky though because PayWord sacrifices aren't
+stored anywhere, so a peer could reuse the same PowPos if they control all your
+peers that are using the protocol.
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.11 (GNU/Linux)
+
+iQEcBAEBCAAGBQJRkKG0AAoJEEWCsU4mNhiP9nMH/1VB4ub5ftPfNK+2S0pcPaxd
+wlc3KigF+5mDKN7t2gKr+DevS0gEJdOBzsCYbyartHbqeUSt7MLofKITbiIEWuTV
+N1zaclwpP5VzkfiCoLj8sJ3If4s0Tkz71+y8WMAOfjJ/XqwqxHVnpLiLgLme1Wxb
+FlSEzXRcnR66DisfvO+dDd0h5A2+OQEIoreTARK/w49caSHU+vAw9j6RHmUZ1Muw
+zEy5VGs94kuehfn6nVyFSyZ3CdrEzstXFuv2eUs2bd3rUpGlgRjSUN1k6QnN5tdq
+XUefI0bSVu1nWxBuS6k3wbTFulkLyWUY3Mt8aNR0/Ss19V8eAjWu87Fc8x4rH5c=
+=KrwV
+-----END PGP SIGNATURE-----
+
+
