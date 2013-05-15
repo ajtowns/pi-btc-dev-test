@@ -1,0 +1,155 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Wed, 15 May 2013 12:25:09 +0200
+Subject: [Bitcoin-development] blind symmetric commitment for stronger
+ byzantine voting resilience (Re: bitcoin taint & unilateral revocability)
+In-Reply-To: <20130514140902.GA22447@netbook.cypherspace.org>
+References: <20130514115151.GA21600@netbook.cypherspace.org>
+	<20130514140902.GA22447@netbook.cypherspace.org>
+Message-ID: <20130515102509.GA3401@netbook.cypherspace.org>
+
+So in a previous mail I described a simple, extremely efficient and easy to
+implement symmetric key commitment that is unlinkable until reveal time (at
+bottom).  I think this can help improve the byzantine generals problem, that
+bitcoin only defends to simple majority (with one vote per CPU power), and
+so assumes most nodes by cpu power are honest.  With this simple protocol
+change you dont need any honest nodes, just some honest clients to spend to,
+to have your transaction accepted.  
+
+You can think of this in terms of a (somewhat distributed) server performing
+validations, but in a way that it sufficiently blind to the details of the
+validations that it can not selectively enforce a policy, it power is
+limited to random DoS.
+
+There are other situations where you can rely on a server for one property
+but not another - eg a somewhat distributed encrypted backup (like Tahoe
+LAFS) you rely on for availability, but not integrity nor confidentiality
+(because you encrypt those, and some sharing scenarios still work.) So this
+is in that class of protocols - zero-trust in server, but can extract
+service and some guarantees from the (optionally distributed) server anyway.
+
+(Bitcoin does not use known better than majority results for byzantine
+generals based on fair coin toss, relying instead on simple majority and an
+assumed largely unjammable network.  I notice Nick Szabo was complaining
+about this on his blog and saying bitcoins majority is not even a standard
+or proven byzantine voting protocol - something adhoc.  I think the bitcoin
+unjammable network assumption is a false at the limit so that someone with
+strong network hacking capabilities can create network splits long enough to
+even overcome the network majority vote without having any compute power of
+their own.  All they need is to have a split with enough power to plausibly
+quickly get the victims their desired number of (split) confirmations.)
+
+Anyway this should be a clear voting improvement, that is efficient.
+
+Imagine a couple of big pools or ASIC miners started enforcing some
+arbitrary coin policy, eg say coins must not have some taint according to
+its list of black coins, or coins must be certified by some entity, be
+traceable to some type of event etc.  Well call these miners/voters
+"dishonest", in that they are not following the intended zero-policy
+protocol.
+
+If the coins dont match their chosen policy, the dishonest miners will
+refuse to include transactions in blocks they issue.  If they see a
+transaction which does not match their policy in a block by someone else
+they will ignore it and try to make it into an orphan.  As they have say 75%
+of the network power they can do that successfully.  Even with current
+validation protocols in the clients, so the "but clients wont accept the
+change" argument does not apply - the existing clients will accept the
+policy change, because they cant detect it, nor prove it, and dont have the
+voting power to impose honest policies.
+
+(For realism of this risk, note that according to Kaminsky there already
+exist multiple entities with reserve ASIC power each exceeding current
+network difficulty who are holding part of their power in reserve for profit
+maximisation reasons.  This is a coming to fruition of the concentration of
+power issue I was talking about in my first bitcoin forum post.  People who
+have that kind of power in reserve have clearly invested millions of
+dollars, which probably makes them more vulnerable to political influence.)
+
+
+Alright so the solution.  Use the commitment protocol (below) which even
+though it is symmetric key strongly hides the committed transaction public
+key.  (Symmetric in the sense that the validation steps are all highly
+efficient symmetric key based).  Now send the transaction (which includes
+the public key) direct to the receiver, over a secure channel, or an assumed
+non-eavesdropped direct channel, with no p2p flood of the transaction.  The
+receiver can check the hash to the commitment, and decide how many
+confirmtions he needs.  Once he has eg 6 confirmations he reveals the
+commitment to the transaction (by publishing it).  The sender may also send
+the reveal/transaction to the network directly himself, if the recipient is
+offline.  However there is no advantage to publishing early so it seems
+better to let the recipient do it when he is ready to incorporate the
+payment into his wallet.  
+
+Now the powerful dishonest voters if they try to apply their policy when
+they see the reveal triggers it, must redo the work of the 6-commitments
+that they computed themselves.  This is like starting 6-steps behind in the
+statstical gamblers ruin game that Nakamoto describes in the bitcoin paper. 
+Consequently even with 75%, they will find it very hard to outcompete their
+own prior work, to create a 6 chain long orphan while the 25% is moving
+forward on the honest chain.  Each time they see transactions which violate
+their policy, they have to restart their chain recalculation again from
+scratch.  Often if simple lower powered intermittent recipient sends the
+coin will be burried hundreds of blocks back.  In addition 6 chain long
+branches are extremely unlikely with honest payers, so clients can (and
+maybe already do?) act with suspicion of they see one.
+
+
+Going further, I said for best security, the recipient should never even
+reveal (to the network) until he is actually about to spend, but futher he
+does not even have to reveal publicly ever, he can choose to reveal only to
+the recipient with a direct connection (no p2p flood fill of transaction.)
+And the direct spend argument composes, ie the 2nd recipient can not do the
+same thing again.  (public key A sends to public key B sends to public key
+C: B publishes COM( transaction B->C ), sends the reveal of COM( transaction
+A->B ), and COM transaction B->C ) to C.  C waits 6 confirmations and is
+convinced.  So its the approach is composable, and in fact the network
+doesnt learn the size of the transaction even, though the spend grows each
+time.  Eventually presumably someone will publish will the confirmations to
+the network to trim the tansaction size, though it is not strictly
+necessary, and the transaction flow is small and direct (no network scaling
+issues), so that it wouldnt be a huge problem to have a 1MB payment
+representing 1000s of hops of network blind transactions.  (For the
+composable network blind respending the commitment has to commit publicly to
+both the sender and next hop recipient keys, so the network can see how long
+the chain is).
+
+Probably you can cope with multiple inputs and outputs, and maybe given even
+you can work with a 100% dishonest network mining network (all the dishonest
+miner can do is selectively DoS transactions if they are all network blind
+except the mining), maybe the mining can even be decoupled from the voting,
+as you no longer demand much from the voting process.  That admits more
+interesting things like pool free direct mining, low variance hashcash
+coins, probably.  Many things to think through.
+
+I suppose the commitment could be described as a blind symmetric commitment.
+
+Adam
+
+On Tue, May 14, 2013 at 04:09:02PM +0200, Adam Back wrote:
+> [...]
+>
+>One related concept is commitments.  I think its relatively easy to commit
+>to a payment and lock a coin without identifying yourself, until the
+>commitment is released.  You might do the commitment, wait 6-blocks for
+>confirmation, then reveal the commitment.  Then that is like a self-issued
+>green coin with no need for trust, that can be immediately cleared.  The
+>recipient has to be committed to at the same time to prevent double
+>spending.
+>
+>So just commit = H( input-pub ) H( transaction ) and put it in the block
+>chain.  Where transaction the is usual ( input signature, output-pub,
+>script).  (Fee for the commit would have to come from an unlinked coin or
+>the input-pub reveals the coin).  Wait 6 blocks, send/reveal the transaction
+>(free because fee was already paid).  Validators check input-pub hash
+>against committed coins by hash, check the transaction hash, and the usual
+>ransaction validations = sum inputs, otherwise reject.  The user better pay
+>change if any to a different public key, as the inputs public keys are one
+>use - are after the reveal they are DoS lockable by other people reposting
+>H( input-pub ).
+>
+>The input-pub coin is locked as normal transactions have their public key hash
+>validate as not being locked.
+>
+>Adam
+
+
