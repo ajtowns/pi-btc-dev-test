@@ -1,0 +1,94 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Wed, 15 May 2013 18:21:29 +0200
+Subject: [Bitcoin-development] blind symmetric commitment for stronger
+ byzantine voting resilience (Re: bitcoin taint & unilateral revocability)
+In-Reply-To: <5193825B.20909@lavabit.com>
+References: <20130514115151.GA21600@netbook.cypherspace.org>
+	<20130514140902.GA22447@netbook.cypherspace.org>
+	<20130515102509.GA3401@netbook.cypherspace.org>
+	<20130515111906.GA26020@savin>
+	<20130515114956.GA5863@netbook.cypherspace.org>
+	<5193825B.20909@lavabit.com>
+Message-ID: <20130515162129.GB6156@netbook.cypherspace.org>
+
+On Wed, May 15, 2013 at 08:40:59AM -0400, Caleb James DeLisle wrote:
+>If the commitment is opaque at the time of inclusion in the block then
+>I will create multiple commitments and then after revealing the
+>commitment and spend to you I will reveal the earlier commitment which
+>commits the coins to an address I control.
+
+Bit-commitments are based on deterministic one-way functions eg like SHA1(
+SHA256( public key ) ) Obviously it has to be a different one-way function
+to the coin address calculation which is RIPEMD( SHA256( public key ) ) as
+that is already public.  Alternatively it can be a different serialization
+using the same hash eg RIPEMD( SHA256( 1 || public key ) ).
+
+There is only one commitment possible per public key - so you can only
+create one commitment that would validate to a receiver, or to the network. 
+The network checks that there are no non-blind double spends of committed
+coins which it can do as spends require disclosure of the public key, which
+allows existing commitments to be verified, and it similarly qchecks that
+there are no blind double-commitments.
+
+Each committed coin would be:
+
+one-spend-commit = Com( spender pub ), Com( transaction )
+
+where Com is implemented as the above hash.  The network just places the
+commitments in order as with conventional transactions.
+
+The committed coins are not linkable to your non-blind coin because you did
+not reveal your public key in the (largely passive) act of receiving to a
+coin address.
+
+>On the topic of reversibility, I suspect in the long term the lack of
+>chargebacks will create issues as criminals learn that for the first
+>time in history, kidnap & ransom is effective. 
+
+The temporary unlinkability (until commitment reveal) is a necessary side
+effect, not a cryptographic anonymity feature like zerocoin.  The
+transactions are identical to bitcoins once revealed.  How long the
+committed transaction chains can be between reveals is an implementation
+choice could be 1 hop, or as long as you like.  (Actually it appears to be
+up to the individual users how long the maximum chain they accept is - the
+network itself, though ordering the committed spends (if there are multiple
+spends on the same key) cant even tell how long the commitment payment
+chains are).
+
+Obviously the first coins in the network ordered committed coins on the same
+key up to the coin value are spends as verified by the recipient, the rest
+are double-spend and ignored.  If someone wants to waste fees by sending
+more spends than there inputs thats up to them.
+
+Probably the typical user doesnt care about long committed chains  other
+than their wallet will bloat if the chains are too long, so probably they
+would periodically compact it by revealing the long chains.  Committed coins
+are probably a bit less SPV client friendly, though with correct formatting
+in the merkle trees between blocks, probably a committed coin holder can
+provide enough proof to an SPV client to verify even multi-spend committed
+coins directly (without a network feed).
+
+About privacy, up to the entire commitment chain can be opened at any time
+(to other people or to the bitcoin network in general) with the cooperation
+of any user on the chain (up to the point they saw it), so while the blind
+commitment protocol is not vulnerable to a > 50% power quorum unilaterally
+imposed policy (without even needing client updates), it is fully dependent
+on the good will of the recipients for its temporary unlinkability.  Thats
+the point: it puts policy control in the users hands not in the > 50% power
+quorum.
+
+If you want cryptographic anonymity its better to look to zerocoin.  You may
+have noticed zero coin talked about optional fraud tracing.  Its usually
+trivial to add tracing to an otherwise privay preserving protocol.
+
+The blind commitment if implemented as described (and its not obvious how to
+get more privacy from it) offers somewhat like community policing.  Users on
+the chain can still themselves do fraud tracing, or any policy they choose,
+on any blind committed coins that they receive.  If they dont like the
+colour of them they can refund them.  The point is to enforce that this is a
+free uncoerced community choice, by individual end users, not a > 50% cpu
+power quorum choice surreptitiously imposed.
+
+Adam
+
+
