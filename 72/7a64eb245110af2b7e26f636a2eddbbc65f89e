@@ -1,0 +1,74 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Thu, 16 May 2013 16:51:09 +0200
+Subject: [Bitcoin-development] blind symmetric commitment for stronger
+ byzantine voting resilience (Re: bitcoin taint & unilateral revocability)
+In-Reply-To: <20130516113222.GA16384@netbook.cypherspace.org>
+References: <20130515111906.GA26020@savin>
+	<20130515114956.GA5863@netbook.cypherspace.org>
+	<5193825B.20909@lavabit.com>
+	<20130515162129.GB6156@netbook.cypherspace.org>
+	<20130515234030.GA17920@netbook.cypherspace.org>
+	<BF1C6C71-9EE5-4A2F-8B73-3E8F934A7CAE@gmail.com>
+	<CAAS2fgQP6mFb0izQxZcBwqBWdxKUiAy1sG23ScAZ+tEMvGU0WQ@mail.gmail.com>
+	<CANEZrP2dFi-3nZhYpaA9RfJ8N2e-GQ_YQtKMdnFfPx-9YLU6MA@mail.gmail.com>
+	<CAAS2fgQQk0Lhmon4FxK7NATDVkaY13DBmJgQk4riJLE1h_Ak0w@mail.gmail.com>
+	<20130516113222.GA16384@netbook.cypherspace.org>
+Message-ID: <20130516145109.GA18115@netbook.cypherspace.org>
+
+More somewhat improved crypto stuff...
+
+On Thu, May 16, 2013 at 01:32:22PM +0200, Adam Back wrote:
+>I suggested fixed size committed coin spends [...]
+>
+>(blind-sender, auth-tag, encrypted-tx-commit)
+>
+>(pub key P = xG, G = base point)
+>
+>	blind-sender = cP (public key EC multiplied by constant c)
+>	sig = ECDSA( cx, encrypted-tx-commit )
+>	encrypted-tx-commit = AES( K, tx-commit )
+>	K = random
+>
+>as K is random, knowledge of P if stored unencrypted does not allow
+>committed spend-to-junk.  To reveal to a recipient just send them P and K at
+>each hop.  (Same K each time, anyone on the committed coin spend chain can
+>already chose to reveal at any time so no loss of security.)
+
+Actually same K every time is not so hot, as then earlier in the committed
+spend chain, can force a reveal for someone later.  A clearer requirement is
+that each person should only be able to reveal committed coin chains up to
+the point of their direct involvement.
+
+So that is easily fixable, just include the K for the input committed coin
+in the encrypted-tx-commit, as above but:
+
+	encrypted-tx-commit = AES( K_i, K_{i-1} || tx-commit )
+	K_i = random
+
+(different K for each spend).
+
+And actually for symmetric encrypted variant the coin as specified was
+already evaluatable with fixed size committed spend (of the last public key)
+- I just didnt realize it in the previous mail: the input public key is
+necessarily revealed when processing the decrypted tx-commit, allowing
+identification and validation of the txin, and validation recursively back
+to the first non-committed coin.  With symmetric verification, the
+limitation is one-use coin committed addresses (and inability to remove
+spend to committed junk with public validation, though there is the tx fee
+as a discouragement, it does bloat a recipients verification and so maybe
+frustates SPV->SPV consumption of committed coins).
+
+(blind-sender, auth-tag, encrypted-tx-commit)
+
+         blind-sender = SHA1( SHA256( 1, pub ) )
+         auth = HMAC-SHA256-128( K, encrypted-tx-commit )
+         encrypted-tx-commit = AES( K, tx-commit )
+         K = SHA-256( pub )
+
+Adam
+
+ps and it would be better and clearer to read also in terms of purpose of
+hashes, to use a KDF like IEEE P1363 KDF2, or PKCS#5 PBKDF2 with 1
+iteration, rather than adhoc hashes for key derivation.
+
+
