@@ -1,0 +1,120 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Thu, 16 May 2013 13:32:22 +0200
+Subject: [Bitcoin-development] blind symmetric commitment for stronger
+ byzantine voting resilience (Re: bitcoin taint & unilateral revocability)
+In-Reply-To: <CAAS2fgQQk0Lhmon4FxK7NATDVkaY13DBmJgQk4riJLE1h_Ak0w@mail.gmail.com>
+References: <20130515102509.GA3401@netbook.cypherspace.org>
+	<20130515111906.GA26020@savin>
+	<20130515114956.GA5863@netbook.cypherspace.org>
+	<5193825B.20909@lavabit.com>
+	<20130515162129.GB6156@netbook.cypherspace.org>
+	<20130515234030.GA17920@netbook.cypherspace.org>
+	<BF1C6C71-9EE5-4A2F-8B73-3E8F934A7CAE@gmail.com>
+	<CAAS2fgQP6mFb0izQxZcBwqBWdxKUiAy1sG23ScAZ+tEMvGU0WQ@mail.gmail.com>
+	<CANEZrP2dFi-3nZhYpaA9RfJ8N2e-GQ_YQtKMdnFfPx-9YLU6MA@mail.gmail.com>
+	<CAAS2fgQQk0Lhmon4FxK7NATDVkaY13DBmJgQk4riJLE1h_Ak0w@mail.gmail.com>
+Message-ID: <20130516113222.GA16384@netbook.cypherspace.org>
+
+On Wed, May 15, 2013 at 07:45:34PM -0700, Gregory Maxwell wrote:
+>[committed coins] depending on how its done, at most conceals the
+>transactions from people who aren't a party to them...  though as time goes
+>on eventually everyone becomes a party to a sufficiently old coin, and
+>avoiding publication creates quadratic costs in evaluating a private
+>clique's claims....  so
+
+I believe the coin size and verification cost is linear not quadratic, but
+maybe it depends on the parameter you're measuing in.  The coin size is
+linear with the number of committed (uncompacted) spends.  You can view
+reveals as committed compaction.  For efficiency a recipient of a committed
+coin may as well compact and spend in one transaction so no new messages are
+created.
+
+Btw I believe if one were concerned about the committed coin size, I can see
+a small tweak that would keep the size of the committed coins small eg
+256-bit regardless of number of spends (no longer grows), and let the block
+store the encrytped & MACed commitment.  Then compaction is no longer a
+concern.  However I think that is SPV -> SPV client unfriendly.  (A full
+client -> SPV client should still be workable as the full client could
+alternatively send the client the MACed data and key, rather than have him
+look at it from his block history.)  (Crypto sketch below).
+
+However I am not sure multi-spend committed coin size is really a concern
+because to the extent people hold long commitments without revealing to the
+network for the long term, that is a bandwidth saving to the network.
+
+Overall about privacy it would be typically temporary, though the peers have
+the technical means to react and defend themselves by using longer committed
+chains if dishonest mining is detected on a significant scale.
+
+>instead an implementation would make the identities public but only once
+>they're burred a bit.
+
+That was the seed idea.  The more aggressive "spend lots of times in
+committed form" is just a technical threat that will keep dishonest mining
+in check.  By definition the coin is already irrevocably spent before the
+reveal (without the threat of having the dishonest miners endlessly redoing
+their own deeply burried work).  The only person who could be punished by
+policy by >50% dishonest miner (retroactively) is the recipient, not the
+spender, and the punishment is very muted: all he can do is prevent coin
+compaction.  If the committed coins are small, compact doesnt even hurt the
+committed coin user, just network itself.  Therefore a dishonest miner is
+wasting his time his dishonesty cant enforce his dishonest policy.
+
+To store the commitments in the block chain replace:
+
+> (blind-sender, auth-tag, tx-commit)
+> 
+> blind-sender = SHA1( SHA256( 1, pub ) )
+> auth = HMAC-SHA256-128( K, tx-commit )
+> tx-commit = SHA-256( tx )
+> K = SHA-256( pub )
+
+with:
+
+(blind-sender, auth-tag, encrypted-tx-commit)
+
+	blind-sender = SHA1( SHA256( 1, pub ) )
+	auth = HMAC-SHA256-128( K, encrypted-tx-commit )
+	encrypted-tx-commit = AES( K, tx-commit )   (*)
+	K = SHA-256( pub )
+
+then a reveal is just to send the recipient the public key (32 bytes)
+per hop, still linear but ~3x smaller.
+
+I suggested fixed size committed coin spends, that also you can do but with
+public key crypto needed probably, and so dropping to the verification
+efficiency of standard transactions.  Sketch 2:
+
+(blind-sender, auth-tag, encrypted-tx-commit)
+
+(pub key P = xG, G = base point)
+
+	blind-sender = cP (public key EC multiplied by constant c)
+	sig = ECDSA( cx, encrypted-tx-commit )
+	encrypted-tx-commit = AES( K, tx-commit )
+	K = random
+
+as K is random, knowledge of P if stored unencrypted does not allow
+committed spend-to-junk.  To reveal to a recipient just send them P and K at
+each hop.  (Same K each time, anyone on the committed coin spend chain can
+already chose to reveal at any time so no loss of security.)
+
+You dont need to verify a second signature inside the tx-commit because you
+already signed the encrypted-tx which binds to it (encryption with out MAC
+is malleable but you cant change it at all without invalidating the
+encryption).  Just need to check the input tx in the tx-commit has P as its
+recipient.  P does not even need to go into tx-commit as its already bound
+by cP and signature security (cant create a signature with someone elses
+key).  So I think the commited coins of this form are the same size and
+verification cost for the network.  And small and fixed size to spend
+offline.  (32+32=64 bytes fixed).
+
+Adam
+
+(*) You should not as a principle re-use keys across algorithms, I omitted a
+second key for simplicity.  Really K1 = SHA256( 1||pub ), K2 = SHA256(
+2||pub ) encrypted-tx-commit = AES( K1, tx-commit ), auth = HMAC( K2,
+encrypted-tx-committ ).  Or more simply a combined authenticated mode like
+CCM or GCM and a single key managed by the mode.
+
+
