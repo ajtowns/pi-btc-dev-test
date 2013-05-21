@@ -1,0 +1,84 @@
+From: luke@dashjr.org (Luke-Jr)
+Date: Tue, 21 May 2013 04:04:28 +0000
+Subject: [Bitcoin-development] UUID to identify chains (payment protocol
+	and elsewhere)
+In-Reply-To: <519AB8EB.5000103@monetize.io>
+References: <519AB8EB.5000103@monetize.io>
+Message-ID: <201305210404.31843.luke@dashjr.org>
+
+Bitcoin currently uses raw hashes extensively as UUIDs; whether the payment 
+protocol should be influence by that or not, I've not given thought to yet.
+
+Some alt coins may share a blockchain, or even merely the genesis block (two 
+currently do; despite one of those being a scamcoin, I think the possibility 
+should not be dismissed). Because of this, requiring a 1:1 mapping between 
+genesis block and chain or coin seems non-ideal.
+
+On Monday, May 20, 2013 11:59:39 PM Mark Friedenbach wrote:
+> At the developer round-table it was asked if the payment protocol would
+> alt-chains, and Gavin noted that it has a UTF-8 encoded string
+> identifying the network ("main" or "test"). As someone with two
+> proposals in the works which also require chain/coin identification (one
+> for merged mining, one for colored coins), I am opinionated on this. I
+> believe that we need a standard mechanism for identifying chains, and
+> one which avoids the trap of maintaining a standard registry of
+> string-to-chain mappings.
+> 
+> Any chain can be uniquely identified by its genesis block, 122 random
+> bits is more than sufficient for uniquely tagging chains/colored assets,
+> and the low-order 16-bytes of the block's hash are effectively random.
+> With these facts in mind, I propose that we identify chains by UUID.
+> 
+> So as to remain reasonably compliant with RFC 4122, I recommend that we
+> use Version 4 (random) UUIDs, with the random bits extracted from the
+> double-SHA256 hash of the genesis block of the chain. (For colored
+> coins, the colored coin definition transaction would be used instead,
+> but I will address that in a separate proposal and will say just one
+> thing about it: adopting this method for identifying chains/coins will
+> greatly assist in adopting the payment protocol to colored coins.)
+> 
+> The following Python code illustrates how to construct the chain
+> identifier from the serialized genesis block:
+> 
+>      from hashlib import sha256
+>      from uuid import UUID
+>      def chain_uuid(serialized_genesis_block):
+>          h = sha256(serialized_genesis_block).digest()
+>          h = sha256(h).digest()
+>          h = h[:16]
+>          h = ''.join([
+>              h[:6],
+>              chr(0x40 | ord(h[6]) & 0x0f),
+>              h[7],
+>              chr(0x80 | ord(h[8]) & 0x3f),
+>              h[9:]
+>          ])
+>          return UUID(bytes=h)
+> 
+> And some example chain identifiers:
+> 
+>      mainnet:  UUID('6fe28c0a-b6f1-4372-81a6-a246ae63f74f')
+>      testnet3: UUID('43497fd7-f826-4571-88f4-a30fd9cec3ae')
+>      namecoin: UUID('70c7a9f0-a2fb-4d48-a635-a70d5b157c80')
+> 
+> As for encoding the chain identifier, the simplest method is to give
+> "network" the "bytes" type, but defining a "UUID" message type is also
+> possible. In either case bitcoin mainnet would be the default, so the
+> extra 12 bytes (vs: "main" or "test") would only be an issue for
+> alt-chains or colored coins.
+> 
+> Kind regards,
+> Mark Friedenbach
+> 
+> ---------------------------------------------------------------------------
+> --- Try New Relic Now & We'll Send You this Cool Shirt
+> New Relic is the only SaaS-based application performance monitoring service
+> that delivers powerful full stack analytics. Optimize and monitor your
+> browser, app, & servers with just a few lines of code. Try New Relic
+> and get this awesome Nerd Life shirt! http://p.sf.net/sfu/newrelic_d2d_may
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
