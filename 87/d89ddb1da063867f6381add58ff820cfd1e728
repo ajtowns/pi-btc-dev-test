@@ -1,0 +1,121 @@
+From: david.vorick@gmail.com (David Vorick)
+Date: Tue, 21 May 2013 10:26:18 -0400
+Subject: [Bitcoin-development] Double Spend Notification
+In-Reply-To: <20130521130534.GA27580@tilt>
+References: <519AC3A8.1020306@quinnharris.me>
+	<CA+i0-i_+Tes+ePRqmDGEXDQ_L=S5y8gHBKk77zaLgTGOS3OMyA@mail.gmail.com>
+	<CAPg+sBjmXyLkgfwzC8h+ZFkmyUf6nzbGo0oAWR9nsJOTOfOXEg@mail.gmail.com>
+	<CAAS2fgRCpXUgw=GpE9_AcTgWcdCaDC6_16Xp5+oOZC0_1xmf-w@mail.gmail.com>
+	<20130521130534.GA27580@tilt>
+Message-ID: <CAFVRnyrROk8SXVjrr5LWb4c68zjezj=Oe+bqpBNjp=y+e5uWVA@mail.gmail.com>
+
+I've been wondering why a blockchain is necessary at all. Ripple doesn't
+have one (I haven't looked closely at their implementation but it seems
+reasonable to go without one).
+
+When you do blockchain based transaction confirmations, you give full
+authority to the miner that finds the transaction block. That miner gets to
+decide which transactions are real and which transactions are fraudulent,
+and even has the option to not include any particular transaction (maybe
+they used dirty coins, or something like that). The advantage to using a
+blockchain is that any tough decisions to choose between two conflicting
+transactions can be decided in an easy manner. The person who finds the
+next block picks their favorite and tells everybody else.
+
+But this has a huge downside: network confirmation can take more than 10
+minutes (for an unlucky block). If you really want to be certain, a
+confirmation can take more than an hour (multi-block confirmations).
+
+For a transaction with no conflict, the network should be able to confirm
+the transaction within a few seconds, because the information can propagate
+to all of the nodes that quickly. The new issue is that if conflicting
+transactions appear on opposite sides of the network, there needs to be
+some way for the network to determine which transaction gets priority.
+Right now the method is to wait for a miner to find a block and then go
+with his decision, but perhaps there's some way to resolve a double spend
+conflict without waiting for a block.
+
+All you really need is for 51% of the nodes in the network to confirm a
+transaction as legitimate in order for it to be 'confirmed' by the entire
+network. Malicious nodes (nodes that confirm both conflicting transactions,
+or nodes that refuse to confirm a transaction even though there are no
+conflicts) can be excommunicated. The two challenges then would be
+
+1. telling everybody when a transaction has hit 51% confirmation
+2. dealing with a triple-or-more spend: A has 25% confirmation, B has 40%
+confirmation, C has 35% confirmation, who wins?
+
+For the first problem, each node only needs to see the transaction twice:
+once when the node sees it for the first time and confirms it, and a second
+time after the transaction hits 51% and is announced to the network as
+confirmed. The first node to see the transaction hit 51% will make the
+announcement.
+
+The second problem could be reduced to a majority-wins problem. If a node
+sees that 94% of votes are in, and one of the transactions is more than 6%
+ahead of the others, that transaction is the winner.
+
+If for whatever reason a clear majority is not hit by the time the next
+mining block is found, the miner could just choose the transaction that had
+the most votes when it saw it. It may be outdated but would clear up any
+issues. This delay would only occur for a transaction if the spender of the
+coins was attempting a double spend, and would indicate dishonesty to the
+merchants. They could then choose to wait and see if their account is the
+winner or they could just refuse to give out their goods.
+
+
+On Tue, May 21, 2013 at 9:05 AM, Peter Todd <pete at petertodd.org> wrote:
+
+> On Mon, May 20, 2013 at 08:54:25PM -0700, Gregory Maxwell wrote:
+> > One point that was only recently exposed to me is that replacement
+> > combined with child-pays-for-parent creates a new kind of double spend
+> > _defense_: If someone double spends a payment to an online key of
+> > yours, you can instantly produce a child transaction that pays 100% of
+> > the double spend to fees... so a double spender can hurt you but not
+> > profit from it.  (and if your side of the transaction is
+> > potentially/partially reversible he will lose)...
+>
+> You can do better than that actually: you can arrange the transaction
+> such that the double-spender is hurt by asking them to pay an excess on
+> top of the initial payment, and having that excess get returned to them
+> in a subsequent transaction. Of course, that's trusting the merchant,
+> but you're trusting the merchant to ship to a product anyway so...
+>
+> A really interesting example for this though would be applications where
+> you are making a deposit. You credit the customer account immediately
+> with half of the deposit amount, allowing them to immediately spend that
+> portion for something transferable. (perhaps an alt-coin) If the
+> customer tries to double-spend you burn half to fees, still leaving the
+> other half to pay for what they did spend. If they don't double-spend,
+> the rest of the balance becomes available after n confirmations. A
+> BTC->alt-coin exchange could use this mechanism for instance, although
+> it only works with widespread replace-by-fee adoption; blockchain.info's
+> shared-send service is another application, as is SatoshiDice. (the
+> failed bet tx can be the refund)
+>
+> What's nice here is even if the customer tries to pay a miner to do the
+> dirty work, a short-term rational miner still has an incentive to screw
+> over the customer by accepting the merchant's double-spend. Now the
+> customer can promise the miner future business, but they've shown
+> themselves to be dishonest... how much honor is there among thieves?
+>
+> --
+> 'peter'[:-1]@petertodd.org
+> 00000000000000f31f5cd20f915e3edb8e3fceea49580235b984fea63f1f882c
+>
+>
+> ------------------------------------------------------------------------------
+> Try New Relic Now & We'll Send You this Cool Shirt
+> New Relic is the only SaaS-based application performance monitoring service
+> that delivers powerful full stack analytics. Optimize and monitor your
+> browser, app, & servers with just a few lines of code. Try New Relic
+> and get this awesome Nerd Life shirt! http://p.sf.net/sfu/newrelic_d2d_may
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130521/bf07e21d/attachment.html>
