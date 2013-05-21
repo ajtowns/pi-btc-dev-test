@@ -1,0 +1,174 @@
+From: robbak@robbak.com (Robert Backhaus)
+Date: Tue, 21 May 2013 11:24:22 +1000
+Subject: [Bitcoin-development] Double Spend Notification
+In-Reply-To: <519AC3A8.1020306@quinnharris.me>
+References: <519AC3A8.1020306@quinnharris.me>
+Message-ID: <CA+i0-i_+Tes+ePRqmDGEXDQ_L=S5y8gHBKk77zaLgTGOS3OMyA@mail.gmail.com>
+
+Personally, I agree, but a different decision has been made by the main
+devs.
+
+The issue is this: consider two transactions in the unconfirmed pool. One
+transaction has 2BTC input, 1.5BTC to one address (the payment), .4995 to
+another address (change) and .0005 standard fee. Another transaction
+appears - Same input, 1BTC to one address, .999 to another, and .001 fee.
+Which one would a miner include? On pure self interest, the second one,
+because it has twice the fee. Anyway, the miner has no real way of knowing
+which transaction was real, and which the fraudulent double-spend. The
+network does not keep accurate timestamps, so it has no way of really
+knowing which is first. A bit of artificial DDOS-type overload on the
+recipient's system, and the real transaction could easily appear last.
+
+So the decision has been made to make 0-conf double spends trivial, so no
+one will ever trust 0-confs. If a later transaction appears with a larger
+fee, it will be considered to be the valid one, and the first one dropped,
+as long as the first one has not been confirmed. This makes undoing a
+mistaken transaction possible.
+
+So anyone needing 0-conf-like speed will have to make other arangements,
+such as contracting with enough mining pool power to never drop their
+transactions unless confirmed multiple times. Secure 0-confs is an
+impossible target with blockchain cyrpto-currencies as the stand. Any ideas
+on how to make them work are welcome, of course - as long as we haven't
+heard them too many times before.
+
+
+On 21 May 2013 10:45, Quinn Harris <btcdev at quinnharris.me> wrote:
+
+> The current BitCoin implementation is subject to relatively easy double
+> spend attack for 0 confirmation payments.  Yet 0 confirmation payments
+> are needed for typical in person transactions like most purchases at a
+> local business.
+>
+> Notably, it is easy to transmit two transactions from the same output at
+> the same time to different sets of nodes on the network by using two
+> instances of bitcoind with same wallet file and a spend on each daemon
+> initiated by RPC by some easy to implement code.  If the first attempt
+> to pay the merchant doesn't go through because they received the "wrong"
+> transaction it could be quickly followed up with another initiated spend
+> from a different output switching which daemon sends the transaction the
+> merchant is expecting.  This means an unsophisticated attacker can
+> reliably get away with this attack and it would be worth while for small
+> transactions.  Given this, I would be reluctant to trust 0 confirmation
+> transactions at all though I think many do in practice.  Someone could
+> write and publish a special daemon to execute this attack further
+> reducing the cost.
+>
+> Right now a node will drop any second spend of the same output in the
+> memory pool.  After the first transaction has propagated through the
+> network issuing a second double spend transaction isn't likely to be
+> seen by a significant number of miners as most nodes especially non
+> miner nodes will drop this transaction.  Today, it is necessary to
+> transmit both transactions on the network nearly simultaneously to
+> reliably get away with this simple attack.  If in this case, the
+> receiving end is quickly notified of the double spend this attack
+> becomes more more difficult to get away with.
+>
+> If the second transaction is relayed instead of being dropped to notify
+> the receiving party of the double spend, most miners will receive both
+> transactions and it is possible that some or even many of the miners
+> would replace the first transaction with the second if it has a higher
+> fee as it would be in their short term interest. This can happen some
+> time after the first transaction has propagated through the network so
+> the receiving end wouldn't get a timely notification of the double
+> spend.  Depending on the choices of the miners, this approach to double
+> spend notification could exacerbate the very problem it was attempting
+> to fix compared to the current implementation.  While miners might
+> continue to drop the second spends, the easy availability of the second
+> spends would increase the short term reward for changing this policy.
+>
+> This problem can be fixed if instead of sending the second transaction a
+> new double spend message is sent with proof of the double spend but not
+> the complete transactions.  This would allow the receiving end to be
+> quickly notified of a double spend while in no way increase the chance
+> over the current implementation that a double spend would be successful.
+>
+> The proof of the double spend would include the scriptSig (input) from
+> the original transactions and the hashes from the "simplified"
+> transaction used by OP_CHECKSIG of the scriptPubKey (output) but not the
+> entire transaction.  This is the hash computed by the SignatureHash
+> function in script.cpp.   The double spend notification message should
+> contain proofs of both signed transaction spending the same output
+> ordered by hash to produce a canonical proof for a specific two
+> transactions.  To reduce DOS potential, the proof should not be relayed
+> unless one of the original transactions has been received to ensure
+> there is some commitment to the block chain and different double spend
+> proofs of the same output should not be relayed.  The forwarding of
+> transactions should remain exactly the same as it is now where the
+> second transaction is dropped but a double spend message is transmitted
+> if appropriate.
+>
+> The existing block chain needs to be checked to make sure the proof of
+> double spend couldn't have been derived from the block chain and a
+> single spend in the memory pool.  This could happen if there was already
+> an identical transaction in the block chain.  This would typically only
+> happen if someone was paying someone else the same amount they had
+> before and neither side changed addresses.  In this case double spend
+> detection wouldn't be reliable as it could be generated by anyone, but
+> both the sending and receiving client could detect this situation and
+> warn the user.
+>
+> It would still be possible for an attacker to send the second
+> transaction directly to powerful miners but this is a distinctly less
+> viable attack than the current double spend attack.
+>
+> I would expect this double spend notification implementation to make
+> double spends more costly than they are worth for most cases today that
+> 0 confirmation acceptance is needed.  That said over time this provision
+> might become less effective.  As the reward for each block mined
+> decreases, transactions fees will become a more significant part of the
+> mining reward accordingly increasing the incentive to replace
+> transactions with higher fees.  Today most BitCoin participants have a
+> high expectation of significant future appreciation of BitCoins and
+> recognize anything that brings into question the integrity of the system
+> is likely to reduce that future value so they have a long term self
+> interest to keep up the impression of integrity.  As BitCoin becomes
+> more establish this incentive will decrease.
+>
+> On the other hand, non mining nodes have no incentive to replace by
+> fee.  The continued increased capital costs of mining would likely
+> increase the proportion of non mining nodes typically run by those with
+> an incentive to assure integrity of the network such as merchants.  But
+> increasing transaction volume is likely to increase node costs which
+> would push out non mining nodes with lower incentive more than mining
+> nodes.  Accordingly increasing block size would have a tendency to
+> reduce the effectiveness of double spend notification.  The primary
+> point is there are multiple counteracting forces that make predicting
+> the future effectiveness of double spend notification uncertain.
+>
+> I don't believe this necessary warrants conceding that we can not
+> provide any protection from non trusted 0 confirmations transaction as a
+> replace by fee implementation would do.  But it would still be important
+> to work towards more robust solutions notably various forms of 3rd party
+> trust.  This could be tamper resistant devices trusted to not duplicate
+> spends, 3rd party certificates with proof the transaction was spent by
+> the holder of the certificate or multi signature transactions on the
+> block chain that must be signed by a trusted 3rd party to spend.  I
+> would expect it would take significantly longer for the companies and
+> technologies to be built to implement this on a wide scale than adding
+> double spend proof messages to the current implementation.  In addition,
+> there will likely always be some use cases where a 3rd party
+> (centralization) is not viable.
+>
+> Should a BIP and pull request implementing a double spend notification
+> as described be accepted?
+>
+> - Quinn
+>
+>
+>
+>
+> ------------------------------------------------------------------------------
+> Try New Relic Now & We'll Send You this Cool Shirt
+> New Relic is the only SaaS-based application performance monitoring service
+> that delivers powerful full stack analytics. Optimize and monitor your
+> browser, app, & servers with just a few lines of code. Try New Relic
+> and get this awesome Nerd Life shirt! http://p.sf.net/sfu/newrelic_d2d_may
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130521/65a0710f/attachment.html>
