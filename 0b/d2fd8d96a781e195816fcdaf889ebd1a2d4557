@@ -1,0 +1,59 @@
+From: gronager@ceptacle.com (Michael Gronager)
+Date: Mon, 27 May 2013 11:41:04 +0200
+Subject: [Bitcoin-development] BIP0032
+Message-ID: <51A32A30.8040504@ceptacle.com>
+
+Pieter,
+
+I was re-reading BIP0032, and checking some of the equations... It seems
+to me that there is something wrong (or I have missed something).
+
+As I see it there can only be one HMAC function, used for both private
+and public derivation - I assume that:
+[1]  CKD((k_par, c_par), i) -> (k_i, c_i)
+[2]  CKD'((K_par, c_par), i) -> (K_i, c_i)
+
+Where K_par = k_par*G, will result in K_i = k_i*G (and identical c_i's
+in both expressions).
+
+Now following your formulas for [1]:
+  k_i = I_L + k_par (mod n)
+where I_L = {HMACSHA512(c_par, 0x00||k_par||i)}_L (denoting left
+256bits). Further c_i = I_R.
+This gives a K_i = k_i*G = I_L*G + k_par(mod n)*G
+
+Now follow the formula for [2]:
+  K_i = (I_L+k_par)*G = I_L*G + K_par
+This is not the same as above, however, if we remove the (mod n) we are
+getting closer, but still the value of I_L are different in the two
+equations as: HMACSHA512(c_par, 0x00||k_par||i) <> HMAXSHA512(c_par,
+X(k_par*G)||i).
+
+We can, however, fix things if we change private child key derivation to:
+
+To define CDK((k_par, c_par), i) -> (k_i, c_i):
+* (no difference in deriving public or private):
+	I = HMACSHA512(c_par, X(k_par*G)||i)
+* Split I into I_L, I_R (256bits each)
+* k_i = k_par + I_L
+* c_i = I_R
+* and, if using public derivation, we use K_i = (k_par + I_L)*G
+
+Now for pure public derivation (i.e. we don't know the private key):
+To define CDK'((K_par, c_par), i) -> (K_i, c_i):
+* I = HMACSHA512(c_par, X(K_par)||i)
+* Split I into I_L and I_R
+* K_i = K_par + I_L*G (= k_par*G + I_L*G = (k_par+I_L)*G = k_i*G)
+* c_i = I_R
+
+Now we have the right properties, but it required quite some changes,
+also note that c_i are now equal in both private and public derivation.
+
+Comments ?
+
+
+Sincerely,
+
+Michael
+
+
