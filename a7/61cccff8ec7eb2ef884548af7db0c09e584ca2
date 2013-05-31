@@ -1,0 +1,46 @@
+From: andyparkins@gmail.com (Andy Parkins)
+Date: Fri, 31 May 2013 13:54:03 +0100
+Subject: [Bitcoin-development] Implementing batch processing for
+	-blocknotify
+In-Reply-To: <CAH2=CKzW41TYbX6c1F8oknA_LttOaA8vmDPmojuowXgEADY61g@mail.gmail.com>
+References: <CAH2=CKzW41TYbX6c1F8oknA_LttOaA8vmDPmojuowXgEADY61g@mail.gmail.com>
+Message-ID: <201305311354.03625.andyparkins@gmail.com>
+
+On Friday 31 May 2013 12:56:43 Rune Kj?r Svendsen wrote:
+
+> I have an application that wants to keep up with new blocks as they come
+> in. For that I can use the -blocknotify option with bitcoind, which will
+> execute my application for each new block.
+> 
+> The problem is that my app isn't necessarily quick enough to finish its
+> work before a new block comes in and the app is executed again. This means
+> the that bitcoind might keep executing my application even though the
+> previous instance hasn't finished, and that's fairly inefficient
+> resource-wise, as many instances of the application will be running
+> simultaneously.
+
+Have your program try to create a unix-domain socket when it starts.  If it 
+can't create it (because one already exists at that path), then connect to it.
+
+You then have two modes:
+
+ - Creator of socket, listens to socket for more incoming data, and adds it to
+   some sort of internal block queue.
+ - Client to socket, pushes output of -blocknotify to socket and exits
+
+Your concurrency problems go away because only one process is ever actually 
+doing something with the data.
+
+Should be fairly straight forward.  The client is simple.  The server is two 
+threads, one listening on the socket and then briefly locking and updating a 
+queue, and one thread briefly locking and removing from the queue.
+
+
+
+Andy
+
+-- 
+Dr Andy Parkins
+andyparkins at gmail.com
+
+
