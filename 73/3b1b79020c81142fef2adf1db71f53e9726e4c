@@ -1,0 +1,71 @@
+From: runesvend@gmail.com (=?ISO-8859-1?Q?Rune_Kj=E6r_Svendsen?=)
+Date: Fri, 31 May 2013 13:56:43 +0200
+Subject: [Bitcoin-development] Implementing batch processing for -blocknotify
+Message-ID: <CAH2=CKzW41TYbX6c1F8oknA_LttOaA8vmDPmojuowXgEADY61g@mail.gmail.com>
+
+Hello dear list
+
+I have an application that wants to keep up with new blocks as they come
+in. For that I can use the -blocknotify option with bitcoind, which will
+execute my application for each new block.
+
+The problem is that my app isn't necessarily quick enough to finish its
+work before a new block comes in and the app is executed again. This means
+the that bitcoind might keep executing my application even though the
+previous instance hasn't finished, and that's fairly inefficient
+resource-wise, as many instances of the application will be running
+simultaneously.
+
+I've discussed this with wumpus on bitcoin-dev, and we figured out a
+solution that might be better. It could replace -blocknotify or we could
+put it in a new function called -batchblocknotify
+
+The idea is that when bitcoind is executed with the -batchblocknotify
+option, and it's missing a lot of blocks, upon the first incoming block,
+the command specified by -batchblocknotify is executed, and if additional
+blocks come in while this command is still running, we add the block hashes
+to a list instead of executing the command again. When the previous command
+finishes, we execute it again and pass two parameters to it: 1. the first
+block hash in the list of queued blocks, and 2. the number of blocks that
+have come in while the last command was executing.
+
+This prevents bitcoind from "fork bombing" the system, and allows the
+command to handle incoming blocks in batches.
+
+Would this make sense as an approach?
+
+I've been looking at the code and I'm not sure how to implement it.
+
+As far as I can see, I need to pass an object - whose state is retained
+between calls - to the thread function (runCommand) that runs the command,
+which contains a variable that keeps track of whether a previously executed
+command is still running, and that contains a list of block hashes that
+haven't been processed. And I'm not sure how to do this.
+
+The runCommand thread is started in SetBestChain() in
+main.cpp. SetBestChain() is executed by ConnectBestBlock() in main.cpp.
+ConnectBestBlock() is executed by CBlock::AddToBlockIndex() in main.cpp.
+CBlock::AddToBlockIndex() is executed by CBlock::AcceptBlock() in main.cpp.
+CBlock::AcceptBlock() is executed by ProcessBlock() in main.cpp.
+ProcessBlock() is executed by ProcessMessage() in main.cpp. And so on, and
+so forth.
+
+What's the right way to create an object that can be passed to the
+runCommand thread, whose state is retained, so it can hold information
+about whether the -batchblocknotify command is still executing, and contain
+a list of blocks that are waiting to be passed to the -batchblocknotify
+command?
+
+I assume I shouldn't add a new parameter to the ProcessMessage() function,
+which passes it to ProcessBlock(), which passes it to AcceptBlock() which
+passes it to AddToBlockIndex()... and so on.
+
+Would it be appropriate to store this object inside the CValidationState
+class that is passed to SetBestChain()?
+
+I'm not quite so how to go about this.
+
+/Rune
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130531/73ed57be/attachment.html>
