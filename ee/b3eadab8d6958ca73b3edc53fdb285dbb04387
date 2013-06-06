@@ -1,0 +1,73 @@
+From: patrick@intersango.com (Patrick Strateman)
+Date: Wed, 05 Jun 2013 18:17:30 -0700
+Subject: [Bitcoin-development] Blockchain alternative storage
+In-Reply-To: <CALG7eYpKj9Ev2a1PZ7qsiqsazS4pHTPiGF22r64=s1buWm2aLQ@mail.gmail.com>
+References: <CALG7eYpKj9Ev2a1PZ7qsiqsazS4pHTPiGF22r64=s1buWm2aLQ@mail.gmail.com>
+Message-ID: <51AFE32A.2020301@intersango.com>
+
+If you're only interested in storing the best chain then a fairly simple
+schema is possible.
+
+CREATE TABLE blocks (
+    hash bytea NOT NULL PRIMARY KEY,
+    index integer NOT NULL UNIQUE,
+    CONSTRAINT block_hash_size_check CHECK ((octet_length(hash) = (256 /
+8)))
+);
+
+CREATE TABLE transaction_inputs (
+    output_transaction_id bytea NOT NULL,
+    output_index integer NOT NULL,
+    block_index integer NOT NULL,
+    CONSTRAINT transaction_id_size_check CHECK
+((octet_length(output_transaction_id) = (256 / 8))),
+    PRIMARY KEY (output_transaction_id, output_index)
+);
+
+CREATE INDEX transaction_inputs_block_index_idx ON transaction_inputs
+USING btree (block_index)
+
+CREATE TABLE transaction_outputs (
+    transaction_id bytea NOT NULL,
+    index integer NOT NULL,
+    amount numeric(16,8) NOT NULL,
+    type character varying NOT NULL,
+    addresses character varying[],
+    block_index integer NOT NULL,
+    spent boolean DEFAULT false NOT NULL,
+    CONSTRAINT transaction_id_size_check CHECK
+((octet_length(transaction_id) = (256 / 8))),
+    PRIMARY KEY (transaction_id, index)
+);
+
+CREATE INDEX transaction_outputs_addresses_idx ON transaction_outputs
+USING gin (addresses);
+CREATE INDEX transaction_outputs_block_index_idx ON transaction_outputs
+USING btree (block_index);
+
+On 06/05/2013 05:53 PM, Marko Otbalkana wrote:
+> Could anyone point me to work/project(s) related to storing the block
+> chain in a database, like PostgreSQL, MySQL? How about any tools that
+> can read the block chain from the Satoshi client and convert it into
+> different formats?
+>
+> Thanks,
+> -Marko
+>
+>
+> ------------------------------------------------------------------------------
+> How ServiceNow helps IT people transform IT departments:
+> 1. A cloud service to automate IT design, transition and operations
+> 2. Dashboards that offer high-level views of enterprise services
+> 3. A single system of record for all IT processes
+> http://p.sf.net/sfu/servicenow-d2d-j
+>
+>
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130605/3673d6e4/attachment.html>
