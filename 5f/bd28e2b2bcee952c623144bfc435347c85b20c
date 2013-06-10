@@ -1,0 +1,229 @@
+From: lidstrom83@gmail.com (Daniel Lidstrom)
+Date: Mon, 10 Jun 2013 03:34:33 -0300
+Subject: [Bitcoin-development] Proposal: Vote on the blocksize limit
+ with proof-of-stake voting
+In-Reply-To: <20130610053002.GA8961@savin>
+References: <CAPaL=UWcKmnChw0zYGVduzHHdQ-AgG7uqbCLvjjuW6Q67zmS0g@mail.gmail.com>
+	<20130610053002.GA8961@savin>
+Message-ID: <CADjHg8HUkh6u1Nhp01DKqX+qLu3jqvDVYhTo55MKpRtcavSWvg@mail.gmail.com>
+
+Reserving my judgement until I've though about it more (design by committee
+scares me, and this voting sounds expensive), I think the SPV-verifiable
+moving median can be done by binning the space of block size limits, and
+for each node in the UTXO tree, a value for each bin is stored which is the
+sum of the corresponding bins of each of the children.  The childless nodes
+- which correspond to the individual UTXOs - increment the appropriate bin
+of their parents according to the rules you mentioned.  The bin values in
+the root node of the UTXO tree would then be added to those, weighted
+appropriately, of the previous N blocks.
+
+The hash of a node would be that of the bin values, concatenated with the
+child nodes' hashes.  In this way, any step of the calculation of the
+median would produce a localized error in the UTXO tree that's easily
+verified.
+
+The number of bins would have to be kept relatively small in order to keep
+this from adding too much data to the UTXO tree branches though.
+
+
+On Mon, Jun 10, 2013 at 2:30 AM, Peter Todd <pete at petertodd.org> wrote:
+
+> On Mon, Jun 10, 2013 at 04:09:26AM +0000, John Dillon wrote:
+>
+> My general comments on the idea are that while it's hard to say if a
+> vote by proof-of-stake is really representative, it's likely the closest
+> thing we'll ever get to a fair vote. Proof-of-stake is certainely better
+> than just letting miners choose; as you point out miners can always
+> choose to decrease the blocksize anyway so we only need a vote on
+> allowable increases. Proof-of-stake also clearly favors those who
+> actually have invested in Bitcoin over those who only talk about
+> Bitcoin.
+>
+> I'll also say that while I know people will complain about putting
+> politics into a technical problem, as I keep saying, is *is* a political
+> issue. The limitations may be technical, but the ultimate issue is a
+> very political decision about what we want Bitcoin to be. Yes, there
+> will be people campaigning left and right to get users to vote for
+> various limits with their coins, deal with it. Democracy is messy.
+>
+> Voting would take a lot of the nastier politics out of the situation,
+> perhaps somewhat ironically. It would quite clearly take control away
+> from the core development team, and the Bitcoin Foundation, and put it
+> back in the hands of the community; you can't argue conspiracy theories
+> that the Foundation is trying to control Bitcoin when there is a
+> completely transparent voting system in place. People will complain that
+> big Bitcoin players are throwing their weight around, but the blockchain
+> itself is a voting mechanism that is anything but 1 person = 1 vote.
+>
+> Of course I wouldn't be the slightest bit surprised if users happily
+> vote themselves into something looking like a centralized PayPal
+> replacement in the long run, but at least if that happens the process by
+> which they get there will be transparent and relatively democratic.
+>
+>
+> > A vote will consist of a txout with a scriptPubKey of the following form:
+> >
+> >     OP_RETURN magic vote_id txid vout vote scriptSig
+> >
+> > Where scriptSig is a valid signature for a transaction with nLockTime
+> > 500,000,000-1 spending txid:vout to scriptPubKey:
+> >
+> >     OP_HASH160 H(OP_RETURN magic vote_id txid vout vote) OP_EQUAL
+>
+> I just wanted to point out how general this mechanism is. Regardless of
+> what the scriptPubKey form is, standard, P2SH, multisig, whatever to
+> vote is to simply prove you could have spent the txout.
+>
+> > vote_id is the ID of the specific vote being made, and magic is included
+> to
+> > allow UTXO proof implementations a as yet unspecified way of identifying
+> votes
+> > and including the weighted median as part of the UTXO tree sums. (it also
+> > allows SPV clients to verify the vote if the UTXO set is a Patricia tree
+> of
+> > scriptPubKeys) vote is just the numerical vote itself.
+>
+> Ah, you're assuming a direct Patricia tree. Keep in mind that
+> scriptPubKey's can be up to 10,000 bytes long, and an attacker can use
+> that (with 10,000 other txouts) to create some extremely deep trees. I
+> said on IRC a few days ago about how skeptical I am of implementing
+> consensus critical systems with such huge differences in average and
+> worst case, but I'll admit this is a decent use-case.
+>
+> Having said that, proof to SPV clients leaves open the interesting
+> possibility that a third-party holding Bitcoins on your behalf can prove
+> that they voted according to your wishes, or even prove they voted
+> according to all their users wishes. Basically we'd add a rule for the
+> UTXO tree where a specific OP_RETURN form is included in the UTXO tree,
+> even though it is unspendable, and is removed from the tree if the
+> master txout is spent. Note that in this case by "prove they voted" we
+> mean the service actually taking the step of ensuring their vote was
+> recorded in the blockchain.
+>
+> > The vote must compute
+> > the median, rather than the mean, so as to not allow someone to skew the
+> vote
+> > by simply setting their value extremely high. Someone who still
+> remembers their
+> > statistics classes should chime in on the right way to compute a median
+> in a
+> > merkle-sum-tree.
+>
+> I think the definition of the median requires knowledge of all the points
+> so
+> it'll have to be a separate sorted tree - kinda complex unfortunately if
+> you really do want to be able to do full proof to SPV clients. Maybe
+> just putting the hash of the overall results in the coinbase is enough
+> for now.
+>
+> The term to google is "moving median" - looks complex.
+>
+> > Of course in the future the voting mechanism can be used for additional
+> votes
+> > with an additional vote_id. For instance the Bitcoin community could
+> vote to
+> > increase the inflation subsidy, another example of a situation where the
+> wishes
+> > of miners may conflict with the wishes of the broader community.
+>
+> Good idea on keeping the code general.
+>
+> > For any given block actual limit in effect is then the rolling median of
+> the
+> > blocks in the last year. At the beginning of every year the value
+> considered to
+> > be the status quo resets to the mean of the limit at the beginning and
+> end of
+> > the interval.  (again, by "year" we really mean 52,560 blocks) The
+> rolling
+> > median and periodic reset process ensures that the limit changes
+> gradually and
+> > is not influenced by temporary events such as hacks to large exchanges or
+> > malicious wallet software.  The rolling median also ensures that for a
+> miner
+> > the act of including a vote is never wasted due to the txout later being
+> spent.
+>
+> Good points, although keep in mind you've created a lot of consensus
+> critical code that is easiest to implement with floating point... not a
+> good thing.
+>
+> One way to mitigate that risk might be to take advantage of the fact
+> that unless the rolling median code itself is buggy, a consensus failure
+> in the calculation is likely to result in different implementations
+> still having a close agreement on the limit. So maybe we write some code
+> where we won't build on top of a block that is larger than, say, 95% of
+> the hard-limit unless another miner does so too?
+>
+> > Implementing the voting system can happen prior to an actual hard-fork
+> allowing
+> > for an increase and can be an important part of determining if the
+> hard-fork is
+> > required at all.
+>
+> Step #0 would be to think about OP_RETURN actually. FWIW Jeff Garzik has
+> a pull-req (https://github.com/bitcoin/bitcoin/pull/2738) to enable it,
+> although only one txout per tx, and only with a 80-byte payload.
+>
+> Even just some ad-hoc voting by the "raise-the-limit" crowd would be a
+> good first step to gaging interest.
+>
+> > Coercion and vote buying is of course possible in this system. A miner
+> could
+> > say that they will only accept transactions accompanied by a vote for a
+> given
+> > limit. However in a decentralized system completely preventing vote
+> buying is
+> > of course impossble, and the design of Bitcoin itself has a fundemental
+>
+> Is it really? There might be someone clever with a cryptographic voting
+> protocol, although in the case of Bitcoin we have to let people vote
+> with arbitrary scriptPubKeys, so almost anything less general than full
+> on SCIP just means miners force people to use the protocol where
+> vote-buying is possible.
+>
+> > A voting process ensures that any increase to the blocksize genuinely
+> > represents the desires of the Bitcoin community, and the process
+> described
+> > above ensures that any changes happen at a rate that gives all
+> participants
+> > time to react. The process also gives a mechanism for the community to
+> vote to
+> > decrease the limit if it turns out that the new one was in fact too
+> high. (note
+> > how the way the status quo is set ensures the default action is for the
+> limit
+> > to gradually decrease even if everyone stops voting)
+>
+> Good idea. So it'd decrease to the mean of the old and new limits
+> basically, and if Bitcoin becomes "too centralized" users can simply do
+> nothing and the process gradually reverses.
+>
+> > As many of you know I have been quite vocal that the 1MB limit should
+> stay. But
+> > I would be happy to support the outcome of a vote done properly,
+> whatever that
+> > outcome may be.
+>
+> Same here.
+>
+> --
+> 'peter'[:-1]@petertodd.org
+> 0000000000000068a8ad033afa763246fe451e840eae5215eb3a64e8101a46c3
+>
+>
+> ------------------------------------------------------------------------------
+> How ServiceNow helps IT people transform IT departments:
+> 1. A cloud service to automate IT design, transition and operations
+> 2. Dashboards that offer high-level views of enterprise services
+> 3. A single system of record for all IT processes
+> http://p.sf.net/sfu/servicenow-d2d-j
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130610/214bfa8e/attachment.html>
