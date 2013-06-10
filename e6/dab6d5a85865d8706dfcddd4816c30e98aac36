@@ -1,0 +1,99 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 10 Jun 2013 17:09:13 -0400
+Subject: [Bitcoin-development] Decentralizing mining
+In-Reply-To: <20130531165758.GA29135@petertodd.org>
+References: <20130527111149.GB8955@tilt> <20130531165445.GA29104@petertodd.org>
+	<20130531165758.GA29135@petertodd.org>
+Message-ID: <20130610210913.GA17242@petertodd.org>
+
+So here's the parts that need to be done for step #1:
+
+
+# Protocol Work
+
+Basic idea is the miner makes two connections, their pool, and a local
+bitcoind.
+
+They always (usually?) work on the subset of transactions common to both
+the pool's getblocktemplate and their local one. When they find a share
+if it doesn't meet difficulty they just hand it to the pool. Currently
+that is done by handing the whole block over, correct? I know the BIP
+says otherwise, but we should optimize this to just hand over tx hashes
+where possible.
+
+If the share does meet difficulty, hand it to both the pool and the
+local bitcoind. Should hand it to the pool first though, because the
+pool likely has the fastest block propagation, then hand it to local
+bitcoind. An optimized version may want to have some record of measured
+bandwidth - this applies Bitcoin in general too, although also has other
+issues.
+
+
+## Reducing bandwidth
+
+How about for normal shares we just pass the block header, and have the
+pool randomly pick a subset of transactions to audit? Any fraud cancels
+the users shares. This will work best in conjunction with a UTXO proof
+tree to prove fees, or by just picking whole shares randomly to audit.
+
+We'll need persistent share storage so if your connection disconnects
+you can provide the pool with the full share later though.
+
+Incedentally, note how the miner can do the reverse: pick random block
+headers and challenge the pool to prove that they correspond to a valid
+block. With some modifications Stratum can support this approach.
+
+
+## Delibrate orphaning of slow to propagate blocks
+
+Block headers can be flooded-filled much faster than blocks themselves.
+They are also small enough to fit into a UDP packet. Nodes should pass
+headers around separately via UDP, optinally with some tiny number of
+transactions. When we see a valid block header whose contents we do not
+know about a miner should switch to mining empty or near empty blocks in
+solo mode that would orphan the still propagating block. Doing this is
+safe, we'll never build on an invalid block, economically rational while
+the inflation subsidy is still high, and helps reduce (although not
+eliminate!) the advantage a large miner with high-bandwidth connections
+has over those who don't.
+
+Of course, the other option is to build a block extending the one you
+don't know about, which is even more rational, but doing poses major
+risks to Bitcoin...
+
+This functionality can be implemented later - it's not strictly part of
+pooled-solo mode.
+
+
+# Pool work
+
+So does eliopool already accept arbitrary shares like this and do the
+correct accounting already? (IE adjust share amount based on fees?) What
+happens when the pool doesn't get the share directly, but does see the
+new block?
+
++ possible protocol extensions
+
+
+# Miner work
+
+Basically we need code to merge the two block templates together to find
+commonality. I guess you probably want to implement this in bfgminer
+first, so add the code to libblkmaker first, then maybe python-blkmaker.
+
+We also want an automatic fallback to local solo mining if the pool
+can't be contacted.
+
++ possible protocol extensions
+
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000005576673e616271f762a5d8779d5fe7796c6e43ed43df5aa189
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130610/ee10beed/attachment.sig>
