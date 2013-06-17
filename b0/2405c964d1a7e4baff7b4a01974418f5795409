@@ -1,0 +1,103 @@
+From: jgarzik@bitpay.com (Jeff Garzik)
+Date: Mon, 17 Jun 2013 11:16:01 -0400
+Subject: [Bitcoin-development] Decentralizing mining
+In-Reply-To: <20130614200654.GB11509@petertodd.org>
+References: <20130527111149.GB8955@tilt> <20130531165758.GA29135@petertodd.org>
+	<20130610210913.GA17242@petertodd.org>
+	<201306102123.15732.luke@dashjr.org>
+	<20130614200654.GB11509@petertodd.org>
+Message-ID: <CAJHLa0P7gndRqubREeQqbVNy_nJgyu7CUdgK9no14RCahxx7Cg@mail.gmail.com>
+
+On Fri, Jun 14, 2013 at 4:06 PM, Peter Todd <pete at petertodd.org> wrote:
+> It strikes me that this would work best if the pool has a mempool with
+> child-pays-for-parent support where conflicts *are* allowed.
+>
+> IE you record whatever transactions you know about, conflicting or not,
+> calculate which ones gives you the most fees/kb, and then figure out
+> which set of non-conflicting ones are optimal. Of course, "optimal" is
+> the knapsack problem...
+>
+> Now you can easilly tell the miners working on shares for you which tx's
+> would be optimal if they wish to know, and at the same time whatever
+> shares they send you are most likely to include transactions in your
+> mempool inventory, and thus they can send just tx hashes to reduce
+> bandwidth.
+>
+>
+> Part of the broader issue that when we send peers INV advertisements we
+> should be telling them what the fee/kb is so our peers can prioritize
+> properly. That'd also help for the case where you want to broadcast two
+> transactions in a row, but the pair is only profitable because the
+> second is paying the fee for the first.
+
+Interesting proposals, particularly this last.  The net result impact
+is, however, that which was criticized in at least one forum thread:
+replace-with-higher-fee.
+
+
+> Speaking of, the way we tell peers about new blocks is really
+> suboptimal: we tell every peer, in no particular order, about a new
+> block via a block INV message, and then we give them the new block in
+> parallel. I was looking through comp-sci papers on optimal
+> flood-fill/gossip algorithms for random graph networks and it appears
+> that optimal is to spend all your bandwidth to send the message to your
+> fastest peer first, followed by your next fastest and so on. This works
+> best because you get the exponential growth scaling faster by
+> propagating the message as "deep" as possible in the network, and it
+> then can flood outwards from there. Just sorting the peer list by
+> #inv-recevied/time when doing INV pushes and when attending to incoming
+> messages would probably be a big improvement.
+
+In terms of packet size, I would like to look into the network-wide
+costs of simply broadcasting block header + coinbase TX + TX list.  I
+bet miners would love to opt into that.
+
+
+>> > If the share does meet difficulty, hand it to both the pool and the
+>> > local bitcoind. Should hand it to the pool first though, because the
+>> > pool likely has the fastest block propagation, then hand it to local
+>> > bitcoind. An optimized version may want to have some record of measured
+>> > bandwidth - this applies Bitcoin in general too, although also has other
+>> > issues.
+>>
+>> Currently, BFGMiner is doing submission to the pool, waiting for a response,
+>> then submitting to a local bitcoind. This is because the pool might need to
+>> receive/record the share before it processes the block on bitcoind, or you
+>> could lose credit for it. The response from the pool is rather small (a single
+>> TCP packet), so this shouldn't delay much longer.
+>
+> Right, I guess the pool wants to be sure you were actually the one who
+> found the share, rather than just someone who was lucky enough to see it
+> on the network and submitted it as your own.
+>
+>> > ## Reducing bandwidth
+>> >
+>> > How about for normal shares we just pass the block header, and have the
+>> > pool randomly pick a subset of transactions to audit? Any fraud cancels
+>> > the users shares. This will work best in conjunction with a UTXO proof
+>> > tree to prove fees, or by just picking whole shares randomly to audit.
+>>
+>> Might as well just use higher difficulty shares (each one audited) for the
+>> same effect. Block proposals allow the miner to tell the pool its transaction
+>> set once (per txset change) for any number of shares.
+>
+> That's a good point - the current practice most pools seem to follow of
+> about a share per second seems very excessive to me. On the other hand,
+> it does have good user optics. The right solution might be something
+> akin to P2Pool where the UI level is telling the user shares are being
+> found so it's clear "stuff is happening", but under the hood only a
+> small subset are ever sent to the pool.
+
+With the onslaught of ASIC mining, most big pools are past a share per
+second.  Variable difficulty or set-to-higher-difficulty quickly
+became the norm, almost out of necessity.
+
+Personally, I think most pools should target at _least_ 5-10 seconds
+per share, no matter the strength of the miner.
+
+-- 
+Jeff Garzik
+Senior Software Engineer and open source evangelist
+BitPay, Inc.      https://bitpay.com/
+
+
