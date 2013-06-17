@@ -1,0 +1,80 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 17 Jun 2013 13:39:42 -0400
+Subject: [Bitcoin-development] Decentralizing mining
+In-Reply-To: <CAJHLa0P7gndRqubREeQqbVNy_nJgyu7CUdgK9no14RCahxx7Cg@mail.gmail.com>
+References: <20130527111149.GB8955@tilt> <20130531165758.GA29135@petertodd.org>
+	<20130610210913.GA17242@petertodd.org>
+	<201306102123.15732.luke@dashjr.org>
+	<20130614200654.GB11509@petertodd.org>
+	<CAJHLa0P7gndRqubREeQqbVNy_nJgyu7CUdgK9no14RCahxx7Cg@mail.gmail.com>
+Message-ID: <20130617173942.GA26623@petertodd.org>
+
+On Mon, Jun 17, 2013 at 11:16:01AM -0400, Jeff Garzik wrote:
+> > Part of the broader issue that when we send peers INV advertisements we
+> > should be telling them what the fee/kb is so our peers can prioritize
+> > properly. That'd also help for the case where you want to broadcast two
+> > transactions in a row, but the pair is only profitable because the
+> > second is paying the fee for the first.
+> 
+> Interesting proposals, particularly this last.  The net result impact
+> is, however, that which was criticized in at least one forum thread:
+> replace-with-higher-fee.
+
+Actually the two are orthogonal: a low-priority no-fee tx might result
+because it was from a customer paying a merchant via the payment
+protocol. The merchant can then respend that tx with a fee to cover
+both, but with the current mempool arrangement if the no-fee tx load is
+high actually getting that first tx to propagate so the second can will
+be difficult.
+
+A nice way to do this would be to accept tx's into your mempool
+indiscriminately but delay broadcasting INV messages until you find
+child tx's that make the low-profit ones worth mining. When you do find
+a child with a sufficiently high fee, send an INVGROUP message to notify
+your peers of the new opportunity. Different nodes will have different
+ideas of what priority TX deserves to be broadcast, but here provided
+the group meets the threshold a peer will always find out.
+
+> > Speaking of, the way we tell peers about new blocks is really
+> > suboptimal: we tell every peer, in no particular order, about a new
+> > block via a block INV message, and then we give them the new block in
+> > parallel. I was looking through comp-sci papers on optimal
+> > flood-fill/gossip algorithms for random graph networks and it appears
+> > that optimal is to spend all your bandwidth to send the message to your
+> > fastest peer first, followed by your next fastest and so on. This works
+> > best because you get the exponential growth scaling faster by
+> > propagating the message as "deep" as possible in the network, and it
+> > then can flood outwards from there. Just sorting the peer list by
+> > #inv-recevied/time when doing INV pushes and when attending to incoming
+> > messages would probably be a big improvement.
+> 
+> In terms of packet size, I would like to look into the network-wide
+> costs of simply broadcasting block header + coinbase TX + TX list.  I
+> bet miners would love to opt into that.
+
+Whether or not that is a improvement is a really complex question, even
+without taking failure into account. If you agressively prioritize peers
+that are the most connected and keep your # of peers reasonably low you
+can afford the memory to keep track of what tx's your peers already know
+about so to save on round trips for TX hash's they don't have. On the
+other hand if you have a large number of peers and can't do that, or
+need to cut down on bandwidth used up by the INV floods and have a
+probabalistic scheme, you are risking more round-trip latency.
+
+Not to mention the nasty problem of how *relying* on TX hashes to keep
+your bandwidth down means that anything disrupting that system suddenly
+has a big impact on the network. I don't think we really understand all
+the nuances of that - look at how few people realize that you need
+multiples of average bandwidth to have sufficient emergency bandwidth
+available to catch up in the event of a chain fork.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000a1c290ce20953d864a4b9c603abc8a9c77a04429c89c5e9fac
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130617/a764a270/attachment.sig>
