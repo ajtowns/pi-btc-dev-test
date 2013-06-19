@@ -1,0 +1,41 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Wed, 19 Jun 2013 12:29:19 -0700
+Subject: [Bitcoin-development] Optional "wallet-linkable" address format
+ - Payment Protocol
+Message-ID: <5AC3FA1D9B1F4FA0A2FE9A67333642B5@LAPTOPAIR>
+
+If you have two parties who want to form a persistent relationship, by exchanging and verifying public keys beforehand, then I think the canonical way to do this with BIP32 is for the parties to exchange PubKey and *ChainCode*.
+
+I don?t understand the use case for handing out individual multipliers, if what you desire is a persistent relationship. If each party dedicates a child-wallet for receiving coins, and saves a PubKey/ChainCode for sending coins, the two parties can transaction securely forever without ever exchanging any more information, and without any address reuse.
+
+I think ideally, the default behavior is that wallets always dedicate a new child node {PubKey, ChainCode} to each party they transact with. At the presentation layer, you have a ?contact? and each contact has a transaction history. You can send coins to a contact at any time, and internally the wallet picks the next address in their sequence. Any funds received on pubkeys from contact?s sequence are attributed to that contact. The wallet can organize the contacts, and roll-up the transaction history into ?ledgers? and ?balances? however they want ? it could be based on the underlying BIP32 hierarchy or perhaps not. The cost of watching large a number of pubkeys, even if you ?look ahead? 100 pubkeys for each contact, is relatively small versus the benefits.
+
+What might be nice is a ?Contact Request? protocol, basically the same as a PaymentRequest but no actual payments are sent, just child wallets created:
+
+message Contact {
+    optional uint32 contact_version = 1 [default = 1];
+    optional string pki_type = 2 [default = "none"];
+    optional bytes pki_data = 3;
+    required bytes serialized_contact_details = 4;
+    optional bytes signature = 5;
+}
+
+message ContactDetails {
+    optional string network = 1 [default = "main"];
+    required bytes pubkey = 2;
+    required bytes chaincode = 3;
+    optional string memo = 4;
+    optional string response_url = 5;
+}
+
+Alice sends a Contact+ContactDetails to Bob.  If Bob accepts, he sends his own Contact+ContactDetails (without a response_url) back to Alice. Basically just like adding a contact to your IM contacts.
+
+Alice could send a Contact+ContactDetails to Bob without a response_url, in which case after accepting the contact, Bob could send funds to Alice, but not receive funds.
+
+You could probably pack the whole message inside a bitcoin:// URI if you wanted to.
+
+Thanks,
+--Jeremy
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130619/81654330/attachment.html>
