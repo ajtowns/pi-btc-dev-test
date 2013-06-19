@@ -1,0 +1,125 @@
+From: melvincarvalho@gmail.com (Melvin Carvalho)
+Date: Wed, 19 Jun 2013 14:19:40 +0200
+Subject: [Bitcoin-development] Optional "wallet-linkable" address format
+ - Payment Protocol
+In-Reply-To: <51BFD886.8000701@gmail.com>
+References: <51BFD886.8000701@gmail.com>
+Message-ID: <CAKaEYhJh4ArCqxf+wFobNzMbyd8TDPWEDw_n7_mm78d_41oFbA@mail.gmail.com>
+
+On 18 June 2013 05:48, Alan Reiner <etotheipi at gmail.com> wrote:
+
+>  *Goal*:  An alternative address format made possible by BIP 32, which
+> allows one to specify a "Wallet ID" and "One-time payment" code, instead of
+> the standard one-use Base58-Hash160 addresses.   This allows parties with a
+> persistent relationship to be able to prove that payment addresses they
+> provide each other are linked to a particular wallet, reducing exposure to
+> MitM attacks without the need for SSL or a web of trust, and without
+> compromising the privacy of either party.    For instance, this could be
+> used between businesses that frequently do business, by exchanging and
+> verifying public keys beforehand, or could be used by an exchange to
+> identify if a customer withdrawal address is related to their last deposit
+> address, and if not enforce extra authentication measures.
+>
+> *Background**:*
+> I haven't been following the payment protocol discussions/development
+> much, so I apologize if this has already been addressed.   I'm calling it
+> "wallet-linkable" addresses, which would be an optional second form for
+> sending someone your address.   With BIP 32, the address is computed by the
+> payee (the person sending the address to receive money):
+>
+>    Standard Address ~ Base58(0x00 || hash160(PubKeyParent * Multiplier[i])
+> || checksum)
+>
+> What I'd like to do is have the option, when specifying an address through
+> the payment protocol, to send *just* the {PublicKeyParent, Multiplier[i]}
+> and let the receiver of that address compute the address on their own.
+> This is no significant burden on the receiver, but it does provide the
+> useful property that they can recognize when addresses specified in this
+> way come from the same wallet -- because the PubKeyParent will be the
+> same.  Remember, this is *optional* for the person providing the address.
+>
+> One nice, accidental feature of BIP 32 is that the Multiplier[i] used
+> above does not actually reveal the "chaincode" (I think Pieter started
+> calling it the "tweak").   It is derived from the chaincode but doesn't
+> reveal it.  Therefore, the payer sees the parent public key, but that's not
+> useful to derive any of the other addresses unless they also have the
+> chaincode.  But they can verify that the PublicKeyParent is identical
+> between transactions, and thus is accessible only to that wallet.  It
+> allows them validate a specific address provided by the payee, but not
+> generate or identify any other addresses.
+>
+> *Use Cases:*
+> (1)  So, just like with PGP/GPG, when two parties decide they will start a
+> relationship, they can start by exchanging the public keys of their wallet
+> and verify them in a reliable manner.  After that, when one party requests
+> a payment address from the other, they can optionally send {PubKey,
+> Multiplier}, and the payer's software will identify the owner of that
+> address, or let you select who you think the address belongs to and it will
+> verify it.  If the payee's system is compromised and address is replaced,
+> the address received by the payer won't validate.  This doesn't help if the
+> side sending the money is compromised.
+>
+> (2)  When a customer first provides a deposit to an exchange, it will send
+> money from an address in their wallet and the software will provide the
+> exchange the {PubKey,Mult}.  When the customer later provides a withdrawal
+> address, the site can automatically trust the address as long it is
+> provided in the alternate form and the public keys match.  If they don't,
+> it might be the same customer just requesting a withdrawal to a different
+> wallet, which is fine, but they'll have to go through an extra verification
+> step to do so.
+>
+>
+> *Downsides:*
+> Multi-sig/P2SH  - The only way this works with P2SH, violates one of the
+> goals of P2SH slightly, but may not matter much if it's all done under the
+> hood by the software.  Instead of providing a 20-byte hash of a script, you
+> provide all the public keys and multipliers for the individual addresses.
+> The payer's software automatically verifies all addresses and creates the
+> P2SH script itself (after a divine decree that public keys will always be
+> sorted lexicographically in the multi-sig script).  The blockchain still
+> benefits from the "compression" of moving the bulky scripts to the TxIn,
+> but it does require revealing more information than is necessary for the
+> payer to pay the payee.  But it may not *really* be a problem, given the
+> benefits.  It might just be slightly longer strings to exchange during
+> initialization and for each transaction.
+>
+> I have various reasons I'd like to use this, and it'd be nice to have some
+> community backing, so I don't have to twist anyone's arm to trust me that
+> it's legit.
+>
+
+Generally in favour of hierarchical deterministic wallets.
+
+Will this new style of address make it into the block chain?  I'd be less
+keen on that.
+
+I'm finding BIP0032 quite hard to read right now, but perhaps that's
+because I'm less familiar with the material than some.  However, there's
+little things like it never actually defines a deterministic wallet in the
+Abstract.  But, I'll keep trying to understand and see if I can use the
+test vectors.
+
+
+>
+> -Alan
+>
+>
+>
+>
+>
+>
+> ------------------------------------------------------------------------------
+> This SF.net email is sponsored by Windows:
+>
+> Build for Windows Store.
+>
+> http://p.sf.net/sfu/windows-dev2dev
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130619/c32fc5bc/attachment.html>
