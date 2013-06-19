@@ -1,0 +1,95 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Wed, 19 Jun 2013 17:28:15 +0200
+Subject: [Bitcoin-development] Optional "wallet-linkable" address format
+ - Payment Protocol
+In-Reply-To: <51C1C288.4000305@gmail.com>
+References: <51BFD886.8000701@gmail.com> <20130619142510.GA17239@crunch>
+	<51C1C288.4000305@gmail.com>
+Message-ID: <20130619152815.GA14729@netbook.cypherspace.org>
+
+I think Timo's point is that while you cant do discrete log, you can do y-th
+root.  So if P = xG is a parent public key (x private key, G base point),
+then your proposed multiplier address is hash of Q=yP.  However its easy to
+find another P such that Q=zP'.  ie just "divide by z" (EC multiply by z^-1
+mod n, n the order of the curve).  So P'=z^-1.Q, which will work because
+Q=zP', substituting P' you get Q=z.z^-1.Q, Q=Q.
+
+Of course the attacker has just performed an unspenable DoS (maybe, or maybe
+a useless collision) because he wont know the discrete log of Q, nor P, nor
+P'.  So thats the question, does the protocol have any reliance on knowing
+the discrete log - is it a problem if someone can find different multipliers
+of different (unknown, uncomputable discrete log) parent keys.
+
+If it was a concern I guess you could require a proof of knowledge of
+discrete log.  ie as well as public key parent, multiplier the address must
+include ECDSA sig or Schnorr proof of knowledge (which both demonstrate
+knowledge of the discrete log of Q to base G.)
+
+So his defense could probably be more simply viewed as hash rather than MAC
+(same thing approximately) you provide the pre-image of the multiplier.  So
+provide P (public parent), x' (mutiplier pre-image).  And compute Q=xP where
+x=H(x',P).  You cant use just x=H(x') because I could choose random x',
+compute x=H(x') compute x^-1 and multiply Q to find P'=x^-1.Q=H(x')^-1.Q as
+before.  Because x includes P as well, I would have to simultaneously choose
+a P' such that Q=H(x',P').P' which requires a birthday attack on the hash
+(or MAC).
+
+Adam
+
+On Wed, Jun 19, 2013 at 10:39:04AM -0400, Alan Reiner wrote:
+>
+>On 06/19/2013 10:25 AM, Timo Hanke wrote:
+>> Since you mention to use this in conjunction with the payment protocol,
+>> note the following subtlety. Suppose the payer has to paid this address
+>> called "destination":
+>>>    Standard Address ~ Base58(0x00 || hash160(PubKeyParent * Multiplier[i]) ||
+>>> checksum)
+>> Also suppose the payee has spent the output, i.e. the pubkey
+>> corresponding to "destination", which is PubKeyParent * Multiplier[i],
+>> is publicly known. Then anybody can (in retrospect) create arbitrary
+>> many pairs {PublicKeyParent, Multiplier} (in particular different
+>> PublicKeyParent) that lead to the same "destination".
+>>
+>> Depending on what you have in mind that the transaction should "prove"
+>> regarding its actual receiver or regarding the receiver's PubKeyParent,
+>> this could be an unwanted feature (or it could be just fine). If it is
+>> unwanted then I suggest replacing
+>> PubKeyParent * Multiplier[i] by
+>> PubKeyParent * HMAC(Multiplier[i],PubKeyParent)
+>> which eliminates from the destination all ambiguity about PubKeyParent.
+>>
+>> This modification would not be directly compatible with BIP32 anymore
+>> (unfortunately), but seems to be better suited for use in conjunction
+>> with a payment protocol.
+>>
+>> Timo
+>
+>It's an interesting observation, but it looks like the most-obvious
+>attack vector is discrete log problem:  spoofing a relationship between
+>a target public key and one that you control.   For instance, if you see
+>{PubA, Mult} produces PubB and you have PubC already in your control
+>that you want to "prove" [maliciously] is related to PubB, then you have
+>to find the multiplier, M that solves:  M*PubC = PubB.  That's a
+>discrete logarithm problem.
+>
+>I'm not as familiar as you are, with the available operations on
+>elliptic curves, but it sounds like you can produce essentially-random
+>pairs of {PubX, Mult} pairs that give the same PubB, but you won't have
+>the private key associated with those public keys.  It's an interesting
+>point, and there may be a reason to be concerned about it.  Though, I
+>don't see it yet.
+>
+>-Alan
+>
+>------------------------------------------------------------------------------
+>This SF.net email is sponsored by Windows:
+>
+>Build for Windows Store.
+>
+>http://p.sf.net/sfu/windows-dev2dev
+>_______________________________________________
+>Bitcoin-development mailing list
+>Bitcoin-development at lists.sourceforge.net
+>https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
