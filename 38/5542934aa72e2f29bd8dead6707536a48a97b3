@@ -1,0 +1,93 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Wed, 19 Jun 2013 20:54:18 -0700
+Subject: [Bitcoin-development] Optional "wallet-linkable" address format
+ - Payment Protocol
+In-Reply-To: <51C234FA.5030909@gmail.com>
+References: <5AC3FA1D9B1F4FA0A2FE9A67333642B5@LAPTOPAIR>
+	<51C21035.9080407@gmail.com>
+	<53E406CF0D93498DAECAAE061555B7C9@LAPTOPAIR>
+	<51C234FA.5030909@gmail.com>
+Message-ID: <9600E3D1DDC24D1391C1E4433F71684D@LAPTOPAIR>
+
+> BIP 32 already specifies how to use the first three tree levels:  M/i/j/k, 
+> i~wallet, j~Internal/External, k~address.  The first level is actually 
+> type-1 derived, and thus we cannot create an arbitrary number of them 
+> without pre-computing them from the offline wallet.  So it's not "free" to 
+> create new wallets unless we redefine how the levels work.
+
+Initially I was thinking that you would share the public key and chain code 
+from [m/i'/0] so that you can receive payments at [m/i'/0/k], for a unique 
+value of 'i' for each receive chain.
+
+For the case of generating new receive chains from a *watch-only* wallet, as 
+you say, the options are to either keep a cache of PubKey/ChainCode for 
+unused [m/i'] or simply increment 'j' past 1 for an existing [m/i'/j] -- the 
+concept of 'internal/'external' and change addresses at Depth=2 don't make 
+sense for handing out receive chains to lots of people anyway, and certainly 
+BIP32 doesn't *require* 0 <= j <= 1.  So I think incrementing 'j' is the way 
+to go here...
+
+The "default" layout of BIP32 does NOT mean that implementations should not 
+check for transactions with j > 1. That would be a useless constraint and 
+obviously self-limiting. It might be helpful to add to the 'Compatibility' 
+section some minimum expectations about how a wallet should be 'probed' when 
+imported. If you don't feel completely free to monotonically increment 'j' 
+to your hearts content to achieve major usability benefits, then I say BIP32 
+could use some clarifying.
+
+BTW - the spec calls for addition not multiplication now, so we should call 
+it the 'Addend' not the 'Multiplier' :-)
+
+> Do these extra wallet chains behave as different wallets, or sub-wallets?
+
+They could, but they certainly don't need to!  A single-wallet 
+implementation treats this merely as an address-generation algorithm, and 
+does not expose any hierarchy to the user interface.  The user just 
+?magically? gets the ability to send multiple payments to their contacts 
+without immediately sacrificing their privacy 
+(http://www.wired.com/wiredenterprise/2013/06/bitcoin_retai/). Everything 
+goes into the same ledger, balance, coin pool, etc. Most of the code base is 
+unaware BIP32 is even in use.
+
+While it is *possible* to support separate ledgers, balances, etc. it is 
+certainly not required, and you get all the benefits either way.
+
+I think, since your proposal generates and receives payments into 
+BIP32-style addresses, we both need similar underlying wallet code. The only 
+difference is that you are passing the Kpar for [m/i'/0/k] and the *result* 
+of CKD'((Kpar, cpar), k), and instead I proposed passing Kpar and cpar, and 
+leaving 'k' out of it, letting the receive choose 'k'.
+
+> For instance, maybe there's a benefit to using the same parent pubkey 
+> across multiple services, as a form of identity.   If I don't want that, I 
+> use your method.  If I do want that, I use my method.
+
+I think it's a interesting idea using static public keys as a means for 
+persistent identity and hence security from MitM. If you want a shared 
+public key across multiple services we could just combine both ideas and get 
+all the benefits, by making the data structure { ParentPubKey, Addend, 
+ChainCode }:
+
+   ParentPubKey: Public key of m/i' -- 33 bytes
+   Addend: I[L]*G from CDK'(m/i', j) -- 33 bytes
+   ChainCode: I[R] from CDK'(m/i', j) -- 32 bytes
+
+All that remains secret is the ChainCode from [m/i'] -- and of course the 
+private keys.  The ParentPubKey is a common value across multiple services, 
+corresponding to user's identity rooted in [m/i'].  Each service gets their 
+own 'j'.  ParentPubKey + Addend gives you the PubKey of [m/i'/j].  With the 
+ChainCode, the receiver then can generate [m/i'/j/k] for monotonically 
+increasing 'k'. Again, from the user perspective all transactions under 
+[m/i'] can be presented in a single ledger, or not.
+
+Anyway, fundamentally my feedback is if you are designing for persistent 
+long-term relationships, you could build in a mechanism for generating 
+address chains so you don't need any further communication after the initial 
+exchange, and it need not complicate the wallet.
+
+Thanks,
+--Jeremy 
+
+
+
+
