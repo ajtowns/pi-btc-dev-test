@@ -1,0 +1,233 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 20 Jun 2013 09:10:05 +0200
+Subject: [Bitcoin-development] Missing fRelayTxes in version message
+In-Reply-To: <1371709237.57104.YahooMailNeo@web162701.mail.bf1.yahoo.com>
+References: <BLU404-EAS74077C5D43EACD319CCA3DA58D0@phx.gbl>
+	<CANEZrP0Pr=_L7CA4hdt9esVCHqf-EOjfDjnVrw8rFxL1OtUw7A@mail.gmail.com>
+	<1371709237.57104.YahooMailNeo@web162701.mail.bf1.yahoo.com>
+Message-ID: <CANEZrP1vqXdODJz8naqbVO0iTcJWOk+4aU4Y=_Epgp2bwh1hKA@mail.gmail.com>
+
+The protocol version was bumped when Bloom filtering was added so there's
+not much point bumping it again - you have to handle the old clients no
+matter what. Nobody brought this up as an issue when the BIP or code was
+first written and as you can see from main.cpp, it was done this way to be
+consistent with how other version fields are handled:
+
+        if (!vRecv.empty())
+            vRecv >> addrFrom >> nNonce;
+        if (!vRecv.empty())
+            vRecv >> pfrom->strSubVer;
+        if (!vRecv.empty())
+            vRecv >> pfrom->nStartingHeight;
+        if (!vRecv.empty())
+            vRecv >> pfrom->fRelayTxes; // set to true after we get the
+first filter* message
+
+The existence of the nStartingHeight field for instance depends on the
+message length and not anything else.
+
+Anyway, are you really asking for the protocol to be changed to work around
+an issue specific to how you wrote your parsing code? This is the first
+time anyone has suggested this minor detail is a problem. It doesn't
+present any issues for the C++ code or bitcoinj where message objects know
+their own length at parse time.
+
+
+
+On Thu, Jun 20, 2013 at 8:20 AM, Turkey Breast <turkeybreast at yahoo.com>wrote:
+
+> I never said that Bitcoin message field lengths should always be the same.
+> But before this change they certainly were constant per protocol version.
+> All I'm saying is that optional lengths shouldn't be used (a field exists
+> or not) and for every field change, the protocol version should be upgraded.
+>
+> Now that fRelayTxes is part of the protocol, the version number should be
+> upgraded to reflect this fact.
+>
+>   ------------------------------
+>  *From:* Mike Hearn <mike at plan99.net>
+> *To:* Paul Lyon <pmlyon at hotmail.ca>
+> *Cc:* Turkey Breast <turkeybreast at yahoo.com>; "
+> bitcoin-development at lists.sourceforge.net" <
+> bitcoin-development at lists.sourceforge.net>
+> *Sent:* Wednesday, June 19, 2013 3:20 PM
+>
+> *Subject:* Re: [Bitcoin-development] Missing fRelayTxes in version message
+>
+> If you want to criticise the Bitcoin protocol for sloppyness, the variable
+> length of some messages isn't where I'd start.
+>
+> Note that ping has the same issue, its length has changed over time to
+> include the nonce.
+>
+> If your parser can't handle that kind of thing, you need to fix it. The
+> protocol has always worked that way.
+>
+>
+>
+> On Wed, Jun 19, 2013 at 3:03 PM, Paul Lyon <pmlyon at hotmail.ca> wrote:
+>
+>  I?m also running into this exact same issue with my parser, now I
+> understand why the relay field behavior I was seeing doesn?t match the wiki.
+>
+> So to parse a version message, you can?t rely on the protocol version? You
+> have to know how long the payload is, and then parse the message
+> accordingly? I agree with Turkey Breast, this seems a bit sloppy to me.
+>
+> Paul
+>
+> P.S. I?ve never used a dev mailing list before and I want to get involved
+> with the Bitcoin dev community, so let me know if I?m horribly violating
+> any mailing list etiquette. ?
+>
+> *From:* Mike Hearn
+> *Sent:* ?Wednesday?, ?June? ?19?, ?2013 ?7?:?43? ?AM
+> *To:* Turkey Breast
+> *Cc:* bitcoin-development at lists.sourceforge.net
+>
+> Bitcoin-Qt on master does send it now although it doesn't affect anything,
+> but as old pre-filtering versions will continue to exist, you'll always
+> have to be able to deserialize version messages without it.
+>
+> Bitcoin version messages have always had variable length, look at how the
+> code is written in main.cpp. If you didn't experience issues until now all
+> it means is that no sufficiently old nodes were talking to yours.
+>
+> The standard does not say it should appear. Read it again - BIP 37 says
+> about the new version message field:
+> If false then broadcast transactions will not be announced until a
+> filter{load,add,clear} command is received. *If missing or true*, no
+> change in protocol behaviour occurs.
+>
+>
+> On Wed, Jun 19, 2013 at 12:33 PM, Turkey Breast <turkeybreast at yahoo.com>wrote:
+>
+> It's a problem if you work with iterators to deserialize the byte stream.
+> Even failing that, it's just sloppy programming. What happens in the future
+> when new fields are added to the version message? It's not a big deal to
+> say that this protocol version has X number of fields, that (higher)
+> protocol version message has X + N number of fields. Deterministic number
+> of fields per protocol version is sensical and how Bitcoin has been for a
+> long time.
+>
+> And yes, it was a problem for me that caused a lot of confusion why this
+> byte didn't exist in many version messages despite the standard saying it
+> should and the code in bitcoind indicating it should. Nowhere was this
+> written. It doesn't help other implementations to have an unclear behaviour
+> that depends on some magic from one implementation.
+>
+>   ------------------------------
+>  *From:* Mike Hearn <mike at plan99.net>
+> *To:* Turkey Breast <turkeybreast at yahoo.com>
+> *Cc:* "bitcoin-development at lists.sourceforge.net" <
+> bitcoin-development at lists.sourceforge.net>
+> *Sent:* Wednesday, June 19, 2013 11:39 AM
+>
+> *Subject:* Re: [Bitcoin-development] Missing fRelayTxes in version message
+>
+> It has to be optional because old clients don't send it, obviously.
+>
+> Why is this even an issue? There's no problem with variable length
+> messages in any codebase that I'm aware of. Is this solving some actual
+> problem?
+>
+>
+> On Wed, Jun 19, 2013 at 12:30 AM, Turkey Breast <turkeybreast at yahoo.com>wrote:
+>
+> That's me. I never said to make all messages fixed length. I said to make
+> a fixed number of fields per protocol. So given a protocol version number,
+> you know the number of fields in a message. This is not only easier for
+> parsing messages, but just good practice. I don't see why a 1 byte flag
+> needs to be optional anyway.
+>
+>   ------------------------------
+>  *From:* Mike Hearn <mike at plan99.net>
+> *To:* Turkey Breast <turkeybreast at yahoo.com>
+> *Cc:* Bitcoin Dev <bitcoin-development at lists.sourceforge.net>
+> *Sent:* Tuesday, June 18, 2013 9:48 PM
+> *Subject:* Re: [Bitcoin-development] Missing fRelayTxes in version message
+>
+> It's not a bug (although there was recently a change to make bitcoind/qt
+> always send this field anyway).
+>
+> I don't know where Amir is going with BIP 60. Version messages have always
+> been variable length. There's nothing inherent in the Bitcoin protocol that
+> says all messages are fixed length, indeed, tx messages are allowed to have
+> arbitrary data appended after them that gets relayed.
+>
+>
+> On Tue, Jun 18, 2013 at 7:45 PM, Turkey Breast <turkeybreast at yahoo.com>wrote:
+>
+> See this BIP. I'm not sure if this is a bug or what, but it would be good
+> if messages always had a fixed number of fields per protocol version.
+>
+> https://en.bitcoin.it/wiki/BIP_0060#Code_Updates
+>
+> This BIP details everything that needs to be done and proposes a protocol
+> upgrade.
+>
+>
+> ------------------------------------------------------------------------------
+> This SF.net <http://sf.net/> email is sponsored by Windows:
+>
+> Build for Windows Store.
+>
+> http://p.sf.net/sfu/windows-dev2dev
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+>
+>
+>
+>
+> ------------------------------------------------------------------------------
+> This SF.net email is sponsored by Windows:
+>
+> Build for Windows Store.
+>
+> http://p.sf.net/sfu/windows-dev2dev
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+>
+>
+>
+>
+> ------------------------------------------------------------------------------
+> This SF.net email is sponsored by Windows:
+>
+> Build for Windows Store.
+>
+> http://p.sf.net/sfu/windows-dev2dev
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+>
+>
+>
+>
+>
+> ------------------------------------------------------------------------------
+> This SF.net email is sponsored by Windows:
+>
+> Build for Windows Store.
+>
+> http://p.sf.net/sfu/windows-dev2dev
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130620/ace406cd/attachment.html>
