@@ -1,0 +1,52 @@
+From: bitcoin-list@bluematt.me (bitcoin-list at bluematt.me)
+Date: Thu, 27 Jun 2013 14:29:30 +0200
+Subject: [Bitcoin-development] [ANN] Micropayment Channel Implementation
+Message-ID: <44f8fd60-be4a-436d-a132-422b939d6de1@email.android.com>
+
+As of today, a full implementation of micropayment channels has been merged
+onto bitcoinj's master branch (to be released in the next version). It is
+designed to make it easy for users to create payment channel servers and
+clients based on the design at
+https://en.bitcoin.it/wiki/Contracts#Example_7:_Rapidly-adjusted_.28micro.29payments_to_a_pre-determined_party,
+by creating a simple TCP socket and exchanging protobufs to initialize and
+make payments.
+
+It supports various levels of abstractions, allowing users to drive the
+state machines which do basic channel init/verification themselves, allow
+bitcoinj to handle all the complexity of channel management/expiry/etc and
+simply exchange protobufs over whatever whatever connection they wish to
+make with the server, or let bitcoinj handle opening a TCP socket and do
+all the work. See
+https://code.google.com/p/bitcoinj/wiki/WorkingWithMicropayments for
+details on how to use the implementation in bitcoinj.
+
+A more full protocol description will be written up in the form of a BIP as
+the code matures a bit more (with the hope that other implementations can
+appear), but, generally:
+
+1. Client and server exchange version handshake, and client may
+optionally request that an existing channel be reopened (the channels last
+for 24 hours by default, so if the connection gets killed, reopening an
+existing channel is useful).
+2. The protocol described on the wiki is followed, exchanging
+(canonical!) signatures and transactions until a multisignature contract is
+established and broadcast which locks money into the channel, and a refund
+transaction is created and signed which allows the client to spend the
+entire multisignature transaction to wherever they want
+(SIGHASH_NONE|SIGHASH_ANYONECANPAY) after some lock time (by default, 24
+hours). Both client and server store a copy of the channel in their wallet
+so that if the app itself crashes the refund transaction can still be
+broadcast/the channel can still be resumed. At this point either the whole wallet should be backed up or the total value in payment channels at any
+given time should be kept reasonably low (because payment channels are
+designed to combine micropayments into confirmable payments, this shouldn't be an issue)
+3. The client increments payments by sending the server new signatures
+spending the multisig contract partially back to themselves and allowing
+the server to do what they want with the rest
+(SIGHASH_SINGLE|SIGHASH_ANYONECANPAY).
+4. When the client sends a CLOSE message or the channel approaches the
+refund transaction unlock time, the server adds any necessary fees to the
+latest payment transaction and broadcasts it, closing the channel, disconnecting the client if the connection is still open and removing the stored channel state from its wallet.
+
+See https://code.google.com/p/bitcoinj/source/browse/core/src/paymentchannel.proto for the protobuf/protocol description.
+
+
