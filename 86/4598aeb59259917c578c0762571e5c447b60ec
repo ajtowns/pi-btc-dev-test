@@ -1,0 +1,102 @@
+From: john.dillon892@googlemail.com (John Dillon)
+Date: Sun, 14 Jul 2013 22:12:00 +0000
+Subject: [Bitcoin-development] Protecting Bitcoin against network-wide DoS
+	attack
+Message-ID: <CAPaL=UVqD1RaguqvaUi-0KnabobvuJ27gF6vK5tTAxEGNO9Xww@mail.gmail.com>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+It's been pointed out recently how a fairly cheap attack on the Bitcoin network
+would be to take advantage of the fact that we limit the number of incoming
+connections, but don't require anything of those connections. This means an
+attacker can simply repeatedly query the the DNS seeds for new addresses and
+make enough incoming connections that those nodes can not accept further
+clients. nMaxConnections defaults to 125, and beyond that there is the limit on
+file descriptors, as well as possible limits by stateful firewalls. (how much
+memory/cpu does an incoming connection require?) The DNS seeds themselves crawl
+the network on your behalf, and let you direct the attack starting at the nodes
+new SPV clients are most likely to connect too.
+
+The cost to the attacker is minimal, 1 INV message per transaction and block,
+and some gossiped peer addresses.  Currently that should be on the order of 30
+bytes a second. The attacker can do even better by pretending to be an SPV
+client, thus reducing their incoming bandwidth consumption to nearly nothing,
+yet increasing resource usage on the node.
+
+Peter estimated you would need just 200 or so well distributed IP addresses to
+make it impossible to use an SPV client. In fact as far as I can tell for
+incoming connections we don't force incoming connections to be well
+distributed, so the attack could be done by simply one server with enough
+amount of bandwidth. Estimates of the total number of nodes out there on
+mainnet are in the tens of thousands, let's say 25,000 for arguments sake. 125
+connections to every one of those nodes would only cost the attacker 94MB/s of
+incoming bandwidth, easily attainable by a few cheap EC2 nodes, and on EC2
+incoming bandwidth is free. The SPV version of the attack would let the
+attacker spend as little as they wished.
+
+Obviously if we want to make it possible for SPV nodes to reliably connect to
+the network we need to give them a way to prove they have sacrificed some
+limited resource to allow nodes to distinguish legit users from attackers.
+Failing that, we need to make attacks sufficiently expensive to discourage
+bored script-kiddies, much the same way flooding the network with transactions
+is sufficiently expensive due to fees that such attacks are impractical.
+
+Now something to keep in mind is whatever we ask SPV nodes to sacrifice must
+not be reusable. For instance proof-of-stake *doesn't* work without consensus
+because an attacker can reuse the proof for multiple connections. Similarly IP
+addresses don't work, requring incoming connections to be "well distributed" in
+IP space isn't a bad idea, but it doesn't buy much DoS resistance. Fees paid by
+confirmed transactions do work, but only if something links the transaction to
+the specific connection.
+
+We also want whatever the nodes to sacrifice to be something not much more
+costly to the client than to the attacker. Bandwidth isn't reusable, but an
+attacker with EC2 or a botnet has vastly lower costs for bandwidth than a user
+with an Android wallet on a phone.
+
+
+For a non-SPV-mode client we can easily do anti-DoS by requiring the peer to do
+"useful work". As the incoming connections slots get used up, simply kick off
+the incoming peers who have relayed the least fee-paying transactions and valid
+blocks, keeping the peers who have relayed the most. We can continue to use the
+usual, randomized, logic for outgoing peers to attempt to preserve the
+randomized structure of the bitcoin network. Without an ongoing attack nodes
+making new connections are unaffected, and during an attack new connections are
+made somewhat easier by the increased numbers of incoming slots made available
+as the attackers connections timeout.
+
+Yes an attacker can simply relay some high-fee transactions to keep their nodes
+from being kicked off, but in that case are they really an attacker? I reject
+the argument that we are letting them de-randomize the structure of the network
+because as I've shown they can already do that with little expenditure.
+
+
+For SPV nodes again in the absense of an attack such anti-DoS code has no
+effect. When an attack is launched the SPV client can simply create some
+high-fee transactions with their own coins to get connection priority. SPV
+nodes already have serious privacy issues, so I don't see the creation of
+transactions as a big deal. Re-use is an issue, but nodes can take into account
+how long it takes for another nodes to advertise the transactions when dealing
+with SPV peers. Better systems can be implemented later, such as micropayment
+channels and coinbase probabalistic payments, that don't result in blockchain
+transactions just for the sake of anti-DoS.
+
+
+A demo of the attack against would be useful. Pieter Wuille's bitcoin-seeder
+code could probably be re-used as it already has the required functionality of
+making large numbers of connections. In fact, simply running multiple instances
+of it could do the trick.
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.11 (GNU/Linux)
+
+iQEcBAEBCAAGBQJR4yHgAAoJEEWCsU4mNhiPRvkH/3fl5brCe+1cBUoFtAnVHV+0
+dezNeXo+nAbDg8XCkF6cmFkDBSgTj8l2iy0N1pfCq1XDXmqfM5p+CtxIBuIwwURc
+KnpwNnRwoQ0JKYFonmaM0rQgOcXnRvyNq2DVL/b/fA6X3I5nignWNFDtzpvFhM+J
+IjhEVbu5S25c+O8LFlJV0ujjBgnR/8gJ0xV2fvdsaisAVHly1n9QWa1FEnMz7hp9
+wfXPBh8tnehKnsspyeAEq5Yc/Yyow97CdwOqPVknI0rhes0OWR8ORcJ2NkBZm/Pn
+rUFFMwAme/K1f3PqW1+EpM4gG/pJvg+xU5E5KdqgnjsQLoEGWtMcxEdAeCoBuNI=
+=jzfg
+-----END PGP SIGNATURE-----
+
+
