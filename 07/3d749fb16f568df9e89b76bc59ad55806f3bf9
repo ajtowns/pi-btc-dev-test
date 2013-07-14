@@ -1,0 +1,59 @@
+From: john.dillon892@googlemail.com (John Dillon)
+Date: Sun, 14 Jul 2013 19:05:26 +0000
+Subject: [Bitcoin-development] Reward for P2SH IsStandard() patch.
+Message-ID: <CAPaL=UW4zXui8Jh-qaFgmfhbzhRSHNyh7U5MSJo2bHoWmtoCkA@mail.gmail.com>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+As you all know keeping the size of the UTXO set small is critical, and more
+recently we've also had problems with distasteful data being added to the UTXO
+set. (http://garzikrants.blogspot.se/2013_04_01_archive.html) Gregory Maxwell
+has an excellent solution to the distasteful data problem in the form of P2SH^2
+(http://comments.gmane.org/gmane.comp.bitcoin.devel/1996) and Peter Todd
+pointed out how we can implement it with the existing P2SH form. We're also
+going to be implementing some kind of OP_RETURN <data> soon which handles the
+timestamping and similar use-cases, again without UTXO impact.
+
+Right now the only scriptPubKey form with any significant use is the
+checksighash. Bare pubkey gets used by the odd miner, and by Deepbit due to
+their ancient codebase. The former isn't an issue as the miner mines the txout
+themselves, and the latter shouldn't find updating to be a big deal.
+OP_CHECKMULTISIG is used by Peter Todd's timestamper, but that can be changed
+to OP_RETURN without difficulty. However all that will (hopefully!) soon change
+as hardware wallets and the payment protocol make hardware wallets worthwhile,
+and we should make sure these protocols take the extra step of using P2SH
+before we get locked into a bunch OP_CHECKMULTISIG implementations.
+
+We also have the problem that the IsStandard() code accepts up to 120 bytes of
+junk data as a pubkey, allowing injection of 240 bytes of *spendable* data into
+the UTXO set with bare OP_CHECKMULTISIG. This capability has to be stopped.
+
+Thus I'm offering a reward of 1BTC for whomever creates a patch to change
+IsStandard() to accept only P2SH and pubkeyhash in a raw scriptSig, allowing
+other forms only when used with P2SH. I'm offering a further 1BTC to whomever
+gets such a patch accepted into mainline. It's a pretty easy patch, so I'm
+asking that all core-developers (that includes you Peter) hold off for one week
+to give less experienced developers a crack at it. If for some reason you want
+to remain anonymous that is ok by me as well provided you assign copyright to
+me. I do expect unittests. Should be about half a day to a days work.
+
+Long-term we should be using P2SH with an inner OP_CHECKSIG for most addresses
+as it's a 1 byte savings. Change addresses can have this done first, although
+bitcoinj support will help so that satoshidice and similar sites can pay to
+P2SH change. As for multisig's P2SH overhead for a 1-of-2 and 2-of-2 and
+3-of-3, is 10%, 8.6% and 6.2% respectively, all pretty minor, especially if you
+assume the blocksize limit will be raised.
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.11 (GNU/Linux)
+
+iQEcBAEBCAAGBQJR4vX+AAoJEEWCsU4mNhiPg/EIAKWFaMsugbY4zZ+dpgnaTcUr
+D1ZnY5PogETVqcwuXdVdHe2zCUcBhejsBe8ic9vp8OnttXTxo8uXJp9xBuq9VYBN
+vXMyGKtxacLL5WS5ShAWnWS47xLf9wnKCJSGX0nqaETIQEUgqCMjTGspZNOpC9W0
+fKBIDi4cZbpXn1EQx45v9vplZhFg+vBQV/Ia2/5rjZLPFvdqZoSBruOVTB/X2SDU
+Hq36DQkRFblp/s3Ktv9c3yUQ8HocRIXD8jKRsE+uCNfEeI2b9oLpPp1cPsOvjveI
+McJnHod8EDzxwbm6abK2cxHWBpGmBa5AABsRmQfpJK+u7GDQoPqzfJ68M1otZjk=
+=uP4n
+-----END PGP SIGNATURE-----
+
+
