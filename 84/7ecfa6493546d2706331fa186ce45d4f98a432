@@ -1,0 +1,176 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Mon, 15 Jul 2013 22:08:12 +0200
+Subject: [Bitcoin-development] Introducing BitcoinKit.framework
+In-Reply-To: <3E7894A0-06F3-453D-87F8-975A244EBACF@include7.ch>
+References: <B87F1213-5BD8-43F5-9744-F69947561ED5@grabhive.com>
+	<CANEZrP2xh=m8yWLt-o2UrrUVfU+cUYBuMVxkVFF5mVMtWdRwOQ@mail.gmail.com>
+	<C1727B41-AF61-44FA-BE17-5FE4425FDEA8@grabhive.com>
+	<CANEZrP0_H9+prDSF92q8a4QzP=fzDM6cTDv0+KcfV9NF9thkmw@mail.gmail.com>
+	<3E7894A0-06F3-453D-87F8-975A244EBACF@include7.ch>
+Message-ID: <CANEZrP2jmWkDbpJEm0vd2CKF-prFNbz_ZeNJfDWtSCKb8k5ZXA@mail.gmail.com>
+
+You can cut down the JVM to be a few megabytes if you're aggressive about
+it. But for a desktop app I'm not sure it's really necessary these days. A
+few megabytes used to make a noticeable difference to success rates but
+bandwidth improved a lot since then.
+
+Portability to android is a given, it's already Java based. IOS is a non
+starter until apple is convinced to allow wallet apps into the App store,
+language is not the issue there.
+
+There is no point manually rewriting bitcoinj to c++ when j2c does such a
+great job already. You would want to at last start from what it generates
+even if you fork from there.
+On 15 Jul 2013 20:19, "Jonas Schnelli" <jonas.schnelli at include7.ch> wrote:
+
+> The embedded JVM is a way. But the binary will be huge.
+> And how about the portability (like iOS and Android)?
+>
+> If i would have "unlimited resources" and like to make a "perfect native
+> client" i would see two solutions:
+> a) add SPV features to bitcoind and go on with BitcoinKit.framework (maybe
+> first SPV features are only available through "API's" and not for bitcoind
+> as runnable binary)
+> b) rewrite bitcoinj in c++ (*auto-port the unit-tests* and try to rewrite
+> line by line to c++)
+>
+> also a mix of a) and b) is possible. Like extending bitcoind with the
+> SPVBlockstore, bloom filter, etc. from bitcoinj (rewritten in c++). The
+> wallet birthday must also be added somehow.
+>
+> both a) and b) (or the mix) is a lot of work and might take much longer as
+> Mike's JVM idea.
+> But it then might end up in a stable, portable and extendable pice of code.
+>
+> </jonas>
+>
+>
+>
+> Oracle provide an OSX JVM and will do so for the forseeable future, it's
+> also open source, so the community could carry on if they stopped. The
+> primary problem with the Oracle JVM is lack of retina support for Swing,
+> but if you'd write a Cocoa UI yourself then it doesn't matter of course as
+> Java won't handle any GUI stuff. Retina support for JavaFX2 (the
+> current-gen gui toolkit) is available in Java 8 so it's definitely being
+> actively developed, it's not abandoned or anything.
+>
+> So the question then becomes, which is better:
+>
+> a) Take bitcoinj completely out of the Java world via native compilation
+> or transpilation to C++
+> b) Embed the JVM and link the two worlds together?
+>
+> (b) is much less ambitious, especially if you're OK with writing a bit of
+> Java code to keep the interface thin. Basically the Java side calls into
+> your app when interesting user-visible things happen, like new transactions
+> appearing, then your GUI can call into the java side to send money. There
+> are auto-translators that make the glue work easy, like
+> https://code.google.com/p/javacpp/. You probably wouldn't want to expose
+> the entire bitcoinj API that way because it's very large, but the code
+> needed to bring up a wallet app is very small. I knocked one up this
+> weekend in about one evenings worth of coding, completed with nice
+> animations. The interfaces you'd need are basically some Objective-C++
+> methods that receive information from the Bitcoin side, like the balance
+> having changed, a list of transactions, etc, and then a callback into the
+> Java side to send money. If you look at the javacpp site you can see
+> example code for making calls both ways.
+>
+> If I were in your shoes, I'd go for (b) because it is the most well
+> trodden path and will let you achieve the best user visible results
+> quickly. The JVM can be bundled with your app and stripped down if you're
+> worried about download size.
+>
+> If it's unclear how the code would look, let me know and I'll try and
+> knock up a really simple prototype.
+>
+> There's also (a). I'm investigating transpilation for a few reasons, one
+> of which is to do with a private project. I'm working with the author of
+> j2c: https://code.google.com/a/eclipselabs.org/p/j2c/. It's a rather
+> sophisticated transpiler that converts Java to clean, readable C++11 that
+> looks much like code a human would write. It's complete enough to transpile
+> the entire standard Java class library, including all the GUI toolkits and
+> other things - so, pretty amazing piece of code. However it's incomplete
+> because where the Java code calls native methods (that would be provided by
+> the JVM) it just spits out stubs you're expected to fill out yourself, for
+> starting threads and so on. As there's no JVM it's just like using a C++
+> library that is missing a "portability layer".
+>
+> I'm working on this myself and don't really need much help at the moment,
+> I'm just making steady progress towards getting something up and running. I
+> can let you know once I reach some interesting milestones. The point of
+> this is that whilst you don't need access to most of the API to write a
+> wallet app, I'd like to make every kind of app easy from C++, not just GUI
+> wallets. Then the compile-to-C++ approach is much more appealing, even
+> though it's also more work.
+>
+>
+>
+>
+>
+> On Mon, Jul 15, 2013 at 4:39 PM, Wendell <w at grabhive.com> wrote:
+>
+>> Hi Mike,
+>>
+>> You are absolutely right about the synchronize time, it's one of our main
+>> frustration points right now and we clearly won't deliver the kind of user
+>> experience we want, without fixing this. Actually we were thinking of
+>> extending Jeff Garzik's picocoin as time permits, but the plan is far from
+>> concrete at the moment.
+>>
+>> What you say about trans-piling bitcoinj is _really_ appealing. We
+>> discounted Java simply because an OS X JVM is no longer guaranteed, but
+>> otherwise bitcoinj is ideal for our purposes. How can we assist or
+>> otherwise accelerate such an effort?
+>>
+>> -w
+>>
+>> On Jul 15, 2013, at 3:19 PM, Mike Hearn wrote:
+>>
+>> > That's great! I'm all for more wallets, especially user friendly UIs.
+>> >
+>> > However being based on bitcoind means it will take a very long time to
+>> synchronize for new users. We know a lot of users drop out. The best fix
+>> for this is SPV mode. Do you have any plans in this direction?
+>> >
+>> > So far, the only SPV mode implementation I know about is bitcoinj. I am
+>> experimenting with trans-piling bitcoinj to C++ to make it usable from
+>> Objective-C++ exactly with your use case in mind.
+>>
+>>
+>
+> ------------------------------------------------------------------------------
+> See everything from the browser to the database with AppDynamics
+> Get end-to-end visibility with application monitoring from AppDynamics
+> Isolate bottlenecks and diagnose root cause in seconds.
+> Start your free trial of AppDynamics Pro today!
+>
+> http://pubads.g.doubleclick.net/gampad/clk?id=48808831&iu=/4140/ostg.clktrk_______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+> ??????????????????????????????????????????????????
+> include7 AG
+> Jonas Schnelli
+> Mattengasse 27
+> CH-8005 Z?rich
+> Switzerland
+> Office: +41 44 500 16 70
+>
+> Mail: jonas.schnelli at include7.ch
+> Web: www.include7.ch
+> V-Card: www.include7.ch/js.vcf
+> ??????????????????????????????????????????????????
+>
+> ACHTUNG
+> Bitte senden sie uns keine sensitiven Daten in unverschl?sselten E-Mails.
+> Verwenden Sie hierzu folgenden Link:
+> https://include7.ch/contact/secureform
+>
+> ??????????????????????????????????????????????????
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130715/3c8e94e0/attachment.html>
