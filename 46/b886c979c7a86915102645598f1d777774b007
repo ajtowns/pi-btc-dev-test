@@ -1,0 +1,117 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Tue, 16 Jul 2013 17:09:19 +0200
+Subject: [Bitcoin-development] SPV bitcoind? (was: Introducing
+	BitcoinKit.framework)
+In-Reply-To: <8EE501AA-1601-4C28-A32E-80F17D219D3A@grabhive.com>
+References: <B87F1213-5BD8-43F5-9744-F69947561ED5@grabhive.com>
+	<CANEZrP2xh=m8yWLt-o2UrrUVfU+cUYBuMVxkVFF5mVMtWdRwOQ@mail.gmail.com>
+	<C1727B41-AF61-44FA-BE17-5FE4425FDEA8@grabhive.com>
+	<CANEZrP0_H9+prDSF92q8a4QzP=fzDM6cTDv0+KcfV9NF9thkmw@mail.gmail.com>
+	<3E7894A0-06F3-453D-87F8-975A244EBACF@include7.ch>
+	<CANEZrP2jmWkDbpJEm0vd2CKF-prFNbz_ZeNJfDWtSCKb8k5ZXA@mail.gmail.com>
+	<2BDA0943-22BB-4405-9AF0-86FB41FD04A6@include7.ch>
+	<CANEZrP0McSrVzwv=-qimPyX41EEDmyQdYW5QjPr_i+KWyJZSZw@mail.gmail.com>
+	<2F20A509-13A9-4C84-86D7-A15C21BACD53@include7.ch>
+	<CANEZrP2yQvmvwP_ZULdS2i+X6L9MeZ+DfidiuZPD2EHwLsN2MA@mail.gmail.com>
+	<2A1C412D-414E-4C41-8E20-F0D21F801328@grabhive.com>
+	<CANEZrP12V_5Ak0f91RsMziuqXysde102rGeSko=qPBjefy3AeA@mail.gmail.com>
+	<8EE501AA-1601-4C28-A32E-80F17D219D3A@grabhive.com>
+Message-ID: <CANEZrP0ZG+91Bm9odkNWYja52_MLTgDz6DSGkPzNJLGteDpF-w@mail.gmail.com>
+
+You'd want to create and get merged patches in the following order:
+
+1) Be able to store just block headers in the blkXXXX.dat files instead of
+full block contents. At this point you are still *downloading* full blocks,
+but they are not being stored. The contents are still sent to the wallet
+for extracting relevant transactions though (see SyncWithWallets).  You
+also need to disable listening and addr announcements to the P2P network at
+this point. You need to be able to re-org and do all the usual things
+without storing block contents. You also need to short-circuit the leveldbs
+so they aren't created or used. All that needs to be unit tested. You need
+to also rewrite the mempool logic so it throws out irrelevant transactions.
+The RPC interface needs to adjust itself so you can't try to start mining,
+query the utxo set, etc.
+
+At this point you have an SPV node, albeit one that still downloads the
+entire block chain. However total disk storage used will be much lower.
+Getting this written and reviewed is a big chunk of work but is the hardest
+part. Once it's done you can breath easy.
+
+2) Next step, use getheaders to catch up with the chain until the
+min(wallet birthdays) is reached. You can see in Satoshi's patch where he
+adds support for receiving "headers" messages. Because key times are
+recorded as dates and you don't know the dates of blocks in advance, you
+need to download headers until you see one that goes past the key birthday
+minus some slack period, then throw out the headers you downloaded and
+switch to downloading full blocks again from that point onwards.
+
+3) Next step, implement client side support for Bloom filtering. Switch
+from downloading full blocks to filteredblocks, verify the Merkle branches
+then apply them to the wallet. Watch out for accidental re-orderings of
+transactions here from block order (e.g. if you accidentally insert them
+into a std::map or other unordered collection it can lead to bugs). Come up
+with some way to decide on a FP rate. Probably you want a fairly high FP
+rate for desktop wallets.
+
+4) Next step (optional), implement monitoring of broadcast propagation for
+transactions that are received. SPV clients cannot verify unconfirmed
+transactions so you can either just give up entirely and accept any old
+garbage, or assume a non-MITMd internet connection and use network
+propagation as a rough proxy for "likely to be valid and mined upon".
+
+4) Optimize!
+
+How much you need to optimize really depends on a lot of things. I found
+that to be competitive with Electrum/blockchain.info I had to do a ton of
+optimizations including very aggressive checkpointing so new users don't
+have to download more than a month or twos worth of headers, as downloading
+all the headers was becoming a bottleneck. You'd need to download about
+16mb+ of data at the moment to grab all the headers and on a weakass mobile
+phone with a weak Dalvik VM and 3G internet this was way too much. I also
+had to spend some time profiling to ensure we weren't accidentally
+thrashing the UI due to too-fast updates, we weren't bottlenecking on
+updating last seen block data in the wallet, we weren't accidentally
+de/reserializing messages redundantly etc.
+
+After about 3-4 evenings of non-stop profiling and optimising I ended up
+with a relatively flat profile whilst doing initial catchup and chain sync.
+On a desktop I bet you can get away with much less optimisation because
+your CPUs, network and disk tend to be much stronger.
+
+
+
+On Tue, Jul 16, 2013 at 4:16 PM, Wendell <w at grabhive.com> wrote:
+
+> Hello everyone,
+>
+> In the previous thread, I expressed interest in seeing an SPV bitcoind,
+> further stating that I would fund such work. Mike Hearn followed up with
+> some of Satoshi's old code for this, which is now quite broken. The offer
+> and interest on my side still stand, as more diversity in SPV options seems
+> like the right way to go.
+>
+> Time-permitting, I would really appreciate feedback from knowledgable
+> parties about the possible approaches to an SPV bitcoind. We at Hive
+> ideally want to see something that could one be merge into master, rather
+> than a fork.
+>
+> -wendell
+>
+> grabhive.com | twitter.com/grabhive
+>
+>
+>
+> ------------------------------------------------------------------------------
+> See everything from the browser to the database with AppDynamics
+> Get end-to-end visibility with application monitoring from AppDynamics
+> Isolate bottlenecks and diagnose root cause in seconds.
+> Start your free trial of AppDynamics Pro today!
+> http://pubads.g.doubleclick.net/gampad/clk?id=48808831&iu=/4140/ostg.clktrk
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130716/0e2c8341/attachment.html>
