@@ -1,0 +1,377 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Tue, 16 Jul 2013 12:59:56 +0200
+Subject: [Bitcoin-development] Introducing BitcoinKit.framework
+In-Reply-To: <2A1C412D-414E-4C41-8E20-F0D21F801328@grabhive.com>
+References: <B87F1213-5BD8-43F5-9744-F69947561ED5@grabhive.com>
+	<CANEZrP2xh=m8yWLt-o2UrrUVfU+cUYBuMVxkVFF5mVMtWdRwOQ@mail.gmail.com>
+	<C1727B41-AF61-44FA-BE17-5FE4425FDEA8@grabhive.com>
+	<CANEZrP0_H9+prDSF92q8a4QzP=fzDM6cTDv0+KcfV9NF9thkmw@mail.gmail.com>
+	<3E7894A0-06F3-453D-87F8-975A244EBACF@include7.ch>
+	<CANEZrP2jmWkDbpJEm0vd2CKF-prFNbz_ZeNJfDWtSCKb8k5ZXA@mail.gmail.com>
+	<2BDA0943-22BB-4405-9AF0-86FB41FD04A6@include7.ch>
+	<CANEZrP0McSrVzwv=-qimPyX41EEDmyQdYW5QjPr_i+KWyJZSZw@mail.gmail.com>
+	<2F20A509-13A9-4C84-86D7-A15C21BACD53@include7.ch>
+	<CANEZrP2yQvmvwP_ZULdS2i+X6L9MeZ+DfidiuZPD2EHwLsN2MA@mail.gmail.com>
+	<2A1C412D-414E-4C41-8E20-F0D21F801328@grabhive.com>
+Message-ID: <CANEZrP12V_5Ak0f91RsMziuqXysde102rGeSko=qPBjefy3AeA@mail.gmail.com>
+
+I think that's a great approach. Here is the patch Satoshi sent me back in
+2010. All the code has changed since but it can be a source of inspiration.
+
+>From Satoshi:
+
+*The simplified payment verification in the paper imagined you would
+receive transactions directly, as with sending to IP address which nobody
+uses, or a node would index all transactions by public key and you could
+download them like downloading mail from a mail server.
+
+Instead, I think client-only nodes should receive full blocks so they can
+scan them for their own transactions.  They don't need to store them or
+index them.  For the initial download, they only need to download headers,
+since there couldn't be any payments before the first time the program was
+run (a header download command was added in 0.3.18).  From then on, they
+download full blocks (but only store the headers).
+
+Code for client-only mode is mostly implemented.  There's a feature branch
+on github with it, also I'm attaching the patch to this message.
+
+Here's some more about it:
+
+"Here's my client-mode implementation so far.  Client-only mode only
+records block headers and doesn't use the tx index.  It can't generate, but
+it can still send and receive transactions.  It's not fully finished for
+use by end-users, but it doesn't matter because it's a complete no-op if
+fClient is not enabled.  At this point it's mainly documentation showing
+the cut-lines for client-only re-implementers.
+
+With fClient=true, I've only tested the header-only initial download.
+
+A little background.  CBlockIndex contains all the information of the block
+header, so to operate with headers only, I just maintain the CBlockIndex
+structure as usual.  The nFile/nBlockPos are null, since the full block is
+not recorded on disk.
+
+The code to gracefully switch between client-mode on/off without deleting
+blk*.dat in between is not implemented yet.  It would mostly be a matter of
+having non-client LoadBlockIndex ignore block index entries with null block
+pos.  That would make it re-download those as full blocks.  Switching back
+to client-mode is no problem, it doesn't mind if the full blocks are there.
+
+If the initial block download becomes too long, we'll want client mode as
+an option so new users can get running quickly.  With graceful switch-off
+of client mode, they can later turn off client mode and have it download
+the full blocks if they want to start generating.  They should rather just
+use a getwork miner to join a pool instead.
+
+Client-only re-implementations would not need to implement EvalScript at
+all, or at most just implement the five ops used by the standard
+transaction templates."
+*
+
+
+
+
+diff -u old\db.cpp new\db.cpp
+--- old\db.cpp  Sat Dec 18 18:35:59 2010
++++ new\db.cpp  Sun Dec 19 20:53:59 2010
+@@ -464,29 +464,32 @@
+     ReadBestInvalidWork(bnBestInvalidWork);
+
+     // Verify blocks in the best chain
+-    CBlockIndex* pindexFork = NULL;
+-    for (CBlockIndex* pindex = pindexBest; pindex && pindex->pprev; pindex
+= pindex->pprev)
++    if (!fClient)
+     {
+-        if (pindex->nHeight < nBestHeight-2500 &&
+!mapArgs.count("-checkblocks"))
+-            break;
+-        CBlock block;
+-        if (!block.ReadFromDisk(pindex))
+-            return error("LoadBlockIndex() : block.ReadFromDisk failed");
+-        if (!block.CheckBlock())
++        CBlockIndex* pindexFork = NULL;
++        for (CBlockIndex* pindex = pindexBest; pindex && pindex->pprev;
+pindex = pindex->pprev)
+         {
+-            printf("LoadBlockIndex() : *** found bad block at %d,
+hash=%s\n", pindex->nHeight, pindex->GetBlockHash().ToString().c_str());
+-            pindexFork = pindex->pprev;
++            if (pindex->nHeight < nBestHeight-2500 &&
+!mapArgs.count("-checkblocks"))
++                break;
++            CBlock block;
++            if (!block.ReadFromDisk(pindex))
++                return error("LoadBlockIndex() : block.ReadFromDisk
+failed");
++            if (!block.CheckBlock())
++            {
++                printf("LoadBlockIndex() : *** found bad block at %d,
+hash=%s\n", pindex->nHeight, pindex->GetBlockHash().ToString().c_str());
++                pindexFork = pindex->pprev;
++            }
++        }
++        if (pindexFork)
++        {
++            // Reorg back to the fork
++            printf("LoadBlockIndex() : *** moving best chain pointer back
+to block %d\n", pindexFork->nHeight);
++            CBlock block;
++            if (!block.ReadFromDisk(pindexFork))
++                return error("LoadBlockIndex() : block.ReadFromDisk
+failed");
++            CTxDB txdb;
++            block.SetBestChain(txdb, pindexFork);
+         }
+-    }
+-    if (pindexFork)
+-    {
+-        // Reorg back to the fork
+-        printf("LoadBlockIndex() : *** moving best chain pointer back to
+block %d\n", pindexFork->nHeight);
+-        CBlock block;
+-        if (!block.ReadFromDisk(pindexFork))
+-            return error("LoadBlockIndex() : block.ReadFromDisk failed");
+-        CTxDB txdb;
+-        block.SetBestChain(txdb, pindexFork);
+     }
+
+     return true;
+diff -u old\main.cpp new\main.cpp
+--- old\main.cpp        Sat Dec 18 18:35:59 2010
++++ new\main.cpp        Sun Dec 19 20:53:59 2010
+@@ -637,6 +637,9 @@
+     if (!IsStandard())
+         return error("AcceptToMemoryPool() : nonstandard transaction
+type");
+
++    if (fClient)
++        return true;
++
+     // Do we already have it?
+     uint256 hash = GetHash();
+     CRITICAL_BLOCK(cs_mapTransactions)
+@@ -1308,23 +1311,26 @@
+     if (!CheckBlock())
+         return false;
+
+-    //// issue here: it doesn't know the version
+-    unsigned int nTxPos = pindex->nBlockPos + ::GetSerializeSize(CBlock(),
+SER_DISK) - 1 + GetSizeOfCompactSize(vtx.size());
+-
+-    map<uint256, CTxIndex> mapUnused;
+-    int64 nFees = 0;
+-    foreach(CTransaction& tx, vtx)
++    if (!fClient)
+     {
+-        CDiskTxPos posThisTx(pindex->nFile, pindex->nBlockPos, nTxPos);
+-        nTxPos += ::GetSerializeSize(tx, SER_DISK);
++        //// issue here: it doesn't know the version
++        unsigned int nTxPos = pindex->nBlockPos +
+::GetSerializeSize(CBlock(), SER_DISK) - 1 + GetSizeOfCompactSize(vtx.size(
+));
++
++        map<uint256, CTxIndex> mapUnused;
++        int64 nFees = 0;
++        foreach(CTransaction& tx, vtx)
++        {
++            CDiskTxPos posThisTx(pindex->nFile, pindex->nBlockPos, nTxPos);
++            nTxPos += ::GetSerializeSize(tx, SER_DISK);
+
+-        if (!tx.ConnectInputs(txdb, mapUnused, posThisTx, pindex, nFees,
+true, false))
++            if (!tx.ConnectInputs(txdb, mapUnused, posThisTx, pindex,
+nFees, true, false))
++                return false;
++        }
++
++        if (vtx[0].GetValueOut() > GetBlockValue(pindex->nHeight, nFees))
+             return false;
+     }
+
+-    if (vtx[0].GetValueOut() > GetBlockValue(pindex->nHeight, nFees))
+-        return false;
+-
+     // Update block index on disk without changing it in memory.
+     // The memory index structure will be changed after the db commits.
+     if (pindex->pprev)
+@@ -1378,7 +1384,7 @@
+     foreach(CBlockIndex* pindex, vDisconnect)
+     {
+         CBlock block;
+-        if (!block.ReadFromDisk(pindex))
++        if (!block.ReadFromDisk(pindex, !fClient))
+             return error("Reorganize() : ReadFromDisk for disconnect
+failed");
+         if (!block.DisconnectBlock(txdb, pindex))
+             return error("Reorganize() : DisconnectBlock failed");
+@@ -1395,7 +1401,7 @@
+     {
+         CBlockIndex* pindex = vConnect[i];
+         CBlock block;
+-        if (!block.ReadFromDisk(pindex))
++        if (!block.ReadFromDisk(pindex, !fClient))
+             return error("Reorganize() : ReadFromDisk for connect failed");
+         if (!block.ConnectBlock(txdb, pindex))
+         {
+@@ -1526,7 +1532,7 @@
+
+     txdb.Close();
+
+-    if (pindexNew == pindexBest)
++    if (!fClient && pindexNew == pindexBest)
+     {
+         // Notify UI to display prev block's coinbase if it was ours
+         static uint256 hashPrevBestCoinBase;
+@@ -1547,10 +1553,6 @@
+     // These are checks that are independent of context
+     // that can be verified before saving an orphan block.
+
+-    // Size limits
+-    if (vtx.empty() || vtx.size() > MAX_BLOCK_SIZE ||
+::GetSerializeSize(*this, SER_NETWORK) > MAX_BLOCK_SIZE)
+-        return error("CheckBlock() : size limits failed");
+-
+     // Check proof of work matches claimed amount
+     if (!CheckProofOfWork(GetHash(), nBits))
+         return error("CheckBlock() : proof of work failed");
+@@ -1559,6 +1561,13 @@
+     if (GetBlockTime() > GetAdjustedTime() + 2 * 60 * 60)
+         return error("CheckBlock() : block timestamp too far in the
+future");
+
++    if (fClient && vtx.empty())
++        return true;
++
++    // Size limits
++    if (vtx.empty() || vtx.size() > MAX_BLOCK_SIZE ||
+::GetSerializeSize(*this, SER_NETWORK) > MAX_BLOCK_SIZE)
++        return error("CheckBlock() : size limits failed");
++
+     // First transaction must be coinbase, the rest must not be
+     if (vtx.empty() || !vtx[0].IsCoinBase())
+         return error("CheckBlock() : first tx is not coinbase");
+@@ -1623,13 +1632,14 @@
+         return error("AcceptBlock() : out of disk space");
+     unsigned int nFile = -1;
+     unsigned int nBlockPos = 0;
+-    if (!WriteToDisk(nFile, nBlockPos))
+-        return error("AcceptBlock() : WriteToDisk failed");
++    if (!fClient)
++        if (!WriteToDisk(nFile, nBlockPos))
++            return error("AcceptBlock() : WriteToDisk failed");
+     if (!AddToBlockIndex(nFile, nBlockPos))
+         return error("AcceptBlock() : AddToBlockIndex failed");
+
+     // Relay inventory, but don't relay old inventory during initial block
+download
+-    if (hashBestChain == hash)
++    if (!fClient && hashBestChain == hash)
+         CRITICAL_BLOCK(cs_vNodes)
+             foreach(CNode* pnode, vNodes)
+                 if (nBestHeight > (pnode->nStartingHeight != -1 ?
+pnode->nStartingHeight - 2000 : 55000))
+@@ -2405,6 +2415,8 @@
+         {
+             if (fShutdown)
+                 return true;
++            if (fClient && inv.type == MSG_TX)
++                continue;
+             pfrom->AddInventoryKnown(inv);
+
+             bool fAlreadyHave = AlreadyHave(txdb, inv);
+@@ -2441,6 +2453,9 @@
+
+             if (inv.type == MSG_BLOCK)
+             {
++                if (fClient)
++                    return true;
++
+                 // Send block from disk
+                 map<uint256, CBlockIndex*>::iterator mi =
+mapBlockIndex.find(inv.hash);
+                 if (mi != mapBlockIndex.end())
+@@ -2486,6 +2501,8 @@
+
+     else if (strCommand == "getblocks")
+     {
++        if (fClient)
++            return true;
+         CBlockLocator locator;
+         uint256 hashStop;
+         vRecv >> locator >> hashStop;
+@@ -2556,6 +2573,8 @@
+
+     else if (strCommand == "tx")
+     {
++        if (fClient)
++            return true;
+         vector<uint256> vWorkQueue;
+         CDataStream vMsg(vRecv);
+         CTransaction tx;
+@@ -2620,6 +2639,33 @@
+
+         if (ProcessBlock(pfrom, &block))
+             mapAlreadyAskedFor.erase(inv);
++    }
++
++
++    else if (strCommand == "headers")
++    {
++        if (!fClient)
++            return true;
++        vector<CBlock> vHeaders;
++        vRecv >> vHeaders;
++
++        uint256 hashBestBefore = hashBestChain;
++        foreach(CBlock& block, vHeaders)
++        {
++            block.vtx.clear();
++
++            printf("received header %s\n", block.GetHash().ToString().
+substr(0,20).c_str());
++
++            CInv inv(MSG_BLOCK, block.GetHash());
++            pfrom->AddInventoryKnown(inv);
++
++            if (ProcessBlock(pfrom, &block))
++                mapAlreadyAskedFor.erase(inv);
++        }
++
++        // Request next batch
++        if (hashBestChain != hashBestBefore)
++            pfrom->PushGetBlocks(pindexBest, uint256(0));
+     }
+
+
+On Tue, Jul 16, 2013 at 12:17 PM, Wendell <w at grabhive.com> wrote:
+
+> I for one would be interested in taking a look at that.
+>
+> In San Jose I was asking around about the possibility of hiring someone to
+> complete such a patch. Pieter Wuille introduced me to Eric Lombrozo, who
+> expressed interest, but has since gotten quite busy. So we haven't arrived
+> at a detailed estimate of what it would involve.
+>
+> Maybe it would be better to start a completely new thread for this topic,
+> but I would very much be interested in an open dissection of what adding
+> SPV support to bitcoind would take. I am willing to fund or (ideally)
+> co-fund this endeavor, if I can ever get my head around it. I'm super
+> interested in all of these possibilities (including micro-stripped-VMs and
+> transpilation), but would simply like to encourage the proliferation of
+> _options_ whenever possible.
+>
+> -wendell
+>
+> grabhive.com | twitter.com/grabhive
+>
+> On Jul 16, 2013, at 11:51 AM, Mike Hearn wrote:
+>
+> > If you wanted to implement SPV mode in bitcoind, Gavin or I could send
+> you Satoshi's old patch although of course it is no longer usable. It would
+> indicate the basic cut lines though.
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130716/cb9235b2/attachment.html>
