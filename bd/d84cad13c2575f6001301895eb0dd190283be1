@@ -1,0 +1,74 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Tue, 16 Jul 2013 11:21:40 +0200
+Subject: [Bitcoin-development] Introducing BitcoinKit.framework
+In-Reply-To: <2BDA0943-22BB-4405-9AF0-86FB41FD04A6@include7.ch>
+References: <B87F1213-5BD8-43F5-9744-F69947561ED5@grabhive.com>
+	<CANEZrP2xh=m8yWLt-o2UrrUVfU+cUYBuMVxkVFF5mVMtWdRwOQ@mail.gmail.com>
+	<C1727B41-AF61-44FA-BE17-5FE4425FDEA8@grabhive.com>
+	<CANEZrP0_H9+prDSF92q8a4QzP=fzDM6cTDv0+KcfV9NF9thkmw@mail.gmail.com>
+	<3E7894A0-06F3-453D-87F8-975A244EBACF@include7.ch>
+	<CANEZrP2jmWkDbpJEm0vd2CKF-prFNbz_ZeNJfDWtSCKb8k5ZXA@mail.gmail.com>
+	<2BDA0943-22BB-4405-9AF0-86FB41FD04A6@include7.ch>
+Message-ID: <CANEZrP0McSrVzwv=-qimPyX41EEDmyQdYW5QjPr_i+KWyJZSZw@mail.gmail.com>
+
+> Clear. Your right. C++ would give us more flexibility (other platforms)
+> and also android compatibility (through NDK).
+>
+
+I'm a bit confused I'm afraid. bitcoinj already runs SPV wallets on Android
+on top of Dalvik. In fact that's what it's designed for. The NDK is not
+necessary to work with Bitcoin at any point.
+
+
+> That's a great idea.
+> Let me look into the quality of j2c's output.
+>
+
+There's an example of what it looks like here:
+
+https://code.google.com/a/eclipselabs.org/p/j2c/wiki/Examples
+
+If you're serious about playing with j2c let me know. It's an amazing piece
+of work BUT it was written for fun, and as such isn't really documented at
+all. It took me a little while to figure out how to make it work properly.
+I'm now fixing bugs in it and making various improvements along with
+filling out the native stubs (a.k.a. portability layer). If you want to
+catch up to where I'm at, I can send you some notes because otherwise you
+might waste a lot of time on blind alleys.
+
+The main things be aware of so far are:
+
+   - Lots of explicit null pointer checks are generated. The reason is that
+   the output is meant to be entirely portable, so Jacek doesn't want to rely
+   on platform specific stuff like signals or SEH. Simplest solution is just
+   to disable npc() generation entirely because normal C++ libraries just
+   segfault if a null pointer gets in the wrong place, they don't throw
+   exceptions. Losing the Java behaviour would not be a downgrade for people
+   used to C++.
+
+   - Array accesses don't seem to be properly bounds-checked. That's a part
+   of the Java security model - bitcoinj is written on the assumption that
+   buffer and heap overflows aren't possible because they're caught by the
+   runtime. If those checks go missing then it'd likely become possible to
+   hack your program by exploiting buffer overflows. So that needs to be fixed.
+
+   - Generated code doesn't use the STL of course, it can't because the
+   Java library has more features than the STL. However as the way j2c works
+   is you transpile your code alongside a copy of the (open source) Java class
+   library, you can go in and modify the generated code for java::lang::String
+   or java::util::List and so on to add helper methods for converting to
+   various other forms. On Linux you'd have implicit c'tors to go back and
+   forth between std::string, on MacOS X you'd have conversions for NSString,
+   you could add code for QStrings or raw C strings too. Once the code has
+   been generated you can extend or patch it to make the API more convenient.
+
+   - Obviously, the resulting code requires the Boehm GC because there are
+   no explicit delete calls anywhere. This is a safety feature though, it
+   avoids use-after-free and double-free bugs that can create security holes.
+
+   - The code generator doesn't do dependency tracing, so you end up with
+   generated code that isn't used anywhere. It's up to the linker to do a dead
+   code elimination pass. Otherwise the resulting binaries can be huge.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130716/1a743665/attachment.html>
