@@ -1,0 +1,147 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 17 Jul 2013 06:58:53 -0400
+Subject: [Bitcoin-development] SPV bitcoind? (was: Introducing
+ BitcoinKit.framework)
+In-Reply-To: <8EE501AA-1601-4C28-A32E-80F17D219D3A@grabhive.com>
+References: <CANEZrP0_H9+prDSF92q8a4QzP=fzDM6cTDv0+KcfV9NF9thkmw@mail.gmail.com>
+	<3E7894A0-06F3-453D-87F8-975A244EBACF@include7.ch>
+	<CANEZrP2jmWkDbpJEm0vd2CKF-prFNbz_ZeNJfDWtSCKb8k5ZXA@mail.gmail.com>
+	<2BDA0943-22BB-4405-9AF0-86FB41FD04A6@include7.ch>
+	<CANEZrP0McSrVzwv=-qimPyX41EEDmyQdYW5QjPr_i+KWyJZSZw@mail.gmail.com>
+	<2F20A509-13A9-4C84-86D7-A15C21BACD53@include7.ch>
+	<CANEZrP2yQvmvwP_ZULdS2i+X6L9MeZ+DfidiuZPD2EHwLsN2MA@mail.gmail.com>
+	<2A1C412D-414E-4C41-8E20-F0D21F801328@grabhive.com>
+	<CANEZrP12V_5Ak0f91RsMziuqXysde102rGeSko=qPBjefy3AeA@mail.gmail.com>
+	<8EE501AA-1601-4C28-A32E-80F17D219D3A@grabhive.com>
+Message-ID: <20130717105853.GA10083@savin>
+
+On Tue, Jul 16, 2013 at 04:16:23PM +0200, Wendell wrote:
+> Hello everyone,
+> 
+> In the previous thread, I expressed interest in seeing an SPV bitcoind, further stating that I would fund such work. Mike Hearn followed up with some of Satoshi's old code for this, which is now quite broken. The offer and interest on my side still stand, as more diversity in SPV options seems like the right way to go.
+> 
+> Time-permitting, I would really appreciate feedback from knowledgable parties about the possible approaches to an SPV bitcoind. We at Hive ideally want to see something that could one be merge into master, rather than a fork.
+
+Keep in mind that SPV mode is newer than many realize: bloom filters are
+a 0.8 feature, itself released only last Febuary. As John Dillon posted
+earlier this week in "Protecting Bitcoin against network-wide DoS
+attack" the Bitcoin codebase will have to implement much better anti-DoS
+attack defences soon, and in a decentralized system there aren't any
+options other than requiring peers to either do work (useful or not) or
+sacrifice something of value. SPV peers can't do useful work, leaving
+only sacrifice - to what extent and how much is unknown. In addition SPV
+nodes have serious privacy issues because their peers know that any
+transaction sent to them by the SPV node is guaranteed to be from the
+node rather than relayed; bloom filters are only really helpful with
+payment protocols that don't exist yet and don't apply to merchants.
+Then you have MITM problems, vulnerability to fake blocks etc.
+
+It'll be awhile before we know how serious these issues are in practice,
+and we're likely to find new issues we didn't think of too. In any case
+Bitcoin is far better off if we make it easy to run a full node,
+donating whatever resources you can. Fortunately there's a whole
+continuum between SPV and full nodes.
+
+The way you do this is by maintaining partial UTXO sets. The trick is
+that if you have verified every block in some range i to j, every time
+you see a txout created by a transaction, and not subsequently spent,
+you can be sure that at height j the txout existed. If height j is the
+current block, you can be sure the txout exists provided that the chain
+itself is valid. Any transaction that only spends txouts in this partial
+set is a transaction you can fully verify and safely relay; for other
+transactions you just don't know and have to wait until you see them in
+a block.
+
+So what's useful about that? Basically it means your node starts with
+the same security level, and usefulness to the network, as a SPV node.
+But over time you keep downloading blocks as they are created, and with
+whatever bandwidth you have left (out of some user-configurable
+allocation) you download additional blocks going further and further
+back in time. Gradually your UTXO set becomes more complete, and over
+time you can verify a higher and higher % of all valid transactions.
+Eventually your node becomes a full node, but in the meantime it was
+still useful for the user, and still contributed to the network by
+relaying blocks and an increasingly large subset of all transactions.
+(optionally you can store a subset of the chain history too for other
+nodes to bootstrap from) You've also got better security because you
+*are* validating blocks, starting off incompletely, and increasingly
+completely until your finally validating fully. Privacy is improved, for
+both you and others, by mixing your transactions with others and adding
+to the overall anonymity set.
+
+In the future we'll have miners commit a hash of the UTXO set, and that
+gives us even more options to, for instance, have relayed transactions
+include proof that their inputs were valid, allowing all nodes to relay
+them safely.
+
+
+As for specifics, you need to maintain a UTXO set, and in addition a set
+of spent txouts (the STXO set) for which you haven't seen the
+transaction that created the txout. As download newer blocks you update
+the UTXO set; as you download older blocks you update the UTXO set and
+STXO set.
+
+Nodes now advertise this new variable to their peers:
+
+nOldestBlock - The oldest block that we've validated. (and all
+subsequent blocks)
+
+We'll also want the ability to advertise what sub-ranges of the
+blockchain data we have on hand:
+
+listArchivedBlockRanges - lists of (begin, end pairs)
+
+Nodes should drop all but the largest n pairs, say 5 or something. The
+index -1 is reserved to indicate the last block to make it easy to
+advertise that you have every block starting at some height to the most
+recent. (reserving -n with n as the last block might be a better choice
+to show intent, but still allow for specific proofs when we get node
+identities)
+
+We probably want to define a NODE_PARTIAL service bit or something; I'll
+have to re-read Pieter Wuille's proposal and think about it. Nodes
+should NOT advertize NODE_NETWORK unless they have the full chain and
+have verified it.
+
+Nodes with partial peers should only relay transactions to those peers
+if the transactions spend inputs the peers know about - remember how
+even an SPV node has that information if it's not spending unconfirmed
+inputs it didn't create. Nodes will have to update their peers
+periodically as nOldestBlock changes. That said it may also be
+worthwhile to simply relay all transactions in some cases too - a
+reasonable way to approach this might be to set a bloom filter for tx's
+that you *definitely* want, and if you are interested in everything,
+just set the filter to all 1's. If someone comes up with a reasonable
+micropayment or proof-of-work system even relaying txs that you haven't
+validated is fine - the proof-of-work and prioritization will prevent
+DoS attacks just fine.
+
+Remember that if you're running a partial node, it can get new blocks
+from any partial node, and it can retrieve historic blockchain data from
+any partial node that has archived the sequence of blocks you need next.
+On a large scale this is similar to how in BitTorrent you can serve data
+to your peers the moment you get it - a significant scalability
+improvement for the network as a whole. Even if a large % of the network
+was partial nodes running for just a few hours a day the whole system
+would work fine due to how partial nodes can serve each other the data
+they need.
+
+On startup you can act as a SPV node temporarily, grabbing asking for
+filtered blocks matching your wallet, and then go back and get the full
+blocks, or just download the full blocks right away. That's a tradeoff
+on how long the node has been off.
+
+Anyway, it's a bit more code compared to pure-SPV, but it results in a
+much more scalable Bitcoin, and if you can spare the modest bandwidth
+requirements to keep up with the blockchain it'll result in much better
+robustness against DoS attacks for you and Bitcoin in general.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130717/a73ba03e/attachment.sig>
