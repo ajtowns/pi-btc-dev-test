@@ -1,0 +1,59 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 18 Jul 2013 09:43:47 -0400
+Subject: [Bitcoin-development] Anti DoS for tx replacement
+In-Reply-To: <CAJHLa0M+LNuEa6j3RN-e1JLA2Q35-mjCo+AhOSJdoxBA6Vm1ow@mail.gmail.com>
+References: <CA+CODZEQX_xiaJE7WtFZC2qfVfDqZAgg-ydU5Q73O-QTkXJpPw@mail.gmail.com>
+	<20130718111353.GA11385@savin>
+	<CAJHLa0M+LNuEa6j3RN-e1JLA2Q35-mjCo+AhOSJdoxBA6Vm1ow@mail.gmail.com>
+Message-ID: <20130718134347.GB28234@petertodd.org>
+
+On Thu, Jul 18, 2013 at 08:53:55AM -0400, Jeff Garzik wrote:
+> On Thu, Jul 18, 2013 at 7:13 AM, Peter Todd <pete at petertodd.org> wrote:
+> > Note that with OP_DEPTH we can remove the small chance of the payee
+> > vanishing and putting the funds in limbo:
+> 
+> What are the costs, benefits, and risks associated with scripts no
+> longer being stateless, as OP_DEPTH would seem to introduce?
+
+Satoshi was worried that in the event of a re-org long chains of
+transactions could become invalid and thus impossible to include in the
+blockchain again, however that's equally possibly through tx mutability
+or double-spends;(1) I don't think it's a valid concern in general. When
+accepting any payment you need to take the chance of a re-org into
+account, and if the payment is large enough it'll call for more confirms
+on that basis. It does increase that (small) risk however and a client
+may want to trace the transaction chain back a few steps when accepting
+a very large payment in leu of just waiting for more confirms.
+
+1) Also via non-standard transactions as SetBestChain() calls
+mempool.accept() which still applies IsStandard(). We also recently
+broke re-acceptance of transactions with dependencies as they are
+currently added in reverse order, broken when Matt removed the
+fIgnoreMissingInputs flag.
+
+
+Not a problem limited to OP_DEPTH either: consider the following
+probabalistic payment:
+
+    PREVBLOCKHASH HASH n LESSTHAN VERIFY <pubkey> CHECKSIG
+
+Obviously in a re-org the chance of it being succesfully included is
+slim. (this example is simplistic and is vulnerable to double-spends in
+a number of ways)
+
+
+Mempool and relay code will have to take into account that a transaction
+that can be included in the next block may not be possible to include in
+the block after that for the purposes of protecting against tx-flood DoS
+attacks - not an important issue unless we loosen IsStandard()
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000090344430e3956a709039288ceeb473fff6c1b68e70ee7169c4
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130718/675e9103/attachment.sig>
