@@ -1,0 +1,98 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 18 Jul 2013 08:13:08 -0400
+Subject: [Bitcoin-development] SPV bitcoind? (was: Introducing
+ BitcoinKit.framework)
+In-Reply-To: <CANEZrP02oQ7GqJfLbEeD+khSGCyFz3eiynPkhARniEWr1ikmPQ@mail.gmail.com>
+References: <CANEZrP2jmWkDbpJEm0vd2CKF-prFNbz_ZeNJfDWtSCKb8k5ZXA@mail.gmail.com>
+	<2BDA0943-22BB-4405-9AF0-86FB41FD04A6@include7.ch>
+	<CANEZrP0McSrVzwv=-qimPyX41EEDmyQdYW5QjPr_i+KWyJZSZw@mail.gmail.com>
+	<2F20A509-13A9-4C84-86D7-A15C21BACD53@include7.ch>
+	<CANEZrP2yQvmvwP_ZULdS2i+X6L9MeZ+DfidiuZPD2EHwLsN2MA@mail.gmail.com>
+	<2A1C412D-414E-4C41-8E20-F0D21F801328@grabhive.com>
+	<CANEZrP12V_5Ak0f91RsMziuqXysde102rGeSko=qPBjefy3AeA@mail.gmail.com>
+	<8EE501AA-1601-4C28-A32E-80F17D219D3A@grabhive.com>
+	<20130717105853.GA10083@savin>
+	<CANEZrP02oQ7GqJfLbEeD+khSGCyFz3eiynPkhARniEWr1ikmPQ@mail.gmail.com>
+Message-ID: <20130718121307.GA6062@savin>
+
+On Wed, Jul 17, 2013 at 02:29:26PM +0200, Mike Hearn wrote:
+> Partial UTXO sets is a neat idea. Unfortunately my intuition is that many
+> SPV wallets only remain open for <1 minute at a time because the user wants
+> to see they received money, or to send it. It'd be neat to get some
+> telemetry from the Android wallet for this - I will ask Andreas to let
+> users opt in to usage statistics.
+
+Good idea.
+
+> So for anti-DoS I think smart prioritisation heuristics are the way to go
+> again. Perhaps by letting clients have an "identity" that they provide to a
+> node when it's load shedding. Clients that have been seen before, have a
+> track record of not being abusive etc get priority and new clients that
+> were never seen before get dropped. Coming up with a way to do that whilst
+> preserving privacy sounds like an interesting cryptographic challenge.
+
+SPV clients behaving normally are highly abusive: they use up maximum
+node resources with minimum cost to themselves. (nodes doing an initial
+block download are similar now, although with partial mode they can
+contribute back to the network sooner)
+
+We can't win if the attacker has more upstream bandwidth than we have
+downstream, but fortunately botnets are generally comprised of computers
+on asymetric residential connections. Thus our goal is to prevent the
+attacker from using lots of downstream bandwidth, and more importantly,
+from consuming more memory and similar resources than we posess.
+Annoyingly the raw # of TCP connections is very much a limited resource
+due to constraints on the # of ports a process can handle, and
+constraints imposed by stateful firewalls, and memory used by kernel
+buffers.
+
+Anything that allows for more incoming connections with less memory
+usage is a good thing - bloom filters are limited to 32KiB and the
+per-peer test if a INV item needs to be relayed to a peer is fairly
+cheap, but we also have other buffers like pending INV messages and so
+on. EC2 micro instances, as an example, often need -maxconnections
+limited or they run out of memory - we've probably got room for
+improvement; removing mapRelay and just grabbing relayed txs from the
+mempool comes to mind.
+
+
+More generally a good thing to do would be to force incoming peers to
+use up RAM to make a connection. We can do that with a proof-of-data
+posession engineered such that unless you store the data in high-speed
+memory you will have your connection dropped. Per peer a node can pick a
+nonce k and define j_i=H(k+i), sending the peer a set J=(j_0...j_n) to
+store in RAM. With f(k, n, i) as a pseudo-random sequence generator we
+create nonce x and ask our peer to compute J'(x, m) = j_f(x, n, 0) ^ ...
+^ j_f(x, n, m)) and give us the result. (^ as the XOR operator) Because
+we know the nonce k we can do that cheaply, calculating it on the fly,
+but our peers have no choice but to store J and retrieve it on demand.
+If they store J in RAM they can do so quickly; if they store J on disk
+they can't. We then prioritize peers by how fast they respond to these
+requests, both measuring ping times, and forcing attackers trying to
+connect to large numbers of peers to posess large amounts of relatively
+expensive RAM. This is particularly nice because we've can make it
+significantly more expensive for anyone to peer to every node in the
+Bitcoin network simultaneously to do things like watch transaction
+propagation in real-time.
+
+A more sophisticated approach would be possible if there existed a
+version of H() with a computational trap-door - that is if there existed
+H'(s, i)=H(i) where H' had significantly faster running time than H(),
+but required knowledge of a secret. Our peers would then be able to
+answer our challenges quickly only if they stored the intermediate
+results in a lookup table, while we could check those challenges cheaply
+without that table.
+
+Adam: you're our local crypto-expert, what can we use for H'? Seems that
+maybe some kind of asymmetric crypto system would work by requiring the
+peer to crack weak secret keys that we generate deterministicly.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130718/edcced21/attachment.sig>
