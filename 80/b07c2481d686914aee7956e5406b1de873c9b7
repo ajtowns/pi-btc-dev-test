@@ -1,0 +1,231 @@
+From: jeanpaulkogelman@me.com (Jean-Paul Kogelman)
+Date: Fri, 19 Jul 2013 17:46:44 +0000 (GMT)
+Subject: [Bitcoin-development] [RFC] Proposal: Base58 encoded HD Wallet
+ master seed with optional encryption
+Message-ID: <20ec1e35-3051-45d6-b449-e4a4d5c06dc8@me.com>
+
+
+Hi everyone,
+
+I'm looking for feedback on the proposal below.
+
+Kind regards,
+
+Jean-Paul
+
+---
+BIP:?
+Title: Base58 encoded HD Wallet master seed with optional encryption
+Author: Jean-Paul Kogelman
+Status: Draft
+Type: Informational
+Created: 17-07-2013
+
+Abstract
+
+This proposal describes a method for encoding and optionally encrypting a Bitcoin Hierarchical Deterministic (HD) Wallet master seed. Encoded master seeds are intended for use on paper wallets. Each string contains all the information needed to verify and reconstitute an HD wallet except for the optional passphrase. The encrypted version uses salting and scrypt to resist brute-force attacks.
+
+The method provides two encoding methodologies in 3 lengths each (16, 32 and 64 byte seeds). One is a clear version of the master seed with verification information for integrity checking and the other is an encrypted representation.
+
+A 32-bit hash of the resulting master Bitcoin public address is encoded in plain text within each seed record, so in the case of an encrypted seed, it can be correlated to a Bitcoin public address with reasonable probability by someone not knowing the passphrase. The complete Bitcoin public address can be derived through successful decoding and optional decryption of the master seed record.
+
+
+Motivation
+
+The extended private keys proposed in BIP 0032 are long, fixed length records and don't offer any form of security. The master seed used to generate the HD wallet is typically shorter than the extended master private key that results from it.?
+
+A compact representation of the master seed is easier to handle and a 2-factor version of the master seed record allows for safe storage and the creation of paper wallets by 3rd parties.?
+
+
+Copyright
+
+This proposal is hereby placed in the public domain.
+
+
+Rationale
+
+User story: As a Bitcoin user who uses HD wallets, I would like the ability to store my wallet master seed in a compact form as a paper wallet.
+
+User story: As a Bitcoin user who uses HD wallets, I would like the ability to have a 3rd party create a paper wallet with my master seed in it, without having access to the funds stored in the wallet.
+
+User story: As a Bitcoin user who uses HD wallets, I would like the ability to choose the strength of the master seed depending on my security requirements and how I wish to store it.?
+
+
+Specification
+
+This proposal makes use of the following functions and definitions:
+
+AES256Encrypt, AES256Decrypt: the simple form of the well-known AES block cipher without consideration for initialization vectors or block chaining. Each of these functions takes a 256-bit key and a variable legth of input and deterministically yields output data of similar length to the input.
+
+SHA256: a well-known hashing algorithm that takes an arbitrary number of bytes as input and deterministically yields a 32-byte hash.
+
+RIPEMD160: a well known hashing algorithm that takes an arbitrary number of bytes as input and deterministically yields a 20-byte hash.
+
+scrypt: A well-known key derivation algorithm. It takes the following parameters: (string) password, (string) salt, (int) n, (int) r, (int) p, (int) length, and deterministically yields an array of bytes whose length is equal to the length parameter.
+
+HMAC-SHA512: Produces a 64 byte (512 bit) hash based message authentication code using the SHA512 hash function using a seed (in our case we will use a byte representation of "Bitcoin seed") and an aribtrary input message. The output will be 64 bytes.
+
+Base58Check: a method for encoding arrays of bytes using 58 alphanumeric characters commonly used in the Bitcoin ecosystem.
+
+G, N: Constants defined as part of the secp256k1 elliptic curve. G is an elliptic curve point, and N is a large positive integer.
+
+Prefix
+
+It is proposed that the resulting Base58Check-encoded string start with either "WS" for clear master seed records or "ws" for 2-factor master seed records. The prefixes "WS" and "ws" were chosen as abreviations of the term "Wallet Seed" and upper case to indicate whether it's a clear representation and lower case when it's a 2-factor representation.?
+
+To keep the size of the encrypted key equal to the clear version, no initialization vectors (IVs) are used in the AES encryption. Rather, suitable values for IV-like use are derived using scrypt from the passphrase and from using a 32-bit hash of the resulting Bitcoin public address as salt.
+
+Proposed specification
+
+There are 2 seed record representations with 3 lengths each, resulting in a total of 6 different object identifier prefixes.?
+
+Prefix 0x1093: Clear 16 byte master seed, total length: 22 bytes
+Prefix 0x1E68: Clear 32 byte master seed, total length: 38 bytes
+Prefix 0x665A: Clear 64 byte master seed, total length: 70 bytes
+
+Prefix 0x1EE4: 2-factor 16 byte master seed, total length: 22 bytes
+Prefix 0x38AE: 2-factor 32 byte master seed, total length: 38 bytes
+Prefix 0xBECB: 2-factor 64 byte master seed, total length: 70 bytes
+
+These are constant bytes that appear at the beginning of the Base58Check-encoded record, and their presence causes the resulting string to have a predictable prefix.
+
+How the user sees it: 35, 57 or 101 characters always starting with either "WS" or "ws".
+
+Count of payload bytes (beyond prefix): 20, 36 or 68
+
+Payload format:
+4 bytes: SHA256(SHA256(master_bitcoin_public_address))[0...3], used both for typo checking and as salt.
+16, 32 or 64 bytes: either a clear representation or an encrypted representation of the master seed.
+
+Range in Base58Check encoding for clear 16 byte master seed (prefix WS):
+Minimum value: WSJ5JnjiRZT8b15aZr6GGWzt2VMBPapmhBQ (based on 0x10 0x93 plus twenty 0x00's)
+Maximum value: WShQumr1iGdbTpWiesWbb189p7rSLBiq3EJ (based on 0x10 0x93 plus twenty 0xFF's)
+
+Range in Base58Check encoding for clear 32 byte master seed (prefix WS):
+Minimum value: WS7SqjMWhDGCagcZxCk317LLWyWUny7465ENGKEKuxBf5sFvRHmRRfCgr (based on 0x1E 0x68 plus thirty-six 0x00's)
+Maximum value: WSLAbo8WHEQr1Z1cv26Z5njh5URHMo9fPiDFYE2NpCwmAoPZwDxzm3PjB (based on 0x1E 0x68 plus thirty-six 0xFF's)
+
+Range in Base58Check encoding for clear 64 byte master seed (prefix WS):
+Minimum value: WS2cMzM9WrogWVLKYFzTaTXZnYCryY31uptmdevXuRFBXTWJhmt4No9Eejoj3apqyU5RkyXsGHFPbZd14oz7Fv1Mi85kadBD4TPsL (based on 0x66 0x5A plus sixty-eight 0x00's)
+Maximum value: WS6PXJ1HoJXn9hyLz8uXQEy2ZajAVaFDTViXhZDthwYbhyvfHRqjwU4FoGpepCbuuycAwMFbgoZB6E48baqD1c9PdMNUZCSSBmfE7 (based on 0x66 0x5A plus sixty-eight 0xFF's)
+
+Range in Base58Check encoding for 2-factor 16 byte master seed (prefix ws):
+Minimum value: ws1nyTi9KjdRkJda4Yh1KkXSLC8SZ6kKzEM (based on 0x1E 0xE4 plus twenty 0x00's)
+Maximum value: wsR8aSpScSotd84i9a7LeEei7pdhVkeciX8 (based on 0x1E 0xE4 plus twenty 0xFF's)
+
+Range in Base58Check encoding for 2-factor 32 byte master seed (prefix ws):
+Minimum value: wsC8sayZpTpeX3k6jcCMeTedDapXkXd7SZpRJbSjdeqKBJ2Vnrm1xyfD3 (based on 0x38 0xAE plus thirty-six 0x00's)
+Maximum value: wsQrdekZQUyHwv99hRYsj93yn5jLKMfikCoJaWEnXubRGEA9Jnxg5KaPW (based on 0x38 0xAE plus thirty-six 0xFF's)
+
+Range in Base58Check encoding for 2-factor 64 byte master seed (prefix ws):
+Minimum value: ws4XTrriTEyyy2TrGWv9R7o94CyBiN69S2VxiK5tVW9htEi48w54sQ43JChCmadoGtYpZSu7vqbbQTMemCSyyToyLPPMjughcXNxE (based on 0xBE 0xCB plus sixty-eight 0x00's)
+Maximum value: ws8JdAWrjgi5cF6siPqDEuEbqFVVEQJLyhKinDPFJ2T84m8Qib2kS4y4Sji8YCQsDQ5ZjpcrMMuNu7nnHyJ5j9x1Fcg5iUwvZ7krH (based on 0xBE 0xCB plus sixty-eight 0xFF's)
+
+Generation of master seed:
+
+1. Take either an existing 16, 32 or 64 byte master seed S, or generate one from a (P)RNG.
+2. Calculate I = HMAC-SHA512(key = "Bitcoin seed", msg = S)
+3. Split I into two 32-byte sequences, IL and IR.
+4. Use IL as master secret key. IR, the master chain code is not relevant here.
+5. In case IL is 0 or >= N, the master key is invalid. Go back to step 1 if generating, or in case of a provided master seed, return an error.
+6. Compute the public key K = IL*G
+7. Calculate the master Bitcoin public address A = Base58Check(RIPEMD160(SHA256(K)))
+8. Calculate the salt = SHA256(SHA256(A))[0...3]
+
+Encryption:
+
+9. Derive a hash H from the passphrase using scrypt
+? ? - Parameters: passphrase is the passphrase itself encoded in UTF-8, salt = salt, n = 16384, r = 8, p = 8, length = seed length + 32
+10. The first number of bytes in H, equal to length of seed S are used to xor seed S. Call the result X.
+11. Do AES256Encrypt(message = X, key = last 32 bytes of H), call this encrypted_seed.
+
+
+The encrypted_master_seed is the Base58Check-encoded concatenation of the following, which totals 2 + 4 + seed length bytes (22, 38 or 70 bytes):
+
+encrypted_master_seed = prefix + salt + encrypted_seed
+
+The clear version is:
+
+master_seed = prefix + salt + seed S
+
+
+Decryption:
+
+1. Collect encrypted_master_seed and passphrase from user.
+2. Perform step 9 of encryption with the passphrase and the salt from the encrypted_master_seed.
+3. With the encrypted_seed from encrypted_master_seed do AES256Decrypt(message = encrypted_seed, key = last 32 bytes of H), call this decrypted_seed.
+4. With the first number of bytes in H, equal to the length of the decrypted_seed, perform the xor operation on decrypted_seed and call the result S.
+5. Perform generation steps 2 until 8 and verify that the generated salt is equal to the salt from encrypted_master_seed.
+
+
+Suggestions for implementers of proposal with alt-chains
+
+This proposal involves hashing of a text representation of a public address which for Bitcoin includes the leading '1'. Alt-chains can easily be denoted simply by using the alt-chain's preferred format for representing an address. Alt-chain implementers may also change the prefix such that encoded master seeds do not start with "WS" or "ws".
+
+
+Bitcoin testnet representation
+
+This proposal does not cover separate Bitcoin testnet representations of encoded master seeds, although since the 4 salt bytes are based on a double SHA256 of the Bitcoin public address, they will be different for Bitcoin testnet public addresses and validation will fail.?
+
+
+Reference implementation
+
+TODO
+
+
+Test vectors
+
+Test 1:
+
+Seed ? ? ?: 000102030405060708090a0b0c0d0e0f
+Clear ? ? : WSZsLQ5c1uKrRQugbrZNYsvMhRixiaWaVmJ
+Password ?: Satoshi
+Encrypted : wsHb15443fYPmneEXskd6wUZeP15fCiA69n
+Address ? : 15mKKb2eos1hWa6tisdPwwDC1a5J1y9nma
+xprv ? ? ?: xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi
+xpub ? ? ?: xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8
+
+Test 2:
+
+Seed ? ? ?: 7f0ad7d595be13e6fe4cf1fa0fbb6ae9c26c5d9b09920709414982b6363d5844
+Clear ? ? : WSB7z3izBZwDoaAUA4mDpEHzAZsA5zfTWu3cCxhkaLtZ4Ur6n6mXsgpMK
+Password ?: Nakamoto
+Encrypted : wsFp1uM2gFhd2PuRzmNFReRud71hgmVwPoc7cGpxuvgETRsv8J1wHNANJ
+Address ? : 1A54ECavJaJAoLGqqNrPd9Y3cvSvkL2Roz
+xprv ? ? ?: xprv9s21ZrQH143K3f9hMVvcbY4EX4CfxsEtc6C5BMkZtgGpTGpxAscoq7SLSAcL6k5dxaZ9s4SChrtfSFoKpijuwAnhuPn76eva6W8bDr118t3
+xpub ? ? ?: xpub661MyMwAqRbcG9EATXTcxfzy563ANKxjyK7fykABT1ooL5A6iQw4NukpHShDxYgeso4NHscFmqcVEtdUt61c8RCf7FqXK9z6sgfkQvYBQPP
+
+Test 3:
+
+Seed ? ? ?: fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542
+Clear ? ? : WS6186bsAkSaGRjRZ1UGyCGigxsXPvnYGSqNHJYmauV9X4W8tLJke1DH8UP8YMsDLdsjwgodcghjjKqkWQmk3t7qDbNMJVBDKcD2s
+Password ?: Vires In Numeris
+Encrypted : ws7vDy7RjqMvcPX7GeakKvdK6vDKGhRSjQtaRfKUVQrJXwwetLSeTdNgGzn5BKZZqz1BBdaHBFYfLvNUSxDaoP1ojJMMJD9UnQuwt
+Address ? : 1JEoxevbLLG8cVqeoGKQiAwoWbNYSUyYjg
+xprv ? ? ?: xprv9s21ZrQH143K31xYSDQpPDxsXRTUcvj2iNHm5NUtrGiGG5e2DtALGdso3pGz6ssrdK4PFmM8NSpSBHNqPqm55Qn3LqFtT2emdEXVYsCzC2U
+xpub ? ? ?: xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB
+
+Test 4:
+
+Seed ? ? ?: 6ca4a27ac660c683340f59353b1375a9
+Clear ? ? : WSXnfK5CJbDoSwcqMfz7Xqy3avuPHSxDQQk
+Password ?: ???
+Encrypted : wsFWKz3c5eeHRwtJveSdFvwUrmoNVkJ5ns2
+Address ? : 1JVncPbsdB2s4zHim3VdAWNkZ8JANBZ1U9
+xprv ? ? ?: xprv9s21ZrQH143K3mJ4upPSDfXdA34yNjem6PSsXT63vm8dq8ikUJv4iiTD3PrSKtdGZXFVD689z5T7knXo55BjcHS2WL3Syp2DbGgnbgxw2QA
+xpub ? ? ?: xpub661MyMwAqRbcGFNY1qvSaoUMi4uTnCNcTcNUKqVfV6fchw3u1rEKGWmgtfUMRKLgUHNZ7dfsh8Ys6SLwUojZqScFBQL3dFGF3QywNLJVZ2o
+
+
+Acknowledgements
+
+Mike Caldwell for BIP 0038, which this proposal borrows heavily from.
+
+
+See Also
+
+BIP 0032 Hierarchical Deterministic Wallets: https://en.bitcoin.it/wiki/BIP_0032
+BIP 0038 Passphrase-protected private key: https://en.bitcoin.it/wiki/BIP_0038
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130719/eb2ecd1f/attachment.html>
