@@ -1,0 +1,92 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 23 Jul 2013 12:19:58 +0200
+Subject: [Bitcoin-development] HTTP REST API for bitcoind
+In-Reply-To: <201307231100.24538.andyparkins@gmail.com>
+References: <CAJHLa0Ou1xF=LeLVu_wH1-XgJ1PavDV7_NHoDevo3R9+4z-ZfQ@mail.gmail.com>
+	<201307231030.14139.andyparkins@gmail.com>
+	<20130723094703.GA25900@savin>
+	<201307231100.24538.andyparkins@gmail.com>
+Message-ID: <CAPg+sBgXviFDBZqS5EhCkb2fLsvP3ySN+b_Q9K3tK5Q=z8Bv_w@mail.gmail.com>
+
+On Tue, Jul 23, 2013 at 12:00 PM, Andy Parkins <andyparkins at gmail.com> wrote:
+>> The REST API has nothing to do with SPV clients; it's similar to the RPC
+>> interface and won't be exposed to the network as a whole.
+>
+> Yes; I know that.  I'm saying that it would make it easier for SPV (and other
+> lightweight clients) for that matter.
+
+In what way?
+
+>> Increasing the resource usage by SPV clients on full nodes is undesirable;
+>
+> I don't think that's thinking big enough.  What I imagine is that making it
+> easier and easier to store a partial blockchain would result in lower demand
+> on full nodes.
+
+A partial blockchain is quite useless, as you can't build an UTXO set from it.
+If you're talking simply about the storage requirements for maintaining history,
+perhaps, but why rely on SPV nodes for this? Right now, those don't store any
+blocks at all, and there is no reason why they should.
+
+The only requirement is that old blocks remain available for new full
+nodes to be
+able to bootstrap. It's certainly not required that everyone keeps
+every block ever
+created. That's how the software currently works, but as soon as we get to a few
+protocol changes that would allow new full nodes to find specific
+peers with the data
+they need, we can have fully-verifying yet (partially) pruning nodes.
+I think that's a
+much better idea than conflating "maintaining a wallet" with
+"maintaining a subset
+of historical block data".
+
+
+> Obviously the miners would still be keeping the entire
+> chain, but we'd have a lot more nodes in the network, each contributing a
+> little bit and so reducing the load on the full nodes.
+
+I disagree strongly here. The rules of the network are enforced by
+full nodes, not by
+miners - they are just trying to satisfy the rules demaned by the network.
+
+And as far as I know, there is no way to do some "partial validation"
+using just the blocks
+you care about (and remember, SPV nodes currently have none at all).
+One interesting
+possibility here is fraud proofs, where the network can relay proofs
+that certain blocks or
+transactions are violating certain network rules. In this case, even
+SPV nodes can just
+communicate with eachother and get some "herd immunity". But storing some blocks
+doesn't matter here - it is all about whether you can maintain the
+UTXO set or not.
+
+>
+>> In any case UTXO data currently requires you to have full trust in
+>> whomever is providing you with it, and that situation will continue
+>> until UTXO commitments are implemented - if they are implemented.
+>
+> Almost; because you can go and ask someone else the same question, it's pretty
+> easy to check if you're being lied to.  Also, it's far easier to maintain a
+> headers-only block chain.  When you fetch your relevant block subset, you can
+> easily see that they are real blocks in your headers-only blockchain; and so
+> it's pretty much impossible to lie to "give me the block containing
+> transaction X".
+
+That's assuming there is no powerful enough attacker that can benefit from doing
+a sybil attack on you. For SPV nodes currently, that risk is limited
+to an attacker
+that can spend enough on faking a chain with valid proof-of-work, to make you
+accept a transaction that will be reversed.
+
+If you go let SPV nodes rely on unauthenticated UTXO set data, there is no such
+limitation, and they can let you believe *anything*. There are some safeguards,
+like combining it with merkle paths for all outputs that credit you (which again
+requires a more expensive index on the other side), but you can't ever guarantee
+that a particular outputs isn't spent yet.
+
+-- 
+Pieter
+
+
