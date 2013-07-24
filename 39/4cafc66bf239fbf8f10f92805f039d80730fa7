@@ -1,0 +1,103 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Wed, 24 Jul 2013 12:55:33 +0100
+Subject: [Bitcoin-development] Distributing low POW headers
+In-Reply-To: <20130724094255.GB12568@savin>
+References: <CAE-z3OX+Uzw_diW97yKWGzVMBFZHq2t+w15jNSdGMGqwyJ65yQ@mail.gmail.com>
+	<20130724094255.GB12568@savin>
+Message-ID: <CAE-z3OWBoMz6jC36Bp+dGqj6jHiWj1d1zGtH+iBbLcCt_6kNJw@mail.gmail.com>
+
+On Wed, Jul 24, 2013 at 10:42 AM, Peter Todd <pete at petertodd.org> wrote:
+
+> Please provide equations and data justifying the 'magic constants' in
+> this proposal.
+>
+
+The are a range of workable values.  Ideally, there would first need to be
+agreement on the general principle.
+
+Distributing headers with 1/64 of the standard POW means that a header
+would be broadcast approximately once every 9 seconds (assuming a 10 minute
+block time).  This was picked because sending 80 byte headers every 9
+seconds shouldn't represent much load on the network.
+
+The second magic number is how much credit to give for mini-headers.
+Setting it at 1/16 means that the headers will be worth around 4 times as
+much as a block (since there would be around 63 low POW headers for each
+full POW one).
+
+This creates an incentive for miners to take headers into account.  If all
+the headers were worth less than a full block, then a fork which was losing
+would suddenly be winning if a block is found.  A fork will only become the
+main chain due to a new block, if it is within 16 mini-confirms.
+
+Miners don't have to mine against the absolute best fork, but they do need
+to make sure they stay within 16 of the best one (so if they find a block,
+that block would be considered part of the main chain).  Some hysteresis
+might be helpful.  The rule could be to only switch unless the current fork
+is losing by at least 4 mini-confirms.
+
+In most cases, this won't be a problem, since orphans don't happen that
+often anyway.
+
+Since it isn't a chain, this doesn't give the full benefits of a 9 second
+block, but it should bring things to consensus faster.  6 full confirms
+would be much more secure against random and hostile reversals.
+
+It doesn't have the risks of 9 second blocks in causing network collapse,
+since it isn't a chain, the headers are short, and there is no
+confirmations of the required (other than checking the hash).
+
+Each "mini" confirms adds to the strength of leaf blocks of the tree.  If
+there is a tie, and 20% of the network is mining one block and 80% is
+mining the other, the mining power of the network will be split until the
+next block arrives.
+
+With mini confirms, the entire network is aware of the 2 blocks (since the
+headers would be forwarded) and the mini-confirms would show which one has
+majority hashing power.
+
+The least risk option would be to make them purely advisory.  The proposal
+takes it further than that.
+
+The proposal means that if the network is split 80/20, then miners should
+stick with the 80% fork, even if the 20% fork wins the race for the next
+block.
+
+Winning a few rounds is easier than wining many rounds worth of
+mini-confirms.
+
+The key is that as long as the honest miners stay on the main chain, they
+will eventually overwhelm any rewrite attack with less than 50% of the
+mining power.  This is a system to agree on what is the main chain in the
+face of a re-write attack.
+
+
+>
+> Currently we do not relay blocks to peers if they conflict with blocks
+> in the best known chain. What changes exactly are you proposing to that
+> behavior?
+>
+
+The (sub) proposal is that headers would still be broadcast.  The blocks
+would not be forwarded.
+
+If a header extends the header tree, meets full POW and is "near" the end
+of the chain, then it is broadcast.  This means that all nodes will have
+the entire header tree, including orphans.
+
+The full blocks would only be sent if they extend the main chain.
+
+Second, if a header builds on a header that is in the header tree, then it
+is broadcast, even if it doesn't meet full POW (only 1/64 required).  This
+gives information on which fork is getting the most power.
+
+It gives information about potential "consensus loss" forks, where a
+significant number of miners are following an alternative chain.
+
+In fact, this is probably worth doing as an initial step.
+
+A warning could be displayed on the client if a fork is getting more than
+15% of the hashing power.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130724/bbae3ccf/attachment.html>
