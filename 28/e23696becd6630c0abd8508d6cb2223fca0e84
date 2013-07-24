@@ -1,0 +1,117 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 24 Jul 2013 05:42:55 -0400
+Subject: [Bitcoin-development] Distributing low POW headers
+In-Reply-To: <CAE-z3OX+Uzw_diW97yKWGzVMBFZHq2t+w15jNSdGMGqwyJ65yQ@mail.gmail.com>
+References: <CAE-z3OX+Uzw_diW97yKWGzVMBFZHq2t+w15jNSdGMGqwyJ65yQ@mail.gmail.com>
+Message-ID: <20130724094255.GB12568@savin>
+
+On Tue, Jul 23, 2013 at 12:27:03PM +0100, Tier Nolan wrote:
+> I was thinking about a change to the rules for distinguishing between forks
+> and maybe a BIP..
+
+Please provide equations and data justifying the 'magic constants' in
+this proposal.
+
+Currently we do not relay blocks to peers if they conflict with blocks
+in the best known chain. What changes exactly are you proposing to that
+behavior?
+
+> *Summary*
+> 
+> - Low POW headers should be broadcast by the network
+> 
+> If a header has more than 1/64 of the POW of a block, it should be
+> broadcast.  This provides information on which fork is getting most of the
+> hashing power.
+> 
+> - Miners should use the header information to decide on longest chain
+> 
+> The fork selection rule for miners should be biased towards staying on the
+> fork that has the most hashing power.
+> 
+> This means that they might keep hashing on a fork that is 1-2 blocks
+> shorter.
+> 
+> If most miners follow the rule, then it is the best strategy for other
+> miners to also follow this rule.
+> 
+> - Advantages
+> 
+> This lowers the probability of natural and malicious reversals.
+> 
+> *Distributing low POW headers*
+> 
+> First block header messages that have more than 1/64 of the standard POW
+> requirements would be forwarded.
+> 
+> This means the client needs to maintain a short term view of the entire
+> header tree.
+> 
+> if (header extends header tree) {
+>   if (header meets full POW) {
+>     add to header tree;
+>     forward to peers;
+>     check if any blocks in storage now extend the header tree
+>   } else {
+>     if (header meets POW / 64) {
+>       forward to peers;
+>     }
+> } else {
+>   if (header meets POW) {
+>     add to orphan header storage
+>   }
+> }
+> 
+> The storage could be limited and headers could be discarded after a while.
+> 
+> This has the extra advantage that it informs clients of forks that are
+> receiving hashing power.
+> 
+> This could be linked to a protocol version to prevent disconnects due to
+> invalid header messages.
+> 
+> *Determining the longest chain*
+> 
+> Each link would get extra credit for headers received.
+> 
+> Assume there are 2 forks starting at block A as the fork point.
+> 
+> A(63) <- B(72) <- C(37) <- D(58)
+> 
+> and
+> 
+> A(63) <- B'(6) <- C'(9) <- D'(4) <- E(7) <- F(6)
+> 
+> The numbers in brackets are the number of low POW headers received that
+> have those blocks as parent.
+> 
+> The new rule is that the POW for a block is equal to
+> 
+> POW * (1 + (headers / 16))
+> 
+> Only headers within <some threshold> of the end of the (shorter) chain
+> count.  However, in most cases, that doesn't matter since the fork point
+> will act as the start point.  As long as miners keep headers for 30-40
+> blocks, they will likely have all headers back to any reasonable fork point.
+> 
+> This means that the top fork is considered longer, since it has much more
+> headers, even though it has 2 less blocks.
+> 
+> If 75% of the miners follow this rule, then the top fork will eventually
+> catch up and win, so it is in the interests of the other 25% to follow the
+> rule too.
+> 
+> Even if there isn't complete agreement on headers received, the fork that
+> is getting the most hashing will naturally gain most of the headers, so
+> ties will be broken quickly.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000001e1c3393788031c4e427b67cfd1b5e90a3b0de4fff094b2894
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130724/ac3bedaa/attachment.sig>
