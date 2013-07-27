@@ -1,0 +1,117 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 27 Jul 2013 19:49:18 -0400
+Subject: [Bitcoin-development] Two factor wallet with one-time-passwords
+Message-ID: <20130727234918.GA11635@savin>
+
+Gavin Andresen recently suggested a design for a wallet protected by
+two-factor authentication via one-time-passwords with the aid of a
+third-party service to counter-sign 2-of-2 protected wallets.(1) The
+design is useful when the user can't sign transactions on a second
+device, such as a phone, but can provide one-time-passwords. (possibly
+generated on a smart phone or stored on paper) However involving a
+third-party has privacy and availability risks. Here is an alternate
+design, also using one-time-passwords, that removes the requirement for
+a third-party, along with other advantages and disadvantages.
+
+
+User experience
+===============
+
+The user has a wallet with a separate balances for savings and a smaller
+day-to-day spending amount. Transactions spending the day-to-day balance
+do not need two-factor authorization, while spending the savings balance
+does. As the day-to-day balance becomes low the user is able to top it
+up by authorizing the movement of discrete multiples of some amount from
+savings to spending. That authorization requires one one-time-password
+per multiple being moved.
+
+
+Implementation
+==============
+
+Savings use P2SH outputs matching the following scriptPubKey form:
+
+HASH160 <H(nonce_i)> EQUALVERIFY <pubkey> CHECKSIG
+
+spent with:
+
+<sig> <nonce_i>
+
+The way the pubkey/seckey is generated is unimportant, although some
+kind of deterministic scheme is preferable. Nonces on the other hand are
+generated deterministically using a counter-based one-time-password
+scheme that takes some secret seed and an integer i.  A large number of
+H(nonce_n) are generated in advance and moved to the computer holding
+the wallet. (generating them on that computer is also possible, but
+obviously risks the secret seed being compromised)
+
+A brute-force attack to spend a signed txout requires the attacker to
+find a preimage, thus the security level is the number of bits for the
+nonce; 64 bits is sufficient. (remember the birthday attack doesn't
+apply here) Unfortunately the most popular one-time-password scheme, the
+RFC6238 used in Google Authenticator, only outputs six digits numbers,
+well below the security level required. (Google Auth is generally used
+in a time-mode, but also has a counter mode)
+
+The older RFC2289 however turns the passwords into six words from a 2048
+entry wordlist, giving a 64-bit nonce with 2-bits of checksum. RFC2289
+implementations are also well suited to paper print-outs and generally
+make it easy to do so. RFC2289 as written uses SHA1, however the
+suspected vulnerabilities in SHA1 are partial-preimage collisions, not
+relevant in this application.
+
+In a sense the user is now acting as an oracle answering the question of
+whether or not funds should be allowed to move from savings to spending,
+without being responsible for where those funds are allowed to go. As
+described in (2) it is easy to create a whole range of conditions by
+using multiple nonces if the use-case demanded. For instance a corporate
+environment may want multiple parties to be required to authorize the
+funds to move, possible with multiple nonces.
+
+It's interesting to note how in some cases it may be preferable that the
+authorization is simply authorization to spend without any other
+involvement. Here the party acting as an oracle not only doesn't need to
+know where funds are going but can even authorize the spend in advance
+without two-way communication - possibly even prior to the funds being
+received in the first place. This authorization can be easily given
+manually, for instance over the phone, and the accounting to keep track
+of the total amount authorized can be easily done with pen and paper -
+something not possible with CHECKMULTISIG wallets.
+
+
+Funding the wallet
+==================
+
+As with any multi-party wallet receiving funds must also be handled
+carefully to ensure an attacker can't fool the user into giving the
+sender the wrong address. This requires the involvement of all parties
+required to authorize an outgoing payment. In addition here the
+protection only works if funds sent to the wallet are split up into the
+discrete authorization amounts the user wishes. (possibly with more than
+one amount level)
+
+There hasn't been as much thought put into these systems as there has
+been on payment protocols between a customer and a merchant, but the
+basic idea is to have more than one device participate in the generation
+of payment request signed somehow. For fund splitting the request can be
+that the funds are paid to multiple txouts in one go.  For recurring
+payments the request could have some mechanism for multiple addresses to
+be specified for future use. Fall-back to a standard multi-signature
+wallet is possible as well.
+
+More research is needed.
+
+
+1) https://gist.github.com/gavinandresen/5616606
+2) https://bitcointalk.org/index.php?topic=260898.msg2804469#msg2804469
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000006447c7d824b1952ba36ad1f34351be6904c30247591156460c
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130727/fbcf95af/attachment.sig>
