@@ -1,0 +1,127 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Sun, 28 Jul 2013 21:07:34 +0100
+Subject: [Bitcoin-development] Distributing low POW headers
+In-Reply-To: <CAPaL=UVc0CGvvam0tdxw+4Y8XwSw0Awz8ifv64HYgORJ7zLztg@mail.gmail.com>
+References: <CAE-z3OX+Uzw_diW97yKWGzVMBFZHq2t+w15jNSdGMGqwyJ65yQ@mail.gmail.com>
+	<20130724094255.GB12568@savin>
+	<CAE-z3OWBoMz6jC36Bp+dGqj6jHiWj1d1zGtH+iBbLcCt_6kNJw@mail.gmail.com>
+	<CAPaL=UVc0CGvvam0tdxw+4Y8XwSw0Awz8ifv64HYgORJ7zLztg@mail.gmail.com>
+Message-ID: <CAE-z3OVTyR1cn31kHJWd=ZUQCwcgX8UdSeZsTMRTeDuDLctz3w@mail.gmail.com>
+
+On Sun, Jul 28, 2013 at 7:42 PM, John Dillon
+<john.dillon892 at googlemail.com>wrote:
+
+> -----BEGIN PGP SIGNED MESSAGE-----
+> Hash: SHA256
+>
+> On Wed, Jul 24, 2013 at 11:55 AM, Tier Nolan <tier.nolan at gmail.com> wrote:
+> > Distributing headers with 1/64 of the standard POW means that a header
+> would
+> > be broadcast approximately once every 9 seconds (assuming a 10 minute
+> block
+> > time).  This was picked because sending 80 byte headers every 9 seconds
+> > shouldn't represent much load on the network.
+>
+> As Peter said, "much" should be quantified.
+>
+
+It has the same statistic properties as normal blocks just 64 times faster.
+
+Even if there is a new block 30 seconds after the previous one, that
+doesn't cause a burst of 64 low POW block headers in the 30 second window.
+They are all statistically independent hashing attempts.
+
+
+> Sounds like you are changing economics and requiring miners to have even
+> better
+> network connections. This is not a thing to do lightly and it probably a
+> bad
+> idea.
+>
+
+No, it just breaks ties.  In most cases there would be only 1 contender
+block, so all miners are equal.
+
+If 10% of blocks were ties/orphans, then only 1% of blocks would be a 3-way
+tie.  That probably overestimates the orphan rate.
+
+This means the miner has to download 2 blocks 10% of the time and 3 blocks
+1% of the time.
+
+However, even then, half the network wouldn't have to download the 2nd
+block of the tie, since they happened to get the winner first.  This means
+5% extra bandwidth on average.
+
+16 low POW headers at 9 seconds per header is more than 2 minutes for a
+miner to switch to the other contender.
+
+A miner would only lose out if he doesn't notice that block he is mining
+against is not getting built on by anyone else.
+
+He needs to download both tied blocks so that he can switch, but he has 2
+minutes to actually switch.
+
+I understand Pieter Wuille is working on letting Bitcoin propagate and make
+> use
+> of pure block headers, a step towards SPV and partial UTXO mode.
+>
+
+That would need to happen before low POW ones are broadcast.  There is a
+basic set of rules in the first post.
+
+At the moment, the client only provides headers when asked, but never
+broadcasts them.
+
+
+> Orphan measurement would be very useful for a lot of reasons, how about you
+> think about that first?
+
+
+I think distributing the low POW headers on an advisory basis a reasonable
+first step.  However, just broadcasting the headers is a zeroth step.
+
+Miners would probably break ties towards the block that seems to be getting
+the most hashing anyway.
+
+I think for orphan rate, the best is to have a system to link to orphans.
+This would add the POW of the orphan to the main chain's total.
+
+Unfortunately adding fields to the header is hard.  It could be done as a
+coinbase extra-nonce thing.  A better option would be if the merkle tree
+could include non-transactions.
+
+The merkle root could be replaced by hash(auxiliary header).  This has the
+advantage of not impacting ASIC miners.
+
+Broadcasting all headers would at least allow clients to count orphans,
+even if they aren't integrated into the block chain.
+
+It wouldn't have the potential data rate issues either
+> and should be a very simple change.
+
+
+I don't think the data rate is really that high.  It would be 80 bytes
+every 9 seconds, or 9 bytes per second.
+
+Blocks are 500kB every 10 minutes, or 853 bytes per second.
+
+
+> Just set some threshold relative to the
+> height of the best block where you will not further propagate and orphan
+> block(header) and prior to that limit do so freely. I believe the change
+> would
+> be 100% compatible with the P2P protocol as it is based on inventories.
+>
+
+Right absolutely.  Headers of blocks that add to the block tree within
+recent history should be forwarded.
+
+The inv system would need to be tweaked, since it can only say block and
+transaction.
+
+A block header field would allow the node to say that it only has the
+header.  Alternatively, it would reply with a header message to the
+getblocks message.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130728/ab4d2f59/attachment.html>
