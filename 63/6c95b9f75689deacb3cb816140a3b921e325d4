@@ -1,0 +1,159 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 27 Jul 2013 21:20:08 -0400
+Subject: [Bitcoin-development] Two factor wallet with one-time-passwords
+In-Reply-To: <20130727234918.GA11635@savin>
+References: <20130727234918.GA11635@savin>
+Message-ID: <20130728012008.GA19958@savin>
+
+On Sat, Jul 27, 2013 at 07:49:18PM -0400, Peter Todd wrote:
+> Implementation
+> ==============
+> 
+> Savings use P2SH outputs matching the following scriptPubKey form:
+> 
+> HASH160 <H(nonce_i)> EQUALVERIFY <pubkey> CHECKSIG
+> 
+> spent with:
+> 
+> <sig> <nonce_i>
+
+FWIW with some minor scripting language additions such as access to txin
+and txout contents, along with merklized abstract syntax tree (MAST)
+support, we can even implement a version where scriptPubKey's can be
+reused:
+
+    <pubkey> CHECKSIGVERIFY
+
+    // Verify we aren't spending more than the maximum spend amount
+    0 GET-TXIN-VALUE      // relative indexing
+    0 GET-TXOUT-VALUE
+    SUB
+    <max-spend-amount>
+    LESSTHAN
+    VERIFY
+
+    // If the txout is greater than the maximum spend amount force it to
+    // also follow these same rules.
+    0 GET-TXOUT-VALUE
+    <max-spend-amount>
+    LESSTHAN
+    IFNOT
+        GET-THIS-SCRIPT
+        MAST-HASH
+        <serialized script "MAST-HASH MAST-EVAL">
+        CAT
+        GET-TXOUT-SCRIPT
+        EQUALVERIFY
+    ENDIF
+
+    // Hash the provided oracle nonce, saving original for later.
+    DUP
+    HASH160
+
+    // Use the txid:vout nonce as an index to a table, embedded with MAST
+    // script compression.
+    0 GET-TXIN-TXID
+    0 GET-TXIN-VOUT
+    CAT
+    HASH160
+
+    // The table, n=64 levels deep, not all levels shown for brevity.
+    DUP
+    1
+    AND
+    IF
+        1
+        RSHIFT
+        DUP
+        1
+        AND
+        IF
+            1
+            RSHIFT
+            DUP
+            1
+            AND
+            IF
+                <MAST digest, not executed>
+            ELSE
+                1
+                RSHIFT
+                DUP
+                1
+                AND
+                IF
+                    // Lowest level contains the following pushdata,
+                    // with 0 <= i < 2^64
+                    <HASH160(HASH160(nonce-secret + i))>
+                ELSE
+                    <MAST digest, not executed>
+                ENDIF
+        ELSE
+            <MAST digest, not executed>
+        ENDIF
+    ELSE
+        <MAST digest, not executed>
+    ENDIF
+
+    // Drop the txid:vout nonce
+    SWAP
+    DROP
+
+    // Verify that the hash of the nonce and the pre-committed value in
+    // the H(nonce) table match.
+    EQUALVERIFY
+
+    // Stack now only contains the nonce preceeded by a merkle path linking
+    // that nonce to the tip of a merkle tree over all nonces.
+    //
+    // Verify that path.
+    SWAP // Move direction flag to the top
+    IF
+        SWAP
+    ENDIF
+    HASH160
+    (repeat above five lines 63 more times)
+
+    <nonce-merkle-tree-tip-digest>
+    EQUAL
+
+The scriptPubKey is spent by the following scriptSig:
+
+    <nonce-merkle-path-0>...<nonce-merkle-path-63>
+    <nonce>
+    <signature>
+    <serialized-script>
+
+(note that I've left off a number of possible optimizations for clarity)
+
+Now when the user wishes to spend a txout greather than their spending
+limit their wallet software will first give them a short 6 word string
+calculated from the last 64-bits of H(txid:vout). They simply enter this
+string into their phone, ideally via convenient qr-code or voice/thought
+recognition, and their phone provides a second short 6 word string to
+enter into the wallet software on their computer, authorizing the
+payment. If they opt for a paper-based one-time-password table they
+simply use the 6 word string as an index to their pre-printed OTP
+encyclopedia set.
+
+Like the previously described version the security level is still a
+healthy 2^64 - again the attacker needs to find a 64-bit pre-image,
+considered to be a highly difficult task for any attacker unable to
+count from 0 to 2^64 or store a table containing 2^64 values.
+
+There is the disadvantage of the large storage requirements for both
+wallets, however because of the double hashed construction,
+H(H(nonce-secret+i)), neither table needs to be kept secret. Thus
+without loss of security both tables can be easily stored in a
+distributed hash table in the cloud and queried as needed.
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000012199fe3f1f54921e8e11c0b0d318ed6245dee22a4ad55bc65
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130727/3cfc9e58/attachment.sig>
