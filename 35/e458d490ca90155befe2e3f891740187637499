@@ -1,0 +1,87 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 29 Jul 2013 04:13:55 -0400
+Subject: [Bitcoin-development] Opcode whitelist for P2SH?
+In-Reply-To: <CAPaL=UV9ytoDc-0U148QSbtq=QHFAY1N=nV_1h_dRW12F6YVhA@mail.gmail.com>
+References: <CAPaL=UV9ytoDc-0U148QSbtq=QHFAY1N=nV_1h_dRW12F6YVhA@mail.gmail.com>
+Message-ID: <20130729081355.GB23180@savin>
+
+On Sun, Jul 28, 2013 at 07:39:08PM +0000, John Dillon wrote:
+> Peter Todd recently came up with two related, and IMO very good, uses for
+> non-standard transactions to implement both oracles and one-time-password
+> protection of wallet funds. While the wallet fund case could be implemented as
+> only a single standard type, at the cost of generality, the oracle case would
+> be most useful with more arbitrary rules. More generally it is also useful to
+> be able to have scriptPubKeys like the following:
+> 
+>     n <pubkey>...<pubkey> m CHECKMULTISIG <master pubkey> CHECKSIG BOOLOR
+> 
+> and many other similar constructions.
+> 
+> What are your thoughts on creating a whitelist for specific opcodes that would
+> apply to scripts serialized using P2SH, retaining the existing standard
+> whitelist for scriptPubKeys? (I would still recommend dropping pay-to-pubkey
+> and pay-to-multisig due to their potential for dumping data in the UTXO set)
+
+One subtlety of what you are proposing is that we should still retain
+the IsStandard() check, or to be exact the AreInputsStandard() check, if
+a P2SH serialized script follows a standard form.
+
+The reason is transaction mutability. Right now other than BIP11
+CHECKMULTISIG only miners can mutate transactions because any change to
+the scriptSig will render the transaction non-standard. As you know this
+is a good thing because it means unconfirmed transaction chains don't
+get broken in flight.
+
+BIP11 is an interesting case because CHECKMULTISIG consumes one extra
+stack item, so when you spend a BIP11 n <pubkey>...<pubkey> m
+CHECKMULTISIG scriptPubKey you have to provide an additional item prior
+to the signatures; usually OP_0 is used.
+
+But we don't actually check that! You can put anything there provided it
+doesn't make the scriptSig go over the standard allowed scriptSig size
+of 500 bytes; for instance I (ab)used that feature just now to timestamp
+my Litecoin v0.8.3.6 audit report SHA256 hash:
+
+d0dfe270e8e8e4c0196f780d42e34d8a1121f2f8a249586aa1a2c5ebcada10b1
+
+in transaction:
+
+15bb08318335f94a8de154dc39b03db2cdebcc7a96ab6cec0379978676d00301
+
+It's been suggested that we consider transactions non-standard, or just
+now allowed at all in a future soft-fork, if at the end of execution
+there is more than one stack item left; a opcode whitelist should
+probably do this. On the other hand I've come up with some soft-fork
+upgrade mechanisms that would leave extra items on the stack for
+non-upgraded nodes, suggesting a soft-fork imposing this is a bad idea.
+(though note how it suggests considering such tx's non-standard is
+reasonable in a few ways)
+
+CHECKMULTISIG isn't helped here because the value really is ignored - a
+soft-fork to force it to always be zero might not be a bad idea, though
+it's far from the only example of mutability.
+
+I'd be interested if you can come up with an example where imposing a
+one stack item at the end of execution rule causes problems.
+
+
+More generally, and getting a bit off topic, I think Bitcoin should have
+been designed so that CHECKSIG signed hashes of scriptPubKeys, rather
+than txid:vout outputs, so that malleability wouldn't affect the
+validity of a signature. Of course, this would mean that signatures
+could be reused if scriptPubKeys were reused, but address re-use is a
+bad thing anyway! Not that I'll fault Satoshi here, type 2 deterministic
+wallets were unknown back then. (though we should be careful that a
+future CHECKSIG design can go back to txid:vout references - ECC is
+unique in allowing for type 2 wallets)
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000053ef658095fb45c7a86955d70c76b44264c7abce79683a8a90
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130729/06f51fbd/attachment.sig>
