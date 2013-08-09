@@ -1,0 +1,313 @@
+From: etotheipi@gmail.com (Alan Reiner)
+Date: Fri, 09 Aug 2013 13:57:35 -0400
+Subject: [Bitcoin-development] Optional "wallet-linkable" address format
+	(Re-request)
+In-Reply-To: <51CB08EE.1050403@gmail.com>
+References: <5AC3FA1D9B1F4FA0A2FE9A67333642B5@LAPTOPAIR>
+	<51C21035.9080407@gmail.com>
+	<53E406CF0D93498DAECAAE061555B7C9@LAPTOPAIR>
+	<51C234FA.5030909@gmail.com>
+	<9600E3D1DDC24D1391C1E4433F71684D@LAPTOPAIR>
+	<CANEZrP3ZcQEPOPrO_O2-tdLZUSezj1nbhtVFt1e77KEwzhfZ-A@mail.gmail.com>
+	<51CB08EE.1050403@gmail.com>
+Message-ID: <52052D8F.90706@gmail.com>
+
+Guys,
+
+I'd like to reiterate my previous request to support this alternate
+address serialization in the payment protocol.  We got caught up in the
+specifics of one use case, but didn't acknowledge that it's still a
+valid address representation that will provide value to those who wish
+to use it and can be safely ignored by others.
+
+Current address format:   binary_to_base58( idbyte + hash160(pubkey) +
+checksum)
+Alternate format:         binary_to_base58( idbyte + parentpubkey +
+multiplier + checksum)
+
+The receiving party will multiply the pubkey by the multiplier, and then
+hash it to get the 20-byte address to send to.  The idea is that you use
+your BIP 32 parent public key, and then you generate whatever child you
+want, and only send them the multiplier used (not the chaincode).  This
+preserves privacy, but if the recipient has your parent public key
+already, they can identify that address being linked to you, but cannot
+determine any other addresses in your wallet.
+
+This form has no drawbacks to the existing address format except for
+being longer and requiring an extra EC multiplication by the person
+sending to that address.  But the advantage is that it optionally allows
+the sender to provide more information than currently contained in the
+25-byte hash160 form.  The discussion about this got side-tracked with
+the use case I presented, but I believe there are plenty of other uses
+for this.
+
+The particular use case I had in mind was that certain services could be
+setup (pre-arranged), say between wallet software and a
+business/exchange.  The exchange would like to be able to reliably send
+addresses to the user for deposit, without risk of MITM, or even if
+their own public server is compromised.  The author of wallet software
+pre-verifies the public key portion of the service, and either hardcodes
+it into the software, or hardcodes their own public key into the
+software and makes the service's signed public key available through
+query server (allowing the software author to offline-sign replacement
+keys, or add keys for new service providers, as needed). 
+
+When the user's software receives a payment address, the software can
+verify it belongs to that service.  You can't use dedicated chain
+technique, because it would either have to be exchanged with the user on
+first transaction which half defeats the purpose, or they give them the
+full public key and chaincode which allows the user to see /all
+/addresses ever used by the service.  Neither one is a reasonable solution.
+
+This use case doesn't necessarily scale, but it doesn't have to.  It
+simply allows service providers to skip the SSL and go right to public
+key exchange/verification for a few of the important services they
+provide access to, and will provide better security than relying on
+SSL/PKI.  This would simply be one, coexisting option for providing
+payment details in the absence (or in addition to) SSL/PKI infrastructure.
+
+I'm sure there's other use cases, but it seems simple enough and
+non-disruptive enough that it could be supported easily for no other
+reason than to support that use case (which I intend to implement in
+Armory to help verify high-volume services).
+
+-Alan
+
+
+
+
+
+On 06/26/2013 11:29 AM, Alan Reiner wrote:
+> Although I'd still prefer my original request, I get much of what I
+> want from your guys' recommendation.  It complicates the wallet
+> design, because it requires tracking and associating a matrix of
+> addresses for each wallet, instead of a single linear list.  But if
+> this is what it's going to take then I will go along. 
+>
+> Right now BIP 32 defines, m/i'/j/k, where j=0 is the "external" chain
+> used for distributing addresses, and j=1 is the "internal" chain for
+> sending change.  The CONOPs (concept of operations) for the extended
+> wallet would be like Jeremy described:
+>
+> - Chains with j>=2 would be independent address chains carved out for
+> individuals relationships
+> - Add wallet code to individually associate each j-value with a
+> particular identity
+> - Update the wallet code to pool all the addresses in all j-chains
+> when calculating the balance of the wallet and/or creating transactions
+> - When choosing to generically "Receive Bitcoins", will pick the next
+> address from the j=0 chain
+> - Will have to add extra function to "Receive Bitcoins" button to
+> allow creation of new contacts/identities.
+> - Change will always go to the next address in j=1, no matter which
+> chains are used to provide inputs.
+> - Add code to figure out lookaheads for each alternate chain.  Not
+> just each chain, but looking ahead a couple chains, too.  Luckily, the
+> lookahead doesn't have to be very big for chains j>=1 
+> - Add an interface to display and choose the different chains in your
+> wallet, and export the pubkey&chaincode in some
+> soon-to-be-standardized format. 
+> - Add code and interface to receive and track alternate j-chains from
+> other clients/users, and maintain those.  Should we try associating
+> incoming and outgoing chains?  What happens if they do it wrong?  Meh...
+>
+> Just as one final swipe at this idea, you can see that I gotta do
+> quite a bit of work to support the multi-chain idea, and adds a little
+> extra burden on the user to maintain the organization of the wallet. 
+> This would all be totally unnecessary with a simple alternate
+> encoding.  Granted, I think the multi-chain idea is good, and one that
+> I will probably implement anyway, but it seems like overkill in terms
+> of developer complexity, and interface complexity to achieve something
+> much simpler.  Developers of much simpler/lightweight clients would
+> probably find this prohibitive.
+>
+> On another note:  I thought we weren't encouraging automatic payments
+> without requesting from the other party...?  It makes me uneasy, but
+> it sounds like group thought has converged on that being acceptable. 
+> I bring it up, because there are situations where it makes sense, but
+> it sounds unsafe for general users.   Alice will give Bob his own
+> chain for sending Alice money, then a year later Bob will send money
+> automatically to Alice not realizing that the wallet was lost, retired
+> or compromised.  It's not that Bob can't ask for a new address, it's
+> that if the interface says "Send Money to Alice", that looks legit
+> enough that Bob may not feel it necessary to check with Alice first.  
+> That's more of an interface issue though.  We can add a warning to
+> "check with the recipient that they still have access to wallet
+> 3cQ398x", etc.   But I just know someone is going to lose money anyway...
+>
+> -Alan
+>
+>
+>
+>
+>
+> On 06/20/2013 03:32 AM, Mike Hearn wrote:
+>> Agree with Jeremy and once the payment protocol work is further along
+>> I'd like to see us define an extension that lets you send payment
+>> requests containing public keys+chain codes, so further payments can
+>> be made push-style with no recipient interaction (e.g. for repeated
+>> billing). How apps choose to arrange their chains internally seems
+>> like an area for experimentation. I definitely want to implement HD
+>> wallets in bitcoinj to allow this and if that means not using the
+>> same tree structure as in the BIP then so be it.
+>>
+>>
+>> On Thu, Jun 20, 2013 at 5:54 AM, Jeremy Spilman <jeremy at taplink.co
+>> <mailto:jeremy at taplink.co>> wrote:
+>>
+>>     > BIP 32 already specifies how to use the first three tree
+>>     levels:  M/i/j/k,
+>>     > i~wallet, j~Internal/External, k~address.  The first level is
+>>     actually
+>>     > type-1 derived, and thus we cannot create an arbitrary number
+>>     of them
+>>     > without pre-computing them from the offline wallet.  So it's
+>>     not "free" to
+>>     > create new wallets unless we redefine how the levels work.
+>>
+>>     Initially I was thinking that you would share the public key and
+>>     chain code
+>>     from [m/i'/0] so that you can receive payments at [m/i'/0/k], for
+>>     a unique
+>>     value of 'i' for each receive chain.
+>>
+>>     For the case of generating new receive chains from a *watch-only*
+>>     wallet, as
+>>     you say, the options are to either keep a cache of
+>>     PubKey/ChainCode for
+>>     unused [m/i'] or simply increment 'j' past 1 for an existing
+>>     [m/i'/j] -- the
+>>     concept of 'internal/'external' and change addresses at Depth=2
+>>     don't make
+>>     sense for handing out receive chains to lots of people anyway,
+>>     and certainly
+>>     BIP32 doesn't *require* 0 <= j <= 1.  So I think incrementing 'j'
+>>     is the way
+>>     to go here...
+>>
+>>     The "default" layout of BIP32 does NOT mean that implementations
+>>     should not
+>>     check for transactions with j > 1. That would be a useless
+>>     constraint and
+>>     obviously self-limiting. It might be helpful to add to the
+>>     'Compatibility'
+>>     section some minimum expectations about how a wallet should be
+>>     'probed' when
+>>     imported. If you don't feel completely free to monotonically
+>>     increment 'j'
+>>     to your hearts content to achieve major usability benefits, then
+>>     I say BIP32
+>>     could use some clarifying.
+>>
+>>     BTW - the spec calls for addition not multiplication now, so we
+>>     should call
+>>     it the 'Addend' not the 'Multiplier' :-)
+>>
+>>     > Do these extra wallet chains behave as different wallets, or
+>>     sub-wallets?
+>>
+>>     They could, but they certainly don't need to!  A single-wallet
+>>     implementation treats this merely as an address-generation
+>>     algorithm, and
+>>     does not expose any hierarchy to the user interface.  The user just
+>>     "magically" gets the ability to send multiple payments to their
+>>     contacts
+>>     without immediately sacrificing their privacy
+>>     (http://www.wired.com/wiredenterprise/2013/06/bitcoin_retai/).
+>>     Everything
+>>     goes into the same ledger, balance, coin pool, etc. Most of the
+>>     code base is
+>>     unaware BIP32 is even in use.
+>>
+>>     While it is *possible* to support separate ledgers, balances,
+>>     etc. it is
+>>     certainly not required, and you get all the benefits either way.
+>>
+>>     I think, since your proposal generates and receives payments into
+>>     BIP32-style addresses, we both need similar underlying wallet
+>>     code. The only
+>>     difference is that you are passing the Kpar for [m/i'/0/k] and
+>>     the *result*
+>>     of CKD'((Kpar, cpar), k), and instead I proposed passing Kpar and
+>>     cpar, and
+>>     leaving 'k' out of it, letting the receive choose 'k'.
+>>
+>>     > For instance, maybe there's a benefit to using the same parent
+>>     pubkey
+>>     > across multiple services, as a form of identity.   If I don't
+>>     want that, I
+>>     > use your method.  If I do want that, I use my method.
+>>
+>>     I think it's a interesting idea using static public keys as a
+>>     means for
+>>     persistent identity and hence security from MitM. If you want a
+>>     shared
+>>     public key across multiple services we could just combine both
+>>     ideas and get
+>>     all the benefits, by making the data structure { ParentPubKey,
+>>     Addend,
+>>     ChainCode }:
+>>
+>>        ParentPubKey: Public key of m/i' -- 33 bytes
+>>        Addend: I[L]*G from CDK'(m/i', j) -- 33 bytes
+>>        ChainCode: I[R] from CDK'(m/i', j) -- 32 bytes
+>>
+>>     All that remains secret is the ChainCode from [m/i'] -- and of
+>>     course the
+>>     private keys.  The ParentPubKey is a common value across multiple
+>>     services,
+>>     corresponding to user's identity rooted in [m/i'].  Each service
+>>     gets their
+>>     own 'j'.  ParentPubKey + Addend gives you the PubKey of [m/i'/j].
+>>      With the
+>>     ChainCode, the receiver then can generate [m/i'/j/k] for
+>>     monotonically
+>>     increasing 'k'. Again, from the user perspective all transactions
+>>     under
+>>     [m/i'] can be presented in a single ledger, or not.
+>>
+>>     Anyway, fundamentally my feedback is if you are designing for
+>>     persistent
+>>     long-term relationships, you could build in a mechanism for
+>>     generating
+>>     address chains so you don't need any further communication after
+>>     the initial
+>>     exchange, and it need not complicate the wallet.
+>>
+>>     Thanks,
+>>     --Jeremy
+>>
+>>
+>>
+>>     ------------------------------------------------------------------------------
+>>     This SF.net email is sponsored by Windows:
+>>
+>>     Build for Windows Store.
+>>
+>>     http://p.sf.net/sfu/windows-dev2dev
+>>     _______________________________________________
+>>     Bitcoin-development mailing list
+>>     Bitcoin-development at lists.sourceforge.net
+>>     <mailto:Bitcoin-development at lists.sourceforge.net>
+>>     https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>
+>>
+>>
+>>
+>> ------------------------------------------------------------------------------
+>> This SF.net email is sponsored by Windows:
+>>
+>> Build for Windows Store.
+>>
+>> http://p.sf.net/sfu/windows-dev2dev
+>>
+>>
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130809/6a4536d2/attachment.html>
