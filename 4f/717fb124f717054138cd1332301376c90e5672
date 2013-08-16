@@ -1,0 +1,64 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Thu, 15 Aug 2013 19:26:29 -0700
+Subject: [Bitcoin-development] BIP 32.5
+Message-ID: <CAAS2fgQFOei6we8nfSr9DuQuHEjXT+G8_XGMk9um14DBgRuPyA@mail.gmail.com>
+
+I am wondering if we shouldn't have a BIP32 addendum which makes the
+following signing related recommendations:
+
+(1) Recommend a specific deterministic DSA derandomization procedure
+(a deterministic way to generate the DSA nonce), presumably one based
+on HMAC-SHA512 (since BIP32 uses that construct) or SHA256 in the
+style of RFC 6979.
+
+DSA systems being compromised due to poor randomness at runtime is not
+new. It effected other systems before it effected Bitcoin systems,
+it's not a new problem and it's not going away.  It's difficult to
+tell if an implementation is correct or not.
+
+Use of a fully deterministic signature  would allow for complete test
+vectors in signing and complete confidence that there is no random
+number related weakness in a signing implementation.
+
+In particular, with relevance to our ecosystem a maliciously modified
+difficult to audit hardware wallet could be leaking its keys material
+via its signatures. Even without producing insecure K values it could
+use the choice of K to leak a couple bits of an encrypted root key
+with every signature, and allow the malicious party to recover the
+keys by simply observing the network. Making the signatures
+deterministic would make this kind of misbehavior practically
+discoverable.
+
+We wouldn't be alone in making this change, in general industry is
+moving in this direction because it has become clear that DSA is a
+hazard otherwise.
+
+The primary arguments in most spaces against derandomizing DSA are
+FIPS conformance (irrelevant for us) and reasonable concerns about the
+risks of using a (less) reviewed cryptographic construct. With
+widespread motion towards derandomized DSA this latter concern is less
+of an issue.
+
+Libcrypt has also implemented derandomized DSA in git. The ed25519
+signature system of DJB, et. al. also uses a similar derandomization.
+
+An alternative is implementing a still random construct where K is
+some H(message||key||random) which should remain secure even where the
+randomness is poor, but this loses the advantage of being able to
+externally verify that an implementation is not leaking information.
+OpenSSL development has implemented a form of this recently.
+
+See also: http://tools.ietf.org/rfc/rfc6979.txt
+
+(2) Recommends a procedure for using only even S values in signatures,
+eliminating this source of mutability in transactions.
+
+This can be accomplished via post-processing of existing signatures,
+but since it requires bignum math it is usually preferable to
+implement it along with signing.  I believe someday this will become a
+network requirement for Bitcoin, but regardless it makes sense to
+implement it as a best practice sooner rather than later.
+
+Thoughts?
+
+
