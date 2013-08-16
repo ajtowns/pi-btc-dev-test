@@ -1,0 +1,115 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Fri, 16 Aug 2013 13:32:39 +0200
+Subject: [Bitcoin-development] BIP 32.5
+In-Reply-To: <CAAS2fgQFOei6we8nfSr9DuQuHEjXT+G8_XGMk9um14DBgRuPyA@mail.gmail.com>
+References: <CAAS2fgQFOei6we8nfSr9DuQuHEjXT+G8_XGMk9um14DBgRuPyA@mail.gmail.com>
+Message-ID: <CANEZrP0Kr+jJA5r1uPELPR_7a5CmwewFuLb0Xr-sno4KxVK1cA@mail.gmail.com>
+
+I filed a bug in the bitcoinj tracker for this a few days ago referencing
+rfc 6967, but that RFC is very complicated and I'm not sure it's really
+necessary to go that far. H(sighash||key) is easy to implement and I feel I
+understand it better.
+
+In our case it wouldn't have helped anyway - if anything it would just
+delayed discovery of the underlying weakness. The same RNG is typically
+used to generate both keys and signatures today. However in future it may
+be the case that people put more effort into generating a really random key
+because they only have to do it once, and then the signing RNG would be
+different.
+
+Your concern about hardware devices leaking private key bits via a side
+channel is also well made, although I think you have to find some way to
+establish trust in these devices anyway as sniffing all their IO traffic
+and analysing it is really hard (plus it inverts the threat model - if you
+trust your computer and not your hardware wallet, why do you have a
+hardware wallet?)
+
+The other advantage is that deterministic keys and signatures together mean
+two instances of the same wallet generate identical transactions given an
+identical sequence of commands. This could help keep wallets in sync. For
+example we had a few users who got confused because they had cloned their
+Android wallets across devices (NOT SUPPORTED!) and then one device updated
+first, did key rotation, and then the other device showed a transaction
+that sent all their money to a new address it knew nothing about. If they
+didn't realise the other device had updated this looked identical to theft!
+
+I don't think fractional BIP numbers are the way to go :) but a new BIP
+that standardised a way to select K would, if reviewed, be something I'd
+implement.
+
+
+On Fri, Aug 16, 2013 at 4:26 AM, Gregory Maxwell <gmaxwell at gmail.com> wrote:
+
+> I am wondering if we shouldn't have a BIP32 addendum which makes the
+> following signing related recommendations:
+>
+> (1) Recommend a specific deterministic DSA derandomization procedure
+> (a deterministic way to generate the DSA nonce), presumably one based
+> on HMAC-SHA512 (since BIP32 uses that construct) or SHA256 in the
+> style of RFC 6979.
+>
+> DSA systems being compromised due to poor randomness at runtime is not
+> new. It effected other systems before it effected Bitcoin systems,
+> it's not a new problem and it's not going away.  It's difficult to
+> tell if an implementation is correct or not.
+>
+> Use of a fully deterministic signature  would allow for complete test
+> vectors in signing and complete confidence that there is no random
+> number related weakness in a signing implementation.
+>
+> In particular, with relevance to our ecosystem a maliciously modified
+> difficult to audit hardware wallet could be leaking its keys material
+> via its signatures. Even without producing insecure K values it could
+> use the choice of K to leak a couple bits of an encrypted root key
+> with every signature, and allow the malicious party to recover the
+> keys by simply observing the network. Making the signatures
+> deterministic would make this kind of misbehavior practically
+> discoverable.
+>
+> We wouldn't be alone in making this change, in general industry is
+> moving in this direction because it has become clear that DSA is a
+> hazard otherwise.
+>
+> The primary arguments in most spaces against derandomizing DSA are
+> FIPS conformance (irrelevant for us) and reasonable concerns about the
+> risks of using a (less) reviewed cryptographic construct. With
+> widespread motion towards derandomized DSA this latter concern is less
+> of an issue.
+>
+> Libcrypt has also implemented derandomized DSA in git. The ed25519
+> signature system of DJB, et. al. also uses a similar derandomization.
+>
+> An alternative is implementing a still random construct where K is
+> some H(message||key||random) which should remain secure even where the
+> randomness is poor, but this loses the advantage of being able to
+> externally verify that an implementation is not leaking information.
+> OpenSSL development has implemented a form of this recently.
+>
+> See also: http://tools.ietf.org/rfc/rfc6979.txt
+>
+> (2) Recommends a procedure for using only even S values in signatures,
+> eliminating this source of mutability in transactions.
+>
+> This can be accomplished via post-processing of existing signatures,
+> but since it requires bignum math it is usually preferable to
+> implement it along with signing.  I believe someday this will become a
+> network requirement for Bitcoin, but regardless it makes sense to
+> implement it as a best practice sooner rather than later.
+>
+> Thoughts?
+>
+>
+> ------------------------------------------------------------------------------
+> Get 100% visibility into Java/.NET code with AppDynamics Lite!
+> It's a free troubleshooting tool designed for production.
+> Get down to code-level detail for bottlenecks, with <2% overhead.
+> Download for free and get started troubleshooting in minutes.
+> http://pubads.g.doubleclick.net/gampad/clk?id=48897031&iu=/4140/ostg.clktrk
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130816/2fc1bc5d/attachment.html>
