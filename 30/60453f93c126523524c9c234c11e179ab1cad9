@@ -1,0 +1,100 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 16 Aug 2013 10:01:16 -0400
+Subject: [Bitcoin-development] Gavin's post-0.9 TODO list...
+In-Reply-To: <CANEZrP3LAR0erjgmTHruLwPNDdx-OVyb9KK52E6UnmE4ZuBrvQ@mail.gmail.com>
+References: <CABsx9T32q8mKgtmsaZgh7nuhHY5cExeW=FiadzXq3jXVP=NBTw@mail.gmail.com>
+	<CANEZrP0PEcP339MKRyrHXHCCsP3BxRHT-ZfKRQ7G2Ou+15CD7A@mail.gmail.com>
+	<CANEZrP3LAR0erjgmTHruLwPNDdx-OVyb9KK52E6UnmE4ZuBrvQ@mail.gmail.com>
+Message-ID: <20130816140116.GB16201@petertodd.org>
+
+On Fri, Aug 16, 2013 at 02:24:04PM +0200, Mike Hearn wrote:
+> The only other thing I'd like to see there is the start of a new anti-DoS
+> framework. I think once the outline is in place other people will be able
+> to fill it in appropriately. But the current framework has to be left
+> behind.
+
+Part of anti-DoS should include making it easier for people to
+contribute back to the network. Lowest hanging fruit:
+
+1) SPV nodes with spare bandwidth should relay whole blocks to reduce
+the load on full-nodes. The SPV security model is based on hashing power
+anyway, so there is no major harm in doing so - if you have the
+resources to fake blocks, you probably have the resources to sybil the
+network anyway.
+
+2) It's probably reasonable for SPV peers with bandwidth to be willing
+to do bloom filtering on the behalf of peers that don't have spare
+bandwidth. Hence they would set NODE_BLOOM, but not NODE_NETWORK. (or
+more likely some more nuanced flags) Again this has to apply to full
+blocks only unless we come up with some PoW scheme or similar to
+discourage DoS attacks via invalid transactions. (maintaining partial
+UTXO sets is another possibility, although a complex one)
+
+Both examples work best with payment protocols where the recipient is
+responsible for getting the transaction broadcast. Similarly you can by
+default not connect to full-node peers, and then connect to them on
+demand when you have a transaction to send.
+
+Doing this also makes it more difficult to sybil the network - for
+instance right now you can create "SPV honeypots" that allow incoming
+connections only from SPV nodes, thus attracting a disproportionate % of
+the total SPV population given a relatively small number of nodes. You
+can then use that to harm SPV nodes by, for instance, making a % of
+transactions be dropped deterministicly, either by the bloom matching
+code, or when sent. Users unlucky enough to be surrounded by sybil nodes
+will have their transactions mysteriously fail to arrive in their
+wallets, or have their transactions mysteriously never confirm. Given
+how few full nodes there are, it probably won't take very many honeypots
+to pull off this attack, especially if you combine it with a
+simultaneous max connections or bloom io attack to degrade the capacity
+of honest nodes.
+
+Deanonymization is another attack that can be done at the same time of
+course.
+
+In any case, the more peers on the network that can relay data the
+better.
+
+3) Make it easier to run a full node. IMO partial mode is the way to go
+here. Note that from a legal perspective we really want to make sure
+that running full nodes (and mining p2pool or solo) continue to be
+something ordinary users do. We do not want to give the impression to
+regulators that running a full node is in any way unusual or rare, and
+thus something that might be practical or desirable to regulate. Users
+should be given clear options about how much disk space and bandwidth to
+donate to the health of the network, and within those limits nodes
+should always try to make progress towards being full nodes, and in the
+meantime being increasingly productive partial nodes.
+
+Even with pure SPV nodes if they are relaying block data and ideally
+transactions they make it much more difficult for regulations to be made
+that, say, require full node operators to apply blacklists to
+transactions in the mempool or in blocks.
+
+
+4) This is really a side effect, and not directly DoS-related, but
+unfortunately we're going to have to create some kind of
+proof-of-UTXO-possession that miners include in the blocks they mine.
+With partial mode it's just too easy and tempting for people to mine
+blocks with fee paying transactions in them without actually having the
+full UTXO set; such nodes can't tell if a block is invalid due to a fake
+txin, and thus will happily extend a invalid chain. This possession
+proof can probably be make part of a UTXO commitment.
+
+> If I had to choose one thing to evict to make time for that, it'd be the
+> whitepapers. At the moment we still have plenty of headroom in block sizes,
+> even post April. It can probably be safely delayed for a while.
+
+Lots of off-chain tx solutions are popping up which will help push back
+the issue's relevance as well. Also your micropayment channels possibly.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000b9656276a0fdab028ca759c3fd7f951fb20196c264b5cd1ce
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130816/5afa0810/attachment.sig>
