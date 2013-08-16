@@ -1,0 +1,52 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Fri, 16 Aug 2013 12:37:50 -0700
+Subject: [Bitcoin-development] BIP 32.5
+In-Reply-To: <CAAS2fgQFOei6we8nfSr9DuQuHEjXT+G8_XGMk9um14DBgRuPyA@mail.gmail.com>
+References: <CAAS2fgQFOei6we8nfSr9DuQuHEjXT+G8_XGMk9um14DBgRuPyA@mail.gmail.com>
+Message-ID: <op.w1xctcddyldrnw@laptop-air>
+
+I personally like the full-measure of eliminating the "CS-PRNG" entirely  
+ from signing. If the "random" component is assumed to be untrusted,  
+keeping it in there adds no value, while eschewing the main benefit of  
+deterministic signing (ease of testing, auditing)
+
+This just leaves the CS-PRNG at the heart of the security system -- when  
+generating the root master key of an HD wallet. Adding to what Mike said,  
+a single invocation of a CS-PRNG driving all subsequent keys increases the  
+attack value if that one invocation turns out to be weak. By comparison,  
+at least compromised DSA signatures were one-off events which didn't allow  
+theft of funds beyond the one compromised address.
+
+Cumulative / rolling entropy collection over time through multiple CS-PRNG  
+invocations, or multiple entropy sources, could serve to recover from an  
+"occasionally weak" CS-PRNG. I've read claims that this is bad practice  
+because a single low entropy source can take entropy out of the result,  
+but this seems like FUD. If you're using SHA512-HMAC to hash chain a few  
+entropy sources, even "return 4; // chosen by random dice roll" is not  
+going to help, but it's not going to hurt.
+
+The DSA 'repeated-k' basically advertises itself on the block-chain and  
+people were actively scanning for this weakness, whereas a weak key in the  
+BIP32 root might not be as apparent, so exploitation may be more  
+difficult, but also more insidious. Of course this depends on the exact  
+failure mode of the CS-PRNG being used -- I wonder if anyone is searching  
+for BIP32 keys based off of one of the 32k Debian random numbers being  
+used as a master key?
+
+Smartphones in particular have lots of sensors which could provide  
+entropy. For example, if you pulled 64 bytes from "secure random", you  
+could at least HMAC that with the SHA512 of a picture or a short video  
+sample taken by the user. I'm guessing some people would cringe at this,  
+but it seems to me like it provides some measure of protection to justify  
+the increased code complexity.
+
+TL;DR - Really like the idea of minimizing CS-PRNG use whenever possible  
+(deterministic signing) and also would love to learn more best practices  
+for placing less trust in the so called "CS-PRNG" when we do have to use  
+them.
+
+Thanks,
+Jeremy
+
+
+
