@@ -1,0 +1,81 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Mon, 19 Aug 2013 11:29:55 +0200
+Subject: [Bitcoin-development] Bloom io attack effectiveness
+In-Reply-To: <20130819001357.GA4281@savin>
+References: <20130819001357.GA4281@savin>
+Message-ID: <CANEZrP1hdnEE9HsKoSctbQeDxpXce71Y96C-6Jf+xZN6ZMhASg@mail.gmail.com>
+
+On Mon, Aug 19, 2013 at 2:13 AM, Peter Todd <pete at petertodd.org> wrote:
+
+> In any case given that SPV peers don't contribute back to the network
+> they should obviously be heavily deprioritized and served only with
+> whatever resources a node has spare.
+
+
+Well, I'm glad we're making progress towards this kind of model :)
+
+If I had to write a scoring function for node importance, I'd start by
+making nodes I connected to more important than nodes that connected to me.
+That should prevent the kind of attacks you're talking about. You can then
+score within those subsets with greater subtlety, like using how long the
+connection has been active (or extending that with signed timestamps).
+
+This doesn't have any in-built bias against SPV nodes, which is probably
+very hard to technically implement anyway. But it encodes the intuitive
+notion that nodes I selected myself are less likely to be DoS attackers
+than nodes which connected to me.
+
+But the trick is to implement the prioritisation code. The usual way to do
+this is to have a thread pool that pops requests off a queue. You can
+either have multiple queues for different priority bands, or code that
+locks the queue and re-orders it when something new is added. I tend to
+find the multiple queues approach simpler, especially, it's simpler to
+export statistics about that via RPC that make it easy to understand what's
+going on underneath the hood.
+
+So IMHO a patch to address I/O exhaustion should look something like this:
+
+   1. Add a thread pool of 2-3 threads (to give the kernel room to overlap
+   IO) which take in CBlock load requests and then do the load/parse/filter in
+   the background.
+
+   2. Each thread starts by blocking on a counting semaphore which
+   represents the total number of requests.
+
+   3. The network thread message loop is adjusted so it can receive some
+   kind of futures/callbacks/closure object (I guess Boost provides this,
+   alternatively we could switch to using C++11). The closures should also
+   have the score of the node they were created for (note: score not a CNode*
+   as that complicates memory management).
+
+   4. At the start of the network loop a thread-local (or global) variable
+   is set that contains the nodes current score, which is just an n-of-m score
+   where M is the total number of connected nodes and N is the ranked
+   importance. At that point any code that needs to prioritise nodes off
+   against each other can just check that variable whilst doing work. The
+   network loop looks at which file descriptors are select()able and their
+   scores, which closures are pending execution and their scores, then decides
+   whether to handle new network data or run a closure. If there is a draw
+   between the scores, closures take priority to reduce memory pressure and
+   lower latency.
+
+   5. Handling of "getdata" then ends up calling a function that requests a
+   load of a block from disk, and runs a closure when it's finished. The
+   closure inherits the nodes current score, of course, so when the block load
+   is completed execution of the rest of the getdata handling takes priority
+   over handling new traffic from network nodes. When the closure executes, it
+   writes the loaded/filtered data out over the network socket and deletes
+
+The function that takes a CBlockIndex and yields a future<CBlock> or
+closure or whatever would internally lock the job queue(s), add the new
+task and then do a stable sort of the queue using the scoring function,
+which in this case would simply use the node score as the job score.
+
+It's a fair amount of work, but should ensure that "good" nodes outcompete
+"bad" nodes for disk IO. Any other disk IO operations can be done in the
+same way. Note that the bulk of LevelDB write work is already handled on a
+background thread. The foreground thread only writes a log entry to disk
+and updates some in-memory data structures.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130819/c38baf67/attachment.html>
