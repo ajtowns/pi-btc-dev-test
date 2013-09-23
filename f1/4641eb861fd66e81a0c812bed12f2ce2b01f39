@@ -1,0 +1,175 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 23 Sep 2013 09:34:19 -0400
+Subject: [Bitcoin-development] Near-block broadcasts for proof of tx
+	propagation
+Message-ID: <20130923133419.GB4400@savin>
+
+Currently there is no way for a node, SPV or otherwise, to know if a
+transaction has been broadcast succesfully to any amount of hashing
+power. This makes it difficult to determine if a transaction failed to
+either propagate across the network, or failed to pay sufficient fees to
+be worthy of inclusion in a block.
+
+Broadcasting blocks that almost, but not quite, met the difficulty
+target provides clients with fast and honest proof about the hashing
+power mining their transaction. This proof is inherently honest because
+making a "near-block" is an expensive operation; additionally given at
+least one honest peer a node can detect near-block censorship by any
+other peer statistically.
+
+
+Limitations of fee estimation
+=============================
+
+Mempool-based fee estimation is limited by the ability of peers to lie,
+particularly to SPV peers. Miners wishing to increase fees can conduct
+sybil attacks where they lie to peers about the average fees required to
+get transactions into blocks. This problem is particularly dangerous
+given the lack of incentives to run full-nodes in the first place; the
+number of full nodes has continued to drop over time as users switch to
+SPV clients and web-wallets; it would be unfortunate if users started
+switching to web-wallets because they could offer better fee estimation.
+In any case creating monetary incentives to sybil the network is very
+undesirable.
+
+Out-of-band fee payment has the opposite effect of making fees in blocks
+appear lower than actually required to get them mined; transactions will
+get stuck unless an initial bad estimate can be replaced with a higher
+paying one. The payment protocol makes out-of-band fee payment
+attractive in the case where you want to accept a payment from a
+customer and pay the fee for them; child-pays-for-parent wastes money
+paying for additional blockchain space.
+
+Replacement-based schemes allow for recovery from stuck too-low
+transactions, but they are still succeptable to sybil attacks. (don't
+relay the transaction to other pools)
+
+
+Miner incentives to create near blocks
+======================================
+
+Why would a miner want to go to the trouble of broadcasting a near block
+anyway? Wouldn't it be better if users didn't get feedback about fees
+and over-paid instead?
+
+If you are a large miner as a % of total profit efforts such as sybiling
+the network have a greater rate of return; if you are a small miner the
+greater income you receive from deception is outweighed by the cost.
+Thus you have an incentive to provide mechanisms to force larger miners
+to behave honestly.
+
+Secondly near-blocks could help "pre-propagate" transactions that will
+be mined in the near future, thus reducing block propagation times and
+hence orphan rates. (the pre-propagation can use the proof-of-work to
+rate-limit transactions that nodes would otherwise not forward, also
+allowing non-full nodes to safely participate in relaying) Again, this
+is something that most interests smaller miners with less peak bandwidth
+rather than large pools.
+
+In the event of a fork near blocks can be used to more quickly determine
+which side of the fork has the majority of hashing power, allowing the
+minority side to switch sooner. Again the reduction in orphan rates
+benefits smaller miners more than larger ones. (though note how only
+near-block headers are required for this application)
+
+
+Contents of a near block
+========================
+
+>From the miner incentives we see that near blocks should contain two
+types of information:
+
+1) Transactions known to the miner, but not included in the current
+block. This information allows nodes to determine if a transaction they
+have broadcast was succesfully propagated to the majority of hashing
+power regardless of whether or not it is being mined, allowing nodes to
+avoid sybil attacks attempting to censor the transactions they make.
+
+This information needs to be committed separately in the coinbase tx.
+The incentive for miners here is to ensure that no-one can gain an
+unfair advantage with a sybil attack.
+
+2) Transactions the miner is attempting to mine, proved by the merkle
+root. The incentives here are allowing non-full nodes to safely
+propagate transactions, improving block propagation, as well as further
+preventing deception by larger miners.
+
+Transaction mutability complicates both #1 and #2. In the case of #1
+nodes can exploit mutability while relaying transactions, although at
+least relaying mutability is increasingly difficult; the incentives are
+such that the miners themselves have no reason to lie about the txids
+they know of. For #2 the incentives are all harmed by mutating
+transactions, so again we can expect miners to either leave transactions
+as they are, or simply not publish near blocks at all.
+
+Bandwidth usage is reasonable: the average transaction from the last
+10,000 blocks is 450 bytes. Both data sets can be delta compressed
+against previously sent txids. Even a naive implementation that sends
+full txids would result in near blocks that are about 1/10th of the size
+of full blocks. (32-byte txids, and 1/4 of that amount in the "seen but
+not mined" list) The machinery for near blocks can also be easily
+re-used to implement improved full-block relaying with transactions in
+blocks being referenced to by txid.
+
+
+Replacement with near blocks
+============================
+
+An node making a transaction can do the following:
+
+1. Broadcast the transaction with an initial estimated fee. (the txid is
+added to the bloom filter here) The estimate can safely be be on the low
+side.
+
+2. Wait
+
+3. If transaction still hasn't appeared in either a block or near block,
+rebroadcast with a higher fee, either by replace-by-fee method, or
+zero-conf safe method of adding an additional txin+txout.
+
+Peers practicing censorship of either transactions or near blocks can be
+detected statisticly by preferring to connect to peers that provide more
+near blocks. Note how a short 80-byte near block header is sufficient
+information to detect a peer withholding near blocks, and that header
+can be relayed by SPV peers safely. If the transaction fails to get into
+the "seen-but-not-mined" list, a node can use that failure as an
+indication to find other peers to relay too.
+
+Currently SPV clients are vulnerable to their peers withholding valid
+bloom filter matches; future UTXO commitments can be designed to make
+this impossible, and spot-check auditing can detect it now.
+
+
+Out-of-band fee payment with near blocks
+========================================
+
+A purchaser of out-of-band fee payment services can use near-blocks to
+check that their fee offer has been accepted and miners are mining their
+transaction. This would be particularly useful for a decentralized
+system where offers backed by fidelity bonds are made; it would be good
+to encourage such systems over arrangements between purchasers and large
+pools.
+
+
+Security
+========
+
+There is a serious problem however with proof-of-propagation and
+proof-of-mining: they let miners cheat. The proof that a given
+transaction is being mined can be used to mine the transaction yourself,
+without having to maintain a copy of the UTXO set or indeed do any
+validation at all. Having said that this risk already exists due to
+P2Pool, which forwards transactions along with shares already.
+
+In any case, it's yet another argument that we need miners to prove they
+possess the UTXO set.
+
+-- 
+'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20130923/56f02ac6/attachment.sig>
