@@ -1,0 +1,190 @@
+From: jgarzik@bitpay.com (Jeff Garzik)
+Date: Tue, 1 Oct 2013 16:17:43 +0200
+Subject: [Bitcoin-development] bitcoind stops responding
+In-Reply-To: <1380611418.932.31.camel@Wailaba2>
+References: <CAJna-Hi+eyRnZUtHpfvod_uRCmjPOL5HS3ZZpr54yzbKRRT9-w@mail.gmail.com>
+	<1380600219.932.21.camel@Wailaba2>
+	<1380611418.932.31.camel@Wailaba2>
+Message-ID: <CAJHLa0PucKk_OBQarRgVBRPyC+RbvT9GC1iYqAaBjyT2qyRFdw@mail.gmail.com>
+
+Olivier,
+
+What network activity was going on, during this test?  i.e. during the
+call with 5.99 locktime, was bitcoind processing a block or sending a
+large transaction?  There are plenty of valid reasons -- sadly -- that
+the locks are held for a long time, during random network events.
+
+
+
+On Tue, Oct 1, 2013 at 9:10 AM, Olivier Langlois <olivier at trillion01.com> wrote:
+>
+>>
+>> Not sure yet exactly where the problem is but my current #1 suspect is:
+>>
+>> LOCK2(cs_main, pwalletMain->cs_wallet);
+>>
+>> with some kind of lock contention with the other threads.
+>>
+>
+> I was right. It took more than 6 seconds to acquire the locks
+>
+> I did modify bitcoinrpc.cpp:
+>
+> namespace {
+>
+> struct timeval difftv( const struct timeval &tv1, const struct timeval
+> &tv2 )
+> {
+>         struct timeval res;
+>         res.tv_sec = tv1.tv_sec - tv2.tv_sec;
+>         if (tv2.tv_usec > tv1.tv_usec) {
+>                 res.tv_sec--;
+>                 res.tv_usec = 1000000;
+>         } else
+>                 res.tv_usec = 0;
+>
+>         res.tv_usec += tv1.tv_usec;
+>         res.tv_usec -= tv2.tv_usec;
+>
+>         return res;
+> }
+>
+> void printExecTimes( const struct timeval &tv1,
+>                      const struct timeval &tv2,
+>                      const struct timeval &tv3 )
+> {
+>         struct timeval lockTime = difftv(tv2,tv1);
+>         struct timeval callTime = difftv(tv3,tv2);
+>         struct timeval totalTime = difftv(tv3,tv1);
+>         printf( "locktime : %ld.%06ld calltime : %ld.%06ld totaltime : %
+> ld.%06ld\n",
+>
+> lockTime.tv_sec,lockTime.tv_usec,callTime.tv_sec,callTime.tv_usec,
+>                 totalTime.tv_sec,totalTime.tv_usec);
+> }
+>
+> }
+>
+> json_spirit::Value CRPCTable::execute(const std::string &strMethod,
+> const json_spirit::Array &params) const
+> {
+>     // Find method
+>     const CRPCCommand *pcmd = tableRPC[strMethod];
+>     if (!pcmd)
+>         throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Method not found");
+>
+>     // Observe safe mode
+>     string strWarning = GetWarnings("rpc");
+>     if (strWarning != "" && !GetBoolArg("-disablesafemode") &&
+>         !pcmd->okSafeMode)
+>         throw JSONRPCError(RPC_FORBIDDEN_BY_SAFE_MODE, string("Safe
+> mode: ") + strWarning);
+>
+>     try
+>     {
+>         // Execute
+>         Value result;
+>         {
+>             if (pcmd->threadSafe)
+>                 result = pcmd->actor(params, false);
+>             else {
+>                 struct timeval tv1,tv2,tv3;
+>                 gettimeofday(&tv1,NULL); {
+>                 LOCK2(cs_main, pwalletMain->cs_wallet);
+>                 gettimeofday(&tv2,NULL);
+>                 result = pcmd->actor(params, false); }
+>                 gettimeofday(&tv3,NULL);
+>                 printExecTimes(tv1,tv2,tv3);
+>             }
+>         }
+>         return result;
+>     }
+>     catch (std::exception& e)
+>     {
+>         throw JSONRPCError(RPC_MISC_ERROR, e.what());
+>     }
+> }
+>
+> locktime : 0.000001 calltime : 0.000153 totaltime : 0.000154
+> locktime : 0.000000 calltime : 0.000011 totaltime : 0.000011
+> locktime : 0.000000 calltime : 0.000451 totaltime : 0.000451
+> locktime : 0.000000 calltime : 0.000313 totaltime : 0.000313
+> locktime : 0.000000 calltime : 0.000011 totaltime : 0.000011
+> locktime : 0.051574 calltime : 0.000377 totaltime : 0.051951
+> locktime : 0.000000 calltime : 0.000222 totaltime : 0.000222
+> locktime : 0.000000 calltime : 0.000011 totaltime : 0.000011
+> locktime : 0.121106 calltime : 0.000471 totaltime : 0.121577
+> locktime : 0.078093 calltime : 0.000451 totaltime : 0.078544
+> locktime : 0.101185 calltime : 0.000021 totaltime : 0.101206
+> locktime : 0.000000 calltime : 0.000476 totaltime : 0.000476
+> locktime : 0.000001 calltime : 0.000291 totaltime : 0.000292
+> locktime : 0.000000 calltime : 0.000017 totaltime : 0.000017
+> locktime : 0.003025 calltime : 0.000036 totaltime : 0.003061
+> locktime : 0.000000 calltime : 0.000383 totaltime : 0.000383
+> locktime : 0.000000 calltime : 0.000210 totaltime : 0.000210
+> locktime : 0.000000 calltime : 0.000016 totaltime : 0.000016
+> locktime : 0.000000 calltime : 0.000470 totaltime : 0.000470
+> locktime : 0.000000 calltime : 0.000295 totaltime : 0.000295
+> locktime : 0.000000 calltime : 0.000020 totaltime : 0.000020
+> locktime : 0.000001 calltime : 0.000385 totaltime : 0.000386
+> locktime : 0.000000 calltime : 0.000241 totaltime : 0.000241
+> locktime : 0.000000 calltime : 0.000017 totaltime : 0.000017
+> locktime : 0.000001 calltime : 0.000308 totaltime : 0.000309
+> locktime : 0.000000 calltime : 0.000164 totaltime : 0.000164
+> locktime : 0.000000 calltime : 0.000017 totaltime : 0.000017
+> locktime : 0.000000 calltime : 0.000376 totaltime : 0.000376
+> locktime : 0.000000 calltime : 0.000356 totaltime : 0.000356
+> locktime : 0.000000 calltime : 0.000021 totaltime : 0.000021
+> locktime : 0.000000 calltime : 0.000496 totaltime : 0.000496
+> locktime : 0.000001 calltime : 0.000201 totaltime : 0.000202
+> locktime : 0.000001 calltime : 0.000017 totaltime : 0.000018
+> locktime : 0.000000 calltime : 0.000301 totaltime : 0.000301
+> locktime : 0.000000 calltime : 0.000180 totaltime : 0.000180
+> locktime : 0.000000 calltime : 0.000016 totaltime : 0.000016
+> locktime : 0.000001 calltime : 0.000359 totaltime : 0.000360
+> locktime : 0.000000 calltime : 0.000265 totaltime : 0.000265
+> locktime : 0.000000 calltime : 0.000017 totaltime : 0.000017
+> locktime : 0.000001 calltime : 0.000488 totaltime : 0.000489
+> locktime : 0.000000 calltime : 0.000226 totaltime : 0.000226
+> locktime : 0.000000 calltime : 0.000025 totaltime : 0.000025
+> locktime : 0.000000 calltime : 0.000369 totaltime : 0.000369
+> locktime : 0.000000 calltime : 0.000262 totaltime : 0.000262
+> locktime : 0.000000 calltime : 0.000017 totaltime : 0.000017
+> locktime : 0.000000 calltime : 0.000459 totaltime : 0.000459
+> locktime : 0.000000 calltime : 0.000260 totaltime : 0.000260
+> locktime : 0.000000 calltime : 0.000017 totaltime : 0.000017
+> locktime : 0.000000 calltime : 0.000330 totaltime : 0.000330
+> locktime : 0.000000 calltime : 0.000223 totaltime : 0.000223
+> locktime : 0.000000 calltime : 0.000014 totaltime : 0.000014
+> locktime : 0.000001 calltime : 0.000449 totaltime : 0.000450
+> locktime : 0.000001 calltime : 0.000248 totaltime : 0.000249
+> locktime : 0.000000 calltime : 0.000017 totaltime : 0.000017
+> locktime : 0.000000 calltime : 0.000327 totaltime : 0.000327
+> locktime : 0.000000 calltime : 0.000196 totaltime : 0.000196
+> locktime : 0.000000 calltime : 0.000016 totaltime : 0.000016
+> locktime : 0.121170 calltime : 0.000408 totaltime : 0.121578
+> locktime : 0.004912 calltime : 0.000278 totaltime : 0.005190
+> locktime : 0.000000 calltime : 0.000016 totaltime : 0.000016
+> locktime : 5.996820 calltime : 0.000328 totaltime : 5.997148
+>
+>
+>
+> ------------------------------------------------------------------------------
+> October Webinars: Code for Performance
+> Free Intel webinars can help you accelerate application performance.
+> Explore tips for MPI, OpenMP, advanced profiling, and more. Get the most from
+> the latest Intel processors and coprocessors. See abstracts and register >
+> http://pubads.g.doubleclick.net/gampad/clk?id=60134791&iu=/4140/ostg.clktrk
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
+-- 
+Jeff Garzik
+Senior Software Engineer and open source evangelist
+BitPay, Inc.      https://bitpay.com/
+
+
