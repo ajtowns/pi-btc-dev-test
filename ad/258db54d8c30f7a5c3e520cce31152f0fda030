@@ -1,0 +1,53 @@
+From: olivier@trillion01.com (Olivier Langlois)
+Date: Tue, 01 Oct 2013 00:03:39 -0400
+Subject: [Bitcoin-development] bitcoind stops responding
+In-Reply-To: <CAJna-Hi+eyRnZUtHpfvod_uRCmjPOL5HS3ZZpr54yzbKRRT9-w@mail.gmail.com>
+References: <CAJna-Hi+eyRnZUtHpfvod_uRCmjPOL5HS3ZZpr54yzbKRRT9-w@mail.gmail.com>
+Message-ID: <1380600219.932.21.camel@Wailaba2>
+
+On Mon, 2013-09-30 at 22:44 +0200, slush wrote:
+> Hi,
+> 
+> 
+> during several weeks I'm observing more and more frequent issues with
+> bitcoind. The problem is that bitcoind stops responding to RPC calls,
+> but there's no other suspicious activity in bitcoind log, CPU usage is
+> low, disk I/O is standard etc.
+> 
+> 
+> I observed this problem with version 0.8.2, but it is still happening
+> with 0.8.5. Originally this happen just one or twice per day. Today my
+> monitoring scripts restarted bitcoind more than 30x, which sounds
+> alarming. This happen on various backends, so it isn't a problem of
+> one specific node. Is there anybody else who's observing similar
+> problem? 
+
+What a coincidence. I do have observed the same thing. right now with
+0.8.5. I am writing a small app. My jsonrpc client is programmed to
+timeout after 2 secs and I did see a couple of timeouts once in while.
+
+What I did is a simple test app that just hammer bitcoind with 3 rpc
+requests every 30 seconds and I abort it as soon as it encountered a
+timeout.
+
+The 3 request burst is performed on the same HTTP 1.1 kept alive
+connection. Then I disconnect. When I launch my app before leaving in
+the morning, pretty sure that I have a core dump waiting for me when I
+come back.
+
+I choose very simple calls: getinfo,getaccount
+
+Added a couple of traces in the RPC handling code. (BTW, timestamps in
+traces would be tremendously useful for tracking problems...). I see my
+request received by bitcoind but there is no trace yet to show that the
+reply is sent.
+
+Not sure yet exactly where the problem is but my current #1 suspect is:
+
+LOCK2(cs_main, pwalletMain->cs_wallet);
+
+with some kind of lock contention with the other threads.
+
+
+
+
