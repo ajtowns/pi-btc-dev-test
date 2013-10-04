@@ -1,0 +1,80 @@
+From: olivier@trillion01.com (Olivier Langlois)
+Date: Thu, 03 Oct 2013 23:52:18 -0400
+Subject: [Bitcoin-development] bitcoind stops responding
+In-Reply-To: <1380684053.932.43.camel@Wailaba2>
+References: <CAJna-Hi+eyRnZUtHpfvod_uRCmjPOL5HS3ZZpr54yzbKRRT9-w@mail.gmail.com>
+	<1380600219.932.21.camel@Wailaba2> <1380611418.932.31.camel@Wailaba2>
+	<CAJHLa0PucKk_OBQarRgVBRPyC+RbvT9GC1iYqAaBjyT2qyRFdw@mail.gmail.com>
+	<1380684053.932.43.camel@Wailaba2>
+Message-ID: <1380858738.932.71.camel@Wailaba2>
+
+
+> 1380610633.387730: POST / HTTP/1.1^M
+> ThreadRPCServer method=getinfo
+> CTxMemPool::accept() : accepted dc2941dd69b2f9fa2754f741dfba76489abef706bd237e3bd715181950723e4d (poolsz 1283)
+> keypool reserve 15
+> keypool return 15
+> locktime : 5.996820 calltime : 0.000328 totaltime : 5.997148
+> 
+
+I have found another circumstance where getinfo rpc function can take
+more than 2 secs to return. Here are the circunstances:
+
+received block 0000000000000013c889fbe1b2a23eb4b6bd38a8051420be1bf319da184f02ae
+Committing 1015 changed transactions to coin database...
+SetBestChain: new best=0000000000000013c889fbe1b2a23eb4b6bd38a8051420be1bf319da184f02ae  height=261213  log2_work=72.38679  tx=24743665  date=2013-10-02 05:26:49 progress=0.999999
+
+{"method":"getinfo","params":[],"id":783}
+ThreadRPCServer method=getinfo
+keypool reserve 15
+keypool return 15
+locktime : 0.000001 calltime : 2.453037 totaltime : 2.453038
+
+This time locking the contention isn't from cs_main, cs_wallet mutex
+lock. I think that what happen here is
+
+1. CWallet::SetBestChain is called
+2. This trigger ThreadFlushWalletDB that will lock wallet db and flush
+it
+3. getinfo will have to wait that ThreadFlushWalletDB ends to complete
+GetOldestKeyPoolTime().
+
+Just throwing a couple of ideas here. Comments are welcome:
+
+1.
+
+Is closing the db and reopen it the only way to flush the db to disk?
+Can it be done asynchonously? I don't know BDB much but probably closing
+the DB involves some blocking fsync() call and given that this follow
+1015 records writing into the txdb, it takes more time than it should
+otherwise to return.
+
+2.
+
+I'm relatively new to bitcoin. I understand that in a recent past
+everything was using BDB. Now that only the wallet seems to keep using
+it, maybe some options could be removed to make BDB more lightweight.
+
+DB_THREAD:
+
+>From what I see, BDB API access is already well synchronized by
+bitcoind. There is no obvious reason to ask BDB API to be thread safe.
+
+DB_INIT_TXN:
+
+Correct me if I'm wrong, but I suspect this subsystem initialization to
+be a vestige of when txdb was in BDB.
+
+3.
+
+not sure at all about this one but I'm throwing the idea anyway.
+Personnally, I have no used for 'keypoololdest'. I might experiment
+without it
+
+How about having an optional bool param to 'getinfo' that could have the
+name 'lowlatency' or 'nodb' to skip info gathering having the potential
+to make the call longer?
+
+
+
+
