@@ -1,0 +1,48 @@
+From: jgarzik@bitpay.com (Jeff Garzik)
+Date: Fri, 4 Oct 2013 11:05:29 -0400
+Subject: [Bitcoin-development] bitcoind stops responding
+In-Reply-To: <CABsx9T2OvOs9ijj8kk4ZdBT5u-2Bb3rYG0AZtk3FFDWi+H_oHw@mail.gmail.com>
+References: <CAJna-Hi+eyRnZUtHpfvod_uRCmjPOL5HS3ZZpr54yzbKRRT9-w@mail.gmail.com>
+	<CAJHLa0MHSjZ_mwsCKa=rd1_39H0yq9j2jVwr0qWFTxTtrWXPCQ@mail.gmail.com>
+	<CAJna-Hj1c0k3Gb7rEMBeU9nQsFophU2CYzGUOEo3JxieOYA5dA@mail.gmail.com>
+	<CABsx9T2OvOs9ijj8kk4ZdBT5u-2Bb3rYG0AZtk3FFDWi+H_oHw@mail.gmail.com>
+Message-ID: <CAJHLa0NP4f9i-fUQfCh_RQCn3zpih9y0mT8kSXeoOk4hT0Twbg@mail.gmail.com>
+
+On Fri, Oct 4, 2013 at 2:22 AM, Gavin Andresen <gavinandresen at gmail.com> wrote:
+> RE: running into the maximum-of-4-keepalive-requests : simple workaround is
+> to run with -rpcthreads=11 (or however many keepalive connections you need
+> to support).  I agree that the rpc code should be smarter; making the last
+> rpc thread ignore keepalive and always disconnecting should be a fairly
+> simple patch, and "patches welcome."
+
+It's all still working around a problem unchanged since Satoshi wrote
+it:  the HTTP server code paths use blocking I/O.
+
+Amusingly, we do this through an async I/O library, which helps
+facilitate SSL, but all our connections and operations are blocking.
+
+That's why RPC was multi-threaded in part:  to work around the ugly
+blocking nature of the code.  At least with multiple threads, one
+thread will not stall another even if the network stalls (or a
+software bug triggers a stall etc.)
+
+Hopefully I can dive into the code and make is truly async I/O.  It
+takes some work, and I'm happy if someone else steals the task, but
+that's what really needs to be done.
+
+I tried the multi-threaded approach, writing an entire boost::asio
+skeleton JSON-RPC HTTP server: https://github.com/jgarzik/rpcsrv
+This is working, tested code that uses boost::asio properly.  It's
+also quite a bit of LOC, and a bit messy to boot (four LOC per boost
+async action and incomprehensible compiler errors in return for proper
+async+MT).
+
+A single thread with async I/O is likely sufficient for even heavy
+uses of RPC -- since today it all goes through a big lock anyway.
+
+-- 
+Jeff Garzik
+Senior Software Engineer and open source evangelist
+BitPay, Inc.      https://bitpay.com/
+
+
