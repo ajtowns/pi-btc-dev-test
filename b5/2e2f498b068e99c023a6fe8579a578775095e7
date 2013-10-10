@@ -1,0 +1,56 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Thu, 10 Oct 2013 16:21:54 +0200
+Subject: [Bitcoin-development] malleability work-around vs fix (Re: 0.8.5
+ with libsecp256k1)
+In-Reply-To: <op.w4p0i7a3yldrnw@laptop-air>
+References: <CAEz79PrCSjSV=FcSMyYtNip8Jg8oa8nMaHbqKNKKyoB-NEqRDQ@mail.gmail.com>
+	<op.w4p0i7a3yldrnw@laptop-air>
+Message-ID: <20131010142154.GA28656@netbook.cypherspace.org>
+
+Determinstic ECDSA signature aka k=H(d,m) insead of k=random, with signature
+(r,s) calculated r=[kG].x, s=k^-1(H(m)+rd) with public key Q=dG and
+verificaton relation [H(m)s^-1G+rs^-1Q].x=?r is cool and should be done. 
+Otherwise RNG issues like EC_DRBG or even leaked partial bits like the RNG
+bias in the original DSA spec that Bleichenbacher pointed out and then they
+corrected.
+
+On Wed, Oct 09, 2013 at 09:10:09PM -0700, Jeremy Spilman wrote:
+>Can this be combined with the ideas on deterministic signing to show 
+>matching signatures with OpenSSL's implementation?
+
+But k=random and k=H(d,m) create compatible signatures - or were you eaning
+to cross check the two implementations with fuzz tester on lots of messages?
+
+btw about malleability:
+
+Mike Hearn <mike at plan99.net> wrote:
+>   I believe the main issue at the moment is the malleability issues? If
+>   so, it would seem possible to use OpenSSL to parse the signature into
+>   components and then libsecp256k1 to verify them.
+
+other than the ASN.1 related parsing ambiguity, if any (openSSL asn.1
+parsing code is evil and shold not be used), the (r,s) vs (r,-s) ambiguity
+can be plugged as discussed (eg define -s as invalid).  But that is ECDSA
+specific, and signature malleability and its impact is a generic problem. 
+Its probably a non-requirement of a signature scheme in terms of the
+analysis effort put in by cryptanalysts that the signature itself be
+non-malleable, eg there are some encryption schemes which are publicly
+reblindable, like Elgamal.  By plugging the (r,s), (r,-s) specific case as a
+DSA specific work-around there may be other malleability even in DSA, unless
+someone has a clear proof that there is not.
+
+And we may want to add ECS (schnorr) because it's simpler and allows more
+flexibility and efficiency (eg native n of n multisig at the storage cost of
+1 signature vs n with ECDSA, and k of n threshold signature at the cost of 1
+sig (but some threshold secret share setup up front).  The relying party
+doesnt need to know how many multi-sigs there are there is a single public
+key.
+
+So I was thinking a more generic / robust way to fix this would be to change
+the txid from H(sig,inputs,outputs,script) to H(pubkey,inputs,outputs,script)
+or something like that in effect so that the malleability of the signature
+mechanism doesnt affect the security of conditional payments.
+
+Adam
+
+
