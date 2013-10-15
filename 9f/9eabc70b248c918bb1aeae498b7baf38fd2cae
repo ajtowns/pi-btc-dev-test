@@ -1,0 +1,86 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Tue, 15 Oct 2013 15:34:46 +0200
+Subject: [Bitcoin-development] two comments on brain-wallet security (and
+	BIP 38)
+Message-ID: <20131015133446.GA5690@netbook.cypherspace.org>
+
+So I had a go at deciphering BIP 038 in summary what I think its doing is
+(ommitting lot and sequence and deterinistic IVs for simplicity):
+
+user:
+
+x1 = Scrypt( salt=random, pass )
+P = x1*G
+
+send (salt, P) to coin manufacturer -> 
+
+				manufacturer:
+
+				x2 = random 24bytes
+				Q = x2*P
+				k = Scrypt( salt2=H(Q)||salt, pass=P )
+				e = AES_k( x2 )
+
+				manufacturer puts es inside coin.
+
+		<- send coin, (salt, e, Q) to user
+
+				then optionally creates conf code:
+
+				B = x2*G
+				c = AES_k( B )
+
+		<- send conf code c to user
+
+verify code c:
+
+(by recreating P, then k from Q & P, decrypt c to get B, check Q = x1*B)
+
+x1 = Scrypt( salt, pass )
+P = x1*G
+k = Scrypt( salt2=H(Q)||salt, pass=P )
+
+Which seems reasonable enough, however its unfortunate that you have to
+repeat the Scrypt work at setup.
+
+One thing that occurs to me eg as mentioned by Rivest et al in their
+time-lock puzzle paper is that it is easy to create work, if you are ok with
+parallelizable symmetric constructions (like scrypt(i) or PBKDF2(i) with i
+iterations) without *doing* the work during setup.
+
+It seems to me therefore that the above protocol could avoid the javascript
+overhead issue that forces users to choose a weak iteration level if they
+want to create the wallet in that way.
+
+eg create a 32-bit random salt, replace scrypt(i=16384, salt, pass) with
+scrypt(i=1,salt, pass) to be brute forced based on deleted salt.  Immediate
+2^32 = 4billion iteration salt without any significant setup cost.  (Or if
+you want to limit the parallelism say scrypt(i=65536, salt, pass) with a
+deleted 16-bit salt.  That should be parallelizable up to 65536 GPU cores
+(32x 7970 chips).
+
+Symmetric time-lock puzzles can achieve decrypt asymmetry without repeating
+the work at setup...
+
+(Rivest et al goes on to avoid using that symmetric construct with an RSA
+related mechanism, because they are trying to lock information for an
+approximate future date, rather than protected by a specific amount of
+grinding work.)
+
+
+I proposed a different blind (securely server-offloadable) deterministic
+proof of work relating to (asymmetric RSA-style) time-lock puzzles.  The
+difference from time-lock is it is made blind (so the work can be securely
+offloaded without the server learning your password or resulting key) and
+can be easily made parallelizable also which is desirable for server
+offload.
+
+https://bitcointalk.org/index.php?topic=311000.new#new
+
+I think that could take brain-wallets to a new level of security, if you
+protect the amount by an amount of computation proportional to the value, eg
+0.1% or 0.01% redemption cost paid to blind proof of work miners.
+
+Adam
+
+
