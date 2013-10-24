@@ -1,0 +1,39 @@
+From: thomasV1@gmx.de (thomasV1 at gmx.de)
+Date: Thu, 24 Oct 2013 19:29:18 +0200 (CEST)
+Subject: [Bitcoin-development] Proposal to replace BIP0039
+Message-ID: <trinity-ba3941a0-f758-4372-b431-c64e9b44328a-1382635758149@3capp-gmx-bs09>
+
+I would like to propose a new BIP, that replaces BIP0039.
+
+My initial problem was that BIP0039 is not backward compatible with Electrum. When trying to solve that, I realized that the seed encoding used in Electrum does not help, because it does not contain a version number information. However, BIP0039 suffers the same shortcoming: it does nothing to help a future replacement, it wants to be final. My first recommendation is to allocate a few bits of the mnemonic, in order to encode a "version number" along with the checksum bits.
+
+The second problem is the wallet structure. There are multiple ways to use a BIP32 tree, and each client will certainly handle this differently. For Electrum, it is important to be able to recover an entire wallet from its mnemonic, using no extra information. Thus, the client needs to know which branches of the BIP32 tree are populated by default. This means that the "version number" I mentioned will not only be about the seed encoding, but it should also give some information about the wallet structure, at least in the case of Electrum.
+
+The third problem is the dictionary. I do not like the dictionary proposed in BIP0039, because it contains too many short words, which are bad for memorization (I explained here how I designed the dictionary used by Electrum: https://bitcointalk.org/index.php?topic=153990.msg2167909#msg2167909). I had some discussions with slush about this, but I do not think it will ever be possible to find a consensus on that topic. 
+
+BIP0039 also suggests to use localized dictionaries, with non-colliding word lists, but it is not clear how that will be achieved; it seems to be difficult, because languages often have words in common. It looks like a first-come-first-served aproach will be used. 
+
+For these reasons, I believe that we need a dictionary-independent solution. This will allow developers to use the dictionary they like, and localization will be easy.
+
+I would like to suggest the following solution:
+
+1. Define a target of k bits: this target contains the metadata ("version number"), plus some extra bits for the checksum. For example, with k=16, we can allocate 8 bits for the version number, and 8 bits for checksum.
+
+2. Pick a random number of length n+k bits, where n is the desired entropy of the seed, and k is the number of bits needed for the metadata (checksum, version number)
+
+3. Translate this random number to a mnemonic string, using a dictionary.
+
+4. Compute a hash of the mnemonic string (utf8 encoded).
+
+5. Repeat steps 2, 3 and 4 until the k first bits of the hash are equal to the target defined in 1.
+
+6. Use the final hash as input for bip32 (as the master seed)
+
+This means that we "mine" for the seed, until the desired metadata is obtained in the hash. This "mining" also adds a bit of difficulty to the process of finding a seed (on average, it will require 2^k iterations). The entropy of the final hash is n, the number of unconstrained bits.
+
+This solution makes it possible for developers to define new dictionaries, localized or adapted to a particular need. 
+The resulting mnemonics will always be usable with other clients, even if they do not know the dictionary. 
+
+I am willing to write a new BIP where this proposal is specified in detail.
+
+
