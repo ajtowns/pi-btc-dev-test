@@ -1,0 +1,104 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 25 Oct 2013 18:13:27 -0400
+Subject: [Bitcoin-development] Making fee estimation better
+In-Reply-To: <op.w5izdkiyyldrnw@laptop-air>
+References: <20131024143043.GA12658@savin>
+	<CANEZrP100Lg_1LcFMKx1yWrGTSFb5GZmLmXNbZjPGaiEgOeuwA@mail.gmail.com>
+	<20131024144358.GA17142@savin>
+	<CANEZrP1TfM+wYbGjUk3+8JJZs6cKZXdb57xGMc=hDr9dQjMMZA@mail.gmail.com>
+	<20131024145447.GA19949@savin>
+	<CABsx9T0T0v=HnRRr6BLKNQOFMBJWrhF4G4SOCJ9DidGJBB8Eow@mail.gmail.com>
+	<20131025070708.GA5760@savin>
+	<91968c56640bf7647325728f490b9257@localhost>
+	<20131025161323.GA15774@petertodd.org>
+	<op.w5izdkiyyldrnw@laptop-air>
+Message-ID: <20131025221327.GA18030@petertodd.org>
+
+On Fri, Oct 25, 2013 at 12:35:34PM -0700, Jeremy Spilman wrote:
+> Do you think we're at the point where wallets have to be able to
+> "actively bid" the fee using replacement due to block contention?
+
+If Bitcoin continues to grow we probably will be at some as-yet-unknown
+point in the future.
+
+> I think a fee estimation API is just a data point. Depending on the
+> properties of the estimator, and how that's presented in the UI, it
+> could serve to either increase or decrease the need for recovery.
+> 
+> Like you said, we already have "fee estimation" in the form of
+> "user, please estimate the fee!" Now we want to make fee estimation
+> "better", and one key aspect of better fee estimation is decreasing
+> the need for recovery. Techniques like signing multiple transactions
+> with different fee levels should become less useful the better you
+> are at estimating the fee.
+
+Yes, but equally all estimates are imperfect, and you can trade-off risk
+that your transaction will not go through initially for lower fees.
+
+Estimates can be made sufficiently conservative that they are rarely
+wrong - this is basically the strategy of the current system. Given that
+demand for blockchain space isn't "saturated" it works reasonably well
+for now. But without a good mechanism to recover from an initial bad
+estimate you have to be more conservative than is efficient.
+
+> What I find interesting is that fee estimation can look at the size
+> and type of the transaction, the age of the inputs, the number of
+> inputs versus outputs, amount of the outputs, factor in [assumptions
+> about] what fee policies miners are actually using, and after all
+> that, look at the actual competing transactions on the blockchain
+> and try to figure out how many of those are even real.
+> 
+> For example, if you just look at fee-per-KB of mempool versus
+> fee-per-KB of recently mined transactions, without taking into
+> account input age, number of inputs vs outputs, output amounts...
+> all the other things miner might have used to discriminate between
+> transactions, then I don't think you'll end up with a better fee
+> estimator.
+
+To a first approximation there's not much reason for miners to take
+anything other than fee-per-KB into account when determining what
+transactions to mine; you want to stuff your 1MB block full of high
+paying transactions. That a child tx may make a parent more profitable
+to mine complicates things - Gavin's current fee estimator also makes
+too-low-estimates in that case - and not all algorithms to do so will
+come to the same conclusion. (doing it perfectly is something like
+O(n^2), and imperfectly is O(1) but doesn't handle multiple children
+well)
+
+There are some second-order effects, a block is less likely to be
+orphaned if all transactions in it have propagated sufficiently, thus a
+miner should penalize very recently broadcast transactions. In addition
+because miners never orphan themselves large miners have a significant
+advantage regarding orphan-inducing effects. However those effects all
+tend to be miner specific, and/or only temporary.
+
+FWIW the logic behind orphans is currently rather frightening: a
+rational miner will, the moment they learn that a block exists via the
+quickly propagating block header, start working to extend that block
+with one that either doesn't contain any transactions, or only contains
+transactions they can be reasonably sure another miner didn't mine.
+(e.g. via exclusive tx mining contracts) This boosts their profit
+because they aren't wasting their effort while the rest of the block
+propagates, removes much of the incentive have any limit on block size,
+and incentivizes miners to extend chains they haven't actually validated
+yet. (relying on the other miners incentive not to produce an invalid
+block)
+
+> Contention might bump you out of a few blocks, but if the basis for
+> calculating the fee is fundamentally compatible with the relay
+> policies and the transaction-inclusion policies being run by large
+> mining pools, the transaction isn't dead, it's just pending.
+
+With a size-limited blocks inclusion is more a matter of supply and
+demand than policy.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000066c29f3319f83f1c6e912b5add5534da1b938c4c65a07b02a
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131025/4df8f795/attachment.sig>
