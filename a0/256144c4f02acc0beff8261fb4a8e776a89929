@@ -1,0 +1,117 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Sat, 26 Oct 2013 10:25:06 +1000
+Subject: [Bitcoin-development] Making fee estimation better
+In-Reply-To: <op.w5h2rwhcyldrnw@laptop-air>
+References: <20131024143043.GA12658@savin>
+	<CANEZrP100Lg_1LcFMKx1yWrGTSFb5GZmLmXNbZjPGaiEgOeuwA@mail.gmail.com>
+	<20131024144358.GA17142@savin>
+	<CANEZrP1TfM+wYbGjUk3+8JJZs6cKZXdb57xGMc=hDr9dQjMMZA@mail.gmail.com>
+	<20131024145447.GA19949@savin>
+	<CABsx9T0T0v=HnRRr6BLKNQOFMBJWrhF4G4SOCJ9DidGJBB8Eow@mail.gmail.com>
+	<op.w5h2rwhcyldrnw@laptop-air>
+Message-ID: <CABsx9T0nc-TO1_=n47UnYHiWKSNvci9Xyhni9PQa=DRo1B7FDg@mail.gmail.com>
+
+On Fri, Oct 25, 2013 at 5:51 PM, Jeremy Spilman <jeremy at taplink.co> wrote:
+
+> **
+> Gavin, can you confirm the best place to  read  up on the discuss fee
+> estimation changes for v0.9?
+>
+
+The blog post is the best place for high-level overview.
+
+The (closed for now, but it will come back) pull request is the best place
+for low-level details and nit-picking discussion:
+  https://github.com/bitcoin/bitcoin/pull/3024
+
+
+
+> I think fee estimation at its core is about providing a data point, or
+> even call it an API, which can be used however you see fit.
+>
+> What parameters do I want to see in a 'fee estimation' API?
+>
+>  - 30 minutes vs 24 hours processing time
+>  - Confidence Levels (50%/90%)
+>
+
+The pull request adds an 'estimatefees' JSON-RPC api call:
+
+====
+estimatefees [prioritymedian=0.1] [feemedian=0.5]
+Estimates the priority or fee a transaction needs
+to be relayed across the network and included in
+the block chain.
+
+prioritymedian and feemedian are values from 0.0
+to 1.0, where 0.0 will return the smallest
+recently-included-in-a-block priority (or fee) seen,
+1.0 the largest, and 0.5 the median priority (or fee)
+for transactions that were broadcast on the network and
+included in a block.
+
+The default value for prioritymedian (0.1) is
+chosen to return a priority for free transactions that
+will eventually be confirmed, but might take several hours.
+The default value for feemedian (0.5) returns how much
+fee you should include to have your transactions confirmed
+in an average amount of time.
+
+Values returned are:
+ freepriority : priority needed to out-compete a prioritymedian
+  fraction of free transactions to be relayed and included in blocks.
+ feeperbyte : fee, in satoshis/byte, needed to out-compete a
+  feemedian fraction of fee-paying transactions.
+
+Values of -1.0 are returned if not enough transactions
+have been seen to make a good estimate.
+====
+
+That API doesn't give "30 minute versus 24 hour" confirmation time or
+confidence intervals. I've always regretted not taking a statistics class;
+if you want to help write code that estimates confidence intervals send me
+an email. The API certainly isn't set in stone.
+
+  - Is it globally consistent?
+>
+
+Ummm.... roughly, yes, it will be. Nodes that have just joined the network
+and haven't seen enough transactions enter and leave the memory pool will
+have a different estimate than long-running nodes, but in my testing the
+estimate narrows down very quickly (with three or four blocks enough
+fee-paying transactions have been seen to make a reasonable estimate; it
+takes longer to see enough free transactions to get a good estimate of the
+priority needed to get into the free space of a block).
+
+RE: lots of other comments:
+
+I feel like there is a lot of "in the weeds" discussion here about
+theoretical, what-if-this-and-that-happens-in-the-future scenarios.
+
+I would just like to point out (again) that this is not intended to be The
+One True Solution For Transaction Fees And Transaction Prioritization. If
+you've got a better mechanism for estimating fees, fantastic! If it turns
+out estimates are often-enough wrong to be a problem and you've got a
+solution for that, fantastic!
+
+RE: are we already seeing pressure on transaction fees:
+
+I believe we are, yes. As part of the prep work for the smart fee work I
+spent some time plotting priority (for zero-fee transactions) and
+transaction fee (for zero-priority transactions) versus confirmation time,
+and it looks to me like people/services are starting to include more than
+the hard-coded fees in the reference implementation-- I assume because they
+want their transactions to be confirmed more quickly.
+
+There is definitely already competition among zero-fee transactions for the
+"free" block space. One of the reasons I'm comfortable with the fee changes
+I'm proposing is if the estimation code gets it very wrong we'll see that
+first as free transactions taking "too long" to confirm, but they'll
+confirm eventually because priority increases over time.
+
+-- 
+--
+Gavin Andresen
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131026/b5b80e6c/attachment.html>
