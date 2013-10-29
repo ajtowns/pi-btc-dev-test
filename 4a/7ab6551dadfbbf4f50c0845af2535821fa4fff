@@ -1,0 +1,101 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 29 Oct 2013 12:35:05 -0400
+Subject: [Bitcoin-development] On soft-forks and hard-forks
+In-Reply-To: <CANEZrP2cu7WJs2TbrFxFibwAHDVbxb7EJQ3mOrVs+ZQm-uU1LQ@mail.gmail.com>
+References: <526B45DB.2030200@jerviss.org>
+	<CABsx9T2OMA_u=S9yUh2j78QDuCDUorYctktuixjwAjqc6neW=Q@mail.gmail.com>
+	<526DD18A.7060201@jerviss.org> <l4lajm$3ga$1@ger.gmane.org>
+	<CAAS2fgSuL4f9Sdg2CyK-EuCKK04gD98zHDoKFyTg_Fp_cNiz=A@mail.gmail.com>
+	<CABsx9T3p6KFc8FiOgBwLtQsmkETE_iUbMhO47pS7J3hi3a9_4w@mail.gmail.com>
+	<CANEZrP1teOnb=Gt_Nybh0jfQopK06Ps34Hy73OxOpHwuz-iZig@mail.gmail.com>
+	<20131029101452.GA15808@savin>
+	<7a22afbd-ad30-4748-8c88-9a1eda3e2fe9@email.android.com>
+	<CANEZrP2cu7WJs2TbrFxFibwAHDVbxb7EJQ3mOrVs+ZQm-uU1LQ@mail.gmail.com>
+Message-ID: <20131029163505.GA28320@petertodd.org>
+
+> On Tue, Oct 29, 2013 at 12:38 PM, Peter Todd <pete at petertodd.org> wrote:
+> > Peter Todd <pete at petertodd.org> wrote:
+> > >On Tue, Oct 29, 2013 at 10:52:31AM +0100, Mike Hearn wrote:
+> > >> For block 0x11 again shall there be a separate code for "block is
+> > >from the
+> > >> future"? We don't want to lose the nVersion field to people just
+> > >using it
+> > >> for nonsense, so does it make sense to reject blocks that claim to be
+> > >v2 or
+> > >> v3?
+> > >
+> > >That would prevent us from using nVersion as a soft-forking mechanism.
+> >
+> > Actually, that statement didn't go far enough: rejecting blocks with
+> > nVersions that you don't expect is a hard fork.
+>
+> Yes, exactly. That's the point. As you well know I think the whole
+> soft-fork mechanism is wrong and should not be used. If the rules change,
+> your node is *supposed* to end up on a chain fork and trigger an alert to
+> you, that's pretty much the whole purpose of Bitcoin's design. Undermining
+> that security model is problematic.
+
+That's a nice sentiment, but there's a lot more nuance to it than
+"soft-forks are bad"
+
+We're talking about rejection here: you don't want to end up on an
+isolated chain fork wondering if maybe miners have been unlucky. You
+want to know that a longer chain exists so as to have solid evidence
+that you're local configuration isn't what miners are mining.  Thus not
+only should you "accept" blocks with versions you don't know about, you
+should relay those blocks as well so that other out-of-date nodes have
+the highest possible chance of finding out about them. Creating a block
+is expensive, so with some minor safeguards - a high minimum difficulty,
+and maximum size - relaying blocks you consider invalid is perfectly
+safe and doesn't enable DoS attacks. Relaying block headers has similar
+logic, and even less DoS attack worry. (don't apply bloom filters to
+invalid blocks though!)
+
+I had this discussion with Warren the other day actually: Litecoin is
+considering banning old node versions and rejecting their attempts to
+connect. I pointed out how you wanted to be damn sure there was no-one
+mining with them, least you wind up creating a slowly growing fork mined
+by nodes unaware of the main chain.
+
+Soft-forks and SPV nodes is another topic. SPV nodes don't do any
+meaningful validation - they usually don't even have the transaction
+inputs spent by a transaction to determine if a scriptSig is valid.
+Their security is already dependent on miners, so allowing those miners
+to upgrade does no harm. In addition there are even cases where what
+would be a hard-fork for a full node, is a soft-fork for a SPV node. On
+the other hand if your "SPV" node is more sophisticated, then by all
+means use a nVersion change to trigger an alert to the user. If you're
+implementation relays blockchain data, continue doing so to ensure other
+nodes find out about the new version as soon as possible. (all SPV nodes
+should relay block headers if possible)
+
+
+Note how the nVersion field is useful for voting: the "chain height in
+coinbase" soft-fork was accomplished this way, changing nVersion from 1
+to 2 with full enforcement of the rule triggered by a 95% supermajority.
+Bitcoin is a decentralized system, so any changes need to be done by
+voting to show that a clear consensus of hashing power will enforce and
+validate the new rules. (time and height deadlines can be disasters if
+the upgrade is ever ignored or delayed)
+
+Interestingly this suggests that what we actually want is two nVersions
+per upgrade: the first to signal that nodes wish to upgrade, and are
+showing their intent to use the new rules. The second to signal that the
+upgrade has actually happened and the old rules are now ignored. Client
+software can use this two stage approach to know when rules may have
+changed, and the user probably should consider upgrading. As applied to
+the chain height upgrade we would have gone from version 2 during the
+voting, to version 3 for any block produced while the rules were in
+effect. Put another way, the last in nVersion is simply to signify that
+the new blockchain rules are now active, as opposed to being proposed.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000180dabf823b09a30b4f2032b5cab7ba1d0351cab350bee91f
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131029/3b94799d/attachment.sig>
