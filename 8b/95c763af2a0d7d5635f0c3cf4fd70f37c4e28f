@@ -1,0 +1,141 @@
+From: slush@centrum.cz (slush)
+Date: Sat, 2 Nov 2013 01:04:11 +0100
+Subject: [Bitcoin-development] BIP39 word list
+In-Reply-To: <CANg-TZC2NHfGR3mfm4VuuZMbwxkJzP69OmWhLvOD2Zq8GWejnw@mail.gmail.com>
+References: <CANg-TZC2NHfGR3mfm4VuuZMbwxkJzP69OmWhLvOD2Zq8GWejnw@mail.gmail.com>
+Message-ID: <CAJna-HhyR4fLotqW2kci8rCuoMMVUtz9s1dpNbZYyrc5epC5sw@mail.gmail.com>
+
+Hi Brooks,
+
+I've been already thinking about eat -> cat typing mistake. Actually there
+may be simplier solution than having wordlist with duplicated words.
+Because there's already a mapping of similar characters in the source code
+(currently only in unit test, but it can be moved), when user type a word
+which isn't in wordlist, application may try to use such mapping to find a
+combination which actually is in the mapping. This may be disambiguous in
+some cases, but giving a choice between few words may be better than hard
+fail. And it is actually quite easy to implement. Although I think
+application can do such smart suggestions and help user to recover badly
+written mnemonic, I don't think it is necessary to standardize such method
+directly into BIP. It may or may not be implemented by developers and it is
+just nice to have feature.
+
+Example:
+
+user type ear, but it isn't in wordlist.
+
+Regards the mapping,
+E is similar to A, C, F, O
+A is similar to E, C, O
+R is similar to B, P, H
+
+So application can calculate combinations of possible characters:
+
+a) when app consider than the the user mistyped only one character
+AAR, CAR, FAR, OAR
+EER, ECR, EOR
+EAB, EAP, EAH
+
+b) when app consider than user maybe mistyped more characters, it may do
+full combination matrix
+AEB,  ACB, AOB,  ... OEH, OCH, OOH
+
+and then ask user to select only these combinations which are actually
+presented in the wordlist. In this particular case it may be only CAR or
+FAR (both cannot be in the wordlist because of rules in similarity).
+
+Marek
+
+
+On Fri, Nov 1, 2013 at 9:14 PM, Brooks Boyd <boydb at midnightdesign.ws> wrote:
+
+> I was inspired to join the mailing list to comment on some of these
+> discussions about BIP39, which I think will have great use in the Bitcoin
+> community and outside it as a way to transcribe binary data.
+>
+> The one thought I had as the discussions about similar characters are
+> resulting in culling words from the list, is that it only helps to validate
+> input, not help the user if it is incorrect.
+>
+> For example, if both "cat" and "eat" were in the word list, and someone
+> wrote down "eat", but later mis-translated it and put "cat" back into
+> translator, the result would be a checksum error; "cat" is a different
+> number, so the checksum would fail.
+>
+> As it currently stands, "cat" would not be a valid word ("eat" is the real
+> word, and no other number is "cat"), so the translator can throw a
+> different error which is more helpful (i.e. "'cat' isn't a valid word
+> choice), but still doesn't get the user to the proper translation.
+>
+> What about if the wordlist included those "words that are so similar to
+> each other that we only kept one of them" and had them all refer to the
+> same number? I propose the wordlist have the possibility of multiple words
+> on a single line, with the first word on the line being the "primary" or
+> "real" word to be used, with the other similar words be included so that a
+> translation program if it wanted to assist the user could fix their input
+> for them (verbosely or not), along the lines of "'cat' isn't a valid word
+> choice; assuming you meant 'eat', which is valid". You might still hit a
+> checksum error if that similar word is still the wrong word, but as it
+> stands now, I know you culled a bunch of words from the wordlist as "too
+> similar", but if I want to try and help the user fix a bad input, I need to
+> write a translation program with a full english dictionary alongside the
+> BIP39 dictionary.
+>
+> I'd be willing to create a pull request for such an update, but before I
+> delve into that, does this sound like a good idea? I could see it devolving
+> into a slippery slope if every number in the 2048 set had a dozen word
+> variations (misspellings, similar words, slang terms for the real word,
+> etc.) which could get confusing of how similar is similar enough to be
+> added as an alternate, and the standard would need to be clear that when
+> translating binary to words, you only use the "main" word for that row, not
+> any of the variations.
+>
+> MidnightLightning
+>
+>
+> > I've just pushed updated wordlist which is filtered to similar
+> characters taken from this matrix.
+> > BIP39 now consider following character pairs as similar:
+> >         similar = (
+> >             ('a', 'c'), ('a', 'e'), ('a', 'o'),
+> >             ('b', 'd'), ('b', 'h'), ('b', 'p'), ('b', 'q'), ('b', 'r'),
+> >             ('c', 'e'), ('c', 'g'), ('c', 'n'), ('c', 'o'), ('c', 'q'),
+> ('c', 'u'),
+> >             ('d', 'g'), ('d', 'h'), ('d', 'o'), ('d', 'p'), ('d', 'q'),
+> >             ('e', 'f'), ('e', 'o'),
+> >             ('f', 'i'), ('f', 'j'), ('f', 'l'), ('f', 'p'), ('f', 't'),
+> >             ('g', 'j'), ('g', 'o'), ('g', 'p'), ('g', 'q'), ('g', 'y'),
+> >             ('h', 'k'), ('h', 'l'), ('h', 'm'), ('h', 'n'), ('h', 'r'),
+> >             ('i', 'j'), ('i', 'l'), ('i', 't'), ('i', 'y'),
+> >             ('j', 'l'), ('j', 'p'), ('j', 'q'), ('j', 'y'),
+> >             ('k', 'x'),
+> >             ('l', 't'),
+> >             ('m', 'n'), ('m', 'w'),
+> >             ('n', 'u'), ('n', 'z'),
+> >             ('o', 'p'), ('o', 'q'), ('o', 'u'), ('o', 'v'),
+> >             ('p', 'q'), ('p', 'r'),
+> >             ('q', 'y'),
+> >             ('s', 'z'),
+> >             ('u', 'v'), ('u', 'w'), ('u', 'y'),
+> >             ('v', 'w'), ('v', 'y')
+> >         )
+> > Feel free to review and comment current wordlist, but I think we're
+> slowly moving forward final list.
+> > slush
+>
+>
+> ------------------------------------------------------------------------------
+> Android is increasing in popularity, but the open development platform that
+> developers love is also attractive to malware creators. Download this white
+> paper to learn more about secure code signing practices that can help keep
+> Android apps secure.
+> http://pubads.g.doubleclick.net/gampad/clk?id=65839951&iu=/4140/ostg.clktrk
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131102/26d9c9a1/attachment.html>
