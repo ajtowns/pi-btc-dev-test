@@ -1,0 +1,187 @@
+From: etotheipi@gmail.com (Alan Reiner)
+Date: Mon, 04 Nov 2013 16:45:24 -0500
+Subject: [Bitcoin-development] Auto-generated miner backbone
+In-Reply-To: <20131104210451.GA4443@petertodd.org>
+References: <CANEZrP3iYBdg3p7Ru4O-UENY_yyQDA8=9PGn=KDKGGTrZ-xkRw@mail.gmail.com>	<20131104142621.GA2190@petertodd.org>	<CABT1wWm1NzKSS9H=Qh3Z6pFmNHbOFKC12WaE=b3kE0mNsRgfmw@mail.gmail.com>	<20131104150406.GA2566@petertodd.org>	<CABT1wWmONUeOWRg-=FKr88bgBQf0un4bvjYW2h8d-10ys-VKtA@mail.gmail.com>	<CABT1wWmwb17b4ACHMmDKqd94tUSKsvwAPx344mZ0VS+47myeWg@mail.gmail.com>
+	<20131104210451.GA4443@petertodd.org>
+Message-ID: <52781574.1000904@gmail.com>
+
+Sorry guys, I'm a little late to the party here.  I skimmed over the
+paper, and appreciated Peter Todd's recap of it.  My first thought was
+that this seems profit-neutral at best, when you take into account all
+the races you lose by trying to beat the propagation of other miners'
+blocks.
+
+So given the assumption that Alice is "well-connected" as Peter
+mentioned, it seems like this is a concern.  But is this a realistic
+assumption?  All miners have an incentive to be thoroughly connected to
+one another, to make sure they minimize the amount of time they spend
+mining on forks and that their blocks win with minimal chance of being
+orphaned.  Is it realistic that one miner can somehow monopolize the
+good connections when the big miners are already trying to do the same
+thing for honest reasons?  If you have a network full of honest miners
+and this one selfish-miner, it seems that all the honest miners need to
+do is try to establish those connections to each other as well as Alice
+does, and Alice will end up orphaning all her profit away.
+
+Furthermore, you can de-incentivize it by simply randomizing the order
+of broadcasts.  Although you are maintaining multiple concurrent
+connections, the data still exits your network card as a serial stream
+of packets, and it seems that if you randomize who gets your new-block
+broadcasts first, then it further reduces the Alice's advantage if she's
+not guaranteed to "be first."   Sure, she can do it sometimes, but it
+would seem that even a couple failures to beat the rest of the network
+is going to erase most/all of what she gained on the blocks/chains that
+she wins.
+
+I liked the statement by Chris WIllmer on the reddit thread:  "practice
+> theory".  The more we can theorize our way to believing the
+conclusions that this is a problem, the more incentive there is for
+someone intelligent to actually try it.  It's very possible that the
+conditions needed to execute this "attack" just cannot be attained in
+practice. 
+
+-Alan
+
+
+
+
+On 11/04/2013 04:04 PM, Peter Todd wrote:
+> On Mon, Nov 04, 2013 at 02:12:44PM -0500, Ittay wrote:
+>> On Mon, Nov 4, 2013 at 10:25 AM, Ittay <ittay.eyal at cornell.edu> wrote:
+>>
+>>> As for the rational motivation of the individual miners - that's a good
+>>> point!
+>>> Here is a solution we did not put in the paper due to space constraints
+>>> that should alleviate your concern:
+>>> Instead of locally choosing a block at random, have a deterministic
+>>> pseudo-random mechanism for choosing between competing chains. E.g., take
+>>> the one whose last block hash is smaller. This way all miners choose the
+>>> same chain, and the guarantees of our solution hold.
+>>>
+>> I take that back.
+> Speaking of, I'm going to take back my solution as well; I misunderstood
+> your paper.
+>
+> So here's your argument in a ELI5 nutshell:
+>
+> Alice is a miner with some amount of hashing power. She has the ability
+> to detect new blocks on the network extremely effectively for whatever
+> reason; in short she has unusually good knowledge of the state of the
+> network. She is also very good at publishing her blocks and getting them
+> to the majority of hashing power in very little time; she has unusually
+> good connectivity to all miners. (low-latency and high bandwidth)
+>
+> She's so good at this that when she finds a new block, she keeps it a
+> secret! She can get away with this because she knows that the moment Bob
+> finds a block, she can immediately broadcast it to the rest of the
+> network before the other block propagates. Instead of building on Bob's
+> blocks, almost everyone builds on Alice's block, depriving Bob of the
+> revenue. Gradually Alice gets more and more miners because Bob, and
+> other pools, don't pay out as much.
+>
+> You propose a rule where essentially miners extend Bob's block 50% of
+> the time, and show in your paper how that leads to a scenario where
+> Alice needs to have at leastr 1/4 of the total hashing power to
+> succesfully pull this attack off anyway.
+>
+>
+> What I did succesfully show is that for a short-term rational miner
+> they're still better off mining to extend the block they hear about
+> first rather than using your pick-one-at-random rule, because when you
+> hear about a block is important information about whether or not the
+> majority is mining on it. This is true even if others are using the
+> pick-one-at-random rule. (they're better defecting than doing what's
+> right for the whole network) Even worse is that miners have a rational
+> incentive to broadcast such near-target headers to try to encourage
+> other miners to work on the same fork that they are working on. The
+> near-target idea came about for a totally different reason, so it's
+> something that might wind up being implemented anyway.
+>
+> Mike Hearn's idea of making it easy to identify nodes associated with
+> hashing power is still wrong. Although again, it's something that miners
+> themselves have rational incentives to do. (you always want to encourage
+> others to send you their blocks, and you also want to be able to send
+> your blocks to the majority of hashing power as quickly as possible)
+>
+> Where the idea goes wrong is it makes it easier for Alice to identify
+> hashing power, specifically where she needs to send her blocks to
+> distribute them to the majority as quickly as possible. The second
+> problem occurs if those nodes also distribute blocks to connecting
+> peers: this makes it easy for Alice to be sure she'll hear about a new
+> block as soon as possible by connecting to every one of those peers with
+> a high-speed, low-latency connection. Bizzarely the idea does work if
+> the advertised nodes only accept blocks, and never send blocks - instead
+> miners would *only* send their blocks to other miners who have proven
+> their hashing power, and do so essentially largest miner to smallest.
+> Now unless Alice already is a large miner, her strategy can't work.  Of
+> course this will strongly encourage further centralization of pools. But
+> it is in the interests of rational miners sadly.
+>
+> That blocks take a finite amount of time to propagate makes the problem
+> worse: for Alice to learn that another block has been mined only
+> requires her to receive the small 80 byte header from a peer; she
+> doesn't need the whole block. She thus can know the block exists well
+> before it has a chance to propagate fully. Even if every miner were
+> directly peered to every other as some suggest, Alice could simply make
+> smaller blocks, faster propagating than everyone else and use especially
+> low-latency connections to win the race.
+>
+> On the other hand, the Bitcoin protocol is currently designed such that
+> a miner can mine a block without knowing the previous block in full.
+> Given the large block reward and/or a supply of transactions they knew
+> no other miner had a rational miner would start trying to extend the
+> longest chain they know about prior to actually receiving and validating
+> the full block. Again, when miners start doing this - perhaps out of
+> desperation due to low revenue - as long as Alice has the lowest latency
+> network she'll win. (she doesn't even need to have the highest bandwidth
+> in this case) We can change the protocol to force miners to fully
+> validate blocks prior to mining extensions, but that only forces Alice
+> to get more bandwidth - she still wins.
+>
+> Speaking of low-latency, latency not only centralizes control in a
+> single pool, it centralizes pools and even mining hardware itself in a
+> single physical location. Anyone at the edges of the propagation network
+> will get comparatively less revenue than those in the center, gradually
+> tightening the network, even without selfish mining. Alice's strategy of
+> course should be to position her nodes in the geographical center. It's
+> worth noting how if Alice is the one with the lowest average latency,
+> she will win against any other miner trying to persue the same selfish
+> miner strategy that she is using.
+>
+>
+> Finally nLockTime makes the selfish miner strategy even more profitable.
+> You may not be aware, but it's possible to make a transaction that can't
+> be mined until some time in the future, measured by either block height
+> or block timestamp. I've proposed to use this mechanism in
+> announce/commit sacrifices: you create a transaction that can't be mined
+> until some point in the future that sacrifices a large amount to mining
+> fees, and then prior to that point you include it in the blockchain as
+> data, proving the whole world knew about your transaction. The idea was
+> that which miner managed to include the transaction, and collect the
+> reward, would be random. However whenever Alice is able to maintain a
+> lead over other miners she's able to reliably mine significantly more of
+> those valuable transactions, further increasing her revenue over other
+> miners.
+>
+>
+> I must say, you've really opened a can of worms...
+>
+>
+>
+> ------------------------------------------------------------------------------
+> Android is increasing in popularity, but the open development platform that
+> developers love is also attractive to malware creators. Download this white
+> paper to learn more about secure code signing practices that can help keep
+> Android apps secure.
+> http://pubads.g.doubleclick.net/gampad/clk?id=65839951&iu=/4140/ostg.clktrk
+>
+>
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131104/0837e02c/attachment.html>
