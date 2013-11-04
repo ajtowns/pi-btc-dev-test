@@ -1,0 +1,83 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 4 Nov 2013 09:26:21 -0500
+Subject: [Bitcoin-development] Auto-generated miner backbone
+In-Reply-To: <CANEZrP3iYBdg3p7Ru4O-UENY_yyQDA8=9PGn=KDKGGTrZ-xkRw@mail.gmail.com>
+References: <CANEZrP3iYBdg3p7Ru4O-UENY_yyQDA8=9PGn=KDKGGTrZ-xkRw@mail.gmail.com>
+Message-ID: <20131104142621.GA2190@petertodd.org>
+
+On Mon, Nov 04, 2013 at 12:26:30PM +0100, Mike Hearn wrote:
+> W.R.T. this paper and the oft-discussed miner backbone,
+> 
+>   http://arxiv.org/pdf/1311.0243v1.pdf
+> 
+> I'm wondering about an alternative protocol change that perhaps has less
+> subtle implications than their suggested change. Rather than address the
+> problem by assuming the network is full of sybil nodes and changing the
+> rules for selecting the chain to build on, how about if we wrote code to
+> automatically build a miner backbone by having IP addresses of nodes
+> embedded into coinbases, then having any bitcoind that is creating work
+> automatically connect to IPs that appeared in enough recent blocks?
+> 
+> It feels like this should be achievable with a few days of solid coding and
+> a couple of new command line flags, and the impact is much easier to reason
+> about than a fundamental rule change like the one proposed by the paper.
+
+Actually on further reflection this idea will make the attack described
+in the paper easier to carry out, rather than harder.
+
+I think where you're misunderstanding originates is the description of
+this attack as requiring a sybil attack on the network - you see this
+underlying sybil as one of numerical advantage, when it's actually one
+of *informational* advantage.
+
+Remember that the selfish miner strategy outlined in the paper is
+essentially a way to use knowledge of what blocks miners will be mining
+on, from the "first seen" rule, and the ability to broadcast blocks you
+have mined more widely than other miners. That knowledge and ability is
+then used in conjunction with a small lead (obtainable by chance) to
+outpace the rest of the network.
+
+By making all miners easily identifiable you make gaining that
+informational and broadcast capability easier to obtain rather than
+harder. The attacker now only needs to connect to every identified miner
+with especially fast nodes. With judicious use of DoS attacks and low
+latency they can still gain the informational and broadcast "upper hand"
+over other miners and carry out the attack.
+
+Where the paper goes wrong is they don't recognize the fundemental
+nature of the strategy being based on an informational advantage. Their
+"pick a random side of the fork" strategy may work to some extent, but
+it's incomplete and isn't necessarily rational for the miners
+individually.
+
+The correct, and rational, approach for a miner is to always mine to
+extend the block that the majority of hashing power is trying to extend.
+The current relay rules don't give you that information at all, but they
+can if we do two things:
+
+1) Relay all blocks that meet the PoW target. (as suggested in the
+   paper)
+
+2) Relay block headers that nearly meet the PoW target.
+
+Mining strategy is now to mine to extend the first block you see, on the
+assumption that the earlier one probably propagated to a large portion
+of the total hashing power. But as you receive "near-blocks" that are
+under the PoW target, use them to estimate the hashing power on each
+fork, and if it looks like you are not on the majority side, switch.
+
+This very effectively defeats the paper's selfish-miner strategy, as all
+miners will very quickly be mining on the block that truly has the
+majority of hashing power trying to extend it. This is also a better
+overall outcome, because it puts the 51% attack threshhold back at 51%
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000004ee9bb13b022c412d75692b5e85454013c53f89e5d6fa8c69
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131104/cc436362/attachment.sig>
