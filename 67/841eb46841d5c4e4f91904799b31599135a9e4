@@ -1,0 +1,69 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 4 Nov 2013 13:16:49 -0500
+Subject: [Bitcoin-development] Committing to extra block data/a better
+ merge-mine standard
+In-Reply-To: <CANEZrP1uqee1UO=zb+50t9BNtv2voTHoCKQCTQExNyoL=Y0=PA@mail.gmail.com>
+References: <CANEZrP3iYBdg3p7Ru4O-UENY_yyQDA8=9PGn=KDKGGTrZ-xkRw@mail.gmail.com>
+	<20131104115314.GA1013@savin>
+	<CANEZrP1uqee1UO=zb+50t9BNtv2voTHoCKQCTQExNyoL=Y0=PA@mail.gmail.com>
+Message-ID: <20131104181649.GA3847@petertodd.org>
+
+On Mon, Nov 04, 2013 at 01:00:16PM +0100, Mike Hearn wrote:
+> Given that IP address data is inherently transient, perhaps a better
+> solution is to define a short hash in the coinbase that commits to extra
+> data that is relayed along with block data (e.g. appended to the block
+> message). It can then be stored temporarily in the block db and erased
+> after some time, like a few months. It would therefore not really be a part
+> of the chain, but could be extended as we see fit with any other
+> semi-transient data required. A new "getextra" message would let nodes
+> query for it.
+> 
+> The hash can be short because it doesn't have to survive brute forcing
+> attacks longer than the expected validity period of the transient data
+> anyway. 80 bits would probably be overkill.
+
+No sense in compromising - you need a whole merkle path to prove the
+extra data is valid so you might as well make this a full 256 bits;
+another 22 bytes is insignificant compared to the size of the path.
+
+Again, the right way to do this is define the standard to use the last
+txout so that midstate compression can be applied in the future. We can
+re-use this for merge-mining and other commitments easily by defining a
+simple standard based on defined path directions. Essentially for each
+thing you might want to commit, perhaps a merge-mined coin, a p2pool
+share, a UTXO commitment, whatever, generate a random 128-bit UUID.
+
+Now interpret the bits of that UUID as an allowed path: 0 = left, 1 =
+right, from the top of the tree. When you build the tree, make sure
+everything that is going to be committed to uses it's allowed path; the
+tree will look a bit jagged. If everyone picks their per-purpose UUIDs
+randomly the paths won't collide for very many levels on average, and
+path lengths will remain short. Validating that some given data was
+committed properly is simple and easy: just check the path, and check
+that the directions from the top of the tree followed the spec.
+
+For timestamping, just pick any empty spot in the tree.
+
+You'll want to put some "reasonable" limit on actual path lengths, just
+pick something like 32 levels; if applications pick their UUIDs honestly
+a collision will be very unlikely. You can also make the allowed paths
+block specific by defining them as H(uuid | nonce), with nonce as an
+optional PUSHDATA just prior to the commitment pushdata, allowing overly
+long paths to be eliminated entirely by simply incrmenting the nonce.
+
+Unlike the original, broken, merge-mining standard alt-coins have used
+this actually works, extends indefinitely, and is simple and easy to
+validate given a single merkle-path for each purpose. Generating the
+trees of commitments is a bit convoluted, but at least that code only
+needs to be written once.
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000002c43b3c05c0ed0842317747f0d1e3982489d0a51e7c8a05a3
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131104/91107aba/attachment.sig>
