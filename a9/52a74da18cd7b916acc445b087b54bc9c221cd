@@ -1,0 +1,69 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Tue, 05 Nov 2013 10:57:34 -0800
+Subject: [Bitcoin-development] BIP proposal - patch to raise selfish
+ mining threshold.
+In-Reply-To: <CABT1wWnPJOKKT5v2hGePkUT8jNau=TEK5s-n2so2kQKnv-HfqQ@mail.gmail.com>
+References: <CABT1wWkOukEzxK5fLbnA4ZgJGN1hb_DMteCJOfA13FE_QZCi=Q@mail.gmail.com>
+	<20131105170541.GA13660@petertodd.org>
+	<CABT1wWnPJOKKT5v2hGePkUT8jNau=TEK5s-n2so2kQKnv-HfqQ@mail.gmail.com>
+Message-ID: <op.w53ax8dtyldrnw@laptop-air>
+
+Great paper Ittay, thanks for all your work on this.
+
+> Today the threshold is 0% with good connectivity.
+
+Fig. 2 captures this well, the threshold is only zero if 'y' is 1. In  
+Section 6 and 6.1 you argue y -> 1 but the sybil attack you describe,  
+isn't that more like how *all* sophisticated miners would want to ensure  
+their blocks are widely propagated? I think you can't assume only the  
+selfish miner is doing it.
+
+Based on the current  'first seen' algorithm, as you say, competing  
+longest chains happen about every 60 blocks.  The rest of the time, a  
+single block propagates through the vast majority of the network  
+'uncontested'.  If there are multiple valid longest blocks being  
+simultaneously propagated, then  propagation pattern of the competing  
+blocks will determine hash rate on each.
+
+Selfish mining requires exploiting the race condition between learning  
+about a competing block, and publishing your own. Usually we talk about  
+minimizing publishing latency so that your block ends up uncontested 59/60  
+times, and in the 1/60 times, even then your block has the best chance of  
+winning.
+
+Selfish mining forgoes the 59/60 chance of your block being uncontested,  
+and instead chooses to 'race the network' every time. You start 'one step  
+behind' the competing block (since of course you only learn about it after  
+it starts propagating), so you must rely on being able to outrace  
+propagation of the competing block through a private low-latency  
+side-network which can inject your block at multiple points throughout the  
+bitcoin p2p network to outrace the competitor.
+
+I think it's a stretch to say 'y' is 0 with good connectivity. Even the  
+best connected mining pools today are concerned with this 'y' factor.
+
+Here's a probably very dumb idea... to throw out one possible "solution"...
+
+You want a way to fake-out the 'selfish miner' into disclosing their  
+blocks -- how can your force their hand to prevent them from accumulating  
+longer private chains?
+
+What if you propagate (and relay) an encrypted block header which honest  
+miners will timestamp when they receive it, then 10 seconds later  
+propagate the decryption key to unblind it. But here's the catch - maybe  
+the decryption results in junk, maybe it results a new longer block. If  
+it's a real block then it gets priority based on when the ciphertext was  
+received instead of when the decryption key was received. Now 'selfish  
+miner' can't race the network anymore, because they are always in state 0'  
+and can't tell if they are up against a ghost, or a real competing block.  
+If they wait for the decryption key to check, it's too late, and they are  
+guaranteed to lose unless they can out-race the network, e.g. back at  
+t=50%. Of course there would need to be some way to anti-DDoS this which  
+allows for some amount of these fake-outs without letting them get out of  
+hand.
+
+Thanks,
+Jeremy
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131105/15da1196/attachment.html>
