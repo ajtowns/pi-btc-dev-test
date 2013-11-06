@@ -1,0 +1,102 @@
+From: btcdev@quinnharris.me (Quinn Harris)
+Date: Tue, 05 Nov 2013 21:26:59 -0300
+Subject: [Bitcoin-development] Possible Solution To SM Attack
+In-Reply-To: <CANAnSg19N6Ri9vVkKqP2VB14KgLN6=whAbtzV9EBcLUfDs_dJQ@mail.gmail.com>
+References: <N1-9eAtMHauq2@Safe-mail.net> <52796C14.5070300@quinnharris.me>
+	<CANAnSg19N6Ri9vVkKqP2VB14KgLN6=whAbtzV9EBcLUfDs_dJQ@mail.gmail.com>
+Message-ID: <52798CD3.3060806@quinnharris.me>
+
+On 11/05/2013 08:03 PM, Drak wrote:
+> On 5 November 2013 22:07, Quinn Harris <btcdev at quinnharris.me 
+> <mailto:btcdev at quinnharris.me>> wrote:
+>
+>     I don't think choosing the block with the lowest hash is the best
+>     option.  The good and bad miners have an equal probability of
+>     finding a
+>     lower hash.  But after Alice finds a block she can easily
+>     determine the
+>     probability that someone else will find a lower hash value that meets
+>     the difficulty requirement.  This can be used to judge if its best to
+>     start working on the next block or work on finding a lower value
+>     hash to
+>     increase the chance her block is used.
+>
+>
+> Well in that case, you could make it unpredictable by choosing based 
+> on a hash of the blockhash and chose the lowest from two. There is no 
+> way for Alice to know if Bob's resulting hash will be higher or lower 
+> than hers since she does not know Bob's blockhash in advance and 
+> therefore she would be better broadcasting her block immediately.
+>
+I don't think that will work but the bit test I suggested won't work either.
+
+Alice can calculate the hash of her blockhash and if the block to mine 
+is chosen based on the lowest result she will know the probability Bobs 
+block will be used.  This complexity doesn't change anything.  If hers 
+is more than 50% likely to be used she should mine the next block 
+otherwise its best to work to find a better current block.
+
+But if the block determination takes into account the current difficulty 
+we can prevent Alice from knowing if Bobs or any block she mines is more 
+likely to win.
+
+Assuming
+a = hash of block A
+b = hash of block B
+difficulty = current difficulty such that A < difficulty and b < difficulty
+
+The following code could be used to determine if the higher or lower 
+block should be chosen
+
+uint256 choose_block(uint256 a, uint256 b, uint256 difficulty)
+{
+   bool choice = false; // false for lower hash, true for greater hash
+   uint256 am = (a + d/4) % difficulty;
+   uint256 bm = (b + d/4) % difficulty
+   if (a + d/4 >= d)
+     choice = b > a || b < am || bm > a || bm < am;
+   else
+     choice = (b > a && b < am) || (bm > a && bm < am);
+   return choice ? (a > b ? a : b) : (a > b ? b : a);
+}
+
+The basic idea is to find a range over 0 to difficulty starting at A and 
+B that is 1/4 of the range of the difficulty.  If the two ranges overlap 
+which should be 1/2 of the time pick the greater hash is used otherwise 
+the lower hash.
+
+There is likely a cleaner solution but this demonstrates the basic idea.
+
+You could use the hash of the blockhash and just set the difficulty to 
+the maximum hash value which would really just end up removing all the 
+modulus stuff and make the code simpler.  But that code requires much 
+less computation that any cryptographic hash.
+
+I think this is preferable to each node randomly picking a block to mine 
+on as the paper suggests.  This should be completely unpredictable but 
+deterministic so all the miners should end up working on the same block.
+
+> You could even add another unpredictable factor: deciding the rules of 
+> whether higher or lower wins by hashing both competing blockhashes. If 
+> the leading two hex digits are below 128 lower wins, and if above, 
+> higher wins.
+>
+> Drak
+>
+>
+> ------------------------------------------------------------------------------
+> November Webinars for C, C++, Fortran Developers
+> Accelerate application performance with scalable programming models. Explore
+> techniques for threading, error checking, porting, and tuning. Get the most
+> from the latest Intel processors and coprocessors. See abstracts and register
+> http://pubads.g.doubleclick.net/gampad/clk?id=60136231&iu=/4140/ostg.clktrk
+>
+>
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131105/2c797822/attachment.html>
