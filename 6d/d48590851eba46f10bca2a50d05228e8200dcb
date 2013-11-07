@@ -1,0 +1,98 @@
+From: gronager@ceptacle.com (Michael Gronager)
+Date: Thu, 07 Nov 2013 15:11:39 +0100
+Subject: [Bitcoin-development] On the optimal block size and why transaction
+ fees are 8 times too low (or transactions 8 times too big)
+Message-ID: <527B9F9B.4060808@ceptacle.com>
+
+Following the discussion on the recent mining sybil trick, I reread the
+article on block propagation by Decker et al.* and decided to use it for
+doing a proper estimate of transaction fee size and optimal block size.
+
+The propagation of a block depends on and is roughly proportional to its
+size. Further, the slower a block propagates the higher the risk of a
+fork, so as a miner you are basically juggling the risk of a fork
+(meaning you loose your bounty) vs the opportunity for including more
+transactions and hence also get those fees.
+
+This alone will dictate the minimal transaction fee as well as the
+optimal block size!
+
+Lets try to put it into equations. For the purpose of this initial study
+lets simplify the work by Decker et al. Roughly, we can say that the
+average propagation time for a block is t_propagate, and the average
+time between blocks is t_blocks. Those are roughly 10sec and 600sec
+respectively. The risk of someone else mining a block before your block
+propagates is roughly**:
+
+P_fork = t_propagate/t_blocks (~1/60)
+
+Also note that propagation time is a function of block size, S:
+
+t_propagate = t_0 + alpha*S
+
+where Decker et al have determined alpha to 80ms/kb. We also define the
+fee size pr kilobyte, f, so
+
+E_fee = f*S
+
+Given these equations the expected average earning is:
+
+E = P_hashrate*(1 - P_fork)*(E_bounty + E_fees)
+
+And inserting:
+
+E  = P_hashrate*[1 - (t_0 + alpha*S)/t_block]*(E_bounty + f*S)
+
+We would like to choose the fee so the more transactions we include the
+more we earn. I.e. dE/dS > 0:
+
+dE/dS = P_hashrate*{[(t_block - t_0)*f - alpha*E_bounty]/t_block -
+2*alpha*f/t_block*S}
+
+Which gives:
+
+ f > alpha*E_bounty/(t_block-t_0) ~ alpha*E_bounty/t_block
+
+or f > 80*25/600000 = 0.0033 or assuming a standard transaction size of
+0.227kb:
+
+f_tx > 0.00076.
+
+Note that this number is 8 times higher than the current transaction
+fee! So the current optimal block size is an empty block i.e. without
+other transactions than the coinbase! (miners don't listen now...)
+
+Lets see what you loose by e.g. including 1000 transactions:
+
+E(1000) = P_hashrate*24.34XBT
+
+Which is a loss of 2.6% compared to not including transactions at all!
+
+So there are two ways forward from here. 1) raise the minimum fee, and
+2) make transactions smaller. We cannot make transactions much smaller,
+but we can utilize that most of them have already been broadcasted
+verified and validated and then just include their hash in the block***.
+This changes the relevant size for a transaction from 0.227kb to
+0.032kb. Which makes f_tx = 0.00011. We are almost there!
+
+Now assume that we implement this change and raise the minimum fee to
+0.00015, what is then the optimal block size (dE/dS = 0) ?
+
+ S = 1/2 * (t_block/alpha - E_bounty/f)
+
+Which gives 1083kb for a bounty of 25 and 2417kb for a bounty of 12.5.
+Optimal size in case of no bounty or an infinite fee is 3750MB.
+
+Final conclusions is that the fee currently is too small and that there
+is no need to keep a maximum block size, the fork probability will
+automatically provide an incentive to not let block grows into infinity.
+
+*)
+http://www.tik.ee.ethz.ch/file/49318d3f56c1d525aabf7fda78b23fc0/P2P2013_041.pdf
+**) The calculations should be done using the proper integrals and
+simulations, but I will leave that for academia ;)
+***) A nice side effect from switching to broadcasting transactions in
+blocks as only their hash is that it decouples fee size from transaction
+size!
+
+
