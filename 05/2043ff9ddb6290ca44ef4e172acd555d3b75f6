@@ -1,0 +1,145 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 6 Nov 2013 22:44:04 -0500
+Subject: [Bitcoin-development] we can all relax now
+In-Reply-To: <CANOOu=-MsPPgACKcHvsvtFAOAiULL+BOQvJz1tC3L=nT8wN01Q@mail.gmail.com>
+References: <5279D49D.5050807@jerviss.org>
+	<CAJHLa0N1-8LfFuWq=vS0r-t2Bt-qZ6yKuGjrnicUOj+K6Gpx5A@mail.gmail.com>
+	<CANOOu=-MsPPgACKcHvsvtFAOAiULL+BOQvJz1tC3L=nT8wN01Q@mail.gmail.com>
+Message-ID: <20131107034404.GA5140@savin>
+
+On Wed, Nov 06, 2013 at 01:06:47PM -0500, Christophe Biocca wrote:
+> I might try building this sometime soon. I think it may also serve an
+> educational purpose when trying to understand the whole network's behaviour.
+> 
+> What level of accuracy are we looking for though? Obviously we need to
+> fully emulate the steps of the network protocol, and we need to be able to
+> specify time taken for transmission/processing for each node. Do we care
+> about the actual contents of the messages (to be able to simulate double
+> spend attempts, invalid transactions and blocks, SPV node communication),
+> and their validation (actual signatures and proof of work)?
+> 
+> I imagine the latter is pretty useless, beyond specifying that the
+> signature/proof of work is valid/invalid.
+> 
+> If we could build up a set of experiments we'd like to run on it, it would
+> help clarify what's needed.
+> 
+> Off the top of my head:
+> 
+> - Peter Todd's miner strategy of sending blocks to only 51% of the
+> hashpower.
+
+Speaking of, I hadn't gotten around to doing up the math behind that
+strategy properly; turns out 51% I was overly optimistic and the actual
+threshold is 29.3%
+
+Suppose I find a block. I have Q hashing power, and the rest of the
+network 1-Q. Should I tell the rest of the network, or withhold that
+block and hope I find a second one?
+
+Now in a purely inflation subsidy environment, where I don't care about
+the other miners success, of course I should publish. However, if my
+goals are to find *more* blocks than the other miners for whatever
+reason, maybe because transaction fees matter or I'm trying to get
+nLockTime'd announce/commit fee sacrifices, it gets more complicated.
+
+
+There are three possible outcomes:
+
+1) I find the next block, probability Q
+2) They find the next block, probability 1-Q
+2.1) I find the next block, probability Q, or (1-Q)*Q in total.
+2.2) They find the next block, probability (1-Q)^2 in total.
+
+Note how only in the last option do I lose. So how much hashing power do
+I need before it is just as likely that the other miners will find two
+blocks before I find either one block, or two blocks? Easy enough:
+
+Q + (1-Q)*Q = (1-Q)^2 -> Q^2 - Q + 1/2 -> Q = (1 - \sqrt(2))/2
+
+Q ~= 29.2%
+
+So basically, if I'm trying to beat other miners, once I have >29.3% of
+the hashing power I have no incentive to publish the blocks I mine!
+
+But hang on, does it matter if I'm the one who actually has that hashing
+power? What if I just make sure that only >29.3% of the hashing power
+has that block? If my goal is to make sure that someone does useless
+work, and/or they are working on a lower height block than me, then no,
+I don't care, which means my original "send blocks to >51% of the
+hashing power" analysis was actually wrong, and the strategy is even
+more crazy: "send blocks to >29.3% of the hashing power" (!)
+
+
+Lets suppose I know that I'm two blocks ahead:
+
+1) I find the next block: Q                    (3:0)
+2) They find the next block: (1-Q)             (2:1)
+2.1) I find the next block: (1-Q)*Q            (3:1)
+2.2) They find the next block: (1-Q)^2         (2:2)
+2.2.1) I find the next block: (1-Q)^2 * Q      (3:2)
+2.2.2) They find the next block: (1-Q)^3       (2:3)
+
+At what hashing power should I release my blocks? So remember, I win
+this round on outcomes 1, 2.1, 2.2.1 and they only win on 2.2.2:
+
+Q + (1-Q)*Q + (1-Q)^2*Q = (1-Q)^3 -> Q = 1 - 2^-3
+
+Q ~= 20.6%
+
+Interesting... so as I get further ahead, or to be exact the group of
+miners who have a given block gets further ahead, I need less hashing
+power for my incentives to be to *not* publish the block I just found.
+Conversely this means I should try to make my blocks propagate to less
+of the hashing power, by whatever means necessary.
+
+Now remember, none of the above strategy requires me to have a special
+low-latency network or anything fancy. I don't even have to have a lot
+of hashing power - the strategy still works if I'm, say, a 5% pool. It
+just means I don't have the incentives people thought I did to propagate
+my blocks widely.
+
+The other nasty thing about this, is suppose I'm a miner and recently
+got a block from another miner: should I forward that block, or not
+bother? Well, it depends: if I have no idea how much of the hashing
+power has that block, I should forward the block. But again, if my goal
+is to be most likely to get the next block, I should only forward in
+such a way that >30% of the hashing power has the block.
+
+This means that if I have some information about what % already has that
+block, I have less incentive to forward! For instance, suppose that
+every major miner has been publishing their node addresses in their
+blocks - I'll have a pretty good idea of who probably has that most
+recent block, so I can easily make a well-optimized decision not to
+forward. Similarly because the 30% hashing power figure is the
+*integral* of time * hashes/second, if miners are forwarding
+near-target-headers, I might as well wait a few seconds and see if I see
+any near-target-headers; if I do for this block then I have evidence
+that hashing power does have it, and I shouldn't forward.
+
+
+So yeah, we're fucked and have got to fix this awful incentive structure
+somehow before the inflation subsidy gets any smaller. Also, raising the
+blocksize, especially by just removing the limit, is utter madness given
+it can be used to slow down block propagation selectively, so the
+hashing power that gets a given block is limited repeatably to the same
+group.
+
+
+P.S: If any large pools want to try this stuff out, give me a shout. You
+have my PGP key - confidentiality assured.
+
+P.P.S: If you're mining on a pool with more than, like, 1% hashing
+power, do the math on varience... Seriously, stop it and go mine on a
+smaller pool, or better yet, p2pool.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000078b970f5134bae96da021744f80e04aa9dc2e2d2c2bcb07c2
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131106/ed5fbe66/attachment.sig>
