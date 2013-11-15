@@ -1,0 +1,74 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 15 Nov 2013 05:32:46 -0500
+Subject: [Bitcoin-development] Even simpler minimum fee calculation
+ formula: f > bounty*fork_rate/average_blocksize
+In-Reply-To: <528367F5.9080303@ceptacle.com>
+References: <528367F5.9080303@ceptacle.com>
+Message-ID: <20131115103246.GB17034@savin>
+
+On Wed, Nov 13, 2013 at 12:52:21PM +0100, Michael Gronager wrote:
+> Last week I posted a writeup: "On the optimal block size and why
+> transaction fees are 8 times too low (or transactions 8 times too big)".
+> 
+> Peter Todd made some nice additions to it including different pool sizes
+> into the numbers.
+> 
+> However, it occurred to me that things can in fact be calculated even
+> simpler: The measured fork rate will mean out all the different pool
+> sizes and network latencies and will as such provide a simple number we
+> can use to estimate the minimum fee. Key assumption is that the latency
+> will depend on block size (# txns) and the fork rate will depend on latency.
+> 
+> Using the formulas from last week:
+> 
+> P_fork = t_propagate/t_blocks
+> 
+> and:
+> 
+> t_propagate = t_0 + alpha*S ~= alpha*S
+
+Assuming t_0 is negligible is wrong in this case. Or, it should be...
+
+> We get a measure for alpha as a function of the average fork rate and
+> average block size:
+> 
+> alpha = P_fork*t_block/S
+
+So alpha has units of seconds/byte, which lets us indirectly figure out
+the bandwidth the blocks are propagating at assuming t_0=0 and all links
+are equal. When you realize that P_fork is basically a multiplier on the
+bandwidth required to get a block out fast enough, the derivation makes
+sense. In any case we get:
+
+alpha = (1/113)*600s/134kBytes = 39.62uS/byte = 24kB/second
+
+Which is atrocious... but when you remember that Bitcoin nodes send
+blocks to all peers simultaneously,(1) thus dividing up the bandwidth and
+ruining latency you see why. t_0 shouldn't be at all negligible due to
+speed of light, but with this low bandwidth it is anyway.
+
+1) To be precise, nodes answer queries for blocks from all peers
+simultaneously.
+
+This also indicates that pools haven't taken the simple step of peering
+with each other using high-bandwidth nodes with restricted numbers of
+peers, which shows you how little attention they are paying to
+optimizing profits.  Right now mining pulls in $1.8 million/day, so
+that's up to $16k wasted.
+
+However, because miners don't orphan themselves, that $16k loss is born
+disproportionately by smaller miners... which also means the 24kB/sec
+bandwidth estimate is wrong, and the real number is even worse. In
+theory anyway, could just as easily be the case that larger pools have
+screwed up relaying still such that p2pool's forwarding wins.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000658459cd64e63243e719106014257870d073207c2d5460137
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131115/461df067/attachment.sig>
