@@ -1,0 +1,363 @@
+From: gronager@ceptacle.com (Michael Gronager)
+Date: Fri, 15 Nov 2013 11:47:53 +0100
+Subject: [Bitcoin-development] Even simpler minimum fee calculation
+ formula: f > bounty*fork_rate/average_blocksize
+In-Reply-To: <20131115095413.GA17034@savin>
+References: <528367F5.9080303@ceptacle.com>
+	<CAPaL=UWZXSwY9dzX30h_ksj2NAdkyLn3Xtfzs7P8Svg5tsE7Xw@mail.gmail.com>
+	<20131115095413.GA17034@savin>
+Message-ID: <5285FBD9.2070106@ceptacle.com>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Hi Peter,
+
+Love to see things put into formulas - nice work!
+
+Fully agree on the your fist section: As latency determines maximum
+block earnings, define a 0-latency (big-miner never orphans his own
+blocks) island and growing that will of course result in increased earnings.
+
+So build your own huge mining data center and you rock.
+
+However, that is hardly the real work scenario today. Instead we have
+pools (Huge pools). It would be interesting to do the calculation:
+
+	Q = Total pool size (fraction of all mining power)
+	q = My mining power (do.)
+	e = fraction of block fee that pool reserves
+
+It is pretty obvious that given your formulas small miners are better
+off in a pool (can't survive as solo miners), but there will be a
+threshold q_min above which you are actually better off on you own -
+depending also on e. (excluding here all benefits of a stable revenue
+stream provided by pools)
+
+Next interesting calculation would be bitcoin rate as a function of pool
+size, I expect a sharp dip somewhere in the 40%s of hardware controlled
+by one entity ;)
+
+Finally, as you mention yourselves, qualification of the various
+functions is needed. This could e.g. suggest if we are like to get 3 or
+10 miners on the long run.
+
+And now for section 2. You insert a definition of f(L) = a-bL. I think
+the whole idea of letting f depend on L is superfluous. As a miner you
+are always free to choose which transactions to include. You will always
+choose those with the biggest fee, so really it is only the average fee
+that is relevant: f(L) = c. Any dependence in L will be removed by the
+reshuffeling. To include an extra transaction will require either that
+it has a fee larger than another (kicking that out out) or that it has a
+fee so large that it covers for the other transaction too. Also recall
+that there is a logical minimum fee (as I have already shown), and a
+maximum optimal block size - that is until the bounty becomes 0 (which
+is where other effects kick in).
+
+> Here's what I've got to date. The first two sections is just a
+> relatively simple proof that mining is more profitable as centralization
+> increases under any circumstance, even before any real-world factors are
+> taken into account. (other than non-zero latency and bandwidth) Nice
+> homework problem, and neat that you can easily get a solid proof, but
+> academic because it doesn't say anything about the magnitude of the
+> incentives.
+> 
+> The latter part is the actual derivation with proper model of
+> supply-and-demand for fees. Or will be: while you can of course solve
+> the equations with mathematica or similar - getting a horrid mess - I'm
+> still trying to see if I can simplify them sanely in a way that's
+> step-by-step understandable. Taking me longer than I'd like; sobering to
+> realize how rusty I am. That said if any you do just throw it at
+> Mathematica, looks like you get a result where the slope of your
+> expected block return is at least quadratic with increasing hashing
+> power. (though I spent all of five minutes eyeballing that result)
+> 
+> 
+> \documentclass{article}
+> \usepackage{url}
+> \usepackage{mathtools}
+> \begin{document}
+> \title{Expected Return}
+> \author{Peter Todd}
+> \date{FIXME}
+> \maketitle
+> 
+> \section{Expected return of a block}
+> \label{sec:exp-return-of-a-block}
+> 
+> Let $f(L)$, a continuous function,\footnote{Transactions do of course give a
+> discontinuous $f$. For a large $L$ the approximation error is negligible.} be
+> the fee-per-byte available to a rational miner for the last transaction
+> included in a block of size $L$. $f(L)$ is a continuous function defined for $L
+> \ge 0$. Supply and demand dictates that:
+> 
+> \begin{equation}
+>     f(L) \ge f(L+\epsilon) \label{eq:f-increases}
+> \end{equation}
+> 
+> A reasonable example for $f$ might be $f(L) = kL$, representing the demand side
+> of a linear supply and demand plot. For a block of size $L$ that is optimally
+> filled with transactions the value of those fees is just the integral:
+> 
+> \begin{equation}
+>     E_f(L) = \int_0^L f(l)\,dl
+> \end{equation}
+> 
+> Let $P(Q,L)$, a continuous function, be the probability that a block of size
+> $L$ produced by a miner with relative hashing power $Q$ will be orphaned.
+> Because a miner will never orphan their own blocks the following holds true:
+> 
+> \begin{equation}
+>     P(Q,L) \le P(Q + \epsilon,L) \label{eq:p-increases}
+> \end{equation}
+> 
+> Similarly because larger blocks take longer to propagate and thus risk getting
+> orphaned by another miner finding a block at the same time:
+> 
+> \begin{equation}
+>     P(Q,L) \ge P(Q,L + \epsilon)
+> \end{equation}
+> 
+> By combining $P(Q, L)$, $E_f(L)$ and the inflation subsidy $B$, gives us the
+> expected return of a block for a given size and hashing power:\footnote{Note
+> how real world marginal costs can be accommodated easily in the definitions of
+> $f$ and $B$.}
+> 
+> \begin{equation}
+>     E(Q,L) = P(Q,L)[E_f(L) + B]
+> \end{equation}
+> 
+> The optimal size is simply the size $L$ at which $E(Q, L)$ no longer increases:
+> 
+> \begin{equation}
+>     \frac{d}{dL}\big[E(Q, L(Q))\big] = 0
+> \end{equation}
+> 
+> We will define the function $L(Q)$ as the optimal value for a given $Q$. A
+> miner creating optimal blocks will thus have an expected return per block found
+> of $E'(Q)=E(Q,L(Q))$. Note how this definition is per unit hashing power by
+> virtue of being per block found.
+> 
+> 
+> \section{Optimal return $E'$ vs. hashing power $Q$}
+> 
+> We want to know if a large miner has a larger return for a given amount of
+> hashing power. We do this by taking the derivative with respect to $Q$ of the
+> expected return given optimal strategy:
+> 
+> \begin{align*}
+>     \frac{d}{dQ}\big[E'(Q)\big] &= \frac{d}{dQ}\big[P(Q,L(Q))\big]\big[E_f(L(Q)) + B\big] + P(Q,L(Q))\frac{d}{dQ}\big[E_f(L(Q))\big] \\
+>                                 &= \frac{dL(Q)}{dQ}\Big[\frac{dP(Q,L(Q))}{dQ}\big[E_f(L(Q)) + B\big] + P(Q,L)\frac{dE_f(L(Q))}{dQ}\Big]
+> \end{align*}
+> 
+> We know that $L(Q)$, $E_f$, $P$, and $B$ are all $\ge 0$. Thus for $dE'/dQ$ to
+> be negative requires either $dL/dQ$ to be negative, or for $dL/dQ$ to be
+> positive and one of $dP/dQ$ or $dE_f/dQ$ negative.
+> 
+> Suppose $dP/dQ$ negative and $dL/dQ$ positive:
+> 
+> \begin{align}
+>     \frac{dL(Q)}{dQ} > 0    &\implies L(Q + \epsilon) > L(Q) \notag \\
+>     \frac{dP(L(Q))}{dQ} < 0 &\implies P(Q + \epsilon, L(Q + \epsilon)) < P(Q, L(Q)) \label{eq:dl-pos-dp-neg}
+> \end{align}
+> 
+> But that contradicts our definition \eqref{eq:p-increases} of $P$ as continuous
+> and increasing. Suppose instead that $dE_f/dQ$ is negative and $dL/dQ$
+> positive:
+> 
+> \begin{align}
+>     \frac{dL(Q)}{dQ} > 0      &\implies L(Q) < L(Q + \epsilon) \notag \\
+>     \frac{dE_f(L(Q))}{dL} < 0 &\implies E_f(L(Q)) > E_f(L(Q + \epsilon)) \notag \\
+>                               &\implies \int_0^{L(Q)} f(l)\,dl > \int_0^{L(Q+\epsilon)} f(l)\,dl \notag \\
+>                               &\implies f(l) < 0 \label{eq:dl-pos-de-neg}
+> \end{align}
+> 
+> Again we have a contradiction with our definition \eqref{eq:f-increases} of
+> $f$. Finally suppose $dL/dQ$ is negative:
+> 
+> \begin{align}
+>     \frac{dL(Q)}{dQ} < 0 &\implies L(Q) > L(Q + \epsilon) \notag \\
+>                          &\implies P(Q + \epsilon, L(Q + \epsilon)) < P(Q, L(Q)) \notag \\
+>                          &\implies \frac{dP(Q, L(Q))}{dQ} < 0 \notag \\
+>                          &\implies \frac{dL(Q)}{dQ}\frac{dP(Q, L(Q))}{dQ} > 0 \label{eq:dl-neg-dp-neg} \\
+>                          &\implies E_f(L(Q + \epsilon)) < E_f(L(Q)) \implies \frac{dE_f(L(Q))}{dQ} < 0 \notag \\
+>                          &\implies \frac{dL(Q)}{dQ}\frac{dE_f(L(Q))}{dQ} > 0 \label{eq:dl-neg-de-neg}
+> \end{align}
+> 
+> Even if $dL/dQ$ is negative \eqref{eq:dl-neg-dp-neg} and
+> \eqref{eq:dl-neg-de-neg} show that $dE'/dQ > 0$. In conjunction with
+> \eqref{eq:dl-pos-dp-neg} and \eqref{eq:dl-pos-de-neg} we prove that increased
+> hashing power always leads to increased return on investment per unit hashing
+> power.
+> 
+> 
+> \subsection{Real-world implications to centralization}
+> 
+> While the author has shown that they still remember first-year, is this result
+> relevant?
+> 
+> The proof holds regardless of what any of the functions actually are, provided
+> that they meet the requirements set out in section
+> \ref{sec:exp-return-of-a-block}. The requirements are met by any reasonable
+> real-world scenario\footnote{Negative fees are not reasonable!}, and show an
+> incentive for mining to centralize even in an ideal situation where all miners
+> are on a level playing field and have no fixed costs.
+> 
+> However the proof is abstract, and doesn't tell us anything about how strong
+> that pressure is; it may be insignificant enough to be outweighed by effects
+> such as social pressure.
+> 
+> We need to investigate $dE'/dQ$ in detail.
+> 
+> 
+> \section{Detailed derivation of of $P(Q,L)$}
+> 
+> \subsection{Assumptions}
+> 
+> The difficulty is assumed to be in a steady state condition and the
+> percentage of hashing power for any given miner is fixed. Unconfirmed
+> transactions are assumed to be known to all miners, giving everyone an
+> equal opportunity of mining any given transaction.
+> 
+> We assume that the graph of all Bitcoin miners is fully connected and
+> that the bandwidth, $1/k$, and latency, $t_0$, is identical for all
+> connections and unchanging. We assume that miners always attempt to
+> build upon the first block they see on the longest chain known to them,
+> and when they find a block, they always broadcast it to all other miners
+> simultaneously. From that we see that the time taken for a block of size
+> $L$ to propagate to $100\%$ of the hashing power is simply:
+> 
+> \begin{equation}
+>     t(L) = t_0 + kL
+> \end{equation}
+> 
+> 
+> \subsection{Analysis}
+> 
+> When miner $Q$ finds a block during the condition of full consensus the
+> outcomes can be described by the following state tree.  The numbers in brackets
+> are the "scorecard" of blocks found by $Q$ and all other miners should a given
+> state be reached:
+> 
+> \begin{description}
+> 
+>     \item[1)] No other block is found prior to full propagation. (1:0)
+> 
+>     \item[2)] $Q$ finds another block prior to full propagation. (2:0)
+>     \begin{description}
+>         \item[2.1)] $Q$'s second block is not orphaned. (2:0)
+>         \item[2.2)] $Q$'s second block is orphaned. (2:3)
+>     \end{description}
+> 
+>     \item[3)] $(1-Q)$ finds another block prior to full propagation. (1:1)
+>     \begin{description}
+>         \item[3.1)] $(1-Q)$'s block is orphaned. (2:1)
+>         \item[3.2)] $(1-Q)$'s block is not orphaned. (1:2)
+>     \end{description}
+> \end{description}
+> 
+> Miner $Q$ wins if states $1$, $2.1$, or $3.1$ are reached. Though it is
+> possible to derive an equation for $P$ that accurately models possible states -
+> the author did exactly that in a fit of madness - the resulting equation is
+> unwieldly and offers no additional insight.
+> 
+> We want to end up with a $dE'/dQ$ that captures second order effects. Since
+> $L(Q)$ and thus $E'(Q)$ will depend on $Q$ our approximation of $P$ should be
+> such that $dP/dQ$ is at least linear.
+> 
+> With $\lambda$ as the block interval the probabilities of reaching states $1$,
+> $2$, and $3$ are as follows:
+> \begin{align}
+>     p_1 &= 1 - \frac{t}{\lambda} \\
+>     p_2 &= \frac{t}{\lambda} Q \\
+>     p_3 &= \frac{t}{\lambda} (1-Q)
+> \end{align}
+> 
+> We could assume that states $2$ and $3$ both lead to the block being orphaned,
+> thus giving us:
+> \begin{equation}
+>     P(Q, L) = 1 - \frac{t}{\lambda} = 1 - \frac{t_o + kL}{\lambda}
+> \end{equation}
+> 
+> However this gives us a linear $E(Q, L)$, linear $L(Q)$, and thus only a
+> quadratic $E'(Q)$. We need at least one more state in our model; state $2.1$ is
+> a good choice. Reaching state $2.2$ is exceptionally improbable - the miners
+> $(1-Q)$ have to find three blocks in time $t$ - so ignoring state $2.2$ and
+> thus using the probability for state $2$ instead has negligible impact on the
+> model. Meanwhile state $3$ requires that state $3.1$ be used directly and would
+> result in a third-order terms in $P$ when treating state $3$ as an always loss
+> is a conservative lower-bound.
+> 
+> This gives us:
+> \begin{align}
+>     P(Q, L) &= p_1 + p_2 = 1 - \frac{t}{\lambda} + \frac{t}{\lambda} Q = 1 - (1-Q)\frac{t}{\lambda} \notag \\
+>             &= 1 - (1-Q)\frac{t_o + kL}{\lambda}
+> \end{align}
+> 
+> 
+> \subsection{Detailed derivation of E'(Q)}
+> 
+> Some preliminaries:
+> 
+> \begin{align}
+>     \frac{dP(Q,L)}{dL} &= -(1-Q)\frac{k}{\lambda} \\
+>     \notag\\
+>     \frac{dE(Q,L)}{dL} &= \frac{dP(Q,L)}{dL}\big[E_f(L) + B\big] + P(Q,L)\frac{dE_f(L)}{dL} \notag\\
+>                        &= \frac{dP(Q,L)}{dL}\big[E_f(L) + B\big] + P(Q,L)\,f(L)
+> \end{align}
+> 
+> We're not going to get very far without a definition for $f$ so we'll use a
+> simple linear demand model:
+> 
+> \begin{align}
+>     f(L) &= a - bL \\
+>     E_f(L) &= aL - \frac{1}{2}bL^2
+> \end{align}
+> 
+> Now we set $dE/dL=0$ and solve for $L$. To simplify the problem we will consider the no-subsidy, $B=0$ case:
+> 
+> \begin{align}
+>     0 &= \frac{dP(Q,L)}{dL}E_f(L) + P(Q,L)\,f(L) \\
+>       &= -(1-Q)\frac{k}{\lambda}\big[aL - \frac{1}{2}bL^2] + \big[1 - (1-Q)\frac{t_o + kL}{\lambda}\big](a - bL) \\
+> \end{align}
+> 
+> 
+> \end{document}
+> 
+>>> Luckily the fork frequency and the average block size are easily
+>>> measurable. blockchain.info keeps historical graphs of number of
+>>> orphaned blocks pr day
+>>
+>> Are those stats accurate? Have any pool operators at least confirmed that the
+>> orphaned blocks that blockchain.info reports match their own records?
+>>
+>> My gut feeling is to relay all orphaned blocks. We know that with a high
+>> investment and sybil attack as blockchain.info has done you can have better
+>> awareness of orphaned blocks than someone without those resources. If having
+>> that awareness is ever a profitable thing we have both created an incentive to
+>> sybil attack the network and we have linked profitability to high up-front
+>> capital investments.
+>>
+>> On those grounds alone I will argue that we should relay all orphans to even
+>> the playing field. If there is a circumstance where we do not want the attacker
+>> to have that knowledge we have failed anyway, as blockchain.info's sybil attack
+>> on the network clearly shows.
+> 
+> Agreed.
+> 
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG/MacGPG2 v2.0.22 (Darwin)
+Comment: GPGTools - http://gpgtools.org
+Comment: Using GnuPG with Thunderbird - http://www.enigmail.net/
+
+iQEcBAEBAgAGBQJShfvZAAoJEKpww0VFxdGRDVoIALEgjxC8PQvj4hyp8CmTM8wP
+4ASL72gs/V6cRZuVPXjKJrrWxs2GjvxASQWaZa+9Oe5pXTg1Qa9yo5/3vBnB4kmK
+SgeJNo+C1rQjd3KuunAV0vG4pkIYnMa9GyBYnWf8mNuP1oysy8NSDOVt2jhtO5A3
+gKra0YFJYIEyOgewfefDrxokP0iSfQnJO7mPYfkoaLQm0ugoAi1IR8EiAuZX3oT9
+v80o9yhKqilz0wxhvsFAFf8txfpJw7LWTne5L/gQkHIV3v3dY7fLoWTfil/mqsAq
+6+d6xf+9s1tOXD18C/QTvhZIAyE3yiW7ZxbOyAYbQmbjORRZBdgWzaxCQbTHQNM=
+=k1i2
+-----END PGP SIGNATURE-----
+
+
