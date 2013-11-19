@@ -1,0 +1,286 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 19 Nov 2013 06:00:23 -0500
+Subject: [Bitcoin-development] Disentangling Crypto-Coin Mining:
+ Timestamping, Proof-of-Publication, and Validation
+Message-ID: <20131119110023.GA24068@savin>
+
+In the design of Bitcoin mining serves two fundemental purposes:
+proof-of-publication and order consensus.  Bitcoin's design entangles
+these fundemental purposes with other goals, such as validation and
+initial coin distribution. This leads to a design that is fundementally
+unscalable, albeit effective on a small scale. Here we show how these
+purposes do not need to be entangled together, and how by disentangling
+them we can achieve better scalability and validation of the system as a
+whole.
+
+Let's first look at what role each of those purposes plays:
+
+* Proof-of-publication
+
+The fundemental problem Bitcoin solves is the double-spend problem.
+Alice has some Bitcoins, and she wants to give them to Bob. She does
+this by signing a digital message, a transaction, authorizing her coins
+to be assigned to Bob. However, Bob has no way of knowing if Alice has
+signed a conflicting digital message assigning her coins to Charlie
+instead.
+
+Bitcoin solves this problem by providing a way for Alice and Bob to
+agree on a common place where *all* transactions will be published, the
+blockchain. Because the definition of a valid transaction is that it has
+been published in the blockchain, Bob can examine the contents of it,
+and be confident that no conflicting transaction exists.
+
+
+* Order consensus
+
+Due to the constraints of physics no decentralized system can provide
+instantaneous and reliable proof of publication; for a non-ideal
+proof-of-publication system to be useful to solve the double-spend
+problem we need to come to a consensus about the order in which data was
+published. Once an order has been established, subsequent
+double-spending transactions can be declared invalid.
+
+Note that time itself isn't directly required, only the order of
+transactions needs to be agreed upon.
+
+
+* Why validation is an optional optimization
+
+Given only proof-of-publication, and a consensus on the order of
+transactions, can we make a succesful crypto-coin system? Surprisingly,
+the answere is yes!
+
+Suppose the rules of Bitcoin allowed blocks to contain invalid
+transactions, in fact, suppose miners did no verification what-so-ever
+of the contents of the blocks they mined. Could Bob still be confident
+in the coins he received? Absolutely. There is consensus that the
+transaction sending coins to Bob's came first and all prior transactions
+can be verified as valid by checking the entire blockchain. In Bitcoin
+all full nodes do this and Bitcoin could succesfully operate on that
+model.
+
+What can't be supported in this model is SPV clients: the existance of a
+transaction in a block tells you nothing about its validity, so no
+compact proof can be made.
+
+Real-world examples of this issue can be found in the parasitic
+consensus system Mastercoin, and to a lesser extent Colored Coins: the
+former uses Bitcoin as a proof-of-publication, applying it's own
+independent set of rules to that published data. The latter tracks the
+transfer of assets in a way that takes advantage of the Bitcoin
+validation rules, but any given txout can only be proven to represent a
+particular asset with a full chain of transfers back to the asset
+genesis. It's notable that proponents of colored coins have proposed
+that rules to validate colored coins be added to Bitcoin to make such
+lengthy proofs not required.(1)
+
+
+* What is the minimum domain for anti-double-spend proof-of-publication?
+
+Answer: a single txout.
+
+So what do we mean by "domain" here? In the existing Bitcoin system,
+modulo validation, what Alice has proven to Bob is that an entire
+transaction has been published. But that's not actually what Bob wants
+to know: he only wants to be sure that no transaction inputs, that is
+the CTxIn data structure containing a valid scriptSig and reference to a
+previous output, have been published that spend outputs of the
+transaction he is accepting from Alice. Put more simply, he doesn't care
+where a double-spending transaction sends the money, he only cares that
+it exists at all.
+
+Suppose the blockchain consisted of blocks that only contained
+information on the transaction outputs spent by that block; essentially
+a block is a list of CTxIn's. We also, add a third field to the existing
+CTxIn structure, hashTx, which commits to the rest of the transaction
+spending that txout.
+
+If we sort the CTxIn's in each block by the hash of the *transaction
+output being spent* and commit to them with a merkle tree, Bob can now
+determine if Alice's transaction is valid by checking the blockchain for
+blocks that contain a conflicting spend of any of the inputs to that
+transaction. For each block the proof that the block does not contain a
+given spend is log2(n) in size.
+
+Put another way, Bob needs proof that some data, a valid CTxIn spending
+some CTxOut, has never been published before. He only cares about that
+particular CTxOut, so the "publication domain" he is interested in is
+that single CTxOut. (note that we are considering a CTxIn as valid if
+its scriptSig satisfies the prevout's scriptPubKey; the rest of the
+transaction may be invalid for other reasons)
+
+Conversely a transaction is only considered to be valid if all CTxIn's
+in that transaction have been succesfully committed to the blockchain
+proper; there must be proof that every CTxIn has been published.
+
+Note the parallels to the authors TXO commitments proposal: where TXO
+commitments commit to the outputs of every transaction in each block,
+here we are committing to the inputs of all transactions.
+
+
+* Transaction validation
+
+Miners still are doing almost no validation in this scheme, other than
+the fact that a block is only valid if the data in it follows some
+order. Bob still needs to examine the chain of of all transactions to
+determine if Alice's payment was valid. However, the information he
+needs to do this is greatly diminished: log(n) * m per txout in that
+history, with n as the average number of spends in a block, and m the
+number of blocks each txout was in existance for.
+
+Of course, a practical implementation of this concept will have to rely
+heavily on direct transfer of proof data from payor to payee.
+
+
+** Privacy
+
+The increased validation effort required on the part of Bob has an
+important privacy advantage: whole transactions need never appear in the
+blockchain at all. By incorporating a simple nonce into every
+transaction blinding the miners have no way of linking CTxIn's to
+CTxOut's. This achieves the end goal of Adam Back's blind symmetric
+commitments(3) but by leaving data out of the blockchain entirely rather
+than blinding it.
+
+
+* The incentive to share blockchain data
+
+What is the incentive for miners have in the Bitcoin system to share
+their blocks? Why not just share the block header? Of course, the
+incentive is that unless they share their block data, all other miners
+in the system won't build upon their blocks because they have no idea if
+they are valid or not.
+
+But here there is no such thing as an invalid block! Blocks are just
+arbitrary data with no specific meaning; whether or not the data is
+valid in some sense is of no importance to the miner.
+
+We can re-introduce this incentive by using a proof-of-work scheme that
+has the requirement of posession of blockchain data. For instance we
+could make the underlying computation be simply H(header + all previous
+blocks) - without the entire blockchain you would be unable to mine, or
+even validate the work done.
+
+Of course this is impractical for a number of reasons. But it's
+important to recognize that this simple scheme doesn't make any
+compromises about the continual availability of blockchain data, and
+thus the ability for users to validate history. Any lesser scheme will
+be a trade-off between that guarantee and other objectives.
+
+
+** Full TxIn set commitments
+
+Since we have to require miners to posess blockchain data, we might as
+well make a simple optimization: rather than commit to the CTxIn's in a
+single block, commit to multiple blocks.
+
+First, let's require that every CTxIn present in a block be have a valid
+scriptSig for the corresponding scriptPubKey. To do this we need for
+CTxIn's to commit to the H(txout) they are spending, and include the
+CTxOut itself alongside the CTxIn in the block. Our hash commitments are
+now chained as follows:
+
+    CTxIn -> CTxOut -> <merkle path> -> CTransaction -> <merkle path> -> CTxIn
+
+Now that we have valid and invalid CTxIn's, we might as well state that
+only one valid CTxIn is allowed for a given CTxOut per block; proof that
+a transaction is valid now doesn't have to take into account the problem
+of an *invalid* CTxIn that you need to prove is invalid and thus can be
+ignored. This validation is stateless, requiring only local data, and
+still provides for strong privacy.(a) A fraud proof in this scheme is
+simply the CTxIn and CTxOut and merkle path, and the code required to
+evaluate it is the same code required to evaluate the data in a block.
+
+a) Remember the mention of a per transaction nonce? It can be used
+   between the CTxOut and the rest of the CTransaction so that even if
+   every CTxIn and CTxOut is known, the actual transactions can't be
+   derived.
+
+Now that we have a definition of a valid CTxIn, we can naturally extend
+this to define the set of all valid *oldest* CTxIn's. That is for any
+given CTxOut, we include the first valid CTxIn found in any block in
+this set. This is analogous to the concept of the UTXO set, except that
+items can only ever be added to the TxIn set.
+
+As with UTXO commitments we can commit to the state of the TxIn set
+using a merkelized radix tree whose tip is committed to by the block
+header.
+
+Of course because a block can manipulate the contents of this set in an
+invalid way, we've strongly reintroduced the notion of an invalid block,
+we've re-introduced the incentive to share blockchain data, and we've
+re-introduced the requirement to have the full set of blockchain data to
+mine.
+
+
+*** Mining with incomplete blockchain data
+
+Or have we? This requirement isn't particularly strong as all: if other
+miners are usually honest we'll get away with just trusting them to mine
+only valid blocks. Meanwhile the TxIn set in merkelized radix tree form
+can have items added to it with only the subset of internal nodes
+modified by your additions. A miner can easily produce blocks only
+containing CTxIn's spending CTxOuts from a subset of the possible
+values. Multiple such miners can even co-operate to produce blocks, with
+each handling a specific subset, as multiple radix trees are easily
+composed.(b)
+
+Note that Bitcoin is even worse in this regard: you don't need any
+previous blockchain data at all to create a new block. For instance the
+authors proof-of-tx-propagation concept(5) has the serious flaw that
+unscrupulous miners can use the proof that other miners are mining
+certain transactions as a way to avoid doing any validation themselves.
+
+
+*** The deletion problem
+
+What happens if a copy of some of the txin set can't be found? With
+Bitcoin this isn't an issue in theory - the miners are supposed to never
+extend blocks they haven't verified in full and they are supposed to
+distribute blocks freely. Not necessarily a perfect assumption(6) but it
+mostly holds true.
+
+With any type of sharded blockchain, it is easy to see that assumption
+may not hold true. Now rather than a 51% attack in terms of total
+hashing power, you could have a "local" attack on some portion of the
+commitment set. On the other hand, with the right set of incentives, the
+existance of such an attack can be made to imply actual consent by those
+owning the coins involved, e.g. through proof-of-stake combined with the
+proof-of-work. (perhaps better described as proof-of-consent with
+proof-of-work)
+
+
+1) OP_CHECKCOLORVERIFY: soft-fork for native color coin support,
+   https://bitcointalk.org/index.php?topic=253385.0,
+   jl2012
+
+2) Merkle tree of open transactions for lite mode?
+   https://bitcointalk.org/index.php?topic=21995.0,
+   Gregory Maxwell
+
+3) Ultimate blockchain compression w/ trust-free lite nodes
+   https://bitcointalk.org/index.php?topic=88208.0
+   Alan C. Reiner
+
+4) blind symmetric commitment for stronger byzantine voting resilience,
+   http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg02184.html,
+   Adam Back
+
+5) Near-block broadcasts for proof of tx propagation,
+   http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg02868.html,
+   Peter Todd
+
+6) Perverse incentives to withhold blocks
+   http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg03200.html
+   Peter Todd
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000009f9403506c42540415272f68232a986e8f529d994bc917c1e
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131119/e1b491fe/attachment.sig>
