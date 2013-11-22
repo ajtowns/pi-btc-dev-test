@@ -1,0 +1,174 @@
+From: jgarzik@bitpay.com (Jeff Garzik)
+Date: Fri, 22 Nov 2013 15:49:04 -0500
+Subject: [Bitcoin-development] [PATCH,
+	try2] bitcoind: whitelist nodes against banning
+Message-ID: <CAJHLa0NGQaMMFByzHhnuPHYhUSj6czqBcimwhaj-DyEM91PRZA@mail.gmail.com>
+
+Whitelist nodes against banning.
+
+-- 
+Jeff Garzik
+Bitcoin core developer and open source evangelist
+BitPay, Inc.      https://bitpay.com/
+-------------- next part --------------
+commit af7b624763e790075f8bb29a084309e6591e3469
+Author: Jeff Garzik <jgarzik at bitpay.com>
+Date:   Fri Nov 22 15:43:51 2013 -0500
+
+    Add whitelist, to prevent whitelisted nodes from being banned.
+    
+    Entry point via RPC, configuration file or command line.
+
+diff --git a/src/bitcoinrpc.cpp b/src/bitcoinrpc.cpp
+index a1e7d14..506b370 100644
+--- a/src/bitcoinrpc.cpp
++++ b/src/bitcoinrpc.cpp
+@@ -233,6 +233,7 @@ static const CRPCCommand vRPCCommands[] =
+     { "getpeerinfo",            &getpeerinfo,            true,      false,      false },
+     { "ping",                   &ping,                   true,      false,      false },
+     { "addnode",                &addnode,                true,      true,       false },
++    { "addwhite",               &addwhite,               true,      true,       false },
+     { "getaddednodeinfo",       &getaddednodeinfo,       true,      true,       false },
+     { "getnettotals",           &getnettotals,           true,      true,       false },
+     { "getdifficulty",          &getdifficulty,          true,      false,      false },
+diff --git a/src/bitcoinrpc.h b/src/bitcoinrpc.h
+index 9025ff9..a7c2e2d 100644
+--- a/src/bitcoinrpc.h
++++ b/src/bitcoinrpc.h
+@@ -162,6 +162,7 @@ extern json_spirit::Value getconnectioncount(const json_spirit::Array& params, b
+ extern json_spirit::Value getpeerinfo(const json_spirit::Array& params, bool fHelp);
+ extern json_spirit::Value ping(const json_spirit::Array& params, bool fHelp);
+ extern json_spirit::Value addnode(const json_spirit::Array& params, bool fHelp);
++extern json_spirit::Value addwhite(const json_spirit::Array& params, bool fHelp);
+ extern json_spirit::Value getaddednodeinfo(const json_spirit::Array& params, bool fHelp);
+ extern json_spirit::Value getnettotals(const json_spirit::Array& params, bool fHelp);
+ 
+diff --git a/src/init.cpp b/src/init.cpp
+index b2e7ddf..75aa301 100644
+--- a/src/init.cpp
++++ b/src/init.cpp
+@@ -548,6 +548,8 @@ bool AppInit2(boost::thread_group& threadGroup, bool fForceServer)
+ 
+     strWalletFile = GetArg("-wallet", "wallet.dat");
+ 
++    LoadWhitelist();
++
+     // ********************************************************* Step 4: application initialization: dir lock, daemonize, pidfile, debug log
+ 
+     std::string strDataDir = GetDataDir().string();
+diff --git a/src/net.cpp b/src/net.cpp
+index c547cf3..969bb1b 100644
+--- a/src/net.cpp
++++ b/src/net.cpp
+@@ -55,6 +55,8 @@ bool fDiscover = true;
+ uint64_t nLocalServices = NODE_NETWORK;
+ static CCriticalSection cs_mapLocalHost;
+ static map<CNetAddr, LocalServiceInfo> mapLocalHost;
++static CCriticalSection cs_mapWhitelist;
++static map<CNetAddr, LocalServiceInfo> mapWhitelist;
+ static bool vfReachable[NET_MAX] = {};
+ static bool vfLimited[NET_MAX] = {};
+ static CNode* pnodeLocalHost = NULL;
+@@ -298,6 +300,45 @@ bool IsReachable(const CNetAddr& addr)
+     return vfReachable[net] && !vfLimited[net];
+ }
+ 
++// learn a new whitelisted address
++bool AddWhitelist(const CService& addr, int nScore)
++{
++    LogPrintf("AddWhitelist(%s,%i)\n", addr.ToString().c_str(), nScore);
++
++    {
++        LOCK(cs_mapWhitelist);
++        bool fAlready = mapWhitelist.count(addr) > 0;
++        LocalServiceInfo &info = mapWhitelist[addr];
++        if (!fAlready || nScore >= info.nScore) {
++            info.nScore = nScore + (fAlready ? 1 : 0);
++            info.nPort = addr.GetPort();
++        }
++    }
++
++    return true;
++}
++
++/** check whether a given address is potentially local */
++bool IsWhitelisted(const CService& addr)
++{
++    LOCK(cs_mapWhitelist);
++    return mapWhitelist.count(addr) > 0;
++}
++
++void LoadWhitelist()
++{
++    // Connect to specific addresses
++    if (mapArgs.count("-whitelist") && mapMultiArgs["-whitelist"].size() > 0)
++    {
++        BOOST_FOREACH(string strAddr, mapMultiArgs["-whitelist"])
++        {
++            CService serv(strAddr.c_str(), Params().GetDefaultPort(), true);
++            if (serv.IsValid())
++                AddWhitelist(serv, 0);
++        }
++    }
++}
++
+ bool GetMyExternalIP2(const CService& addrConnect, const char* pszGet, const char* pszKeyword, CNetAddr& ipRet)
+ {
+     SOCKET hSocket;
+@@ -588,6 +629,11 @@ bool CNode::Misbehaving(int howmuch)
+         LogPrintf("Warning: Local node %s misbehaving (delta: %d)!\n", addrName.c_str(), howmuch);
+         return false;
+     }
++    if (IsWhitelisted(addr))
++    {
++        LogPrintf("Warning: Whitelisted node %s misbehaving (delta: %d)!\n", addrName.c_str(), howmuch);
++        return false;
++    }
+ 
+     nMisbehavior += howmuch;
+     if (nMisbehavior >= GetArg("-banscore", 100))
+diff --git a/src/net.h b/src/net.h
+index 278462a..e215255 100644
+--- a/src/net.h
++++ b/src/net.h
+@@ -87,6 +87,9 @@ bool AddLocal(const CService& addr, int nScore = LOCAL_NONE);
+ bool AddLocal(const CNetAddr& addr, int nScore = LOCAL_NONE);
+ bool SeenLocal(const CService& addr);
+ bool IsLocal(const CService& addr);
++bool AddWhitelist(const CService& addr, int nScore);
++bool IsWhitelisted(const CService& addr);
++void LoadWhitelist();
+ bool GetLocal(CService &addr, const CNetAddr *paddrPeer = NULL);
+ bool IsReachable(const CNetAddr &addr);
+ void SetReachable(enum Network net, bool fFlag = true);
+diff --git a/src/rpcnet.cpp b/src/rpcnet.cpp
+index 9f8dea8..47af21f 100644
+--- a/src/rpcnet.cpp
++++ b/src/rpcnet.cpp
+@@ -139,6 +139,26 @@ Value getpeerinfo(const Array& params, bool fHelp)
+     return ret;
+ }
+ 
++Value addwhite(const Array& params, bool fHelp)
++{
++    if (fHelp || params.size() != 1)
++        throw runtime_error(
++            "addwhite \"node\"\n"
++            "\nAttempts add a node to the whitelist.\n"
++            "\nArguments:\n"
++            "1. \"node\"     (string, required) The node (see getpeerinfo for nodes)\n"
++            "\nExamples:\n"
++            + HelpExampleCli("addwhite", "\"192.168.0.6:8333\" ")
++            + HelpExampleRpc("addwhite", "\"192.168.0.6:8333\" ")
++        );
++
++    string strNode = params[0].get_str();
++
++    CService serv(strNode.c_str(), Params().GetDefaultPort(), true);
++
++    return AddWhitelist(serv, 0);
++}
++
+ Value addnode(const Array& params, bool fHelp)
+ {
+     string strCommand;
