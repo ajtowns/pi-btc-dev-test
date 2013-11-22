@@ -1,0 +1,169 @@
+From: jgarzik@bitpay.com (Jeff Garzik)
+Date: Fri, 22 Nov 2013 15:46:50 -0500
+Subject: [Bitcoin-development] [PATCH] bitcoind: whitelist nodes,
+	to prevent them from being banned
+Message-ID: <CAJHLa0PP-q9cmHKzk5uzRZfLYXpwse4K497Wuuc+7UBrupDd2w@mail.gmail.com>
+
+Trying something new... a [simple] patch sent to the list, for
+discussion.  Seems unlikely to be controversial.  github access is
+temporarily disabled, so this is the best pull request avenue for the
+moment.
+
+-- 
+Jeff Garzik
+Bitcoin core developer and open source evangelist
+BitPay, Inc.      https://bitpay.com/
+-------------- next part --------------
+diff --git a/node_modules/bitpay/bitcoinRPC.js b/node_modules/bitpay/bitcoinRPC.js
+index bd410ac..e6edf81 100644
+--- a/node_modules/bitpay/bitcoinRPC.js
++++ b/node_modules/bitpay/bitcoinRPC.js
+@@ -68,6 +68,18 @@ function spec(b) {
+     RPC.call(this, 'gettransaction',  [txid], callback);
+   };
+ 
++  BitcoinRPC.prototype.getRawTransaction = function(txid, callback) {
++    RPC.call(this, 'getrawtransaction',  [txid], callback);
++  };
++
++  BitcoinRPC.prototype.signRawTransaction = function(hexstr, callback) {
++    RPC.call(this, 'signrawtransaction',  [hexstr], callback);
++  };
++
++  BitcoinRPC.prototype.sendRawTransaction = function(hexstr, callback) {
++    RPC.call(this, 'sendrawtransaction',  [hexstr], callback);
++  };
++
+   BitcoinRPC.prototype.sendToAddress = function(address, amount, callback) {
+     RPC.call(this, 'sendtoaddress', [address, amount], callback);
+   };
+diff --git a/node_modules/txtool/txtool b/node_modules/txtool/txtool
+new file mode 100755
+index 0000000..b50dc77
+--- /dev/null
++++ b/node_modules/txtool/txtool
+@@ -0,0 +1,124 @@
++#!/usr/bin/env node
++
++var fs = require('fs');
++var Util = require('bitcoin/lib/ext/util');
++var BitcoinRPC = require('bitpay/bitcoinRPC').default();
++var bitcoinRPC = undefined;
++var Transaction = required('bitcoin/lib/model/transaction').class();
++
++var argv = require('optimist')
++	.usage('Transaction tool.\nUsage: $0 [options]')
++	.demand(['c'])
++	.alias('f', 'file')
++	.describe('f', 'Transaction source file (raw, serialized, hex encoded)')
++	.alias('x', 'txid')
++	.describe('x', 'Transaction id (switches TX source to RPC)')
++	.alias('c', 'cmd')
++	.describe('c', 'JSON command file')
++	.alias('h', 'host')
++	.describe('h', 'bitcoind RPC hostname or IP address')
++	.alias('p', 'port')
++	.describe('p', 'bitcoind RPC port')
++	.alias('U', 'user')
++	.describe('U', 'bitcoind RPC username')
++	.alias('P', 'pass')
++	.describe('P', 'bitcoind RPC password')
++	.argv
++;
++
++function setupRPC(host, port, user, pass) {
++	var opts = {};
++	opts.host = host;
++	opts.port = port;
++	opts.user = user;
++	opts.pass = pass;
++	bitcoinRPC = new BitcoinRPC(opts);
++}
++
++function loadTxRPC(txid) {
++	var hexstr = bitcoinRPC.getRawTransaction(txid);
++
++	var data = new Buffer(hexstr, 'hex');
++	var tx = new Transaction(data);
++	return tx;
++}
++
++function loadTxfile(filename) {
++	var hexfile = fs.readFilesync(filename, 'utf8');
++
++	var data = new Buffer(hexfile.trim(), 'hex');
++	var tx = new Transaction(data);
++	return tx;
++}
++
++function loadCmdFile(filename) {
++	var data = JSON.parse(fs.readFileSync(filename)).result;
++	return data;
++}
++
++// how many copies of this can one codebase bear?
++function transactionDesc(tx) {
++  var outDescriptions = [];
++  var outs = tx.outs;
++  for(var i=0; i<outs.length; i++) {
++    var txout = outs[i];
++    var script = txout.getScript();
++    var type = script.getOutType();
++    var amount = (txout.getValue() / 1e8).round(8);
++    if(type == 'Address') {
++      outDescriptions.push({
++        type: type,
++        amount: amount,
++        address: Util.pubKeyHashToAddress(script.simpleOutHash())
++      });
++    } else {
++      outDescriptions.push({
++        type: type,
++        amount: amount
++      });
++    }
++  }
++  return {
++    txid: Util.formatHashFull(tx.getHash()),
++    outs: outDescriptions
++  }
++};
++
++function CmdShow(tx) {
++	console.log(inspect(transactionDesc(tx), false, 10));
++}
++
++function CmdSign(tx) {
++	var txHex = Util.encodeHex(tx.serialize());
++	var retHex = bitcoinRPC.signRawTransaction(txHex);
++	console.log(retHex);
++}
++
++function CmdSend(tx) {
++	var txHex = Util.encodeHex(tx.serialize());
++	bitcoinRPC.sendRawTransaction(txHex);
++}
++
++function ExecCmdData(tx, cmdData) {
++	for (var i = 0; i < cmdData.length; i++) {
++		var obj = cmdData[i];
++		if (obj.cmd == "show") {
++			CmdShow(tx);
++		}
++		else if (obj.cmd == "sign") {
++			CmdSign(tx);
++		}
++		else if (obj.cmd == "send") {
++			CmdSend(tx);
++		}
++	}
++}
++
++if (argv.host) {
++	setupRPC(host, port, user, pass);
++}
++var tx = argv.txid ? loadTxRPC(argv.txid) :
++		     loadTxFile(argv.file);
++var cmdData = loadCmdFile(argv.cmd);
++ExecCmdData(tx, cmdData);
++
