@@ -1,0 +1,59 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Sun, 1 Dec 2013 12:51:46 +0100
+Subject: [Bitcoin-development] Floating fees and SPV clients
+Message-ID: <CANEZrP3tGdFh6oG5fbX9JbU6sYbbex1cq=0tQB-0A4aDrdbXrQ@mail.gmail.com>
+
+Lately I was pondering how to make floating fees and SPV wallets work well
+together.
+
+I propose the following plan:
+
+1) 0.9 ships with something dead simple, like a command to query what a
+node estimates and then clients just take the average, or cross-check a
+centralised estimate against the P2P network. It's fast to implement and
+simple, but not very secure or decentralised. However it will allow the
+feature to launch on some kind of reasonable timeframe.
+
+2) We bump the protocol version and the tx message now gets an optional
+protobuf buffer stuck on the end. The first thing put in this protobuf is a
+list of the values of the inputs. Using this data, the fee paid by a
+transaction can be calculated. In step 2 the data is unauthenticated.
+
+3) Some SPV wallets already set themselves up so that they sync with the
+network in the background, e.g. the Android wallet syncs at least every 24
+hours. This should become more common, using scheduler capabilities built
+into most operating systems. When the wallet syncs with the network, it
+sets a deliberately very noisy Bloom filter on its peers and waits around
+for 30-60 seconds or so. The wallet observes some of the broadcasts taking
+place and records the hashes and associated fees that were paid to disk.
+Next time it syncs, it includes the observed hashes into the Bloom filter
+used to download the chain, and thus learns how quickly they confirmed. It
+can calculate its own fee estimate from that.
+
+4) Finally, when we next hard fork, we make v2 transactions include the
+output value in the signature, same as the output script (this proposal has
+been on the forums for a while now). That allows the fee data added in step
+2 to be cross-checked against the signatures on the inputs, thus
+authenticating it.
+
+
+I think this is a small and easy set of steps that would make it quite hard
+to attack - malicious nodes could make it appear that some transactions
+never confirmed thus seeming to force the price up, but it's easy to simply
+exclude transactions which never confirm at all from the calculations. Plus
+of course you can cross-check nodes against each other to try and catch
+nodes that are failing to match transactions properly.
+
+One obvious concern is what to do if nodes don't converge on very similar
+estimates. Wallets will always want to pay the lowest fee possible, so that
+means they'll always be riding the very edge of what's acceptable, opening
+up tx propagation to random flaky failures if fee estimates change whilst a
+transaction is in progress, or if some nodes don't calculate the same
+estimates as others.
+
+If a wallet gets a reject message for a tx that has a fee that are by its
+own estimates acceptable, what should it do? What if only some nodes report
+that and others don't?
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131201/d06702fb/attachment.html>
