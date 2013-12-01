@@ -1,0 +1,38 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Sun, 1 Dec 2013 14:41:52 +0100
+Subject: [Bitcoin-development] Floating fees and SPV clients
+In-Reply-To: <l7f97u$jdg$1@ger.gmane.org>
+References: <CANEZrP3tGdFh6oG5fbX9JbU6sYbbex1cq=0tQB-0A4aDrdbXrQ@mail.gmail.com>
+	<l7f97u$jdg$1@ger.gmane.org>
+Message-ID: <5E4597E4-C1C7-4536-8CF0-82EDD7715DAB@plan99.net>
+
+> As long as the tx is not confirmed (by a broadcast), apps can offer to
+> bump up the fee a little bit.
+
+Unfortunately there are risks to that approach. 
+
+The most obvious one is that nodes could keep sending reject messages to get wallets to attach ridiculously high fees. If half a wallets peers do this and the other half don?t, then effectively the wallet will double spend against itself. The bad nodes can keep the fat transaction and send it directly to a corrupt miner, no broadcast. If some other miner includes the original normal transaction, no problem, just take it out of the current block. If the corrupt miner finds the current block, they get to claim huge fee premiums.
+
+Quite apart from the problem of malicious nodes/miners, how would you represent this in the wallet GUI? Current wallets are designed on the assumption that 1 payment == 1 transaction == 1 paid fee. If a single payment could have several different fees, and there?s no way to know which you will actually pay until later, then complexity would explode. Even the notion of balance would become even more complicated than it already is.
+
+So I really don?t like the idea of creating different transactions depending on error messages from remote nodes. The only time when it could make sense is if *all* nodes reject a transaction. Then (assuming no MITM) you can assume the first transaction can be thrown away and a new attempt made.
+
+But if you think about what the UI flows for that would look like - it?s just a mess.
+
+There are other risks to fee estimation. Let?s say wallet authors create transactions with exactly the estimated fee needed to get into the next block. But due to mempool skew, estimates vary, and so those transactions don?t propagate cleanly everywhere. Now we have two problems:
+
+1) Unpredictable failure to enter the mempools can lead to double spending and slow confirmations
+
+2) Wallet authors may be tempted to ensure that doesn?t happen by taking the estimate, adding 10% and using that. But then if a bunch of popular wallets all do the same thing, the estimation algorithm might get confused and decide that as everyone seems to be attaching a fee of X+10%, the correct estimate for what fee to attach is X+10%. Then wallets would immediate raise their attached fees again and you?d enter into a infinite upward spiral.
+
+The more I think about this, the more complicated it gets.
+
+It?s tempting to try and just push all the complexity onto the merchant side, but one of the best things about Bitcoin is there isn?t any strong notion of ?merchant? - that?s inherent to being peer to peer. So just hand-waving and saying sellers will deal with complicated fee processes is just a punt.
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 4127 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131201/56554bc4/attachment.p7s>
