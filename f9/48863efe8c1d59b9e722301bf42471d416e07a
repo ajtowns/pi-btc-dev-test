@@ -1,0 +1,455 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 19 Dec 2013 08:17:06 -0500
+Subject: [Bitcoin-development] DarkWallet Best Practices
+Message-ID: <20131219131706.GA21179@savin>
+
+Here's my draft. I don't claim this to be "official", but I think this
+should represent the consensus we've come to at the DarkWallet
+Hackathon; I'm writing it up as an email in part to preserve a record of
+that consensus.
+
+
+* General Principles
+
+We believe in decentralization, user-defined privacy, education as
+opposed to "magic", and security based on openness rather than just
+trust. We consider users who are individuals as well as the needs of
+businesses such as merchants and exchanges. We recognize that often the
+more people who use privacy protection technologies such as CoinJoin,
+the better protected we all are.
+
+
+* Privacy
+
+Bitcoin inherently makes the flow of money visible, however it does not
+require that flow to have real-world identities attached, or even for
+that matter, pseudonyms. We see this as an unfortunate flaw in the
+Bitcoin protocol that is to be corrected; the Satoshi whitepaper itself
+included one such correction by outlining how avoiding address re-use
+helped preserve privacy.
+
+
+** Threat model
+
+We assume a worst-case sophisticated state-level attacker with the goal
+of deanonymizing and otherwise subverting Bitcoin users. Such an
+attacker can be assumed to control up to 100% of the Bitcoin relay
+network as well as have the ability to wiretap up to 100% of the
+node-to-node traffic. (for nodes that they do not control) Such
+attackers are however constrained by politics and budget. We assume they
+use their ability to conduct MITM attacks sparingly - for instance by
+subverting certificate authorities - due to the risk of detection. (note
+how such attackers may be more willing to use detectable attacks in the
+future now that their activities are public knowledge) We also assume
+that while their budgets for individual targets may be very large, the
+equally large number of targets required for en-mass survailance leads
+to relatively low budgets per target. In particular note how the 51%
+assumption assumes that the overall "economic value" of Bitcoin to its
+participants is greater than the attacker's budget by some margin.
+
+
+** Address re-use
+
+Wallet software SHALL avoid address re-use. New addresses will be used
+for all change and users will be encouraged through the user-interface
+and other measures to use new addresses for every payment to the wallet.
+
+
+** CoinJoin
+
+With CoinJoin the more users that make use of it, the larger the
+anonymity set and the better protected user privacy is. Thus we
+encourage wallet software to agressively make trade-offs between
+absolute privacy and usability; compromise is not a dirty word.
+
+Wallet software SHALL implement basic two-party mix functionality and
+MAY implement more sophisticated CoinJoin functionality such as n-party
+mixes. CoinJoin SHALL be the default way that all transactions are sent.
+Wallet authors are cautioned that more sophisticated functionality may
+be more secure in theory, but if users do not use it the functionality
+is wasted; focus on the general case first and only then try to improve.
+
+
+*** Two-Party Mixes
+
+The most basic form of CoinJoin is for two parties to author a
+transaction. A key distinction between a 2 party mix and an n-party mix
+is that in the two party case both parties automatically learn the
+other's inputs and outputs by simple elimination; sophisticated
+cryptographic blinding protocols are useless. To an external attacker
+each transaction doubles the size of the anonymity set: the coins may
+have come from one party or the other and the attacker has no way of
+knowing which. (modulo value analysis, which will be discussed later)
+
+
+*** n-party Mixes and Blinding
+
+If two parties can jointly author a transaction, n parties can too.
+Without special effort this has the disadvantage of revealing the input
+to output mapping to all parties. Various cryptographic blinding schemes
+have been proposed to fix this problem, either with multi-party
+computational techniques, or by making use of multiple communication
+channels along with a robust anti-DoS scheme. In either case, for now we
+reject such schemes as complex and inconvenient and prioritize robust
+two-party mixing. However we do take the existance of such schemes into
+account; note how a n-party mix can act as a single party in a two-party
+mix scheme.
+
+
+*** Four-stage two-party mix protocol
+
+<on the wiki>
+
+
+*** Defeating value analysis
+
+Attackers can make good guesses at the mapping of inputs to outputs
+based on value. For instance with two inputs of 3 and 5, and fours
+outputs of 1.4, 1.6, 2.4 and 2.6 the attacker can easily map inputs to
+outputs based on what values match up, in this case 3 split into 1.6 and
+1.4, and 5 split into 2.4 and 2.6
+
+
+**** Value Matching
+
+Not all CoinJoin users need their transactions to have specific output
+amounts; some users simply need to move money from one place to another
+but do not need a specific amount moved or at a specific time. These
+users can assist users with more stringent requirements by matching the
+input or output values they request. As a general principle wallets
+SHOULD make these anonymity optimizations possible by allowing users to
+schedule transactions to complete by a specific time and/or allow users
+to specify that they do not wish the transaction to happen unless
+CoinJoin is used.
+
+With four-stage two-party mixes the Alice, who advertised a desire to do
+a transaction first, can easily do ths by picking the transaction output
+amounts only after Bob replies with his desired inputs and outputs, and
+picking those amounts so they match Bob's. (or some combination of Bob's
+outputs)
+
+
+**** Merge Avoidance
+
+Merge avoidance is the practice of avoiding the merging of multiple
+transaction inputs into a single new transaction output, thus implying a
+common relationship between those inputs. The most primitive form of
+merge avoidance is to create multiple individual transactions, each
+moving single transaction input to an output. (or perhaps some small
+number) This is of course inefficient, and appears to have only been
+proposed as a means to still allow for coin blacklists to function while
+preserving some financial privacy.
+
+Combined with CoinJoin however merge avoidance becomes much more
+powerful. For instance even in its most simple form multiple parties can
+combine their merge-avoiding transaction sets, giving even transactions
+without actual counterparties a useful measure of plausible deniability.
+
+In addition the underlyng features that make merge-avoidance possible -
+the ability of a recipient to designate they are willing to receive
+payments made to multiple addresses - synergisticly make very
+sophisticated value matching strategies possible.
+
+
+***** Cut-thru payments
+
+Related to merge avoidance the idea of a cut-thru payment is that if an
+intermediary is both a debitor and a creditor, with sophisticated
+payment protocols they can request incoming payments to directly pay
+outgoing liabilities, skipping them as an intermediary. While premature
+to implement this feature now, it is worth thinking about for the future.
+
+
+** Tor
+
+While Tor isn't perfect there is real-world evidence - specifically the
+Snowden leaks - that it works well enough to be considered a worthy
+adversary by state-level attackers. Wallets MUST suppoort the basic
+proxy options that allow the Tor proxy - or some other similar
+technology - to be used for privacy enhancement and SHOULD make use of
+Tor-specific features such as hidden services.
+
+
+* Decentralization
+
+** Fees
+
+In a decentralized system distinguishing DoS attackers from legitimate
+users is at best difficult, at worst impossible. Wallets that do not
+provide users with the ability to set fees, both when a transaction is
+created initially and after initial broadcast, do their users a
+disservice by taking away a vital method of responding to an attack:
+outspending the attacker.
+
+Wallets MUST give users the ability to set the fee per KB they are
+willing to pay for their transactions. Wallets SHOULD allow users to
+change that fee after the fact via transction replacement. Wallets MAY
+additionally implement fee estimation techniques, such as watching what
+transactions in the mempool are finally mined, or using estimates
+provided by miners. However it must be recognized that such data is
+inherently unreliable, and this may become a problem in practice in the
+future; giving users robust ways to alter fees after the fact will make
+lying about fee data - perhaps to push fees upwards - less advantageous.
+
+Note that the current direction of the Bitcoin Foundation maintained
+reference implementation is weakly towards a pure estimation scheme;
+deployment of full nodes supporting replacement and support from miners
+is a precondition to doing things correctly.
+
+
+*** Fees and privacy
+
+Where there is a trade-off between fees and privacy - such as with merge
+avoidance strategies - users should be given options to specify how much
+extra they are willing to pay for extra privacy. Wallets SHOULD default
+to being willing to pay some extra, perhaps 25% more over the basic fee.
+
+
+** SPV, full nodes and partial nodes
+
+Wallet software SHOULD whenever possible blur the distinctions between
+full UTXO set nodes, SPV nodes, and partial UTXO set nodes. In addition
+to those three basic categories there is also the question of whether or
+not a node stores archival blockchain data, something that all three
+categories of nodes can participate in.
+
+Instead how a node contributes back to the health of the network should
+be a function of what resources it has available to it. Of course in
+some cases, like a phone wallet, that won't be very much, but for
+desktop or business usage the resources available can be significant in
+both bandwidth and storage capacity.
+
+
+*** Relaying data
+
+**** Blocks and blockheaders
+
+Any node can safely relay blocks and block headers, where "safely" is
+defined as SPV-level security. Our threat model implies that we don't
+trust random peers on the network, thus we are not relying on them for
+block validity; as a SPV node we are relying on miners to do validity
+checking for us. In short feel free to relay data that you yourself
+would trust.
+
+
+**** Transactions
+
+Remember that relaying transactions has a DoS-attack risk; the Bitcoin
+model relies entirely on mining fees and/or priority as the limited
+resource to prevent DoS attacks. Thus at present nodes SHOULD NOT relay
+transactions if they do not have an up-to-date copy of the relevant
+parts of the UTXO set spent by the transaction. (relaying transactions
+spending only inputs in a partial UTXO set is acceptable):
+
+
+**** Block-header diversity
+
+Wallet software MUST make it possible to get block-header information
+from a diverse set of sources. These sources SHOULD comprise more than
+just peers on a single P2P network. Remember that it is acceptable to
+use even centralized sources in addition to decentralized ones for
+blockheader data - knowing that a miner did the work required to create
+a block header is always valuable information. (for reasonable amounts
+of work) For instance the author's block headers over twitter project -
+while an April Fools joke - is equally a perfectly reasonable backup
+source of blockheader data.
+
+
+** Updating wallets from blockchain data
+
+In an ideal world wallets wouldn't need to sync their state with
+blockchain data at all: pervasive use of payment protocols would have
+senders send txout proofs directly to recipients. But that's not the
+case. Instead wallet implementations sync themselves from the
+blockchain, and when bandwidth limited this becomes a tradeoff between
+bandwidth and privacy: your transactions hide in the anonymity set of
+the false positives matched by the filter.
+
+
+*** Bloom filters
+
+The current implementation for SPV nodes is to simply give peers a bloom
+filter; the false-positives make the anonymity set. For n peers this has
+O(n) cost when a new block comes in; Bloom filters are cheap to test
+against and this system works reasonably well.
+
+However, for archival blockchain data bloom filters are seriously
+flawed: every block has to be read from disk in full, the bloom filter
+matched, and some (potentially very small!) subset sent to the peer. n
+peers. The result is high IO load on the node relative to the client,
+enabling easy DoS attacks.
+
+Wallet software SHOULD NOT implement only Bloom filters, however using
+them when availalbe is acceptable. Note how the Bloom filter design has
+at best O(n^2) scaling ruling it out for large-blocksize future
+scenarios.
+
+
+*** Prefix filters
+
+TXO or UTXO data can be easily indexed by in radix trees with log2(k)
+lookup cost per query. We can take advantage of the fact that the query
+keys need not be provided in full by only providing partial keys.
+Because scriptPubKeys are randomly distributed a prefix n bits long has
+an anonymity set of roughly 1/2^n * # of transactions in total.
+
+Wallet software SHOULD implement prefix filters and SHOULD use them in
+preference to bloom filters whenever available. Wallet software that
+currently uses full-key filtering - e.g. Electrum - MUST be upgraded to
+support prefix filters in the future.
+
+Wallet software MUST NOT assume that matching anyting other than
+H(scriptPubkey) is possible. This applies to bloom filter matches as
+well.
+
+In the future miners may commit to either the TXO set in conjunction
+with per-block lookup trees, or possibly the full UTXO set. In either
+case many of the leading designs may be implemented with only
+H(scriptPubKey) lookup capability for reasons of scalability.
+
+
+* Security
+
+Bitcoin wallet software is unprecedented in how they provide attackers
+targets that are highly profitable to attack and highly liquid. (note
+the irony here!) A succesfull attack that injects malicious theft
+routines into either sourcecode or binaries can steal thousands of
+Bitcoins in one go, and the attacks target is you and your team.
+Following basic good practices for robust code is a start, but it's far
+from enough.
+
+
+** Source-code integrity
+
+Sourcecode MUST be maintained using a revision control system that
+provides strong integrity guarantees; git is recommended.
+
+Sourcecode MUST be PGP signed on a regular basis. Releases MUST be
+signed - in git this is accomplished by signing the release tag.
+Individual commits SHOULD be signed, particularly if source-code used in
+day-to-day development is kept on an untrusted server, e.g. github.
+Recovering from a server compromise is made significantly easier if
+every commit is securely signed.
+
+
+** Binary integrity
+
+All things being equal it is better to use an interpreted language
+rather than a compiled one; auditing the former is significantly easier
+than the latter. Similarly, all things being equal, do not distribute
+binaries of your software - have end-users compile binaries themselves.
+
+Of course all things are not equal, and frequently compiled languages
+and distributing binaries is the correct choice. If that is the case
+deterministic build systems MUST be used when possible; if using them is
+not possible take great care with the process by which binaries are
+created and try to create long-term plans to move to a deterministic
+build system in the future.
+
+
+** PGP
+
+Developers of wallet software MUST make use of PGP and participate in
+the web-of-trust. Developers MUST advertise their PGP fingerprint
+widely, for instance on personal websites, forum profiles, business
+cards etc. simultaneously. Multiple paths by which someone can find a
+fingerprint claimed to be of some developer make subterfuge easier to
+detect and more costly to carry out. When possible it is highly
+recommended to attach these advertisements to real-world, physical,
+actions. For instance the author has included his PGP fingerprint in
+highly public, videotaped, talks he has given at conferences. He has
+also created a videotaped statement of his PGP key that was timestamped
+in the Bitcoin blockchain. While it certainly is possible for such
+artifacts to be faked, doing so convincingly is expensive, labour
+intensive, and error prone.
+
+Developers SHOULD sign as much communication as practical. Sourcecode is
+one form; your emails to development lists and between each other are
+another. Signing both leaves a large body of widely distributed work,
+all tied to your identity. (it's highly unfortunate that nearly all
+publicly available mail archives do not make mail accessible to the
+public in such a way as to allow verification of PGP signatures; often
+even inline signatures are broken for various reasons)
+
+
+*** Increasing adoption of PGP
+
+Keep in mind that end-users very rarely verify PGP fingerprints at all,
+let alone correctly - the above advice with regard to PGP is currently
+mostly useful in allowing *other developers* the tools they need to
+verify the integrity of your code. For instance, in the event of a
+suspected compromise consistantly signed code allows anyone competent in
+the use of PGP to quickly evaluate the situation, and if warrented,
+inform less sophisticated users through traditional measures such as the
+media.
+
+While this is somewhat out of scope for this document the "DarkWallet
+effort" should include work to make PGP more user-friendly and a better
+experience. But that does *not* have to mean "making PGP easier for
+grama", right now "making PGP easier for Joe Wallet Developer" is a
+laudable goal. For instance understanding and using the web-of-trust
+sucks right now. How can we make that experience better for a user who
+understands the basics of cryptography?
+
+
+** SSL/Certificate authorties
+
+While certificate authorities are notoriously bad at the job they are
+supposed to be doing the CA system is still better than nothing - use it
+where appropriate. For instance if you have a website advertising your
+software, use https rather than http.
+
+
+** Multi-factor spend authorization, AKA multisig wallets
+
+<mainly discussed at the conference in terms of multiple individuals
+controlling funds, which is out of scope for this document>
+
+Assuming any individual device is uncompromised is risky; wallet
+software SHOULD support some form of multi-factor protection of some or
+all wallet funds. Note that this is a weak "should"; mainly we want to
+ensure that users have options to keep large quantities of funds secure;
+accepting higher risks for smaller quantities is an acceptable
+trade-off.
+
+FIXME: go into more detail.
+
+
+*** P2SH
+
+Wallet software MUST support paying funds to P2SH addresses.
+
+
+** Payment Integrity
+
+Multi-factor wallets protect your funds from being spent without your
+knowledge, but they provide no assurance about where those funds went; a
+Bitcoin address is not an identity. A payment protocol, such as BIP70,
+is needed.
+
+Wallet software SHOULD support BIP70. Yes, there are (justified)
+concerns about its current dependence on the certificate authority
+system, but those concerns should be addressed by a combination of
+fixing that system, and extending BIP70 with different and better
+identity verification options.
+
+However, remember that in the absense of multi-factor wallets the "know
+who you are paying" protections of BIP70 are actually pretty much
+useless; malware that defeats the payment protocol locally is not much
+different than malware that silently rewrites Bitcoin addresses. There
+are other motivations for the BIP70 version of the payment protocol, but
+whether or not they are actually interesting for users is an open
+question; it was not designed by user-experience experts. Thus wallet
+authors should consider supporting a low priority for now.
+
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000f9102d27cfd61ea9e8bb324593593ca3ce6ba53153ff251b3
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131219/7f0be874/attachment.sig>
