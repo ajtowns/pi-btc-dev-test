@@ -1,0 +1,71 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 20 Dec 2013 08:17:31 -0500
+Subject: [Bitcoin-development] BIP proposal: Authenticated prefix trees
+In-Reply-To: <52B42842.6000306@monetize.io>
+References: <52B3A1C8.5000005@monetize.io>
+	<op.w8do7rg9yldrnw@laptop-air.hsd1.ca.comcast.net>
+	<52B42842.6000306@monetize.io>
+Message-ID: <20131220131731.GC21148@savin>
+
+On Fri, Dec 20, 2013 at 03:21:38AM -0800, Mark Friedenbach wrote:
+> Hi Jeremy, Let's give a preview of the application-oriented BIPs I
+> mentioned:
+> 
+> Stateless validation and mining involves prefixing transaction and
+> block messages with proofs of their UTxO state changes. These are the
+> "operational proofs" I describe in the draft, and they work on prefix
+> trees whose root hashes committed to the coinbase in a soft-fork
+> upgrade of the validation rules.
+> 
+> "Ultimate blockchain compression" involves consensus over an address
+> index, which can be queried over the p2p network by lightweight nodes.
+> The structure of the index is an authenticated prefix tree, and the
+> results of such a query is an an inclusion proof.
+
+I've thought about this for awhile and come to the conclusion that UTXO
+commitments are a really bad idea. I myself wanted to see them
+implemented about a year ago for fidelity bonded banks, but I've changed
+my mind and I hope you do too.
+
+They force miners and every full node with SPV clients to store the
+entire UTXO set in perpetuity. This is bad by itself, but then they make
+it even worse by making Bitcoin really useful and convenient to use as a
+decentralized database; UTXO commitments make it easy and convenient to
+implement systems like Namecoin on top of Bitcoin, yet we don't have the
+UTXO expiration that might make such uses reasonable. Right now the UTXO
+set is reasonable small - ~300MB - but that can and will change if we
+make it an attractive way to store data. UTXO commitments do exactly
+that.
+
+You're also *not* giving users what they actually want: the transactions
+associated with their wallets. Even though Electrum could easily work
+via a pure UTXO database they implemented transaction lookup instead;
+Electrum servers cough up every transaction associated with a user's
+wallet. If you're going to do that, it's just as easy to do per-block
+lookup trees which don't force the UTXO set to be stored.
+
+There's also a more subtle issue: the security model of UTXO commitments
+sucks. It encourages wallets to essentially trust single confirmations
+because it's unlikely that nodes will want to store the multiple copies
+of the UTXO set required to provide proof of multiple confirmations.
+Basically the issue is when you start your wallet you get a proof of
+UTXO set for the most recent block; that's just one confirmation. To get
+more confirmations you have to wait for subsequent blocks, checking the
+set on each block. Per block indexes on the other hand naturally lead
+wallets to count confirmations properly.
+
+
+IMO you should take this technology to Namecoin instead. For them the
+fast lookups are probably worth the trade-offs, and they expire domains
+so the total set size doesn't grow unbounded.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000028fd077fb1e33e942e3e875aa29cec134fed89d650242c577
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 681 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131220/15a33b11/attachment.sig>
