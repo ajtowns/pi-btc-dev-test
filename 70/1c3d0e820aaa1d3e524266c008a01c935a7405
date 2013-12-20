@@ -1,0 +1,527 @@
+From: mark@monetize.io (Mark Friedenbach)
+Date: Thu, 19 Dec 2013 17:47:52 -0800
+Subject: [Bitcoin-development] BIP proposal: Authenticated prefix trees
+Message-ID: <52B3A1C8.5000005@monetize.io>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Hello fellow bitcoin developers. Included below is the first draft of
+a BIP for a new Merkle-compressed data structure. The need for this
+data structure arose out of the misnamed "Ultimate blockchain
+compression" project, but it has since been recognized to have many
+other applications.
+
+In addition to this BIP I am preparing three additional BIPs
+describing the use of this data structure in stateless validation &
+mining, the UBC address index for "SPV+" operating modes, document
+timestamping and merged mining.
+
+A Python implementation of this data structure is available here:
+
+https://github.com/monetizeio/python-bitcoin
+
+A C++ implementation is being worked on.
+
+As per the BIP-1 procedure, I am submitting this rough draft to the
+community for discussion. I welcome all comments and criticisms of
+both form and content.
+
+- -Mark
+
+
+==Abstract==
+
+This BIP describes a [http://en.wikipedia.org/wiki/Hash_tree Merkle
+hash tree] variant of the [http://en.wikipedia.org/wiki/Trie
+prefix-tree data structure], ideally suited for encoding key-value
+indices which support memory-efficient proofs.
+
+==Motivation==
+
+There are a number of applications which would benefit from having a
+data structure with the following properties:
+
+* '''Arbitrary mapping of keys to values.''' A ''key'' can be any
+bytestring, and its ''value'' any other bytestring.
+* '''Duplicate keys disallowed.''' Every key has one, and only one
+value associated with it. Some applications demand assurance that no
+key value is reused, and that this constraint can be checked without
+requiring access to the entire data structure.
+* '''Efficient look-up by key.''' The data structure should support
+sub-linear lookup operations with respect to the number of keys in the
+mapping. Logarithmic time or linear with respect to the length of the
+key should be achievable and would be sufficient for realistic
+applications.
+* '''Merkle compression of mapping structure.''' It should be possible
+to produce a reduced description of the tree consisting of a single
+root hash value which is deterministically calculated from the mapping
+structure.
+* '''Efficient proofs of inclusion.''' It should be possible to
+extract a proof of key/value mapping which is limited in size and
+verification time by the length of the key in the worst case.
+* '''Computation of updates using local information.''' Given a set of
+inclusion proofs, it should be possible to calculate adjustments to
+the local mapping structure (update or deletion of included mappings,
+or insertion between two included mappings which are adjacent in the
+global structure).
+
+Such applications include committed validation indices which enable
+stateless mining nodes, committed wallet indices which enable
+trust-less querying of the unspent transaction output set by
+<code>scriptPubKey</code>, efficient document time-stamping, and
+secure & efficient merged mining. This BIP describes an authenticated
+prefix tree which has the above properties, but leaves the myriad
+applications to be formalized in future BIPs.
+
+==Data structure==
+
+This BIP defines a binary prefix tree. Such a structure provides a
+mapping of bitstrings (the ''keys'') to bytestrings (the ''values'').
+It is an acyclic binary tree which implicitly encodes keys within the
+traversal path -- a "left" branch is a 0, and a "right" branch is a 1.
+Each node is reachable by only one unique path, and reading off the
+branches taken (0 for each left, 1 for each right) as one follows the
+path from root to target yields the node's key.
+
+The particular binary prefix tree defined by this BIP is a hybrid
+PATRICIA / de la Brandais tree structure.
+[http://en.wikipedia.org/wiki/Radix_tree PATRICIA trees] compress a
+long sequence of non-branching nodes into a single interior node with
+a per-branch ''skip prefix''. This achieves significant savings in
+storage space, root hash calculation, and traversal time.
+
+A de la Brandais trie achieves compression by only storing branches
+actually taken in a node. The space savings are minimal for a binary
+tree, but place the serialized size of a non-branching interior node
+under the SHA-256 block size, thereby reducing the number of hash
+operations required to perform updates and validate proofs.
+
+This BIP describes the authenticated prefix tree and its many
+variations in terms of its serialized representation. Additional BIPs
+describe the application of authenticated prefix trees to such
+applications as committed indices, document time-stamping, and merged
+mining.
+
+==Serialization format==
+
+As a hierarchical structure, the serialization of an entire tree is
+the serialization of its root node. A serialized node is the
+concatenation of five structures:
+
+    node := flags || VARCHAR(extra) || value || left || right
+
+The <code>flags</code> is a single byte field whose composite values
+determine the bytes that follow.
+
+    flags = (left_flags  << 0) |
+            (right_flags << 2) |
+            (has_value   << 4) |
+            (prune_left  << 5) |
+            (prune_right << 6) |
+            (prune_value << 7)
+
+The <code>left_flags</code> and <code>right_flags</code> are special
+2-bit enumeration fields. A value of 0 indicates that the node does
+not branch in this direction, and the corresponding <code>left</code>
+or <code>right</code> branch is missing (replaced with the empty
+string in the node serialization). A value of 1 indicates a single bit
+key prefix for this branch, implicitly 0 for <code>left</code> and 1
+for <code>right</code>. A 2 indicates up to 7 bits of additional skip
+prefix (beyond the implicit first bit, making 8 bits total) are stored
+in a compact single-byte format. A 3 indicates a skip prefix with
+greater than 7 additional bits, stored length-prefix encoded.
+
+The single bit <code>has_value</code> indicates whether the node
+stores a data bytestring, the value associated with its key prefix.
+Since keys may be any value or length, including one key being a
+prefix of another, it is possible for interior nodes in addition to
+leaf nodes to have values associated with them, and therefore an
+explicit value-existence bit is required.
+
+The remaining three bits are used for proof extraction, and are masked
+away prior to hash operations. <code>prune_left</code> indicates that
+the entire left branch has been pruned. <code>prune_right</code> has
+similar meaning for the right branch. If <code>has_value</code> is
+set, <code>prune_value</code> may be set to exclude the node's value
+from encoded proof. This is necessary field for interior nodes, since
+it is possible that their values may be pruned while their children
+are not.
+
+The <code>value</code> field is only present if the bit
+<code>flags.has_value</code> is set, in which case it is a
+<code>VARCHAR</code> bytestring:
+
+    switch flags.has_value:
+      case 0:
+        value := ?
+      case 1:
+        value := VARCHAR(node.value)
+
+The <code>extra</code> field is always present, and takes on a
+bytestring value defined by the particular application. Use of the
+<code>extra</code> field is application dependent, and will not be
+covered in this specification. It can be set to the empty bytestring
+(serialized as a single zero byte) if the application has no use for
+the <code>extra</code> field.
+
+    value := VARCHAR(calculate_extra(node))
+
+The <code>left</code> and <code>right</code> non-terminals are only
+present if the corresponding <code>flags.left_flags</code> or
+<code>flags.right_flags</code> are non-zero. The format depends on the
+value of this flags setting:
+
+    switch branch_flags:
+      case 0:
+        branch := ?
+      case 1:
+        branch := branch_node_or_hash
+      case 2:
+        prefix  = prefix >> 1
+        branch := int_to_byte(1 << len(prefix) | bits_to_int(prefix)) ||
+                  branch_node_or_hash
+      case 3:
+        prefix  = prefix >> 1
+        branch := VARINT(len(prefix) - 9) ||
+                  bits_to_string(prefix) ||
+                  branch_node_or_hash
+
+<code>branch_flags</code> is a stand-in meant to describe either
+<code>left_flags</code> or <code>right_flags</code>, and likewise
+everywhere else in the above pseudocode <code>branch</code> can be
+replaced with either <code>left</code> or <code>right</code>.
+
+<code>prefix</code> is the key bits between the current node and the
+next branching, terminal, and/or leaf node, including the implicit
+leading bit for the branch (0 for the left branch, 1 for the right
+branch). In the above code, <code>len(prefix)</code> returns the
+number of bits in the bitstring, and <code>prefix >> 1</code> drops
+the first bit reducing the size of the bitstring by one and
+renumbering the indices accordingly.
+
+The function <code>int_to_byte</code> takes an integer in the range
+[0, 255] and returns the octet representing that value. This is a NOP
+in many languages, but present in this pseudocode so as to be explicit
+about what is going on.
+
+The function <code>bits_to_int</code> interprets a sequence of bits as
+a little-endian integer value. This is analogous to the following
+pseudocode:
+
+    def bits_to_int(bits):
+        result = 0
+        for idx in 1..len(bits):
+            if bits[idx] == 1:
+                result |= 1<<idx
+
+The function <code>bits_to_string</code> serializes a sequence of bits
+into a binary string. It uses little-endian bit and byte order, as
+demonstrated by the following pseudocode:
+
+    def bits_to_string(bits):
+        bytes = [0] * ceil(len(bits) / 8)
+        for idx in 1..len(bits):
+            if bits[idx] == 1:
+                bytes[idx / 8] |= 1 << idx % 8
+        return map(int_to_byte, bytes)
+
+<code>branch_node_or_hash</code> is either the serialized child node
+or its SHA-256 hash and associated meta-data. Context determines which
+value to use: during digest calculations, disk/database serialization,
+and when the branch is pruned the hash value is used and serialized in
+the same way as other SHA-256 values in the bitcoin protocol (note
+however that it is single-SHA-256, not the double-SHA-256 more
+commonly used in bitcoin). The number of terminal (value-containing)
+nodes and the serialized size in bytes of the fully unpruned branch
+are suffixed to the branch hash. When serializing a proof or
+snapshotting tree state and the branch is not pruned, the serialized
+child node is included directly and the count and size are omitted as
+they can be derived from the serialization.
+
+    if branch_pruned or SER_HASH:
+        branch_node_or_hash := SHA-256(branch) ||
+                               count(branch) ||
+                               size(branch)
+    else:
+        branch_node_or_hash := serialize(branch)
+
+As an example, here is the serialization of a prefix tree mapping the
+names men and women of science to the year of their greatest publication:
+
+    >>> dict = AuthTree()
+    >>> dict['Curie'] = VARINT(1898)
+    >>> dict('Einstein') = VARINT(1905)
+    >>> dict['Fleming'] = VARINT(1928)
+    >>> dict['??'] = VARINT(2009)
+    >>> dict.serialize()
+    # An bytestring, broken out into parts:
+
+    # . Root node:
+    0x0e # left_flags: 2, right_flags: 3, has_value: 1
+    0x00 # extra: ?
+
+    # .l Inner node: 0b01000
+    0x11 # 0b01000
+    0x07 # left_flags: 3, right_flags: 1
+    0x00 # extra: ?
+
+    # .l.l Inner node: 0b01000011 0b01110101 0b01110010 0b01101001
+    #                  'C'        'u'        'r'        'i'
+    #                  0b01100101
+    #                  'e'
+    0x1abb3a599a02 # 0b01101110101011100100110100101100101
+    0x10           # has_value: 1
+    0x00           # extra: ?
+    0x03fd6a07     # value: VARINT(1911)
+
+    # .l.r Inner node: 0b010001
+    0x0f # left_flags: 3, right_flags: 3
+    0x00 # extra: ?
+
+    # .l.r.l Inner node: 0b01000101 0b01101001 0b01101110 0b01110011
+    #                    'E'        'i'        'n'        's'
+    #                    0b01110100 0b01100101 0b01101001 0b01101110
+    #                    't'        'e'        'i'        'n'
+    0x312ded9c5d4c2ded00 # 0b1011010010110111
+                         # 0b0011100110111010
+                         # 0b0011001010110100
+                         # 0b101101110
+    0x10                 # has_value: 1
+    0x00                 # extra: ?
+    0x03fd7107           # value: VARINT(1905)
+
+    # .l.r.r Inner node: 0b01000110 0b01101100 0b01100101 0b01101101
+    #                    'F'        'l'        'e'        'm'
+    #                    0b01101001 0b01101110 0b01100111
+    #                    'i'        'n'        'g'
+    0x296c4c6d2dedcc01 # 0b0011011000110010
+                       # 0b1011011010110100
+                       # 0b10110111001100111
+    0x10               # has_value: 1
+    0x00               # extra: ?
+    0x03fd8807         # value: VARINT(1928)
+
+    # .r Inner node: 0b11100100 0b10111000 0b10101101
+    #                '?'
+    #                0b11100110 0b10011100 0b10101100
+    #                '?'
+    0x27938edab39c1a # 0b1100100101110001
+                     # 0b0101101111001101
+                     # 0b001110010101100
+    0x10             # has_value: 1
+    0x00             # extra: ?
+    0x03fdd907       # value: VARINT(2009)
+
+==Hashing==
+
+There are two variations of the authenticated prefix tree presented in
+this draft BIP. They differ only in the way in which hash values of a
+node and its left/right branches are constructed. The variations,
+discussed below, tradeoff computational resources for the ability to
+compose operational proofs. Whether the performance hit is
+significant, and whether or not the added features are worth the
+tradeoff depends very much on the application.
+
+===Variation 1: Level-compressed hashing===
+
+In this variation the referenced child node's hash is used in
+construction of an interior node's hash digest. The interior node is
+serialized just as described (using the child node's digest instead of
+inline serialization), the resulting bytestring is passed through one
+round of SHA-256, and the digest that comes out of that is the hash
+value of the node. This is very efficient to calculate, requiring the
+absolute minimum number of SHA-256 hash operations, and achieving
+level-compression of computational resources in addition to reduction
+of space usage.
+
+For example:
+
+    >>> dict = AuthTree()
+    >>> dict['a'] = 0xff
+    >>> dict.serialize()
+    0x0200c3100001ff
+    >>> dict.root
+    AuthTreeNode(
+        left_prefix = 0b01100001,
+        left_hash   =
+0xbafa0e2bba3396c5e9804b6cbe61be82bc442c1121aed81f8d5de36e9b20dc2f,
+        left_count  = 1,
+        left_size   = 4)
+    >>> dict.hash
+    0xb4837376022a7c9ddaa7d685ad183bcbd5d16c362b81fa293a7b9e911766cf3c
+
+Assuming uniform distribution of key values, level-compressed hashing
+has time-complexity logarithmic with respect to the number of keys in
+the prefix tree. The disadvantage is that it is not possible in
+general to "rebase" an operational proof on top of a sibling,
+particularly if that sibling deletes branches that result in
+reorganization and level compression of internal nodes used by the
+rebased proof.
+
+===Variation 2: Proof-updatable hashing===
+
+In this variation, level-compressed branches are expanded into a
+series of chained single-branch internal nodes, each including the
+hash of its direct child. For a brach with a prefix N bits in length,
+this requires N chained hashes. Thanks to node-compression (excluding
+empty branches from the serialization), it is possible for each hash
+operation + padding to fit within a single SHA-256 block.
+
+Note that the serialization semantics are unchanged! The variation
+only changes the procedure for calculating the hash values of interior
+nodes. The serialization format remains the same (modulo differing
+hash values standing in for pruned branches).
+
+Using the above example, calling <code>dict.hash</code> causes the
+following internal nodes to be constructed:
+
+    >>> node1 = AuthTreeNode(
+        right_prefix = 0b1,
+        right_hash   =
+0xbafa0e2bba3396c5e9804b6cbe61be82bc442c1121aed81f8d5de36e9b20dc2f,
+        right_count  = 1,
+        right_size   = 4)
+    >>> node2 = AuthTreeNode( left_prefix=0b0,  left_hash=node1.hash,
+ left_count=1,  left_size=4)
+    >>> node3 = AuthTreeNode( left_prefix=0b0,  left_hash=node2.hash,
+ left_count=1,  left_size=4)
+    >>> node4 = AuthTreeNode( left_prefix=0b0,  left_hash=node3.hash,
+ left_count=1,  left_size=4)
+    >>> node5 = AuthTreeNode( left_prefix=0b0,  left_hash=node4.hash,
+ left_count=1,  left_size=4)
+    >>> node6 = AuthTreeNode(right_prefix=0b1, right_hash=node5.hash,
+right_count=1, right_size=4)
+    >>> node7 = AuthTreeNode(right_prefix=0b1, right_hash=node6.hash,
+right_count=1, right_size=4)
+    >>> node8 = AuthTreeNode( left_prefix=0b0,  left_hash=node7.hash,
+ left_count=1,  left_size=4,
+                              value=0xff)
+    >>> dict.hash == node8.hash
+    True
+    >>> dict.hash
+    0xc3a9328eff06662ed9ff8e82aa9cc094d05f70f0953828ea8c643c4679213895
+
+The advantage of proof-updatable hashing is that any operational proof
+may be "rebased" onto the tree resulting from a sibling proof, using
+only the information locally available in the proofs, even in the
+presence of deletion operations that result in level-compression of
+the serialized form. The disadvantage is performance: validating an
+updatable proof requires a number of hash operations lower-bounded by
+the length of the key in bits.
+
+==Inclusion proofs==
+
+An inclusion proof is a prefix tree pruned to contain a subset of its
+keys. The serialization of an inclusion proof takes the following form:
+
+    inclusion_proof := variant || root_hash || root_node || checksum
+
+Where <code>variant</code> is a single-byte value indicating the
+presence of level-compression (0 for proof-updatable hashing, 1 for
+level-compressed hashing). <code>root_hash</code> is the Merkle
+compression hash of the tree, the 32-byte SHA-256 hash of the root
+node. <code>tree</code> is the possibly pruned, serialized
+representation of the tree. And finally, <code>checksum</code> is the
+first 4 bytes of the SHA-256 checksum of <code>variant</code>,
+<code>root_hash</code>, and <code>root_node</code>.
+
+For ease of transport, the standard envelope for display of an
+inclusion proof is internet-standard base64 encoding in the following
+format:
+
+- -----BEGIN INCLUSION PROOF-----
+ATzPZheRnns6KfqBKzZs0dXLOxithdan2p18KgJ2c4O0DgARBwAauzpZmgIQAAP9agcPADEt7Zxd
+TC3tABAAA/1xBylsTG0t7cwBEAAD/YgHJ5OO2rOcGhAAA/3ZByEg+2g=
+- -----END INCLUSION PROOF-----
+
+Decoded, it looks like this:
+
+    0x01 # Level-compressed hashing
+    # Merkle root:
+    0x3ccf6617919e7b3a29fa812b366cd1d5cb3b18ad85d6a7da9d7c2a02767383b4
+    # Serialized tree (unpruned):
+    0x0e001107001abb3a599a02100003fd6a070f00312ded9c5d4c2ded00100003fd
+    0x7107296c4c6d2dedcc01100003fd880727938edab39c1a100003fdd907
+    # Checksum:
+    0x2120fb68
+
+==Operational proofs==
+
+An operational proof is a list of insert/update and delete operations
+suffixed to an inclusion proof which contains the pathways necessary
+to perform the specified operations. The inclusion proof must contain
+the key values to be updated or deleted, and the nearest adjacent key
+values for each insertion. The serialization of an operational proof
+takes the following form:
+
+    operational_proof := variant || root_hash || tree ||
+                         VARLIST(delete*) || VARLIST(update*) ||
+                         new_hash || checksum
+
+    delete := VARCHAR(key)
+    update := VARCHAR(key) || VARCHAR(value)
+
+The first three fields, <code>variant</code>, <code>root_hash</code>,
+and <code>tree</code> are the inclusion proof, and take the same
+values described in the previous section. <code>deletes</code> is a
+list of key values to be deleted; each key value in this list must
+exist in the inclusion proof. <code>updates</code> is a list of key,
+value mappings which are to be inserted into the tree, possibly
+replacing any mapping for the key which already exists; either the key
+itself if it exists (update), or the two lexicographically closest
+keys on either side if it does not (insert) must be present in the
+insertion proof. <code>new_hash</code> is the resulting Merkle root
+after the insertion, updates, and deletes are performed, and
+<code>checksum</code> is the initial 4 bytes of the SHA-256 hash of
+the preceding fields.
+
+Just like inclusion proofs, an operational proof is encoded in base64
+for display and transport. Here's the same
+
+- -----BEGIN OPERATIONAL PROOF-----
+ATzPZheRnns6KfqBKzZs0dXLOxithdan2p18KgJ2c4O0LgARaIsVaQi/GdhOPOgA8p4Pu4PiEfEg
+lcmy3j7bOc7hXw0DLSeTjtqznBoQAAP92QcBMOS4reacrACzuZJbyP7fqIOf5VEk4iarG4+uPoZC
+oun8BztQMQBy0LHVeSY=
+- -----END OPERATIONAL PROOF-----
+
+Decoded and broken into its constituent fields:
+
+    0x01 # Level-compressed hashing
+    # Original Merkle root:
+    0x3ccf6617919e7b3a29fa812b366cd1d5cb3b18ad85d6a7da9d7c2a02767383b4
+    # Serialized tree (included keys: '??'):
+    0x2e0011688b156908bf19d84e3ce800f29e0fbb83e211f12095c9b2de3edb39ce
+    0xe15f0d032d27938edab39c1a100003fdd907
+    # Deletion list ['??']:
+    0x01
+    0x30e4b8ade69cac
+    # Insertion list []:
+    0x00
+    # New Merkle root:
+    0xb3b9925bc8fedfa8839fe55124e226ab1b8fae3e8642a2e9fc073b50310072d0
+    # Checksum:
+    0xb1d57926
+
+~End of File~
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.14 (GNU/Linux)
+Comment: GPGTools - http://gpgtools.org
+Comment: Using GnuPG with Thunderbird - http://www.enigmail.net/
+
+iQIcBAEBAgAGBQJSs6HIAAoJEAdzVfsmodw4gooQAJm7XNsZjgdeTSpKIvUIU38f
+tQx2FD08hQdLl48me5mDUbHJgGlYINsKAgoZ8Mqwi/kHEEYhuIlLIX1p6Ovigidb
+21BiVoOLdG1egGOwxp17DuwYaDPTppFTlN9TBjZzW6WKc7+4aNvyc1KtrbHIhtj/
+04ekFyAn4U5UH0ht7CI79j0u3Kp85p5D4PyYZB2m82mzti6OxpSM4tXlMkDW7ihg
+QJwiZSjzejqTd7WF0zr0SLeGVRSN2A0dzUCoVsI98eIa3hkw2N4ae6dRkibyStOT
+V8VEDvHArEDlvu8jiryajhsom5mvtOOclNDkVXWAf/Te4gj05iYdTIvNvDEJtqsP
+XDbmw6GgV1kBLlLo0mp//t/+wr+nIvy+sVAP+eqtM/0vjaVXBkXxkUMqqNkrtVpB
+f3whq7nFahssUMSoWE93jgob1ayAax2XUALVMAXYsJl7b2MqBGlhiTZ8FQZ+TW4A
+tIpKeUprPmDvA18rO3SCbmLMQryZqYiH0sRyvUc5kvn3qCRHrISZNkEuK591eS+x
+BO1eOluPzVqeXPPSK1jvGeY0FNJtwzbov4nI1mzOvzQHLCvkHn5PhUFCK5tL5tAe
+b0Z5qwDV+SvVs7W1R7ejYBzEj77U1zuzZ9AtikOuvy+bNGrkIlpI49EyXHijm7C3
+Q6JacTuI0PelYji2gaBJ
+=BbDs
+-----END PGP SIGNATURE-----
+
+
