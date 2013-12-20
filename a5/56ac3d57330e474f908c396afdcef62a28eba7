@@ -1,0 +1,67 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Fri, 20 Dec 2013 11:48:23 -0800
+Subject: [Bitcoin-development] BIP proposal: Authenticated prefix trees
+In-Reply-To: <52B3A1C8.5000005@monetize.io>
+References: <52B3A1C8.5000005@monetize.io>
+Message-ID: <CAAS2fgSD7qbDkcPqW1XsRbSKpF5JhJXbJQrYQQ63LEQnV0qJyA@mail.gmail.com>
+
+On Thu, Dec 19, 2013 at 5:47 PM, Mark Friedenbach <mark at monetize.io> wrote:
+> Hello fellow bitcoin developers. Included below is the first draft of
+> a BIP for a new Merkle-compressed data structure. The need for this
+> data structure arose out of the misnamed "Ultimate blockchain
+> compression" project, but it has since been recognized to have many
+> other applications.
+
+A couple very early comments? I shared some of these with you on IRC
+but I thought I'd post them to make them more likely to not get lost.
+
+Whats a VARCHAR()  A zero terminated string?  A length prefixed
+string? How is the length encoded?  Hopefully not in a way that has
+redundancy, since things that don't survive a serialization round trip
+is a major trap.
+
+Is the 'middle' the best place for the extradata? Have you
+contemplated the possibility that some applications might use midstate
+compression?
+
+On that general subject, since the structure here pretty much always
+guarantees two compression function invocations. SHA512/256 might
+actually be faster in this application.
+
+Re: using sha256 instead of sha256^2, we need to think carefully about
+the implications of Merkle-Damgard generic length extension attacks.
+It would be unfortunately to introduce them here, even though they're
+currently mostly theoretical for sha256.
+
+WRT hash function performance, hash functions are so ludicrously fast
+(and will be more so as processors get SHA2 instructions) that the
+performance of the raw compression function would hardly ever be a
+performance consideration unless you're using a slow interpreted
+language (... and that sounds like a personal problem to me). So I
+don't think CPU performance should be a major consideration in this
+BIP.
+
+What I do think should be a consideration is the cost of validating
+the structure under a zero-knowledge proof. An example application is
+a blind proof for a SIN or a proof of how much coin you control... or
+even a proof that a block was a correctly validated one, and in these
+cases additional compression function calls are indeed pretty
+expensive. But they're not the only cost, any conditional logic in the
+hash tree evaluation is expensive, and particular, I think that any
+place where data from children will be combined with a variable offset
+(especially if its not word aligned) would potentially be rather
+expensive.
+
+I'm unconvinced about the prefix tree compressed applications, since
+they break compact update proofs.  If we used them in the Bitcoin
+network they could only be used for data where all verifying nodes had
+all their data under the tree. I think they add a lot of complexity to
+the BIP (esp from people reading the wrong section), so perhaps they
+should be split into another document?
+
+In any case, I want to thank you for talking the time to write this
+up. You've been working on this stuff for a while and I think it will
+be lead to useful results, even if we don't end up using how it was
+originally envisioned.
+
+
