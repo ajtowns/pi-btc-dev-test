@@ -1,0 +1,170 @@
+From: mark@monetize.io (Mark Friedenbach)
+Date: Fri, 20 Dec 2013 14:04:23 -0800
+Subject: [Bitcoin-development] BIP proposal: Authenticated prefix trees
+In-Reply-To: <CAAS2fgSD7qbDkcPqW1XsRbSKpF5JhJXbJQrYQQ63LEQnV0qJyA@mail.gmail.com>
+References: <52B3A1C8.5000005@monetize.io>
+	<CAAS2fgSD7qbDkcPqW1XsRbSKpF5JhJXbJQrYQQ63LEQnV0qJyA@mail.gmail.com>
+Message-ID: <52B4BEE7.9020401@monetize.io>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+On 12/20/2013 11:48 AM, Gregory Maxwell wrote:
+> A couple very early comments? I shared some of these with you on
+> IRC but I thought I'd post them to make them more likely to not get
+> lost.
+
+I got the inputs from IRC, but thank you for posting to the list so
+that others can see and review.
+
+> Whats a VARCHAR()  A zero terminated string?  A length prefixed 
+> string? How is the length encoded?  Hopefully not in a way that
+> has redundancy, since things that don't survive a serialization
+> round trip is a major trap.
+
+A length-prefixed string, using the shortest representation VARINT for
+the length. Same as how scripts are serialized in transactions.
+
+> Is the 'middle' the best place for the extradata? Have you 
+> contemplated the possibility that some applications might use
+> midstate compression?
+
+Yes I considered midstate compression which is why the branch hashes
+come last, but "extra" was an oversight. In every application I've
+considered it's either not used (and therefore a single byte), or
+updated whenever the node or its children updates.
+
+Honestly I don't expect midestate compression to offer much since in
+the nodes that are updated frequently it is unlikely that there will
+be enough static data at the front to fill even a 512 bit block of the
+smaller hash function.
+
+But it doesn't hurt to prepare just in case. I'll move it to the end.
+
+> On that general subject, since the structure here pretty much
+> always guarantees two compression function invocations. SHA512/256
+> might actually be faster in this application.
+
+Yes, this is a great suggestion. Moving to SHA-512/256 will let most
+inner nodes fit inside a single block, so long as the "extra" field is
+not too long. Also apparently SHA-512 is faster on 64-bit CPUs, which
+is a nice advantage. I didn't know that.
+
+I'm concerned about speed but I did not go with a faster hash function
+because users are more likely to have hardware acceleration for the
+SHA-2 family.
+
+> Re: using sha256 instead of sha256^2, we need to think carefully
+> about the implications of Merkle-Damgard generic length extension
+> attacks. It would be unfortunately to introduce them here, even
+> though they're currently mostly theoretical for sha256.
+
+The serialization format encodes lengths in such a way that you cannot
+extend the data structure merely by appending bits. You would have to
+change the prior, already hashed bits as well. I believe this makes it
+immune to length extension attacks.
+
+> WRT hash function performance, hash functions are so ludicrously
+> fast (and will be more so as processors get SHA2 instructions) that
+> the performance of the raw compression function would hardly ever
+> be a performance consideration unless you're using a slow
+> interpreted language (... and that sounds like a personal problem
+> to me). So I don't think CPU performance should be a major
+> consideration in this BIP.
+
+Well.. the UTXO tree is big. Let's assume 5,000 transactions per
+block, with an average of 3 inputs/outputs per transaction. This is
+close to the worst-case scenario with the current block size. That's
+15,000 insert, update, or delete operations.
+
+The number of hashes required when level-compression is used is log2
+the number of items in the tree, which for bitcoin is currently about
+2.5 million transactions. So that's about ~21 hashes per input/ouput,
+or 315,000 hash operations. A CPU is able to do about 100,000 hashes
+per second per core, that'll probably take about a second on a modern
+4- or 8-core machine.
+
+For updatable proofs, the number of hash operations is equal to the
+number of bits in the key, which for the validation index is always
+256. That means 3.84 million hashes, or about 10 seconds on a 4-core
+machine.
+
+The numbers for the wallet index are worse, as it scales with the
+number of outputs, which is necessarily larger, and the keys are longer.
+
+This is not an insignificant cost in the near term, although it is the
+type of operation that could be easily offloaded to a GPU or FPGA.
+
+> What I do think should be a consideration is the cost of
+> validating the structure under a zero-knowledge proof. An example
+> application is a blind proof for a SIN or a proof of how much coin
+> you control... or even a proof that a block was a correctly
+> validated one, and in these cases additional compression function
+> calls are indeed pretty expensive. But they're not the only cost,
+> any conditional logic in the hash tree evaluation is expensive, and
+> particular, I think that any place where data from children will be
+> combined with a variable offset (especially if its not word
+> aligned) would potentially be rather expensive.
+
+This is something I know less about, and I welcome constructive input.
+There is *no* reason that the hash serialization needs to have fancy
+space-saving features. You could even make the SIG_HASH node
+serialization into fixed-size, word-aligned data structures.
+
+But this is absolutely not my field, and I may need some hand-holding.
+Do the fields need to be at fixed offsets? With fixed widths? Should I
+put variable-length stuff like the level-compressed prefixes and value
+data at the end (midstate be damned) to keep fixed offsets? What's
+expected word alignment, 32-bit or 64-bit?
+
+> I'm unconvinced about the prefix tree compressed applications,
+> since they break compact update proofs.  If we used them in the
+> Bitcoin network they could only be used for data where all
+> verifying nodes had all their data under the tree. I think they add
+> a lot of complexity to the BIP (esp from people reading the wrong
+> section), so perhaps they should be split into another document?
+
+I believe what you mean by "compact update proofs" is what I call
+"updatable proofs", where level compression is only used in the disk
+and network serialization. These are what I propose to use for the
+validation and wallet indexes, if the computational costs can be
+brought under control, because it allows composable proofs.
+
+Unlike a time-ordered index, it does require that someone, somewhere
+has random access to the entire UTXO set since you can't predict in
+advance what your txid will be. But this is a matter of tradeoffs and
+I don't believe at this time that there is a clearcut advantage of one
+approach over the other. I'm pursuing a txid-indexed UTXO set because
+it most closely matches the current operational model.
+
+That said, you still want level-compression within the serialization
+format itself, if for no other reason than to keep proof sizes small.
+
+> In any case, I want to thank you for talking the time to write
+> this up. You've been working on this stuff for a while and I think
+> it will be lead to useful results, even if we don't end up using
+> how it was originally envisioned.
+
+Thanks,
+Mark
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.14 (GNU/Linux)
+Comment: GPGTools - http://gpgtools.org
+Comment: Using GnuPG with Thunderbird - http://www.enigmail.net/
+
+iQIcBAEBAgAGBQJStL7nAAoJEAdzVfsmodw4DQcP/ilB2LTPnbK/UoU+y0d/0CUu
+4PVo8VJt0KCUgWbEHIohm0rq4FUpb7FpjzAyQ171jzRykDEkUy7nDh/QsWGUvDvA
+gOHKEsX3E+ei8iQMkwlw5D/Lpbb8GNr3SHrU3lvVbXOoaPua9I16778hv3wBWhiN
+R70N8dQUwWD1IU0Dfmhi8v2P8OTn4OGTEwS5AQANGCroYyALF+U9EDHjWDMV+bYn
+8qrX4v05xjik5YXOv8PNDDp0S9A+KxD72OKL5xlXiE7VbKrYXKt6xNfy1xYgHH8p
+u9kWDFMkbis/HAiB5aiFTmxX5/k+yeJw8BfG+txj0xo7b7cWKB9cQLT8vUru2QuH
+lHdurxkaBQ+6jqlxYRk7nh0h+obeAXA/CGMseaDYluBg7qTkeWnLORfm7T7fUnHw
+fB5sXPUKEeYw48sfs58w/71NbCyl2yYNGlmmugk2SilD3QbUKU1xogNTHEGDuA8M
+kPsWW7vRIdI3iy9adgh3LZAvySt7/a5VXXs1li7teDgV4QqH7e2hR0KR8n115N7f
+r30LSctbc/MovE9VPb8I7ssQTB7So+1Ki6DbVeQO/8UlCSK5prM3n2sICmT/EVW7
+2hNzwbHuEJEWYE7q89buzMRdqbUYSRdG1T1mFBeZ+/n4HH6cweMl6BH4d46LAfuq
+BqzTmq5neoCKBwfMfoqg
+=YmkZ
+-----END PGP SIGNATURE-----
+
+
