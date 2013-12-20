@@ -1,0 +1,108 @@
+From: mark@monetize.io (Mark Friedenbach)
+Date: Fri, 20 Dec 2013 10:41:31 -0800
+Subject: [Bitcoin-development] BIP proposal: Authenticated prefix trees
+In-Reply-To: <20131220131731.GC21148@savin>
+References: <52B3A1C8.5000005@monetize.io>
+	<op.w8do7rg9yldrnw@laptop-air.hsd1.ca.comcast.net>
+	<52B42842.6000306@monetize.io> <20131220131731.GC21148@savin>
+Message-ID: <52B48F5B.8020706@monetize.io>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+(Sorry Peter, this was meant for the whole list:)
+
+On 12/20/2013 05:17 AM, Peter Todd wrote:
+> I've thought about this for awhile and come to the conclusion that 
+> UTXO commitments are a really bad idea. I myself wanted to see them
+> implemented about a year ago for fidelity bonded banks, but I've
+> changed my mind and I hope you do too.
+> 
+> They force miners and every full node with SPV clients to store the
+> entire UTXO set in perpetuity.
+
+This is incorrect. If the slower proof-updatable hashes are used, then
+mining only requires what I've called "operational proofs" to be
+attached to received transactions and blocks.
+
+Access to the UTXO set is required to make new transactions, at least
+for the outputs of the transaction, but I do not believe this is as
+significant a problem as you do. It is a service that can be
+outsourced for a minimal fee - include an explicit output of the
+necessary amount to a scriptPubKey specified by the archival node, and
+they will make sure the proper proofs are attached.
+
+> This is bad by itself, but then they make it even worse by making 
+> Bitcoin really useful and convenient to use as a decentralized 
+> database; UTXO commitments make it easy and convenient to
+> implement systems like Namecoin on top of Bitcoin, yet we don't
+> have the UTXO expiration that might make such uses reasonable.
+> Right now the UTXO set is reasonable small - ~300MB - but that can
+> and will change if we make it an attractive way to store data.
+> UTXO commitments do exactly that.
+
+You might have to explain this to me, but it is not clear to me how
+the validation index could be twisted into providing a Namecoin-like
+system. Or the address index either, which I presume is what you are
+referring to. Namecoin works by assigning domains to outputs, and then
+tracking ownership and configuration of that domain through chains of
+outputs. But the UTXO set doesn't contain connecting information. At
+best all it would be is a glorified, and expensive time-stamper,
+unattractive because there are already better solutions.
+
+> You're also *not* giving users what they actually want: the 
+> transactions associated with their wallets. Even though Electrum 
+> could easily work via a pure UTXO database they implemented 
+> transaction lookup instead; Electrum servers cough up every 
+> transaction associated with a user's wallet. If you're going to do 
+> that, it's just as easy to do per-block lookup trees which don't 
+> force the UTXO set to be stored.
+
+At the cost of having the supposedly lightweight client query for each
+of its coins on every single block, to construct a negative
+proof-of-spend.
+
+> There's also a more subtle issue: the security model of UTXO 
+> commitments sucks. It encourages wallets to essentially trust 
+> single confirmations because it's unlikely that nodes will want to 
+> store the multiple copies of the UTXO set required to provide
+> proof of multiple confirmations. Basically the issue is when you
+> start your wallet you get a proof of UTXO set for the most recent
+> block; that's just one confirmation. To get more confirmations you
+> have to wait for subsequent blocks, checking the set on each block.
+> Per block indexes on the other hand naturally lead wallets to
+> count confirmations properly.
+
+I don't think this is true, or at least you are not considering
+available optimizations. You certainly don't need to store multiple
+copies of the UTXO set.
+
+I'm a little confused as to the exact situation you are describing.
+When a key is loaded into a wallet, or a wallet comes online after a
+significant absence, it looks for coins in the current UTXO set. If
+any coins are found, their attached transaction record has a block
+height field, so the confirmation count can be derived from that. As
+blocks go by that count is naturally increased. I'm not sure how this
+is different from the current situation.
+
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.14 (GNU/Linux)
+Comment: GPGTools - http://gpgtools.org
+Comment: Using GnuPG with Thunderbird - http://www.enigmail.net/
+
+iQIcBAEBAgAGBQJStI9aAAoJEAdzVfsmodw4IooP/1uK9cvP1vxXyQRbAHf9oFXw
+AmZ8p1+t8f6MHUpjkv/Xn0poFNU8qSnNz65drQdq8ErcJnqe4V3Wt6G32/uCxvZs
+6AX6bRYQIfhHY0DBPgfacO5/ALdlnS4NdjWFCA5hHDgLd30BpbU1WK1ze985TXrd
++ucQkzcMYEDW2lb+sFvfhpi9ZPFd34ZrNzH//oS794eYKWAmj7jXqdgxk5AKat61
+Xileq5beE4xom3pChXc3PtIJKsoil5SjE20/FW52wcCdyaEFG0kwl937pEGjQnlP
+mylK/ilfZ6cvRC8MmVnl/6AC4V2hjB4Ncej03jG3JI2FdaJEOHuHg0uh8/Zl1I4A
+YVIKyrHQhQb/VGsfXtW3zokHzDeEtJwlx+PPFaLc9QurFirNjSnenhbw4Vpbg3Xt
+dH1Qd9xWcT85a19Oz8Q4rt3z7UmX9J/geZrUHCuPtr47yXU0e1Cc6ZP9zDYNtfKU
+q6MjNZiaLJ/Wp0n4IeQ/4/wqy0rM/psP9i5d6IdP96tayVM9aKj5Lh9lU/Od5wGO
+2PPB4kvhJfMbx3o+S7UK5vra7ysZzULpoVGDpUR3xRM72l//vlNhSLK5nILVO3r8
+sIC5+3WoZLUKvuNo45/BDxXHZajrWLCU84WrwHVm1u7SHfBQcoES/rhcx2zlgyx0
+/Iwxsgb7Fznl+eM2bEpZ
+=TtaV
+-----END PGP SIGNATURE-----
+
+
