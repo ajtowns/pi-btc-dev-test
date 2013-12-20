@@ -1,0 +1,120 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 20 Dec 2013 11:54:34 -0500
+Subject: [Bitcoin-development] Censorship-resistance via timelock crypto for
+ embedded consensus systems
+Message-ID: <20131220165434.GA23932@petertodd.org>
+
+Embedded consensus systems such as Mastercoin face the risk that the
+data they need to embed in the host consensus system will be subject to
+censorship. This censorship can take two forms: whitelists and
+blacklists. The former we can't do anything about, however the latter
+requires someone to identify the data-carrying transactions that are to
+be blacklisted.
+
+Embedding data steganographically in transactions is known to be
+possible in ways that can-not be detected. Even if P2SH^2 (1) is
+implemented data can be hidden in pubkeys in P2SH scriptSigs, either by
+using unused pubkeys in CHECKMULTISIG transactions with a simple
+transform(2) to turn arbitrary data into valid-looking pubkeys, or with
+some ECC math even usable pubkeys can have data hidden in them.(3)
+
+However these methods are unsuitable if the data needs to be provably
+made public; without the encryption key the data is securely hidden.
+Almost all consensus systems rely on proof-of-publication(4) and even if
+the encryption keys are later made public - perhaps by broadcasting them
+on a P2P network - we've only shifted the problem to proving that the
+keys were released. Of course, if we then publish them via our host
+consensus system, *that* act of publishing can itself be censored!
+
+Timelock cryptography offers a solution to this problem. Let S(n, k) be
+a sequential-hard strengthening function that takes key k and number of
+rounds n, outputting k'. A suitable S() might be the scrypt function.
+Let E(d, k) be a symmetric encryption algorithm. Finally let H(m) be a
+cryptographic hash function.
+
+To hide data D in a transaction we set k to some random and publicly
+known value in the transaction and compute k'=S(n, k) and D'=E(D, k')
+Then D' is hidden in the transaction, perhaps in an unused pubkey of a
+CHECKMULTISIG scriptPubKey.
+
+Our intended audience can also calculate k' from the public data, and
+thus recover D in time ~t, thus we know that after time ~t has elapsed
+all participants in the system can reliably come to consensus.
+
+However miners and other parties who may wish to censor D face a
+dilemma: If they repeat the calculation for every transaction that may
+be hiding data they delay all transactions for all users. In addition
+miners have a financial incentive to defect and mine transactions
+without checking for hidden data.
+
+
+Practical Considerations
+========================
+
+Efforts should be made to limit the scope of possible transactions as
+much as possible to reduce the computation required, e.g. by restricting
+the search space to only transactions with scriptPubKeys starting with
+some short prefix. This is a balance between computation and censorship
+resistance.
+
+Consideration needs to be made as to how the data will be validated as
+part of the embedded consensus system, for instance via a checksum or
+cryptographic signature.
+
+Participates in the embedded consensus system should share k' keys among
+each other to reduce overall effort. This ties back to validation: it
+must not be possible to distribute a fake k' undetectably.
+
+Picking n, and thus the time taken, is a balance. Also there should be
+some mechanism to update n as technological improvements warrant. Along
+those lines this method works best when t can be large and immediate
+consensus is not required. A suitable use-case could be a key-value
+consensus system for name information where mappings are infrequently
+changed.
+
+The source of k should be such that k' can be computed in advance,
+however only by the sender. For instance simply using the first txin
+hash allows the attacker to compute k' in advance themselves. A better
+choice would be the first (real) pubkey in a scriptPubKey, a value we
+can both compute in advance, yet is not known publicly.
+
+
+Censorship resistant voting
+===========================
+
+With due care the scheme can be used to allow for censorship-resistant
+voting. While previously it was believed that miners would inevitably be
+able to censor any voting scheme - with the exception of certain special
+cases(5) - provided that the financial incentive to collect fees
+outweighs the incentive to not count votes we have strong censorship
+resistance with strong consensus in a fixed amount of time.
+
+
+1) Gregory Maxwell, [Bitcoin-development] To prevent arbitrary data
+   storage in txouts ? The Ultimate Solution,
+   https://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg01987.html
+
+2) Peter Todd, Re: MasterCoin: New Protocol Layer Starting From ?The
+   Exodus Address?,
+   https://bitcointalk.org/index.php?topic=265488.msg3377058#msg3377058
+
+3) ByteCoin, Untraceable transactions which can contain a secure message
+   are inevitable, https://bitcointalk.org/index.php?topic=5965.0
+
+4) Peter Todd, [Bitcoin-development] Disentangling Crypto-Coin Mining:
+   Timestamping, Proof-of-Publication, and Validation,
+   http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg03307.html
+
+5) John Dillon, Proposal: We should vote on the blocksize limit with proof-of-stake
+   voting, https://bitcointalk.org/index.php?topic=230864.0
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000001cdaabe80320d14ab5907997ec6ad12eaaa304941c34fc8bd
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20131220/75159ce0/attachment.sig>
