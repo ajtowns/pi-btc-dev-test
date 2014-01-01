@@ -1,0 +1,74 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Wed, 01 Jan 2014 02:02:02 -0800
+Subject: [Bitcoin-development] Dedicated server for bitcoin.org,
+	your thoughts?
+In-Reply-To: <4264e886-48de-40ac-921a-a60502595060@email.android.com>
+References: <52A3C8A5.7010606@gmail.com>
+	<1795f3067ba3fcdd0caf978cc59ff024.squirrel@fruiteater.riseup.net>
+	<52A435EA.7090405@gmail.com> <201312081237.24473.luke@dashjr.org>
+	<CANAnSg2OrmQAcZ+cZdtQeADicH3U29QOgYPfP1AQhOMP6+P1wg@mail.gmail.com>
+	<CAAS2fgR0khyJxmz9c2Oc87hOFgiNuiPJuaeugGajdo_EcKEW9w@mail.gmail.com>
+	<20131212205106.GA4572@netbook.cypherspace.org>
+	<CANAnSg3nPhrk2k=yDKf39AuBQnSuTWJbgANdMhGe=soiOy0NTw@mail.gmail.com>
+	<CAAS2fgTmWRMxYweu3sNn_X7grgjUqTQujM-DbZRxG_YMZnD=7g@mail.gmail.com>
+	<CANEZrP2X_63qkuNuk0MvsLR9ewd7HR0mPVaD7bZSgWMTJ5-9FQ@mail.gmail.com>
+	<CAAS2fgQmMZ6RYjbJ6ZfFO5+ZhZoR4d4yMf8CXLXKPmZt3-Je4Q@mail.gmail.com>
+	<CANEZrP1mdJNa7ADkUXTGDNKMSCROjGAVbMXZXxodxCz1LFDzZw@mail.gmail.com>
+	<op.w8y642nryldrnw@laptop-air.hsd1.ca.comcast.net>
+	<4264e886-48de-40ac-921a-a60502595060@email.android.com>
+Message-ID: <op.w8z55onhyldrnw@laptop-air.hsd1.ca.comcast.net>
+
+So I looked into gitian, the first thing I noticed was the hashes that  
+people were signing, for example:
+
+    https://github.com/bitcoin/gitian.sigs/blob/master/0.8.6-win32/gavinandresen/bitcoin-build.assert
+
+don't match the hash of the file 'bitcoin-0.8.6-win32-setup.exe' actually  
+hosted by sourceforce. That was a bit alarming at first, but I talked to  
+BlueMatt and maaku on IRC and the difference is due to Gavin Authenticode  
+signing the executable for windows.
+
+BlueMatt asked if someone could implement in gitian-downloader a way to  
+strip off the signature so that we could get back to the raw binary with a  
+hash that matches what everyone is producing from gitian.  I found:
+
+   http://blog.didierstevens.com/programs/disitool/
+
+which is a Python script which can strip the signature nicely, but the  
+hashes still don't match.
+
+I couldn't find a gitian build of 0.8.6 so I built my own, and after  
+verifying the hash for v0.8.6 was '49547ff9...' as expected I looked at  
+the hex diff between that and the sig-stripped .exe from sourceforge, and  
+the only two differences are:
+
+   - At offset D8 the stripped file has '5D E2 B2' versus 'F9 F4 00' in the  
+gitian build
+   - The sig-stripped file has an extra byte '00' at the end
+
+I started to look at the file spec for windows PE files and quickly  
+thought better of it. Maybe someone better informed can chime in on what  
+those three bytes at offset D8 specify.
+
+I'm not sure if we want to patch the signature onto the gitian build, or  
+strip the signature off of the Gavin-signed build, but something of the  
+sort is necessary if you want get gitian-downloader to match the official  
+distro (for Windows at least).
+
+In any case, I think wallet users want to know when an upgrade is  
+available, and ability to click an 'update' button get a binary they can  
+trust. It's not a problem unique to bitcoind, deterministic builds are  
+awesome, but I don't think fully solve it.
+
+Thanks,
+Jeremy
+
+On Tue, 31 Dec 2013 13:33:54 -0800, Matt Corallo  
+<bitcoin-list at bluematt.me> wrote:
+
+> We already have a wonderful system for secure updating -  
+> gitian-downloader. We just neither use it >not bother making actual  
+> gitian releases so anyone can use it to verify signatures of downloads.
+
+
+
