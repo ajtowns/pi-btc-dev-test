@@ -1,0 +1,288 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sun, 5 Jan 2014 21:53:12 -0500
+Subject: [Bitcoin-development] Privacy and blockchain data
+Message-ID: <20140106025312.GC2356@savin>
+
+* Summary
+
+CoinJoin, CoinSwap and similar technologies improve your privacy by
+making sure information about what coins you own doesn't make it into
+the blockchain, but syncing your wallet is a privacy risk in itself and
+can easily leak that same info. Here's an overview of that risk, how to
+quantify it, and how to reduce it efficiently.
+
+
+* Background
+
+In the most general sense a Bitcoin wallet is a collection of one or
+more scriptPubKeys, often known as addresses.(*) The basic purpose of
+the wallet is maintain the set of all transaction outputs (txouts)
+matching the scriptPubKeys in the wallet.  Secondary to that purpose is
+to maintain the set of all transactions associated with scriptPubKeys in
+the wallet; almost all (all?) wallet software maintains transaction
+information rather than only txout data. Usually, but not always, the
+wallet will have some mechanism to spend transaction outputs, creating
+new transactions. (if the wallet doesn't it is referred to as a
+watch-only wallet)
+
+Given a full set of blockchain data the task of keeping the set of all
+relevant transactions and txouts up-to-date is simple: scan the
+blockchain for the relevant data. The challenge is to devise systems
+where wallets can be kept up to date without this requirement in a way
+that is secure, efficient, scalable, and meets the user's privacy
+requirements.
+
+*) Alternatively addresses can be thought of as instructions to the
+   payor as to how to generate a scriptPubKey that the payee can spend,
+   a subtlety different concept.
+
+
+* Threat Model and Goals
+
+Currently the Bitcoin network consists of a large (low thousands) number
+of allegedly independent nodes. There is no mechanism to prevent an
+attacker from sybil attacking the network other than the availability of
+IP addresses. This protection is made even weaker by the difficulty of
+being sure you have a non-sybilled list of nodes to connect too; IP
+addresses are passed gossip-style with no authentication.
+
+>From a privacy perspective we are conservative and assume an active,
+internal, and global attacker - using the terminology of Diaz et al.(1)
+- that controls up to 100% of the nodes you are connected too. With
+regard to retrieval of blockchain data we can use the Sweeney's notion
+of k-anonymity(2) where the privacy-sensitive data for an individual is
+obscured by it's inclusion in a data of a large set of individuals, the
+anonymity set.
+
+
+* Basic Functionality
+
+With regard to blockchain data we have the following basic functions:
+
+** Spending funds
+
+The user creates a transaction and gets it to miners by some method,
+usually the P2P network although also possibly by direct submission.
+Either way privacy can be achieved through a mix network such as Tor
+and/or relaying other users' transactions so as to embed yours within a
+larger anonymity set. In some cases payment protocols can shift the
+problem to the recipient of the funds. Using CoinJoin also helps
+increase the anonymity set.
+
+Usually the sender will want to determine when the transaction confirms;
+once the transaction has confirmed modulo a reorganization the
+confirmation count can only increase. Transaction mutability and
+double-spends by malicious CoinJoin participants complicate the task of
+detecting confirmation: ideally we could simply query for the presence
+of a given txid in each new block, however the transaction could be
+mutated, changing the txid. The most simple way to detect confirmation
+is then to query for spends of the txouts spend by the transaction.
+
+
+** Receiving new funds
+
+While in the future payment protocols may give recipients transaction
+information directly it is most likely that wallets will continue to
+have to query peers for new transactions paying scriptPubKey's under the
+user's control for the forseeable future.
+
+
+** Detection of unauthorized spends
+
+Users' want early detection of private key compromise, accomplished by
+querying blockchain data for spends from txouts in their wallets. This
+has implications for how change must be handled, discussed below.
+
+
+* Scalability/Efficiency
+
+The total work done by the system as a whole for all queries given some
+number of transactions n is the scalability of the scheme. In addition
+scalability, and privacy in some cases, is improved if work can be
+easily spread out across multiple nodes both at a per-block and
+within-block level.
+
+
+* Reliability/Robustness
+
+Deterministic wallets using BIP32 or similar, where all private keys are
+derived from a fixed seed, have proven to be extremely popular with
+users for their simple backup model. While losing transaction metadata
+after a data-loss event is unfortunate, losing access to all funds is a
+disaster. Any address generation scheme must take this into account and
+make it possible for all funds to be recovered quickly and efficiently
+from blockchain data. Preserving privacy during this recovery is a
+consideration, but 100% recovery of funds should not be sacrificed for
+that goal.
+
+
+* Query schemes
+
+** Bloom filters
+
+BIP37 bloom filters are currently implemented by the Bitcoin reference
+implementation and used by bitcoinj-based SPV clients. Bloom filters
+achieve a privacy-bandwidth tradeoff by having probabalistic
+false-positives; the false-positives comprise the anonymity set.
+
+Boom filters have a number of problems, both in the specific BIP37
+implementation, as well as fundemental to the idea. Scalability is a
+serious problem: the client sends asks a peer with a copy of all
+blockchain data to filter data sent to the client, limiting the client's
+bandwidth to only the data they are interested in. In the typical case
+of a SPV wallet syncronizing against m new blocks this requires the peer
+to read those m blocks from disk in their entirety, apply the filter,
+and send the client the subset of matching transactions. Obviously this
+results in poor O(n^2) scaling for n clients each making some fixed
+number of transactions.
+
+Of course bloom filters are attractive in that they have very good
+performance per match, but this performance is only really relevant for
+the most recent blockchain information where the data is in RAM. For
+older information they make possible the Bloom IO attack where an
+attacker uses an inordinant amount of disk IO bandwidth at little cost
+to themselves.(3)
+
+The actual BIP37 standard, and existing implementations of it, have a
+number of other flaws that reduce privacy. For instance the standard
+lets the seed value of the hash function be tweaked with a 32-bit
+integer, nTweak. However on the one hand if randomly chosen and rarely
+changed, as suggested by BIP37, the 32-bit integer can be used by an
+attacker to correlate multiple connections from the same wallet. On the
+other hand if nTweak is changed an attacker that can link multiple bloom
+filters can AND those filters together to greatly decrease the
+false-positive rate and determine exactly what funds are in the user's
+wallet.
+
+
+** Prefix filters
+
+With a randomly distributed keyspace - common in cryptographic
+applications - clients can query using variable length prefixes that
+partially match the desired keys. A very simple format for a query of n
+prefixes will look like the following:
+
+    <1 byte length in bits> <1 to 256/8 bytes of prefix>
+    ...
+    ...
+    0x00
+
+The anonymity set is then the blockchain data whose key is the same
+prefix, usually H(scriptPubKey) or scriptPubKey directly. An important
+advantage of prefix filters is compatibility with the proposed (U)TXO
+commitment schemes: the prefix maps directly to the committed
+scriptPubKey lookup trees, and nodes simply return all entries matching
+the prefix, as well the the rest of the merkle path to the blockchain
+headers proving the data is valid.
+
+While bloom filters have O(n) cost per lookup, or O(n^2) scalability
+system-wide, prefix filters have significantly better O(log n) cost per
+lookup, or O(n log n) system-wide. It's also worth noting that a naive
+implementation can achieve very similar performance to bloom filters
+without bothering to build key-value indexes by just scanning blockchain
+data; once the data is hashed testing the hash against a prefix has a
+minimal cost.
+
+
+** Cryptographically blinded schemes
+
+There are many blinded database query schemes in existence. While we do
+not reject such schemes completely, technologies that rely on simple and
+easy-to-understand cryptography have a significant advantage in their
+simplicity. In addition such complex schemes are unlikely to ever be
+made into miner commitments and thus are less trustworthy in the long
+run.
+
+
+* Correlation attacks
+
+It is often advantageous if blockchain queries can be efficiently spread
+across multiple servers to avoid allowing the attacker to correllate the
+information into a whole. If you have n addresses that need to be
+watched for new transactions, splitting the queries across m nodes
+reduces the information any one node may learn. With bloom filters doing
+this is extremely costly as the full blockchain data needs to be read
+from disk to apply the filter; with prefix filters if the nodes have
+appropriate indexes there is little overhead to splitting the queries
+and no performance loss.
+
+
+* DoS attacks
+
+A possible DoS attack on bandwidth is to insert a large amount of
+blockchain data matching the target's filter; the BIP37 nTweak parameter
+was an attempt to avoid this problem, although with privacy tradeoffs.
+Blockchain data is an extremely expensive communications channel so we
+do not consider this a serious issue. Implementations may wish to give
+clients the ability to specify a filter for information they do not want
+to avoid unintentional collisions, although hopefully in the future the
+address reuse making this a potential problem will become less common.
+
+
+* Address use, management, and generation
+
+If privacy was not a consideration the most efficient mode of operation
+would be to use a single address, as is done by many existing wallets,
+notably the bitcoinj-derived Multibit and Android Wallet, both of which
+use bloom filters. In addition to strongly encouraging address re-use,
+neither provide the user any control over the privacy/bandwidth tradeoff
+given by bloom filters; the default settings have an extremely low
+false-positive rate that is a significant privacy risk.
+
+Taking privacy into account better clients such as Electrum, Armory, and
+Bitcoin Core discourage the re-use of addresses in their UIs, and send
+change to new addresses. However this leads to problem with user
+expectations: users expect it to be possible to be notified quickly of
+new transactions paying any address ever generated by their wallet, as
+well as unauthorized spends from any txout, yet for privacy each query
+for transactions related to the address/txout must match false-positives
+that consume bandwidth; for a fixed bandwidth budget the specificity and
+size of the filter must increase over time.
+
+We have two main avenues to solve this problem:
+
+1) Txin-reuse: Continue to reinforce the idea that transaction inputs
+   have no particular relationship to outputs. Using them for refunds or
+   other purposes implying "ownership" must be strongly discouraged.
+   CoinJoin will help here. If addresses associated with change txouts
+   are truly one-time-use, we can reduce or eliminate queries associated
+   with them. In particular, while the set of all change addresses ever
+   used will grow linearly with time, the set of all change addresses
+   with funds in them will remain roughly stable - it's this set that
+   needs to be queried to detect unauthorized spends.
+
+2) Common prefixes: Generate addresses such that for a given wallet they
+   all share a fixed prefix. The length of that prefix determines the
+   anonymity set and associated privacy/bandwidth tradeoff, which
+   remainds a fixed ratio of all transactions for the life of the
+   wallet.
+
+With this approach change addresses continue to be generated randomly, a
+requirement for CoinJoin privacy. There is some statistical information
+leaked if many non-change txouts are spent in a single transaction in a
+CoinJoin, but even that leak can be avoided with the authors
+OP_RETURN-based stealth addresses proposal. (to be published)
+
+The actual prefix-forcing scheme in many cases will have to be
+brute-force search; fortunately the search space involved is reasonably
+small, ~2 to ~16 bits, and can be done as a background task.
+
+
+1) Towards Measuring Anonymity, Claudia Diaz and Stefaan Seys and Joris
+   Claessens and Bart Preneel (April 2002)
+
+2) k-Anonymity: A Model for Protecting Privacy, Latanya Sweeney, May
+   2002
+
+3) Private discussions with developers.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000f9102d27cfd61ea9e8bb324593593ca3ce6ba53153ff251b3
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140105/41f8b0fc/attachment.sig>
