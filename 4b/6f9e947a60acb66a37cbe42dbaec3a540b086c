@@ -1,0 +1,56 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Wed, 08 Jan 2014 02:20:57 -0800
+Subject: [Bitcoin-development] Stealth Addresses
+In-Reply-To: <20140106120338.GA14918@savin>
+References: <20140106120338.GA14918@savin>
+Message-ID: <op.w9c5o7vgyldrnw@laptop-air.hsd1.ca.comcast.net>
+
+Thanks Peter for the paper!
+
+I'm just going to restate your 'simple explanation' to make sure I got  
+it...
+
+The payee publishes a public key of theirs, which will be a long-standing  
+identifier, public key = 'Q', corresponding private key = 'd'.
+
+To pay them, payee generate a keypair, private key = 'e' public key of  
+'P'. Publish 'P' in the transaction.
+
+The payer can calculate S = eQ, where S is a shared secret between  
+payer/payee. The payee calculates the same S as S = dP. So the payee sees  
+'P' in a transaction, and multiplies by their private key, to get S.
+
+Now that we have the shared secret, either side can calculate an offset to  
+Q which becomes the pay-to-address. When you say BIP32-style derivation,  
+Q' = H(S) + Q, does this mean Q + SHA256(33-byte S)?
+
+A payee has to check each transaction (or every transaction of a fixed  
+prefix) with 'P', calculate Q' = Q + H(dP) and see if that transaction  
+pays to Q'. If the address matches, then the payee can spend it with  
+private key of d + H(dP).
+
+One downside is that you have to hold your private key in memory  
+unencrypted in order to identify new payments coming in. So  
+stealth-addresses may not be suitable for receiving eCommerce payments,  
+since you can't implement a corresponding watch-only wallet, e.g. there's  
+no way to "direct-deposit into cold storage."
+
+Hope I got that right...
+
+On Mon, 06 Jan 2014 04:03:38 -0800, Peter Todd <pete at petertodd.org> wrote:
+
+> Using Elliptic curve Diffie-Hellman (ECDH) we can generate a shared
+> secret that the payee can use to recover their funds. Let the payee have
+> keypair Q=dG. The payor generates nonce keypair P=eG and uses ECDH to
+> arrive at shared secret c=H(eQ)=H(dP). This secret could be used to
+> derive a ECC secret key, and from that a scriptPubKey, however that
+> would allow both payor and payee the ability to spend the funds. So
+> instead we use BIP32-style derivation to create Q'=(Q+c)G and associated
+> scriptPubKey.
+>
+> As for the nonce keypair, that is included in the transaction in an
+> additional zero-valued output:
+>    RETURN <P>
+
+
+
