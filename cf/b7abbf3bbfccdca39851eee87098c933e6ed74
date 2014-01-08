@@ -1,0 +1,94 @@
+From: mark@monetize.io (Mark Friedenbach)
+Date: Tue, 07 Jan 2014 17:04:58 -0800
+Subject: [Bitcoin-development] BIP proposal: Authenticated prefix trees
+In-Reply-To: <52CB9F5D.1040903@gmx.de>
+References: <52B3A1C8.5000005@monetize.io>	<52C9A7EE.2050904@gmx.de>	<20140106181324.GB28880@petertodd.org>	<52CB4885.6090003@monetize.io>
+	<52CB9F5D.1040903@gmx.de>
+Message-ID: <52CCA43A.9080004@monetize.io>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+On 01/06/2014 10:31 PM, Thomas Voegtlin wrote:
+> You are right. The 256-way branching follows from the fact that the
+> tree was implemented using a key-value database operating with byte
+> strings (leveldb). With this implementation constraint, a different
+> branching would probably be possible but wasteful.
+
+Not really. Just use a suffix to determine the number of bits used in
+the final key byte. For example, the string "abc" would have the key
+
+    0x61626308 // "abc\x08"
+
+Dropping the final bit would mean masking it off and having a
+different terminating value:
+
+    0x61626207 // "abb\x07"
+
+That way you keep the lexical ordering of keys necessary for database
+iteration, and the efficient binary encoding.
+
+> I see the advantage of doing that, but this looks really
+> far-fetched.. My understanding is that it would require a complete
+> change in the way clients and miners work. Could such a change be
+> brought iteratively?
+
+It is an iterative change, I believe. You might be confusing this idea
+with Peter Todd's TXO commitment proposal using MMR trees, which is a
+drastic change with its own set of tradeoffs. Just to be clear, here's
+what I'm proposing:
+
+1) Restructure the current UTXO index to be a Merkle tree, basically
+by splitting coins into individual outputs and adding interior nodes
+to the leveldb database.
+
+2) Add hash commitments of this structure to the coinbase.
+
+It's still mapping txid's to unspent outputs, just as before - this
+has nothing to do with the script keyed "wallet index." It's just now
+nodes can prefix optional proofs to block or transaction messages
+which prove by reference to the current best block's hash the spend
+status of the inputs of a transaction, or all the inputs of all the
+transactions of a block.
+
+If the more expensive proof-updatable hashing is used, then these
+proofs can even be composed or "rebased" onto a new block by applying
+the contents of an "operational proof" representing the diff between
+two blocks / the application of a series of transactions.
+
+This means that a node which does not have access to the UTXO set can
+nevertheless receive transactions or entire blocks with prefixed
+proofs and check the validity of the transaction with just the
+information available (proof + transaction contents).
+
+All that is required after the above soft-fork is a protocol version
+update and/or a service bit to indicate the ability to send or receive
+proof-prefixed messages. I'd call that an incremental update.
+
+[Aside: adding the wallet index requires storing the entire UTXO set
+in duplicated form, indexed this time by scriptPubKey or
+H(scriptPubKey), and including proofs of this structure as well. It is
+unlikely that any soft-fork would occur forcing consensus over the
+wallet index, but it could be done as a meta-chain or as an index
+covering just the contents of the block.]
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.14 (GNU/Linux)
+Comment: GPGTools - http://gpgtools.org
+Comment: Using GnuPG with Thunderbird - http://www.enigmail.net/
+
+iQIcBAEBAgAGBQJSzKQ2AAoJEAdzVfsmodw4hyoQAJ0f6P3ijZCEw7IPd/RcrmkI
+Viv4j17ZyAAcbNUplvjzhr/tIIKYPg51ltvfkp8cGRHgez88QsljzvM8B5n+nbPa
+jaaI6eiJ3AU1bR8hWYKtlXFwMvRjyr3ofl8hhTvYptGv9x3/Tr+2FwxIRY0413m6
+2h95vItsvBs8v7clqLoBEqx9uyUpsH3+J32V4oGubrNAFXh1oOHi4Ban+TOKYaQV
+GHZaIZ3bVAvcMd5riaWSPUPLHwJnxQ8w6SlVRy2UNUPe+9yTuy4n1GW4vk4WHvop
+FgZFrM3LBmh1MhlYHRdEUUtwk3mfDuGbfW5UJVMri0Nis1PsXr5VK4qQaMbd/9e6
+M2uWKslY9QCnzMajnHen9OwotteAJy2I1KHVcxXb0tFqrvqZ6o/auIe0G4VdKYuI
+XfNF3mokX93tiSflmphDba6qgB/W+Y6UD2gG2AeFuMGhFF/Hy62pVC6Zx7PKZ3vL
+Kh27rKkO/0FJau2JCQm5xBiQgCnKghqOiHefY3o+l+Y9kJ8fXKWCuwJ0lJ3LxZ2u
+8H6sp6Jm9Ct9L90wSn7VmmI5H3bRe8sa7sylH4BR2T6jP3/tKDYTEeNWj+F9FfO1
+FxsjYrjAyv1HxYYKd/Y1svEVSsKMv3a2SR9pF36ynBABdFjvx+oEuCyCO4tspFe6
+15eA1QoMKvEQe/Ww5kRC
+=L9WT
+-----END PGP SIGNATURE-----
+
+
