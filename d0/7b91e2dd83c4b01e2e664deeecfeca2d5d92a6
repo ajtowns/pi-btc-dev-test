@@ -1,0 +1,77 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Sun, 12 Jan 2014 10:20:18 -0800
+Subject: [Bitcoin-development] Stealth Addresses
+In-Reply-To: <CANEZrP0Np_FGhw=m6OffijByzz9r4D2AA78jCkzh=NZh=xrbjQ@mail.gmail.com>
+References: <20140106120338.GA14918@savin>
+	<op.w9c5o7vgyldrnw@laptop-air.hsd1.ca.comcast.net>
+	<20140110102037.GB25749@savin>
+	<op.w9kkxcityldrnw@laptop-air.hsd1.ca.comcast.net>
+	<CANEZrP0Np_FGhw=m6OffijByzz9r4D2AA78jCkzh=NZh=xrbjQ@mail.gmail.com>
+Message-ID: <op.w9k6j4xryldrnw@laptop-air.hsd1.ca.comcast.net>
+
+
+> You can always just extend the payment protocol with the new fields as  
+> well, vs making very long addresses.
+
+I should have mentioned that as Task #4. Agree it could be an optional  
+extension and backward compatible. I think for displaying the payment in  
+the UI after it's been made via PP, we have to fully support sending to a  
+new standard address type anyway. Probably easiest to implement in PP  
+after the address and transaction building code is done.
+
+So '4a' would be building a static PP file given the necessary inputs.  
+When I get to that point, I'll send out a draft PP extension with  
+fields/formats if someone else hasn't already. '4b' would be actually  
+adding support for parsing those fields and generating the new transaction  
+type into bitcoind.
+
+Any thoughts on the prefix, and one vs two pubkey approach? First of all,  
+do we try to support both equally, or favor one over the other? I was  
+thinking we could have two different 4 byte prefixes but that both render  
+as xSTL/tSTL in Base58 but correspond to the one vs two pubkeys expected.  
+I think the chance of finding a single prefix which looks like xSTL for  
+both address lengths is 1 in (58^4)^2, so that's probably not going to  
+happen.
+
+ From the payer/user perspective, short stealth vs. long stealth is  
+irrelevant; they both have the same usability properties from the payer  
+perspective. So giving them the same Base58 prefix seems like a good plan.
+
+The full 4-byte prefix seems worth the usability trade-off versus 1-byte  
+prefix, especially since it will impact the ability to lookup the  
+transaction on an outside service, which I think a lot of people do to  
+verify their payments. IMO a longer prefix isn't "wasting bytes" anywhere  
+that it really counts.
+
+We could save two bytes in the address if we required both pubkeys to  
+start with '03', or save one byte if we required they both start with the  
+same byte, but again doesn't seem worth it (to me) for the arbitrary  
+restriction.
+
+The actual internal wallet code for *receiving* STL payments and updating  
+balances is more tricky and probably not something I can personally tackle  
+for bitcoind. Assuming we even want first-class support for generating STL  
+addresses and receiving STL payments in a standard user wallet, someone  
+has to decide if the STL 'd' / 'd2' keys should be...
+
+   1) Encrypted as usual, and then keep a list of blocks with interesting  
+transactions, and go through them when the user enters their password?   
+This would cause balances to update differently than how they do now, but  
+perhaps be more secure.
+
+   2) Kept unencrypted to allow live scanning as usual? Or keep just 'd2'  
+unencrypted, with some new concept of 'unconfirmed' until the user enters  
+their password to prove they can spend that TX? That kind of extra step  
+seems OK for a merchant but sounds very scary for an average user.
+
+   3) Kept encrypted under a separate password? Meh...
+
+And last thought for now... At some point, we might want to decide on a  
+convention to highlight these STL addresses as 'reusable' -- but similar  
+questions around revocability remain. I hope we don't need anything like a  
+UTC expiration time baked in to the address. A static PP file will have an  
+expiration date either in the certificate or in 'expires' field, so I  
+think if you want it to expire then use PP?
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140112/462cb3bc/attachment.html>
