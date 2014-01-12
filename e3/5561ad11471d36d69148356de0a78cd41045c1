@@ -1,0 +1,110 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Sun, 12 Jan 2014 02:33:02 -0800
+Subject: [Bitcoin-development] Stealth Addresses
+In-Reply-To: <20140110102037.GB25749@savin>
+References: <20140106120338.GA14918@savin>
+	<op.w9c5o7vgyldrnw@laptop-air.hsd1.ca.comcast.net>
+	<20140110102037.GB25749@savin>
+Message-ID: <op.w9kkxcityldrnw@laptop-air.hsd1.ca.comcast.net>
+
+> Oh, sorry, I forgot to mention it in my first write-up but you can
+> easily make stealth addresses include a second pubkey for the purpose of
+> the communication that either isn't used in the scriptPubKey at all, or
+> is part of a n-of-m multisig. (n>=2) Interestingly that also means you
+> can give a third-party that key and out-source the effort of scanning
+> the blockchain for you.
+
+Great point. Even if it's not a 3rd party, I think it's really important  
+to be able to scan for transactions with a key which can't actually spend  
+the funds.
+
+The first approach is just one-pass ECDH. I think you're saying the second  
+approach is two rounds of ECDH but re-using the same e/P (usually referred  
+to as r/R in ECIES). I think this is safe, unlike reusing an ephemeral key  
+for signing operations.
+
+   Payee: Publish Q, Q2                     [d, d2 are privkeys, Q, Q2 are  
+pubkeys]
+   Payer: 1) Generate ephemeral key: e / P  [e is privkey, P is pubkey]
+          2) S = e * Q                      [first shared secret]
+          3) S2 = e * Q2                    [second shared secret, reusing  
+'e']
+          4) Q' = Q + H(S)                  [pay-to stealth address]
+          5) Q2' = Q2 + H(S2)               [stealth 'marker']
+
+   Watch: 1) Look for TxOut with OP_RETURN <P>
+          2) Q2' = Q2 + H(d2 * P)
+          3) Check for Q2' elsewhere in the Tx
+
+S/MIME for example, allows reuse of the ephemeral keypair. When reusing an  
+ephemeral keypair where A reuses (x, X) to encrypt different messages to  
+more than one user, A should verify the static public keys to prevent  
+small-subgroup attacks.[1][2]
+
+Let's say you pay-to Q' and then Q2' value has to be somewhere else in the  
+transaction. You could put it next to the shared P in OP_RETURN. OP_RETURN  
+<P> <Q2'> would be 66 bytes.
+
+But then Mallory could generate transactions with the right Q2' but with  
+his own pubkey in Step 2 instead of Q. So your scanner would detect a  
+payment, but you wouldn't be able to spend it, and Mallory could.
+
+That's a good argument for putting Q2' in a 2-of-2 multisig so that  
+pulling this trick would at least make the transaction unspendable for  
+both parties, which may be good enough deterrent, but you're still going  
+to want to check it against your 'd' before fulfilling a large order. Your  
+online watch process could queue the matching transactions, which you  
+could move to your offline machine, decrypt your key, and verify the  
+transactions are spendable.
+
+Now, you would need to get two pubkeys to the payer, throw in a prefix to  
+help standardize it, and end up with addresses that could look like (for  
+example):
+
+xSTLxsn59oaupR6ZKt2yddQ4dp5hcFinnTWkvsDiXtHgAEDg5ajNVzTY8MMQsmqnEn3ZMKxQzrfC3pDimfTWMkiUb7x3jX3J26JSX
+tSTLcpwzupCFL3maVZkSiB9ib3BXsCAfkhMLgckQEyoj8Tk83ANzofeuDdbX6bSPqNRfACLLFYK8EwVo1jdjxNDFNDWxhnQiAy4ba
+
+Those addresses are 74 bytes:  
+<Prefix><CompressedPubKey1><CompressedPubKey2><Checksum>
+
+   xSTL Prefix = 0xC0CB9270
+   tSTL Prefix = 0xB2E27D50
+   NOTE: I do NOT have the corresponding privkeys for these four pubkeys!
+
+Those just happened to be the first matching prefixes I found for 74 byte  
+addresses. I could try to find ones which start with a specific byte if  
+that's somehow better, like 0x04 to match BIP32.
+
+Unfortunately, I don't think you can just derive a second public key from  
+the first to keep the address shorter, and still keep the first private  
+key secure, even if the second private key is stolen. You only get  
+equivalent security as BIP32 public derivation, where you can't lose a  
+child private key.
+
+Do we also want xSTL (or whatever user friendly string) prefixes for  
+single pubkey (41 byte) stealth addresses?
+
+I'll wait a couple days for feedback, then I'll try to implement the  
+following prototypes:
+
+1) Pay to STL addresses
+2) Watcher process to detect and queue STL payments for a given d2/Q2
+3) Offline verifier to take output from Watcher and verify spendable given  
+encrypted d/d2
+
+Obviously extending QT directly for #1 would be ideal, I may even be able  
+to do that since supporting a new address type should be fairly contained.  
+But if not I'll punt to writing a node.js or python script which connects  
+to bitcoind via RPC.
+
+Thanks,
+Jeremy
+
+[1] - On Reusing Ephemeral Keys in Diffie-Hellman Key Agreement Protocols
+       http://www.math.uwaterloo.ca/~ajmeneze/publications/ephemeral.pdf
+
+[2] - Validation of Elliptic Curve Public Keys
+       http://www.iacr.org/archive/pkc2003/25670211/25670211.pdf
+
+
+
