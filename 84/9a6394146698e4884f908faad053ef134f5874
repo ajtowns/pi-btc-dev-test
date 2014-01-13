@@ -1,0 +1,86 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Mon, 13 Jan 2014 01:18:39 -0800
+Subject: [Bitcoin-development] Stealth Payments - Sample Code / Proof of
+	Concept
+Message-ID: <op.w9mb5dv0yldrnw@laptop-air.hsd1.ca.comcast.net>
+
+* Transaction *
+
+I spent 1BTC on TestNet to a stealth address...
+    TxID: df092896c1347b303da299bc84c92bef1946f455dbdc80ffdb01a18ea4ed8b4c
+
+http://blockexplorer.com/testnet/tx/df092896c1347b303da299bc84c92bef1946f455dbdc80ffdb01a18ea4ed8b4c#i8166574
+
+* Code *
+
+Code which generated this transaction is here:  
+https://gist.github.com/jspilman/8396495
+
+Note, one minor change from the protocol we discussed is I'm just using  
+the 32-byte x coordinate for the shared secret, not the compressed pubKey  
+(so, throwing away the first byte) before hashing with SHA256.
+
+* How it Looks *
+
+After importing the privkey for the TxIn to that transaction  
+(importprivkey "cNL8XqRtqwC1YEc9kKspbX2aukWnXfgHQSvjsPYbuPif5Q3DJkEs"  
+rescan) you will see two rows in the Transaction List of Bitcoin-QT...
+
+Both rows simply say 'Sent to' with a blank address. One has 1BTC amount  
+which is the 2-of-2 stealth multisig, the other has 0BTC amount, and it's  
+the OP_RETURN.
+
+I wonder if the 0BTC OP_RETURN transactions should be hidden from the  
+Transaction List? 'Transaction Details' truncates the <data> after  
+OP_RETURN anyway, so it's not even particularly useful for seeing what  
+data you embedded.
+
+* Next Steps *
+
+I'm not quite sure. If we're going to try to deploy this, I think we need  
+to fully understand what users who are making these payments should see in  
+their wallet software while making a payment, and after a payment has been  
+made.
+
+Right now I'm thinking...
+
+   1) Define the PaymentRequest extension
+   2) Update Gavin's PHP to generate PaymentRequests for stealth payments
+   3) Get Bitcoin-QT loading the PaymentRequest and generating transactions  
+ from those PaymentRequests
+   4) Write an agent to detect incoming stealth payments
+
+But we would still be showing meaningless rows in the payer's Transaction  
+List without some additional work.
+
+If there is a place to add TxOut meta-data with the pubkeys used to  
+generate it... well, there must be since the 'Merchant' field is attached  
+somehow. So we could probably use the same method to keep the pubKeys  
+around.
+
+Maybe the simple way to punt on this is to just show 'Merchant' in the  
+address column if it is available and an address is not. We could skip  
+saving the pubKeys for now, so there would be no way to send follow on  
+stealth payments, but at least the Transaction List would make sense  
+instead of looking like two empty transactions.
+
+* Other Open Questions *
+
+I think the biggest is if/how to receive P2P stealth payments in  
+Bitcoin-QT as an end-user not a merchant.
+
+I can probably make the necessary changes to IsMine, but I don't know  
+where we should keep 'd2'/'Q2' unencrypted so it's available for doing the  
+necessary tests, but has no chance of ever be used as a stand-alone  
+private key?
+
+And then there's still the question of: when 'd1'/Q1 is available  
+decrypted, we must fully verify the transaction, and how to indicate if  
+that has or has not been done yet.
+
+It really seems crippled to me without fully integrated support for  
+receiving P2P stealth payments in Bitcoin-QT. It doesn't seem like that  
+much code, just some details to work out first.
+
+
+
