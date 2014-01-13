@@ -1,0 +1,133 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Mon, 13 Jan 2014 01:13:08 -0800
+Subject: [Bitcoin-development] Stealth Addresses
+In-Reply-To: <CANEZrP06EiiY+5hL05bxzdcFXS8V7S1KOiZj86a_ZP5EcoaMKA@mail.gmail.com>
+References: <20140106120338.GA14918@savin>
+	<op.w9c5o7vgyldrnw@laptop-air.hsd1.ca.comcast.net>
+	<20140110102037.GB25749@savin>
+	<op.w9kkxcityldrnw@laptop-air.hsd1.ca.comcast.net>
+	<CANEZrP0Np_FGhw=m6OffijByzz9r4D2AA78jCkzh=NZh=xrbjQ@mail.gmail.com>
+	<op.w9k6j4xryldrnw@laptop-air.hsd1.ca.comcast.net>
+	<CANEZrP06EiiY+5hL05bxzdcFXS8V7S1KOiZj86a_ZP5EcoaMKA@mail.gmail.com>
+Message-ID: <op.w9mbv6dcyldrnw@laptop-air.hsd1.ca.comcast.net>
+
+On Sun, Jan 12, 2014 at 7:20 PM, Jeremy Spilman <jeremy at taplink.co> wrote:
+> > I think for displaying the payment in the UI after it's been made via  
+> PP, we have to fully
+> > support sending to a new standard address type anyway.
+
+On Sun, 12 Jan 2014 10:26:18 -0800, Mike Hearn <mike at plan99.net> wrote:
+> Why? Showing an address is meaningless, especially if the user didn't  
+> type it in or see
+> it somewhere else. It's just an opaque random number, all putting it in  
+> the UI can do is
+> make it look scarier :)
+>
+> Part of the point of the payment protocol is it lets merchants provide  
+> human readable text
+> for transactions instead of addresses.
+
+Of course you're right, moving away from addresses is definitely part of  
+the point of PP.
+
+On Sun, 12 Jan 2014 13:18:33 -0800, Gavin Andresen  
+<gavinandresen at gmail.com> wrote:
+> No, please. Make it easy for non-geeks, extend the payment protocol, or  
+> we'll spend the next
+> two years writing code that tries to ignore linebreaks and spaces and  
+> changing <input> in HTML
+> forms to <textarea>...
+
+Agreed, it's long enough to be even more problematic than usual. If the  
+general consensus is that there should not even be a standardized address  
+form, then I can skip that entirely, and go straight to trying to extend  
+PP.
+
+It's a given this will be implemented for Payment Protocol. The question  
+is whether it's also usable outside of PP.
+
+I was kind of imagining that we could encourage people to replace all  
+their static address text that live on Github pages, and README.me, and  
+forum signatures, etc. with new 'href=bitcoin:xSTL...' URIs. Convention  
+could be to require only transporting xSTL addresses within a URI, even  
+going so far as to not support them copy/pasted. 101 characters is not  
+much longer (and sometimes shorter) than PaymentRequest URIs end up being.
+
+I think there are ways to make stealth addresses easy enough to use that  
+people actually prefer using them for P2P payments which do not involve a  
+full-stack merchant. In that case, if it was a PaymentRequest it would  
+almost certainly not be signed, and would be more easily shared over email  
+or SMS as a URI than as a file attachment or, even worse, putting the  
+unsigned PR file up on a third-party server which probably won't do a good  
+job securing it.
+
+* PP Implementation Overview *
+
+The basic PaymentRequest>PaymentDetails is expecting 'output' containing  
+one or more TxOuts with script and amount. I believe the general approach  
+is to put a fallback address into 'output' for backward compatibility, and  
+put Q and Q2 into an extension field.
+
+So we add a new optional field to PaymentDetails which contains the one or  
+two PubKeys. Not sure if we want different protobuf tags, or if the  
+difference in length of the value makes it obvious enough which approach  
+is being used;
+
+    optional bytes stealthOnePubKey = 1000
+    optional bytes stealthTwoPubKey = 1001
+
+or just
+
+    optional bytes stealth = 1000
+
+* User Interaction / Flow *
+
+Lets follow this through from the user perspective, starting with what it  
+looks like today. I'm having a hard time finding screenshots of what PP  
+looks like in BitcoinQT, so I built from HEAD and using Gavin's  
+Handy-Dandy PaymentRequest Generator  
+(https://bitcoincore.org/~gavin/createpaymentrequest.php):
+
+Screenshots: http://imgur.com/a/k6j9D
+
+Image 1 - 'Send' screen after clicking a PR URI with a small transaction  
+and auto-calculated fee
+Image 2 - System Tray notification after clicking 'Send'
+Image 3 - Transaction List showing partially confirmed transaction
+Image 4 - Transactions details popup
+
+We see 'Pay To' (Common Name from the cert) and 'Memo' on the Send screen.  
+The System Tray notification popup and Transaction List shows just the  
+address string. The 'Transaction details' window shows 'Merchant' which I  
+think is the same as 'Pay To'. You also have 'Copy address' option in the  
+right-click menu.
+
+Memo seems not to be saved, or at least not visible in the UI after  
+sending a payment.
+
+* Transaction Display *
+
+The address string is fairly pervasive, which is why I was originally  
+thinking it would make sense to implement all the address handling first,  
+so all those screens would continue to work as specified, without trying  
+to hack something different in those fields.
+
+Without digging too far into the code, it looks like "address" displayed  
+is derived from the TxOut -- e.g. script.cpp:ExtractDestination. This  
+could be a bit problematic depending on what we really want to show to the  
+user -- the stealth multisig, or the pubkeys?
+
+Part of the point of stealth addresses is actually making them reusable.  
+So if you're the originator of the payment, you might want the wallet to  
+tag that transaction somehow with the pubkeys used to generate it.
+
+Also, ideally I think I would want multiple different stealth payments  
+within a single wallet to the same merchant / pubkeys to be identifiable  
+as such.
+
+* Sample Code *
+
+Will follow in another email, to be sent shortly!
+
+
+
