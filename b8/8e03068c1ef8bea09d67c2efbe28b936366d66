@@ -1,0 +1,158 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Mon, 13 Jan 2014 06:10:14 -0800
+Subject: [Bitcoin-development] Stealth Payments - Sample Code / Proof of
+	Concept
+In-Reply-To: <CANEZrP38DsYP4KRk1Jz_hiMrP_ZPCj6=TDKmr-t-r2BJRMjDSQ@mail.gmail.com>
+References: <op.w9mb5dv0yldrnw@laptop-air.hsd1.ca.comcast.net>
+	<CANEZrP38DsYP4KRk1Jz_hiMrP_ZPCj6=TDKmr-t-r2BJRMjDSQ@mail.gmail.com>
+Message-ID: <op.w9mpncluyldrnw@laptop-air.hsd1.ca.comcast.net>
+
+On Mon, 13 Jan 2014 03:18:28 -0800, Mike Hearn <mike at plan99.net> wrote:
+
+> Cool!
+>
+> On Mon, Jan 13, 2014 at 10:18 AM, Jeremy Spilman <jeremy at taplink.co>  
+> wrote:
+>> I spent 1BTC on TestNet to a stealth address...
+>>    TxID:  
+>> df092896c1347b303da299bc84c92bef1946f455dbdc80ffdb01a18ea4ed8b4c
+>
+> ... but can you redeem it?
+
+But of course!
+
+Every time the test runs it makes a new ephemeral key, so I wrote a  
+separate test with hard-coded values from the block chain (as it would be  
+in real-life) to create a redeeming Tx. I've added the RedeemStealth code  
+to the Gist.
+
+It sent successfully using sendrawtransaction, TxID:  
+ed92364d2b6f6528dea32dbf6c4d5d6291b601aff1ddb4eeb124d003c7c7ff07
+
+I'm self mining since no one else seems to be on TestNet this time of  
+night... going to catch some sleep, hopefully by the time I wake up it'll  
+be on the chain.
+
+
+>> Code which generated this transaction is here:
+>> https://gist.github.com/jspilman/8396495
+>
+> That's rather interesting code. Is this using a private C# bitcoin  
+> implementation?
+
+Indeed it is. One day I may publish the libraries, but they aren't doing  
+anything particularly special under the hood, just the standard  
+Bitcoin/EC/BIP32 stuff and using OpenSSL under the hood instead of the  
+more typical BouncyCastle.
+
+I just tried to keep things extremely concise in the APIs. Hopefully all  
+the function calls are obvious what they are doing. Since there's no  
+actual wallet behind it, the code to setup the inputs is a bit annoying,  
+but actually building and signing transactions is super clean.
+
+
+>> I wonder if the 0BTC OP_RETURN transactions should be hidden from the
+>> Transaction List?
+>
+> Yes, of course. The transaction list should just say something like
+>
+>    "Payment received from Jeremy,  0.1 BTC"
+
+In this case I'm just looking at the payee wallet, but yes, "Payment set  
+to Jeremy" should be possible, with the name coming from the CN.
+
+>
+>> Maybe the simple way to punt on this is to just show 'Merchant' in the
+>> address column if it is available and an address is not.
+>
+> I am surprised it's not already the case! Though "merchant" is perhaps a  
+> bit biased as a name, internally it perhaps should just be called  
+> "Recipient". >There's no requirement for you to be a merchant to create  
+> payment protocol requests.
+
+Yeah, right now for PaymentProtocol fulfilled payments, on the payer's  
+Transaction List, it shows the address in the 'Address' column, but if you  
+right-click and look at 'Transaction details' you will see something like:
+
+
+    Status: 42 confirmations
+    Date: 1/12/2014 21:07
+    To: mrhz5ZgSF3C1BSdyCKt3gEdhKoRL5BNfJV
+    Debit: -0.10 BTC
+    Net amount: -0.10 BTC
+    Transaction ID:  
+93c50347e35062a3501fcea15d1a22ace8d1b059affb9913fc9e7df4e7d6a00b-000
+    Merchant: www.bitcoincore.org
+
+
+
+I agree 'Merchant' might not be the best name, especially since when  
+you're making the payment the field is labeled simply 'Pay To'.
+
+
+
+But I think we agree, why show 'mrhz5ZgSF3C1BSdyCKt3gEdhKoRL5BNfJV' in the  
+transaction list instead of just "Paid To: www.bitcoincore.org" and then  
+perhaps the Memo field could be stuck under 'Transaction details', instead  
+of losing that important bit of info.
+
+>
+>> I can probably make the necessary changes to IsMine, but I don't know
+>> where we should keep 'd2'/'Q2' unencrypted so it's available for doing  
+>> the
+>> necessary tests, but has no chance of ever be used as a stand-alone
+>> private key?
+>
+> The wallet format would need extending.
+>
+> I'd feel a lot more comfortable if the protocol was reviewed by a  
+> professional cryptographer though. I think think Gregory already brought  
+> up an issue >to do with people able to detect such payments by testing  
+> if decrypted values are points on the curve, or something like that.
+
+Not sure I follow that, will look forward to hearing more about it.
+
+The only risk I know of is that there are checks in theory that you would  
+do on Q1/Q2, but since the payee is the one generating Q1/Q2 they would  
+literally be attacking themselves. I referenced two papers in a prior  
+email specifically on reusing ephemeral keys in ECDH, and the validation  
+you need to do on Q1/Q2 when re-using an ephemeral key to send two  
+messages to two different pubKeys. I think the idea of checking the  
+pubKeys when re-using ephemeral keys is more when the pubKeys are under  
+the attackers control. But the validation is not complicated, and I'll see  
+if I can add it tomorrow.
+
+It would be good to fully understand how a possible small-group attack  
+would work...  This is a bit of guess-work on my part:
+
+    If a payee managed to foot-shoot themselves with a bad Q2 pubKey, then  
+gives out d2/Q2 to a scanning service run by Mallory...
+
+    Mallory has d2/Q2, given P from a transaction, he calculates S2 (as  
+usual):
+
+       byte[] S2 = EC.DH(d2, P);
+
+    But with the small sub-group attack with Q2 he can learn 'e' (the  
+ephemeral private key) used:
+
+       byte[] S2 = EC.DH(e, Q2);
+
+    and from that he can calculate S1 directly, when he should only know S2.
+
+       byte[] S1 = EC.DH(e, Q1);
+
+So does that mean Mallory can find 'd1'? It looks like you would need  
+another small sub-group attack on P, the ephemeral public key, so another  
+key the attacker doesn't control which would have to randomly be bad.
+
+       byte[] S1 = EC.DH(d1, P);
+
+But I'm definitely not a professional cryptographer. Perhaps Matthew Green  
+might be a good candidate to review this?
+
+AND YAY, my stealth redemption Tx just went through, goodnight :-)  
+http://blockexplorer.com/testnet/tx/df092896c1347b303da299bc84c92bef1946f455dbdc80ffdb01a18ea4ed8b4c#o0
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140113/21e4df9f/attachment.html>
