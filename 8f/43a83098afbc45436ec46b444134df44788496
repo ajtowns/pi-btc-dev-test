@@ -1,0 +1,80 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Tue, 14 Jan 2014 11:12:40 -0800
+Subject: [Bitcoin-development] Stealth Addresses
+In-Reply-To: <20140114141908.GB29950@savin>
+References: <op.w9c5o7vgyldrnw@laptop-air.hsd1.ca.comcast.net>
+	<20140110102037.GB25749@savin>
+	<op.w9kkxcityldrnw@laptop-air.hsd1.ca.comcast.net>
+	<CABsx9T2G=yqSUGr0+Ju5-z9P++uS20AwLC+c3DnFMHtcQjQK6w@mail.gmail.com>
+	<CAAS2fgTz0TaGhym_35V3N2-vHVzU9BeuV8q+QJjwh5bg77FEZg@mail.gmail.com>
+	<20140113194049.GJ38964@giles.gnomon.org.uk>
+	<CANAnSg30V01B_3LCJ09sTwcsYa4_WOg3sKd-=p6COZS6w0b-uA@mail.gmail.com>
+	<52D4458C.6010909@gmail.com>
+	<CAAS2fgTzVWUF_B_-1jkRs3WZ8Um_CcHeH7uFU0eLncgEqQ01HQ@mail.gmail.com>
+	<19AE1549-16E0-4119-8BE9-8F4DFD3381C1@taplink.co>
+	<20140114141908.GB29950@savin>
+Message-ID: <op.w9oybextyldrnw@laptop-air.hsd1.ca.comcast.net>
+
+On Tue, 14 Jan 2014 06:19:08 -0800, Peter Todd <pete at petertodd.org> wrote:
+
+> On Mon, Jan 13, 2014 at 02:02:00PM -0800, Jeremy Spilman wrote:
+>> I decided to put both pubKeys in a 2-of-2 multisig, instead of keeping  
+>> one of the pubKeys in the OP-RETURN, to prevent a malicious sender from  
+>> triggering false positives on your online detection key when the funds  
+>> are actually still fully controlled by the payer.
+>>
+>> You can still have a false positive (only 1 of 2 keys actually yours)  
+>> but the funds would be trapped so it's unlikely anyone would do it.
+>
+> How would they trigger false positives? The payee recovers the nonce
+> with ECDH from the payor's ephemereal pubkey and their online detection
+> secret key. They use BIP32 public derivation with their offline spending
+> pubkey(s), if the derived pubkeys match the actual scriptPubKey they
+> know the output is spendable by them. I don't see how that can go wrong.
+>
+
+Right now I have this:
+
+   byte[] e = EC.NewPrivateKey();
+   byte[] P = EC.GetPublicKey(e, compressed: true);
+   byte[] S1 = EC.DH(e, Q1);
+   byte[] S2 = EC.DH(e, Q2);
+   byte[] q1New = EC.PointAdd(Q1, Util.SingleSHA256(S1));
+   byte[] q2New = EC.PointAdd(Q2, Util.SingleSHA256(S2));
+   stealthTx.Vout.Add(TxOut.PayToMultiSig(Util.Amount(".995"), 2, 2, q1New,  
+q2New));
+   stealthTx.Vout.Add(TxOut.OpReturn(P));
+
+In this case, you can scan with d2, calculate S2, and matching payments  
+will have the right 'q2New'. But you need to check again offline with d1  
+since it's a separate shared secret.
+
+Maybe you are saying:
+
+   byte[] S = EC.DH(e, Q2);
+   byte[] q1New = EC.PointAdd(Q1, Util.SingleSHA256(S));
+   byte[] q2New = EC.PointAdd(Q2, Util.SingleSHA256(S));
+
+But the payment would have (q2New - q1New) == (Q2 - Q1), so I think not  
+entirely stealth? OK, let's fix that by adding a counter to the hash  
+function...
+
+   byte[] S = EC.DH(e, Q2);
+   byte[] q1New = EC.PointAdd(Q1, Util.SingleSHA256(S || 1));
+   byte[] q2New = EC.PointAdd(Q2, Util.SingleSHA256(S || 2));
+   stealthTx.Vout.Add(TxOut.PayToMultiSig(Util.Amount(".995"), 2, 2, q1New,  
+q2New));
+   stealthTx.Vout.Add(TxOut.OpReturn(P));
+
+This is assuming we want to put q2New somewhere into the transaction,  
+which, is it even required?
+
+   byte[] S = EC.DH(e, Q2);
+   byte[] q1New = EC.PointAdd(Q1, Util.SingleSHA256(S));
+   stealthTx.Vout.Add(TxOut.PayToPubKeyHash(Util.Amount(".995"), q1New);
+   stealthTx.Vout.Add(TxOut.OpReturn(P));
+
+I'll wait for ACK and then update my sample code.
+
+
+
