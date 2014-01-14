@@ -1,0 +1,96 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 14 Jan 2014 07:10:51 -0500
+Subject: [Bitcoin-development] Stealth Addresses
+In-Reply-To: <op.w9ne31oqyldrnw@laptop-air.hsd1.ca.comcast.net>
+References: <CAAS2fgTz0TaGhym_35V3N2-vHVzU9BeuV8q+QJjwh5bg77FEZg@mail.gmail.com>
+	<20140113194049.GJ38964@giles.gnomon.org.uk>
+	<CANAnSg30V01B_3LCJ09sTwcsYa4_WOg3sKd-=p6COZS6w0b-uA@mail.gmail.com>
+	<52D4458C.6010909@gmail.com> <20140113201407.GB7941@petertodd.org>
+	<52D44F86.1040407@gmail.com>
+	<20140113210217.GO38964@giles.gnomon.org.uk>
+	<52D45755.60402@gmail.com> <20140113212752.GA9098@petertodd.org>
+	<op.w9ne31oqyldrnw@laptop-air.hsd1.ca.comcast.net>
+Message-ID: <20140114121051.GA2583@savin>
+
+On Mon, Jan 13, 2014 at 03:20:15PM -0800, Jeremy Spilman wrote:
+> On Mon, 13 Jan 2014 13:27:52 -0800, Peter Todd <pete at petertodd.org> wrote:
+> 
+> >There is a catch however: if you need the prefix to be against
+> >H(scriptPubKey) rather than scriptPubKey directly the sender needs to
+> >grind the OP_RETURN output at 2^len(prefix) cost. Fortunately that
+> >grinding can be done with hash operations rather than ECC - even if we
+> >needed 32-bit prefixes eventually computing 32-bit hash collisions is
+> >plausible, and more reasonable 8-bit is quite doable now.
+> 
+> I'll be updating my test code to support a prefix on the OP_RETURN
+> TxOut, for either where we expect to have an index on scriptPubKey,
+> or where we have an index on H(scriptPubKey) and have to grind with
+> a nonce.
+> 
+> Where do we say what prefix we are targeting, or how many bits
+> should match with Q? I assume the only place to communicate this,
+> dare I say it, is in the address string.
+
+That's exactly where you need to put it.
+
+Incidentally a prefix nonce, either direct or grind-style, is a bit of a
+privacy leak by suggestion how long the prefix was in the original
+stealth address. Code should be written such that grinding routines
+start at a random nonce, and nonces of any length are accepted. The
+easiest way to do that is to just stick the grind nonce at the end after
+the 33 bytes of pubkey.
+
+I dunno yet what hashing algorithm to target for grinding. I'd assume
+SHA256^2 on the basis that it's identical to what the merkle tree uses
+and thus will have the same security properties in a committed index,
+but I can see people pushing for the shorter 20-byte HASH160 too.
+
+> Also, for symmetric encryption of P in the OP_RETURN TxOut using a
+> key H(Q), what cipher did you have in mind? Since P is ephemeral and
+> random, I don't follow, why does encrypting it 'gives a slightly
+> larger anonymity set'?
+
+The idea was to make the anonymity set include other uses of OP_RETURN
+txouts, however Gregory Maxwell pointed out that it'd easily lead to a
+much reduced anonymity set because someone could trial decrypt the
+encrypted P and check if it was a valid pubkey. If you encrypted the
+full 33 bytes that'd be a total disaster - only 1/256 candidate stealth
+keys would work. There are ways to do it right, but it's tricky and
+there may be other attacks I don't know about, so I'm inclined to just
+drop that idea for now unless a professional cryptographer wants to take
+it on.
+
+> You made an interesting point in the original post that payer should
+> hold onto their ephemeral privKey 'e' corresponding to pubKey P if
+> they need to later prove the payment was actually sent to Q.
+
+Yup. You can even use that pubkey to disambiguate/prove payments with
+Timo Hanke's pay-to-contract ideas by deriving it from some root and a
+contract hash.
+
+Conversely Amir Taaki pointed out on the unsystem list that once a nonce
+is agreed on, it can be used directly with BIP32 derivation so that
+future payments don't have to use an OP_RETURN txout. Interesting idea,
+although I worry that the statelessness advantage of stealth payments
+gets lost if you do that. Probably best to look at that one after an
+initial implementation happens and we get some experience with them in
+the real world - adding that can be done in a backwards compatible
+fashion.
+
+> Finally, I hope you can take a look at the Gist and sample Test-Net
+> TXs I sent out this morning. I just went back and re-read your
+> original post, and compared to what I implemented there are some
+> differences, I'd like to make sure you think it's on track.
+
+Will do.
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000001420349f2276e53e5b087faea67c7c40aa12383c416067364
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140114/8419ac67/attachment.sig>
