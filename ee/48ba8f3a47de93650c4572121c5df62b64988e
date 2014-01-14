@@ -1,0 +1,87 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 14 Jan 2014 15:48:06 -0500
+Subject: [Bitcoin-development] Stealth Addresses
+In-Reply-To: <op.w9oybextyldrnw@laptop-air.hsd1.ca.comcast.net>
+References: <op.w9kkxcityldrnw@laptop-air.hsd1.ca.comcast.net>
+	<CABsx9T2G=yqSUGr0+Ju5-z9P++uS20AwLC+c3DnFMHtcQjQK6w@mail.gmail.com>
+	<CAAS2fgTz0TaGhym_35V3N2-vHVzU9BeuV8q+QJjwh5bg77FEZg@mail.gmail.com>
+	<20140113194049.GJ38964@giles.gnomon.org.uk>
+	<CANAnSg30V01B_3LCJ09sTwcsYa4_WOg3sKd-=p6COZS6w0b-uA@mail.gmail.com>
+	<52D4458C.6010909@gmail.com>
+	<CAAS2fgTzVWUF_B_-1jkRs3WZ8Um_CcHeH7uFU0eLncgEqQ01HQ@mail.gmail.com>
+	<19AE1549-16E0-4119-8BE9-8F4DFD3381C1@taplink.co>
+	<20140114141908.GB29950@savin>
+	<op.w9oybextyldrnw@laptop-air.hsd1.ca.comcast.net>
+Message-ID: <20140114204806.GA20546@petertodd.org>
+
+On Tue, Jan 14, 2014 at 11:12:40AM -0800, Jeremy Spilman wrote:
+> Maybe you are saying:
+> 
+>   byte[] S = EC.DH(e, Q2);
+>   byte[] q1New = EC.PointAdd(Q1, Util.SingleSHA256(S));
+>   byte[] q2New = EC.PointAdd(Q2, Util.SingleSHA256(S));
+> 
+> But the payment would have (q2New - q1New) == (Q2 - Q1), so I think
+> not entirely stealth? OK, let's fix that by adding a counter to the
+> hash function...
+
+Good catch, yeah, use the master shared secret to derive per-pubkey
+secrets.
+
+>   byte[] S = EC.DH(e, Q2);
+>   byte[] q1New = EC.PointAdd(Q1, Util.SingleSHA256(S || 1));
+>   byte[] q2New = EC.PointAdd(Q2, Util.SingleSHA256(S || 2));
+>   stealthTx.Vout.Add(TxOut.PayToMultiSig(Util.Amount(".995"), 2, 2,
+> q1New, q2New));
+>   stealthTx.Vout.Add(TxOut.OpReturn(P));
+> 
+> This is assuming we want to put q2New somewhere into the
+> transaction, which, is it even required?
+> 
+>   byte[] S = EC.DH(e, Q2);
+>   byte[] q1New = EC.PointAdd(Q1, Util.SingleSHA256(S));
+>   stealthTx.Vout.Add(TxOut.PayToPubKeyHash(Util.Amount(".995"), q1New);
+>   stealthTx.Vout.Add(TxOut.OpReturn(P));
+
+Well like I said, you shouldn't force the txout to be exactly a 2-of-2
+multisig - the recipient might be using a multi-factor wallet for
+instance. So, if I understand your code, what you want is the following:
+
+byte[] Q = <payee root pubkeys>;
+byte[] Q_Scan = <may or may not be provided in Q>
+int m = <# of pubkeys required to redeem>;
+byte[] S = EC.DH(e, Q_Scan);
+
+byte[] qDerived[];
+for (int = 0; i < len(Q); i++){
+    qDerived[i] = EC.PointAdd(Q[i], Util.SingleSHA256(S || i));
+}
+
+// Best to have a single canonical order re: anonymity set.
+qDerived = sorted(qDerived);
+
+if (len(Q) > 1){
+    stealthTx.Vout.Add(TxOut.PayToMultiSig(amount, m, len(Q), qDerived));
+} else {
+    stealthTx.Vout.Add(TxOut.PayToPubKeyHash(amount, qDerived[0]);
+}
+stealthTx.Vout.Add(TxOut.OpReturn(P));
+
+
+Finally, it would probably be better if the multisig output was wrapped
+in a P2SH output to better match the behavior of other wallets for the
+sake of a bigger anonymity set - seems that stuff that is implementing
+multifactor wallets and escrow is using P2SH to do it rather than bare
+multisig. Also there's quite a bit of support for making bare multisig
+not IsStandard() to discourage data-storage applications.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000010c474cd4e25913535ec1c166b6d43fbdd9a5f2726711ced7
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140114/7569f46b/attachment.sig>
