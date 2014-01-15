@@ -1,0 +1,76 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Wed, 15 Jan 2014 23:51:21 +0100
+Subject: [Bitcoin-development] Tor / SPV
+Message-ID: <5747D5DF-879B-4A60-8BD6-18251E7D5F47@plan99.net>
+
+intro text starts here, protocol upgrade proposal starts further down
+
+Recently on IRC we have discussed what it'd take to use SSL on P2P connections, the goal being encryption and authentication of traffic to help avoid passive wiretapping and sybil attacks.
+
+Gregory pointed out - very reasonably - that OpenSSL is huge and very old-school C, meaning that using it to implement SSL would put a big piece of code exposed to the internet into the same process as people?s wallets. This would be not excellent. Also, even with encryption, with SSL you only get some resistance to traffic analysis. And it'd be a complicated upgrade.
+
+Tor is an option, but it has other disadvantages:
+
+1) Also a giant piece of C that is likely to contain bugs
+2) Breaks our anti-sybil heuristics when connecting to hidden services
+3) MITM very likely when not connecting to hidden services
+4) Is not usable as a library at all. Convention to use Tor is "tell user to start TorBrowser and connect to the SOCKS port".
+
+The latter point means in reality hardly anyone will ever connect via Tor, as you'd have to do extra setup and most people are lazy. Especially it's not going to work on mobile. It?s not worth doing something complicated if hardly anyone would use it.
+
+But recently I discovered this interesting piece of code:
+
+   http://www.subgraph.com/orchid.html
+
+It is a pure Java implementation of the Tor protocol (client only, no relays), easily usable as a library. Sure enough after about an hour of fiddling around, I now have a bitcoinj that connects via Tor with no other software running.
+
+Suddenly making MultiBit, the Android Bitcoin Wallet app, Hive and other bitcoinj based wallets use Tor by default seems very plausible.
+
+So I started thinking about what it'd take to switch this on for everyone. The biggest problem is that SPV wallets can't verify unconfirmed/pending transactions for themselves, so they rely on counting the number of peers that announced it and assuming that their internet connections aren't being tampered with. Mostly this assumption is a good one - we have never heard anyone report that they were paid with a fake pending tx using a MITM attack.
+
+However, with Tor the chance of being MITMd goes up dramatically. Lots of people have reported exit nodes that are doing SSL stripping. Being sybilled when using exit nodes seems rather likely.
+
+Connecting to hidden services solve the MITM problem but screws you in a different way. Bitcoin Core has some weak heuristics in the code to try and ensure we don?t accidentally connect to nodes all controlled by the same guys ? mostly by trying to keep a good mix of /16s. This is probably not very hard to defeat, but it does at least raise the bar beyond ?buy lots of amazon VMs?. With hidden services we lose that. Also, there aren?t very many nodes running as hidden services - if all bitcoinjs started hitting them simultaneously they?d probably die.
+
+tl;dr the proposal starts here
+
+Let?s fix this so SPV wallets can use Tor by default. Downgrading things is not an option, it must be pure upgrade. We can do it like this:
+
+1) Firstly, we observe that MITM only matters when we?re trying to count pending transaction announcements, but most of the load SPV wallets impose on the network is chain filtering. So it?s OK to download the chain from any arbitrary clearnet IP via Tor because we?re checking Merkle branches.  This ensures we won?t put excessive load on hidden service nodes.
+
+2) Secondly, we bump the protocol version, add a service flag and introduce a new P2P protocol command ?tor??. If a client sends a tor? message to a node that has the new service flag set, it will respond with a new ?tor? message that contains a regular addr packet, with a single address, the IPv6-ified version of its hidden service name.
+
+3) SPV wallets that want to get a good mix of nodes for measuring pending transactions identify nodes on the clearnet via their addr announcements+service flag, in the normal way. They select some of these nodes using the standard clearnet anti-sybil heuristics and connect without using Tor. They proceed to query them for their hidden service key. After they?ve done that, they record the public IP->hidden service mapping and can go ahead and connect back to them at any later time via Tor itself.
+
+This would seem to be pointless - did we not just go ahead and bypass Tor entirely, thus making neither node hidden? Is it not a dead cert that the next connection the node gets via Tor is likely the same computer? Yes, but it only matters the first time. As long as those nodes are somewhat stable the mapping will be recorded on disk and the next time the wallet starts, it?ll skip straight to using Tor.
+
+The goal of all that is that we get to keep our existing IPv4 based anti-sybil heuristics, so we can?t possibly make anything worse, only better. Plus, we?ve now set things up so in future if/when we come up with a better anti-sybil system based on anonymous identities or other fancy crypto, we can take out the ?connect via clearnet? step and go straight to using hidden services with only a very small set of code changes and no new protocol work.
+
+I like this idea for several reasons:
+
+It feels implementable to me in about a couple of weeks wall-time. The tasks are small - the new tor? p2p message is super easy to implement because a node already knows if it?s a hidden service or not. On the bitcoinj side, it?d take a bit of work to implement the extra storage of IPv4->onion mappings and ensure the right kind of connection is used at the right time, but it?s not all that hard.
+We could switch Tor on by default for a lot of users.
+On the bitcoind side, Tor runs as a separate process and because it initiates connections to bitcoind, it can be easily sandboxed, e.g. ran as a different UNIX user or even run inside a chroot/ptrace jail. Even though Tor is likely to contain exploits, we can easily keep them away from the wallet. So there?s not much additional surface area.
+Obviously as it?s pure Java and client only, Orchid is immune to buffer overflows/double frees and other such security problems.
+It?s optional for all parties. Wallet clients can try to fall back to non-Tor usage if their access to Tor seems to be blocked somehow.
+Tor is the gold standard for resisting traffic analysis - we know thanks to Snowden that it?s good at this task.
+
+To launch I?d probably have a percentage throttle hosted on some SSLd website, so we can control the load placed on the existing hidden service nodes.
+
+Feedback welcome.
+
+
+
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140115/18fe96f5/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 7453 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140115/18fe96f5/attachment.p7s>
