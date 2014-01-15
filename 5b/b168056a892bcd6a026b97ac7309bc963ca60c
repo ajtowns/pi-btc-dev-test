@@ -1,0 +1,177 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Thu, 16 Jan 2014 00:09:01 +0100
+Subject: [Bitcoin-development] unlinakble static address? & spv-privacy (Re:
+ Stealth Addresses)
+In-Reply-To: <CAJHLa0P5r2+kxy7w8G=h=TAhdk1jUoW5UOiv-euo47uQY0u9ZA@mail.gmail.com>
+References: <CABsx9T2G=yqSUGr0+Ju5-z9P++uS20AwLC+c3DnFMHtcQjQK6w@mail.gmail.com>
+	<CAAS2fgTz0TaGhym_35V3N2-vHVzU9BeuV8q+QJjwh5bg77FEZg@mail.gmail.com>
+	<CANEZrP0huBWqgvQik9Yc26Tu4CwR0VSXcfC+qfzsZqvoU4VJGA@mail.gmail.com>
+	<20140113133746.GI38964@giles.gnomon.org.uk>
+	<CANEZrP1KAVhi_-cxCYe0rR9LUSYJ8MyW8=6eSJZ65FeY5ZJNuQ@mail.gmail.com>
+	<20140114225321.GT38964@giles.gnomon.org.uk>
+	<CANAnSg0tH_bK_19rsRRHOeZgrGYeWMhW89fXPyS4DQGmS4r_7A@mail.gmail.com>
+	<CALimQCXgc0eXeOcqFGUaCpSF7gKEe87KzvLqHZwUysV3WyjjGw@mail.gmail.com>
+	<CAAS2fgShChAQryfUOBp60jB-zxn2tH986fu1HfT+LsNdBYnoYg@mail.gmail.com>
+	<CAJHLa0P5r2+kxy7w8G=h=TAhdk1jUoW5UOiv-euo47uQY0u9ZA@mail.gmail.com>
+Message-ID: <20140115230901.GA25135@netbook.cypherspace.org>
+
+So I like static address name too.  In the write up for my variant I called
+it something less sexy than stealth "unlinkable public address":
+
+https://bitcointalk.org/index.php?topic=317835.msg4103530#msg4103530
+
+(there are 3 variants that are approximately the same thing).
+
+Maybe we could call it an unlinkable static address.  Otherwise static
+addresses are maybe too synonymous with reused addresses a bad practice we
+have been complaining about users and wallet authors incorrectly doing.
+
+But to explain, in Peter Todds (and Amir Taaki also?) variant stealth refers
+to an actual useful security criteria.  Stealth objective actually means
+"looks like a normal bitcoin payment to the outside observer".  You
+generally want that to be the case for fungibility reasons.  Its like
+browser cookie state, the more things that are unusual about your
+transaction, the more your transactions identify you in the public
+block-chain.  Statistics are cumulative so it matters.
+
+
+And is an actual element of stealthiness (hence the name) in this variant
+that Peter Todd proposed, at least as an objective, though I think the
+stealthiness somewhat fails because the P parameter is extra and not present
+in a normal transaction.
+
+Unfortunately so far removing P and using an input in its stead breaks
+CoinJoin which is also necessary for fungibility.  Maybe there is another
+way to make an extended CoinJoin that can mix inputs and unlinkable static
+addresses.
+
+
+I was meaning to comment on the SPV privacy properties.
+
+For full-node use these unlinkable static addresses have quite nice
+properties.  It also nicely solves the problem of having to educate users
+and wallet authors to not reuse addresses.  But for SPV nodes they have no
+direct-way to find the payments.  So then in Peter Todd's variant (maybe it
+was suggested by Greg Maxwell?) there is a second address so that the SPV
+client can delegate detection to a full node without giving it the private
+key allowing it to spend!  (This is something analogous to bloom filtering). 
+But I think its moderately expensive for the full node because it has to do
+a DH calculation per transaction and its not precomputable so there is IO
+per query.  (In the P version in fact only payments which are thereby
+reconizable as unlinkable static need to be processed).
+
+Then an artificial prefix is proposed to constrain the query to a subset,
+however that leaks to everyone so in some wayts its a worse privacy leak
+than bloom filtering.  It can be used to rule out recipients and could be
+quite a powerful extra lever for statistical analysis.  (And also there is
+proposed a version of the prefix computed via brute-force to make it
+somewhat stealthy still).
+
+
+So I also am quite enthusiastic about the possiblity to fix this address
+reuse problem, but there remain a few open problems in my view, for SPV
+uses.  Not nay-saying, I spent quite a bit of time trying to solve this for
+my variant, its a tricky problem, or basically we wouldnt have one-use
+addresses and bloom filtering.
+
+
+But maybe its intereting enough already for full-node uses.  Many processors
+and businesses are full nodes.  Many power users run full-nodes  The data
+isnt lost, you just need to scan a full-node.
+
+It could help the related problem of paying the wrong person.  Ie deposit
+address given by merchant.  If the deposit address is static, and the used
+address user derived from it, then that itself is an assurance to the user
+that they are paying an address at least owned by the service.  (As opposed
+to someone who hacked the web site or MITM the link).  Of course for users
+probably the main likelihood is they have malware on their machine, but that
+is what offline wallets are for.  A smartphone is maybe a little less
+hackable and could be trained to store the static address and warn if its
+not the same as the last time they used the site.  (TOFU for bitcoin
+addresses, or at least be able to call someone you know who also uses the
+service and compare static addresses).
+
+Maybe in the payment address case the service should choose the derivation
+factor and communicate it and the client with the static address, as
+suggeste by Alan Reiner because then it can also serve the function of
+allowing the service to tie the payment to the users account.
+
+People also mention payment protocol for certifying addresses however I
+think it is useful to have address level TOFU / static to principal
+verification because it is simpler for harware wallets, maps to account
+number concept users understand, and doesnt rely on the CA infrastructure. 
+Also the typical payment protcol is talking about a message constructed by a
+web app.  Thats millions of lines of web server, script language, db code
+etc in play on an online server.  The static address private key would be
+airgapped from that mess.  
+
+Mike Hearn proposed if I understand that you could something analogous and
+upload in batches signed payment protocol sub-messages from a different CA
+certificate key.  But I think the above is simpler, and its useful to have
+something that works at the low level.  What we have now is like SSH without
+the knownhosts cache.  Lets add it.  It can then play with the payment
+protocol at the address level.
+
+Adam
+
+On Wed, Jan 15, 2014 at 03:44:17PM -0500, Jeff Garzik wrote:
+>   "static address" seems like a reasonable attempt at describing intended
+>   use/direction.
+>
+>   On Wed, Jan 15, 2014 at 3:38 PM, Gregory Maxwell
+>   <[1]gmaxwell at gmail.com> wrote:
+>
+>   On Wed, Jan 15, 2014 at 12:22 PM, Ben Davenport
+>   <[2]bendavenport at gmail.com> wrote:
+>   > But may I suggest we consider changing the name "stealth address" to
+>   > something more neutral?
+>
+>     ACK.  Regardless of the 'political' overtones, I think stealth is a
+>     little cringe-worthy.
+>     "Private address" would be fine if not for confusion with
+>     private-keys.
+>     "Static address" is perhaps the best in my view. (also helps improve
+>     awareness that normal addresses are intended to be more
+>     one-use-ness)
+>
+>   -----------------------------------------------------------------------
+>   -------
+>   CenturyLink Cloud: The Leader in Enterprise Cloud Services.
+>   Learn Why More Businesses Are Choosing CenturyLink Cloud For
+>   Critical Workloads, Development Environments & Everything In Between.
+>   Get a Quote or Start a Free Trial Today.
+>   [3]http://pubads.g.doubleclick.net/gampad/clk?id=119420431&iu=/4140/ost
+>   g.clktrk
+>   _______________________________________________
+>   Bitcoin-development mailing list
+>   [4]Bitcoin-development at lists.sourceforge.net
+>   [5]https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>   --
+>   Jeff Garzik
+>   Bitcoin core developer and open source evangelist
+>   BitPay, Inc.      [6]https://bitpay.com/
+>
+>References
+>
+>   1. mailto:gmaxwell at gmail.com
+>   2. mailto:bendavenport at gmail.com
+>   3. http://pubads.g.doubleclick.net/gampad/clk?id=119420431&iu=/4140/ostg.clktrk
+>   4. mailto:Bitcoin-development at lists.sourceforge.net
+>   5. https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>   6. https://bitpay.com/
+
+>------------------------------------------------------------------------------
+>CenturyLink Cloud: The Leader in Enterprise Cloud Services.
+>Learn Why More Businesses Are Choosing CenturyLink Cloud For
+>Critical Workloads, Development Environments & Everything In Between.
+>Get a Quote or Start a Free Trial Today.
+>http://pubads.g.doubleclick.net/gampad/clk?id=119420431&iu=/4140/ostg.clktrk
+
+>_______________________________________________
+>Bitcoin-development mailing list
+>Bitcoin-development at lists.sourceforge.net
+>https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
