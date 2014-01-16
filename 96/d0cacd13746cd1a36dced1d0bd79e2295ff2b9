@@ -1,0 +1,70 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Wed, 15 Jan 2014 17:23:04 -0800
+Subject: [Bitcoin-development] Bait for reusable addresses
+Message-ID: <CAAS2fgQmsxjkQFSiCdeMoVMaqq5720KpUpdkKZOE+XytHsWw0w@mail.gmail.com>
+
+One challenge with reusable addresses is that while they result in a
+small constant overhead for full nodes in searching for their own
+transactions they create large overheads for SPV nodes.
+
+One way to address this is for the SPV nodes to hand their servers
+their blinding private key so that the server may test addresses on
+their behalf. The primary problem with this is that it is
+non-reputable:  If I show you a blinding private key and say a set of
+transactions are related you will be utterly convinced of it, the
+transactions really are related. This makes the privacy brittle.
+
+It also has a downside of not being indexable for the server, the
+server must do O(clients * reusable-address-txn) work and the work
+includes an ECC multiply.
+
+An idea that Adam Back had originally proposed was including optional
+"bloom bait", a small token? say 8 bits? that distinguished
+transactions which allowed an anonymity set vs filtering trade off.
+Such a bait would be indexable, enabling faster lookup too.
+
+But bloom bait has privacy problems more severe than the current SPV
+bloom filtering. While you leak information to your SPV servers today
+if you use bloom filtering the leak usually goes no further. So a
+compromise requires both a statistical attack _and_ using SPV servers
+that log data against your interest.  With bloom bait the whole
+network can see the relation. That is unfortunate.
+
+I suggest instead that with optional bait is included in an address
+that the sender compute H(nonce-pubkey) and then pick one byte at
+random out of the first 16 and xor it with the specified bait and
+store the result in the transaction.  An SPV server can now index the
+bait as it comes in by extracting 16 8-bit keys from each transaction
+(the 16 bytes xored with the bait in the transaction).  When the
+client wants to search for transactions it can give the server a list
+of keys its interested in? including their real key and number of
+random number of cover keys.
+
+ObTechnicalWank:  This is a specific simple instance of a general
+class of solutions which are related to locally decodable error
+correcting codes: E.g. the transaction data represents a codeword in a
+vector-space and the degree of freedom provided by the adjustable
+prefix is used to ensure that codeword is never more than a certain
+distance from a specified point.  The point isn't made public in the
+transaction and it's hidden from the server by providing several
+points.   There is still an information leak here? as if someone
+believes a set of transactions are related they can intersect their
+radiuses and test if the intersection is empty, and if it's not assume
+that they found the secret bait? but it is substantially lower an
+information leak than the prefix case.
+
+I didn't give any though into the parameters 8-bits and 16 dimensions.
+Some reasoning should be done to fix the parameters in order to make
+them the most useful: e.g.
+
+Systems derived from more complex linear codes might give better
+performance, e.g. two secret bloom baits, two prefixes in the
+transaction bait0^random_char[0-8], bait1^random_char[0-8],  server
+extracts 16 keys.. and returns to the client transactions which have
+at least two key matches with their list.
+
+Obviously whatever is used needs to be easy to implement, but schemes
+loosely based on fountain codes should only require picking some
+things and xoring... so they should be simple enough.
+
+
