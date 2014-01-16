@@ -1,0 +1,96 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Wed, 15 Jan 2014 17:02:10 -0800
+Subject: [Bitcoin-development] unlinakble static address? & spv-privacy
+ (Re: Stealth Addresses)
+In-Reply-To: <20140115230901.GA25135@netbook.cypherspace.org>
+References: <CABsx9T2G=yqSUGr0+Ju5-z9P++uS20AwLC+c3DnFMHtcQjQK6w@mail.gmail.com>
+	<CAAS2fgTz0TaGhym_35V3N2-vHVzU9BeuV8q+QJjwh5bg77FEZg@mail.gmail.com>
+	<CANEZrP0huBWqgvQik9Yc26Tu4CwR0VSXcfC+qfzsZqvoU4VJGA@mail.gmail.com>
+	<20140113133746.GI38964@giles.gnomon.org.uk>
+	<CANEZrP1KAVhi_-cxCYe0rR9LUSYJ8MyW8=6eSJZ65FeY5ZJNuQ@mail.gmail.com>
+	<20140114225321.GT38964@giles.gnomon.org.uk>
+	<CANAnSg0tH_bK_19rsRRHOeZgrGYeWMhW89fXPyS4DQGmS4r_7A@mail.gmail.com>
+	<CALimQCXgc0eXeOcqFGUaCpSF7gKEe87KzvLqHZwUysV3WyjjGw@mail.gmail.com>
+	<CAAS2fgShChAQryfUOBp60jB-zxn2tH986fu1HfT+LsNdBYnoYg@mail.gmail.com>
+	<CAJHLa0P5r2+kxy7w8G=h=TAhdk1jUoW5UOiv-euo47uQY0u9ZA@mail.gmail.com>
+	<20140115230901.GA25135@netbook.cypherspace.org>
+Message-ID: <op.w9q85wkhyldrnw@laptop-air.hsd1.ca.comcast.net>
+
+On Wed, 15 Jan 2014 15:09:01 -0800, Adam Back <adam at cypherspace.org> wrote:
+> I was meaning to comment on the SPV privacy properties.
+>
+> For full-node use these unlinkable static addresses have quite nice
+> properties.  It also nicely solves the problem of having to educate users
+> and wallet authors to not reuse addresses.  But for SPV nodes they have  
+> no direct-way to find the payments.  So then in Peter Todd's variant  
+> (maybe it was suggested by Greg Maxwell?) there is a second address so  
+> that the SPV
+> client can delegate detection to a full node without giving it the  
+> private key allowing it to spend!  (This is something analogous to bloom  
+> filtering).
+
+The second pubKey is useful for delegating scanning, or even just being  
+able to scan for transactions yourself without keeping bitcoin-encumbered  
+private keys decrypted in memory. So even while running your own full node  
+there are good reasons to use a second pubKey to derive the shared secret.
+
+> But I think its moderately expensive for the full node because it has to  
+> do a DH calculation per transaction and its not precomputable so there  
+> is IO
+> per query.  (In the P version in fact only payments which are thereby
+> reconizable as unlinkable static need to be processed).
+
+And of course, if you have multiple reuseable addresses, then you're doing  
+this calculation separately to check each one.
+
+So the load on a popular centralized service would be quite high, which  
+you may consider a feature.
+
+>
+> Then an artificial prefix is proposed to constrain the query to a subset,
+> however that leaks to everyone so in some ways its a worse privacy leak
+> than bloom filtering.  It can be used to rule out recipients and could be
+> quite a powerful extra lever for statistical analysis.
+
+Choosing how many bits to put in the prefix may be difficult, particularly  
+if transaction load changes dramatically over time. 0 or 1 bits may be  
+just fine for a single user running their own node, whereas a central  
+service might want 4 or 5 bits to keep their computation costs scalable.
+
+But I think it's great people can choose how to trade privacy for  
+computation/bandwidth however they want, and services can compete to offer  
+monitoring for 0+ bit prefixes.
+
+> (And also there is proposed a version of the prefix computed via
+> brute-force to make it somewhat stealthy still).
+
+I think in this case the hash grinding of the prefix would only being used  
+if thats how transactions are being indexed. I don't think it adds any  
+privacy, it's just added work we're forced to do in order for the prefix  
+to work as designed. Peter, please correct me if I'm wrong.
+
+
+>
+> Maybe in the payment address case the service should choose the  
+> derivation factor and communicate it and the client with the static
+> address, as suggested by Alan Reiner because then it can also serve
+> the function of allowing the service to tie the payment to the users
+> account.
+
+I think any change which requires more than a single published public  
+message (e.g. a posting in a forum, or in a README.me in Github) should be  
+seen as solving an entirely different problem.
+
+If you have directed communication from payee->payer, I think there's  
+simply no reason to do it this way. (By "this way" I mean ECDH with  
+OP_RETURN P).
+
+We could try to define a different reusable address type, for when you can  
+make a single directed message from payer->payee, and in that case there's  
+probably no need for ECDH or the prefix, like Alan's proposal.
+
+But once you admit having that directed communication, then you are  
+swimming very close to the payment protocol.
+
+
+
