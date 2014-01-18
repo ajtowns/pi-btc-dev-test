@@ -1,0 +1,66 @@
+From: etotheipi@gmail.com (Alan Reiner)
+Date: Fri, 17 Jan 2014 23:55:25 -0500
+Subject: [Bitcoin-development] Stealth Addresses
+In-Reply-To: <CALimQCU10asn65q=+VwCVNtgbROu9XQOYKzB7jy-TCFoemjEOQ@mail.gmail.com>
+References: <CANEZrP1KAVhi_-cxCYe0rR9LUSYJ8MyW8=6eSJZ65FeY5ZJNuQ@mail.gmail.com>	<20140114225321.GT38964@giles.gnomon.org.uk>	<CANAnSg0tH_bK_19rsRRHOeZgrGYeWMhW89fXPyS4DQGmS4r_7A@mail.gmail.com>	<CALimQCXgc0eXeOcqFGUaCpSF7gKEe87KzvLqHZwUysV3WyjjGw@mail.gmail.com>	<CAAS2fgShChAQryfUOBp60jB-zxn2tH986fu1HfT+LsNdBYnoYg@mail.gmail.com>	<CAJHLa0P5r2+kxy7w8G=h=TAhdk1jUoW5UOiv-euo47uQY0u9ZA@mail.gmail.com>	<op.w9q6jdsayldrnw@laptop-air.hsd1.ca.comcast.net>	<20140116212805.GA4421@petertodd.org>	<CANAnSg2TY7Zh7RnHkBeTz1s-WutGLayum8q5DhdLhtOBMDT9ng@mail.gmail.com>	<CANEZrP1=PMiJn9BoN50K1wz2tOdxx5L80ngjErCJqj5wm2ESPA@mail.gmail.com>	<20140117144601.GA8614@petertodd.org>
+	<CALimQCU10asn65q=+VwCVNtgbROu9XQOYKzB7jy-TCFoemjEOQ@mail.gmail.com>
+Message-ID: <52DA093D.4070505@gmail.com>
+
+*Avoiding ECDH calcs on every blockchain transaction (and avoiding the
+prefix thing):*
+
+Can we skip the whole ECDSA/ECDH thing, and use the second key pair for
+encryption instead?  Then we don't need any ephemeral keys.  We use the
+much simpler scheme like I mentioned before (just root keys and
+multpliers), but instead of requesting a multiplier from the person
+receiving the money, the payer can create their own multiplier and
+encrypt it into an OP_RETURN msg (using the secondary public key of the
+receiver).  When they do this, they append a deterministic identifier to
+it, so that the receiver can immediately identify it upon decryption.
+
+Basically, the receiver simply attempts decryption of every OP_RETURN
+message, and if the identifier is there, they immediately know that the
+tx is theirs, and that the other bytes of the decrypted message is the
+multiplier used.
+
+Of course, using something like ECIES and forcing the receiver to
+attempt decryption of every OP_RETURN tx may not be any faster than the
+ECDH we've already talked about here.  But with this, we are not tied to
+any particular crypto.  Isn't there a much faster asymmetric scheme that
+we can use?  I've heard people talk about ed25519, though I'm not sure
+it can be used for encryption.  I'd bet money there is an asymmetric
+_/encryption/_//algorithm that would be fast enough to not burden the
+receiver.
+
+Here's how I envision it:
+
+--Alice gives out her business card that has public key X (BIP32 root),
+and public key Y (fastCrypto)
+--Bob generates a random 32-byte nonce, and EC-multiplies Alice's public
+key by it.   He prepares a transaction sending coins to that address (Z)
+--Bob also computes a deterministic identifier, perhaps hash(pubKeyX ||
+addrZ)[8:].  Bob appends the those 8 bytes to the multiplier, and
+encrypts all of it with Alice's fastCrypto key, Y.   He puts that
+message in the OP_RETURN output.
+--Alice's wallet will attempt decryption of every OP_RETURN message. 
+First she computes hash(pubKeyX, addrZ)[8:], and then decrypts the
+message with the fastCrypto private key.  If the tx is actually hers,
+the last 8 bytes will match the identifier, and she knows to use the
+other 32 bytes as a multiplier.  If it doesn't, it's irrelevant to her
+and she moves on.
+
+[**Should probably use 24-byte values for the multipliers (or hashes of
+24-byte values), so that adding 8 bytes makes the whole message an even
+32 bytes which is better for encryption]
+
+Doesn't this have the exact same properties as the original proposal
+(including compatibility with CoinJoin)?  But it all depends on having
+fast asymmetric encryption.
+
+-Alan
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140117/ef9e2937/attachment.html>
