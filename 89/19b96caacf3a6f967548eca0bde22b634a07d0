@@ -1,0 +1,91 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 24 Jan 2014 04:02:18 -0500
+Subject: [Bitcoin-development] Bait for reusable addresses
+In-Reply-To: <CAAS2fgQmsxjkQFSiCdeMoVMaqq5720KpUpdkKZOE+XytHsWw0w@mail.gmail.com>
+References: <CAAS2fgQmsxjkQFSiCdeMoVMaqq5720KpUpdkKZOE+XytHsWw0w@mail.gmail.com>
+Message-ID: <20140124090218.GA15398@savin>
+
+On Wed, Jan 15, 2014 at 05:23:04PM -0800, Gregory Maxwell wrote:
+> It also has a downside of not being indexable for the server, the
+> server must do O(clients * reusable-address-txn) work and the work
+> includes an ECC multiply.
+> 
+> An idea that Adam Back had originally proposed was including optional
+> "bloom bait", a small token? say 8 bits? that distinguished
+> transactions which allowed an anonymity set vs filtering trade off.
+> Such a bait would be indexable, enabling faster lookup too.
+> 
+> But bloom bait has privacy problems more severe than the current SPV
+> bloom filtering. While you leak information to your SPV servers today
+> if you use bloom filtering the leak usually goes no further. So a
+> compromise requires both a statistical attack _and_ using SPV servers
+> that log data against your interest.  With bloom bait the whole
+> network can see the relation. That is unfortunate.
+
+Yes, but remember I proposed prefixing in my blockchain data query paper
+because it's a trade-off between theoretical good privacy and
+brittleness. The real world experience is that users, or to be exact
+wallet authors, turn down SPV privacy parameters until bloom filters
+have almost no privacy in exchange for little bandwidth usage. (though
+load on the server is unchanged of course)
+
+The brittleness comes in because the moment you connect to a malicious,
+data-collecting peer, the contents of your wallet are all revealed.
+Frankly that'd be a disaster for CoinJoin too, and I think it'd be a
+bigger disaster than the poor specificity patterns leaked by prefix
+usage. If anyone wants to deanonymize CoinJoin there will be a lot of
+incentives to do so, and you only need wallet content data to do that.
+
+> I suggest instead that with optional bait is included in an address
+> that the sender compute H(nonce-pubkey) and then pick one byte at
+> random out of the first 16 and xor it with the specified bait and
+> store the result in the transaction.  An SPV server can now index the
+> bait as it comes in by extracting 16 8-bit keys from each transaction
+> (the 16 bytes xored with the bait in the transaction).  When the
+> client wants to search for transactions it can give the server a list
+> of keys its interested in? including their real key and number of
+> random number of cover keys.
+> 
+> I didn't give any though into the parameters 8-bits and 16 dimensions.
+> Some reasoning should be done to fix the parameters in order to make
+> them the most useful: e.g.
+> 
+> Systems derived from more complex linear codes might give better
+> performance, e.g. two secret bloom baits, two prefixes in the
+> transaction bait0^random_char[0-8], bait1^random_char[0-8],  server
+> extracts 16 keys.. and returns to the client transactions which have
+> at least two key matches with their list.
+> 
+> Obviously whatever is used needs to be easy to implement, but schemes
+> loosely based on fountain codes should only require picking some
+> things and xoring... so they should be simple enough.
+
+Well, that's the big question: How much extra data do we need and what's
+the chance that this will get turned into miner-committed indexes? Or
+even just provided at all? We keep on saying that miner-commitments may
+next happen at all because of performance issues, and adding n extra
+indexes doesn't exactly help that situation. I really suspect that the
+moment that gets implemented we'll see wallet software use that for
+simple security reasons, so plan ahead for that.
+
+In the short term without miner-commitments it's just a question of how
+much extra load we subject servers to. Again, getting people to even
+implement prefixes isn't a trivial argument to make, yet bloom has some
+serious scalability problems. (though does do roughly what you're
+proposing)
+
+In any case, your "bait" proposal is stealth address specific - how
+would you propose applying the same principle to all addresses? Again,
+it's a tradeoff between brittleness - connecting to a malicious peer
+reveals your wallet - and blockchain stats data.
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000001315c71472fdce344f85f794a7135e25554f2b51dfa6b83c4
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140124/d822bb2a/attachment.sig>
