@@ -1,0 +1,98 @@
+From: andreas@schildbach.de (Andreas Schildbach)
+Date: Mon, 27 Jan 2014 12:59:25 +0100
+Subject: [Bitcoin-development] Payment Protocol for Face-to-face Payments
+Message-ID: <lc5hmg$1jh$1@ger.gmane.org>
+
+As promised I'd like to present my work done on leveraging the payment
+protocol for face-to-face payments. The general assumption is that
+individuals don't own X.509 certificates. Their devices may be only
+badly connected to the internet or in some cases not at all. I've
+implemented a prototype on a branch of Bitcoin Wallet. It is using
+bitcoinj 0.11 (not released).
+
+https://github.com/schildbach/bitcoin-wallet/commits/payment-protocol
+
+
+TAP TO PAY
+
+First I looked at the NFC tap-to-pay usecase. The way it works as
+currently rolled out: A BIP21 URL is published using an NDEF URI
+message. The URL is supplemented by a Bluetooth MAC address that can be
+connected in order to finish the payment. Once connected, a very simple
+custom protocol transmits the signed transaction(s) in
+bitcoin-serialized form to the payee, who replies with an ack or nack.
+
+The way I prototyped it to work in future: Instead of the BIP21 URL a
+BIP70 payment request is published using an NDEF MIME message (mime-type
+as per BIP71). The paymentUrl field can (and in the face-to-face case
+should) contain a Bluetooth URL which contains the MAC address of the
+payee. Because I could not find any standard for Bluetooth URLs, I made
+up my own: "bt:112233445566" means MAC address 11:22:33:44:55:66. Once
+connected, Payment message and PaymentACK reply are used to finish the
+payment. Since Bluetooth sockets are streams, I had to use the delimited
+variant of the protobufs for Payment and PaymentACK messages. This
+prepends them with a VARINT containing the message length.
+
+All of the above should be easy to migrate. NFC implementations are
+rare, and the current Bluetooth protocol is implemented only by Bitcoin
+Wallet afaik. Fallbacks are provided where necessary.
+
+In future, I'd like to add encryption to the Bluetooth connection, maybe
+using SSL and some DH key exchange.
+
+
+SCAN TO PAY
+
+For scan-to-pay, the current landscape looks different. I assume at
+least 50% of Bitcoin transactions are initiated by a BIP21 URL encoded
+into a QR-code. Nevertheless, I tried to encode a payment request into
+the bitcoin URL. I used my existing work on encoding transactions into
+QR-codes. Steps to encode:
+
+1. The payment request is protobuf-serialized. For a simple payment
+request, this results in only ~50 bytes thanks to the efficiency of
+protobuf.
+2. The bytes are encoded using "Base43", which is the same as
+Base64/Base58, but its alphabet consists of the characters allowed in
+so-called "alphanumeric" QR-codes, minus the characters not allowed in URLs.
+3. The resulting string is prefixed by "BITCOIN:"
+4. All of that goes into a QR-code, and because it only contains
+"alphanumeric" characters, it will produce a very efficient code. For
+simple payment requests, I could not notice any difference in scanning
+difficulty.
+
+There are some limitations however:
+
+- Obviously such QR-encoded payment requests cannot grow in size as much
+as using other media. In particular, I expect PKI signed requests are
+out of question. However, in face to face payments the value of a sig
+based on PKI is highly questionable, and the fact the sig cannot be
+verified without TCP connectivity doesn't help. There should be some
+headroom for multiple-output requests and moderately more complex
+scripts though.
+
+- I chose to re-use the "bitcoin:" URL scheme, because it's already
+whitelisted in web browsers, QR-code scanners and so on. In order to
+differentiate "payment requests URLs" from BIP21 URLs, I test for
+uri.startsWith("BITCOIN:") because you'll get letters in all-caps from
+alphanumeric QR-codes. I will investigate into a better solution.
+
+- Due to wide deployment of BIP21 QR-codes, migration needs to happen in
+distinct phases. Ability to parse "payment protocol URLs" comes first,
+default to presenting them to users has to come (much) later.
+
+
+CLICK TO PAY
+
+Finally this is the usecase the payment protocol was invented for and
+it's not face-to-face. I don't have much to add, just one thing. As a
+byproduct of the above, "payment protocol URLs" can be used for links
+published on web pages as well. This might provide a nice replacement
+for the imho rather ugly BIP72 specification once the payment protocol
+is widely deployed.
+
+
+Open for discussion.
+
+
+
