@@ -1,0 +1,57 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Thu, 30 Jan 2014 16:16:54 +0100
+Subject: [Bitcoin-development] BIP70: PaymentACK semantics
+In-Reply-To: <CABsx9T1jAobC_p9oa_PX8M7Bo6Db3=oBhPuhp5CXVHqTRb=Hng@mail.gmail.com>
+References: <lc409d$4mf$1@ger.gmane.org>
+	<CABsx9T1Y3sO6eS54wsj377BL4rGoghx1uDzD+SY3tTgc1PPbHg@mail.gmail.com>
+	<CANEZrP0ENhJJhba8Xwj_cVzNKGDUQriia_Q=JWTXpztb6ic8rg@mail.gmail.com>
+	<CAEY8wq4QEO1rtaNdjHXR6-b3Cgi7pfSWk7M8khVi0MHCiVOBzQ@mail.gmail.com>
+	<CAPg+sBgUNYqYm7d4Rv+f0rBa=nSuqwmZ6_REBS7M-+Wea+za0g@mail.gmail.com>
+	<CAJHLa0MVbDnC0i+uT9Sahxk8ht9R5ztSJ-kOU5ERapeVibH9eg@mail.gmail.com>
+	<CABsx9T1jAobC_p9oa_PX8M7Bo6Db3=oBhPuhp5CXVHqTRb=Hng@mail.gmail.com>
+Message-ID: <CAPg+sBiz1oXqsRTpQpVghTFupj6jsp5M-zDGKe7bjeUBHNMxUA@mail.gmail.com>
+
+On Thu, Jan 30, 2014 at 4:06 PM, Gavin Andresen <gavinandresen at gmail.com> wrote:
+> On Thu, Jan 30, 2014 at 9:51 AM, Jeff Garzik <jgarzik at bitpay.com> wrote:
+>>
+>> Is this truly the intent?  That the merchant/processor takes full
+>> responsibility for getting the TX confirmed?
+>
+>
+> The intent is to give the customer a great experience. We could talk for
+> months about whether having the wallet broadcast the transaction as soon as
+> possible or having it wait for the merchant to respond with a PaymentACK is
+> better. But I think we should let wallets experiment with different ways of
+> doing it, and see what works best in practice.
+
+Currently, with the specification and implementation in Bitcoin Core,
+if a merchant wants to use the refund or memo feature, they need to
+provide an alternative route for delivering that information to them
+*before* the transaction is made, as sending the transaction may
+result in the transfer of funds without knowing what to do with it (if
+their receive server is down at the right time) and potnetially no way
+to contact the sender. This makes these fields utterly useless.
+
+This is not a matter of letting wallets experiment with the best
+behaviour. This is removing the ability to rely on the payment
+protocol being bidirectional.
+
+I don't care whether wallets broadcast the transactions or not (they
+can experiment with that as they like). But we should take measures to
+prevent a transaction for being broadcast without the payment being
+delivered. One way is never broadcasting the transaction yourself.
+Another is retrying to send the payment if delivery fails.
+
+Here is what I would suggest to add to the specification:
+* If a payment_uri is specified, the client must attempt to send the
+payment there.
+* If a transaction is broadcast (which is permitted even if sending
+the payment fails), a client should make a reasonable attempt of
+delivering the payment (remembering, retrying, ...).
+* If a paymentACK has been received, the client is no longer
+responsible for broadcasting the transaction (but still may).
+
+-- 
+Pieter
+
+
