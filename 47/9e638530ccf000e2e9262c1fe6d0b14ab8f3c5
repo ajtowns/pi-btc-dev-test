@@ -1,0 +1,98 @@
+From: christophe.biocca@gmail.com (Christophe Biocca)
+Date: Fri, 31 Jan 2014 11:21:59 -0500
+Subject: [Bitcoin-development] BIP70: PaymentACK semantics
+In-Reply-To: <52EB23A4.9@borboggle.com>
+References: <lc409d$4mf$1@ger.gmane.org>
+	<CABsx9T1Y3sO6eS54wsj377BL4rGoghx1uDzD+SY3tTgc1PPbHg@mail.gmail.com>
+	<CANEZrP0ENhJJhba8Xwj_cVzNKGDUQriia_Q=JWTXpztb6ic8rg@mail.gmail.com>
+	<CAEY8wq4QEO1rtaNdjHXR6-b3Cgi7pfSWk7M8khVi0MHCiVOBzQ@mail.gmail.com>
+	<CAPg+sBgUNYqYm7d4Rv+f0rBa=nSuqwmZ6_REBS7M-+Wea+za0g@mail.gmail.com>
+	<CAJHLa0MVbDnC0i+uT9Sahxk8ht9R5ztSJ-kOU5ERapeVibH9eg@mail.gmail.com>
+	<CABsx9T1jAobC_p9oa_PX8M7Bo6Db3=oBhPuhp5CXVHqTRb=Hng@mail.gmail.com>
+	<CAPg+sBiz1oXqsRTpQpVghTFupj6jsp5M-zDGKe7bjeUBHNMxUA@mail.gmail.com>
+	<op.xainxqs2yldrnw@laptop-air> <52EB23A4.9@borboggle.com>
+Message-ID: <CANOOu=9RcZ5VLGBzONYmY6MtPAegqjiHk5bAWRN8q7T5Gz+Xeg@mail.gmail.com>
+
+The merchant can always act maliciously by simply not delivering the
+goods. The only recourse the payment protocol provides at that point
+is that you have proof the merchant is acting maliciously (or at the
+very least his payment system is broken).
+
+Your scheme just adds an ACK of the specific unsigned transactions
+before the payment is effectively irreversible.
+
+I can't come up with a situation where the combination of signed
+request and blockchain entry aren't enough evidence, yet where adding
+an ACK by the merchant of the unsigned transaction tips the balance
+the other way. If you know of such a possibility, I'd love to hear it,
+because we'd know what we're trying to fix.
+
+The only way I can see a malicious merchant exploiting wallet
+behaviour around PaymentACK is by accepting the Payment message, not
+broadcasting it, not returning an ACK, and hoping the wallet/user
+retries paying with a new, non-conflicting transaction. Then he can
+try milking multiple small payments out of the user before they
+realize what happened, and broadcast them all at once, stealing more
+funds than the user ever was willing to risk in the transaction. But
+this is trivial to guard against at the wallet level (by making every
+new payment conflict with all previous non-acked payments).
+
+The non-reliability of getting memo/refund fields is a separate
+problem, but it seems BitcoinJ's approach addresses that nicely.
+
+On Thu, Jan 30, 2014 at 11:16 PM, Chuck <chuck+bitcoindev at borboggle.com> wrote:
+> On 1/31/2014 3:16 AM, Jeremy Spilman wrote:
+>> I think we want to separate the two issues;
+>>
+>>     1) Reliably getting refund/memo fields to the merchant/payee
+>>     2) Who broadcasts a TX, how it's retried, how outputs are 'locked' and
+>> if/when they should be [double]-spent to clear them
+>>
+>> We should be able to solve '1' without having to fully spec out behavior
+>> for 2.
+> My original message was focused on #1.  Not only #1, but ensuring the
+> merchant can't act maliciously too.
+>
+> As far as #2 is concerned, I don't think it makes any difference - it's
+> in both the customer and the merchant's best interest to have the
+> transactions confirmed.
+>
+>>     c) Send them as a response to the PaymentRequest/PaymentDetails with the
+>> UNsigned transaction, and then follow up with the signed transaction in a
+>> separate message.
+> ...
+>> On Wed, 29 Jan 2014 21:47:51 -0800, Chuck <chuck+bitcoindev at borboggle.com>
+>> wrote:
+>>> 3. Customer builds a set of transactions and sends a new
+>>> PaymentApprovalRequest message which includes a refund address and the
+>>> unsigned transactions and their associated fully-signed transactionhash,
+>>> the whole message signed with the private key of the refund address.
+>> "Unsigned transactions and their associated fully-signed transaction hash"
+>> -- isn't that a fully signed transaction? In this case, it doesn't solve
+>> the core problem of the server being able to broadcast that transaction
+>> without ACKing.
+> What I meant was (and maybe this was roundabout?): the customer includes
+> the UNsigned transactions as well as the hashes (and only the hashes) of
+> the fully signed transactions.  The customer keeps the fully signed
+> transactions private until the merchant ACKs the unsigned versions.  If
+> the merchant has the hash of the fully signed transaction, he can
+> monitor the network for delivery of the signed transaction.
+>
+> It definitely complicates things, but it's nothing that can't be done.
+>
+> Cheers,
+>
+> Chuck
+>
+> ------------------------------------------------------------------------------
+> WatchGuard Dimension instantly turns raw network data into actionable
+> security intelligence. It gives you real-time visual feedback on key
+> security issues and trends.  Skip the complicated setup - simply import
+> a virtual appliance and go from zero to informed in seconds.
+> http://pubads.g.doubleclick.net/gampad/clk?id=123612991&iu=/4140/ostg.clktrk
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
