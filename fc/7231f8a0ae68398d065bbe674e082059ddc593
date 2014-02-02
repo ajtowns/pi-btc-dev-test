@@ -1,0 +1,101 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sun, 2 Feb 2014 06:55:31 -0500
+Subject: [Bitcoin-development] (space) efficient reusable addr via weil
+ pairing IBE (Re: Bait for reusable addresses)
+In-Reply-To: <20140202023651.GA18666@savin>
+References: <CAAS2fgQmsxjkQFSiCdeMoVMaqq5720KpUpdkKZOE+XytHsWw0w@mail.gmail.com>
+	<20140124090218.GA15398@savin>
+	<CANEZrP0MnXr4xjaMPg7v7vTiDQr-y7esvEBE=xk=Y0BUGXak9A@mail.gmail.com>
+	<20140124154235.GA3741@netbook.cypherspace.org>
+	<20140124161330.GA31233@petertodd.org>
+	<20140125161901.GA17457@netbook.cypherspace.org>
+	<20140202023651.GA18666@savin>
+Message-ID: <20140202115531.GA22375@savin>
+
+> On Sat, Jan 25, 2014 at 05:19:01PM +0100, Adam Back wrote:
+> [quote author=adam3us link=topic=431756.msg4729682#msg4729682
+> date=1390660452]
+> So have been talking with Greg Maxwell, Peter Todd, Jeremy Spillman,
+> Mike Hearn, Bytecoin and others about reusable addresses.
+> 
+> There is a summary of the situation here
+> http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg03792.html
+> and I had posed th question of whether it was possible to do better at
+> all with Peter Todd:
+
+You're explanation is a bit long-winded, so I'll start with a simplified
+ECC-based version first and later explain how identity-based encryption
+applies to the problem; I have a feeling not many non-crypt-experts
+spent the time to figure out what you're talking about; do check if what
+I've written below is correct:
+
+So Alice wants to pay Bob, who is bandwidth constrained and frequently
+offline. Meanwhile Ivan has a full node, but can't really be trusted.
+Meanwhile Eve is busy trying to piece together everyones' financial
+details.
+
+Bob publicly publishes three pubkeys, Filter, Recover, and Spend, along
+with a short n-bit prefix p. When Alice needs to pay Bob she creates a
+ephemeral keypair and uses ECDH *two* shared secrets, n_f and n_r, from
+Bob's Filter and Recover pubkeys respectively. She makes a transaction
+that pays Bob by deriving pubkey Spend_{n_f} from the Spend and n_r
+nonce.  She also uses the Filter nonce and the prefix to derive a
+encrypted prefix p'=n_f^p and puts that prefix and the cleartext
+ephemeral pubkey in the transaction as data.
+
+When Bob wants to find that transaction he gives the prefix and Filter
+secret key to Ivan, who then scans the blockchain. For every transaction
+he computes n_f=ECDH(Filter_sec, Ephm_pub), extracts the encrypted
+prefix p' from the transaction, and checks if p'=n_f^p If so he gives
+that transaction to Bob who can then use his Recover secret key to check
+if the transaction was in fact for him. (note how the prefix can
+actually always be simply a given length of zeros)
+
+Because Bob's prefix is short Ivan only learns probabalistic information
+about what transactions might be Bob's. Eve doesn't know the Filter
+secret key, and thus learns nothing at all from the blockchain data. On
+the other hand after getting the key once Ivan can forever after get
+that probability information about what transactions might be Bob's.
+
+What we'd really like is for there to be some way for Alice to derive a
+time-limited Filter pubkey from some public random beacon with value
+R_i, such as the Bitcoin blockchain, such that each defined time
+interval uses a different key. Bob would then only give Ivan the secret
+key(s) for the time interval(s) in question.
+
+Unfortunately ECDSA doesn't have a way to do this. The closest thing
+available is BIP32-style key derivation, however it has the property
+that given a derived secret key and known master pubkey the master
+secret key can be derived. Thus Ivan can simply try every public Filter
+key/epoch tweak he knows about until he finds Q,d' st. (d+d')G=Q+d'G
+>From that he can recover d, reducing the security to where we started.
+(or put another way, Ivan can store every (d+d') secret key he is asked
+to search with, and test it against every public key he learns about
+later)
+
+Identity-based cryptograhy however can do that. Bob publishes a (single)
+master public key, and anyone can derive public keys based on that
+master key and the random beacon value R_i. Bob can then derive the
+corresponding secret key, but unlike with ECDSA, that secret key *can't*
+be used to derive the master private key. Having said that, it can of
+course be linked to that key, so every query that Bob makes gives Ivan
+some knowledge about what transactions might be in Bob's wallet.
+
+Problem is, who the hell has a production-ready Weil pairing library
+kicking around? (is this read? http://crypto.stanford.edu/pbc/) Also,
+Weil pairing is not yet trustworthy:
+
+    < gmaxwell> (IMO thats how we should be using pairing in
+    cryptosystems: for lower value applications, and solving things that
+    can't be solved any other way)
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000075829f6169c79d7d5aaa20bfa8da6e9edb2393c4f8662ba0
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140202/ce7414ce/attachment.sig>
