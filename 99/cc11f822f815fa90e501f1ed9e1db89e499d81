@@ -1,0 +1,141 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Sun, 02 Feb 2014 01:16:20 -0800
+Subject: [Bitcoin-development] (space) efficient reusable addr via weil
+ pairing IBE (Re: Bait for reusable addresses)
+In-Reply-To: <20140202023651.GA18666@savin>
+References: <CAAS2fgQmsxjkQFSiCdeMoVMaqq5720KpUpdkKZOE+XytHsWw0w@mail.gmail.com>
+	<20140124090218.GA15398@savin>
+	<CANEZrP0MnXr4xjaMPg7v7vTiDQr-y7esvEBE=xk=Y0BUGXak9A@mail.gmail.com>
+	<20140124154235.GA3741@netbook.cypherspace.org>
+	<20140124161330.GA31233@petertodd.org>
+	<20140125161901.GA17457@netbook.cypherspace.org>
+	<20140202023651.GA18666@savin>
+Message-ID: <op.xanddiq6yldrnw@laptop-air>
+
+>
+> Consequently you can now securely and very network/space efficiently
+> securely delegate searching a block by computing the private key for the
+> IBE pub key that any sender would use for that block, and sending it as
+> a query to a random (or node-capture defended random selected node).
+> The node can decrypt the encrypted bloom baits with it, but remains
+> powerless to correlate with bloom baits to other payments received by
+> the same user in bother blocks.
+>
+
+I'm not sure I've fully wrapped my head around it.
+
+   d/Q        - Identity key
+   E          - Generate an epoch-pubkey: E = Q * H1(epoch)
+   r/P        - Ephemeral privkey/pubkey, or discoverable from inputs
+   S = r * K  - Shared secret (ECDE)
+
+Payer derives an encryption key H(S), and encrypts M, which is a 1 byte  
+bloom bait.
+
+For each epoch, payee generates e = d * H1(epoch) and provides the key to  
+a full node for monitoring. So you are providing a per-block or per-epoch  
+private key, along with the block ID or epoch ID that the key corresponds  
+to.
+
+The full node then uses this privkey to decrypt the same byte in all the  
+transactions in that epoch/block which match the expected layout/template,  
+e.g. given a certain length OP_RETURN, pull the specific byte and decrypt.
+
+This decrypted byte is then in turn used as bloom bait which may or may  
+not cause the transaction to be sent back to the SPV client.
+
+Am I right in saying the full node has no idea if decryption is  
+'succeeding' it just feeds the resultant bait into the bloom filter and  
+the transaction may match or not? So we do get some level of repudiation  
+by the SPV client -- the server doesn't know exactly which transactions  
+belong to the SPV client.
+
+The bloom bait specified in the reusable address is still making the  
+bandwidth/privacy trade-off, it just doesn't become public information,  
+because it's protected by another factor?
+
+What encryption scheme is being used here?
+
+-=-=-=-==
+
+Another approach (inspired by IBE) which narrows the discoverability of  
+transactions to the nodes that your SPV client is actually communicating  
+with, for the specific blocks/epochs that you specify, would be to use  
+PEKS.
+
+PEKS(Q, W) for a public key Q and a keyword W produces a searchable  
+encryption of the word W.
+
+The payee holding 'd' (privkey for Q) can create a trapdoor which allows a  
+server to search for transactions with W, where the searching party only  
+knows if a match is found or not.
+
+Payer:
+
+   d/Q   - Longstanding / identity privkey/pubkey
+   r/P   - Ephemeral privkey/pubkey, or discoverable from inputs
+   W     - Searchable Keyword
+   H1    - Hash function, {0, 1} ? ? G1
+   H2    - Hash function, G2 ? {0, 1}p
+
+Secret, as usual per ECDH:
+
+   S = r * Q
+
+For payer to create the searchable encryption of W for Q, called 'Sw':
+
+   Sw = H2(e(H1(W), S))
+   OP_RETURN P, Sw
+
+For payee to search for a given 'W', payee calculates a trapdoor 'Tw':
+
+   Tw = d * H1(W)
+
+For a searcher, given a Trapdoor (Tw), check each Transaction (P, Sw):
+
+   H2(e(Tw, P)) ==? Sw
+   If the values match, the keyword matches
+
+Without getting into the concepts of e(g,g) and binomial pairing, I think  
+of it this way:
+
+   Sw = H2(r * Q * H1(W)), but recall: rQ == dP, so...
+      = H2(d * P * H1(W)), which can be written
+      = H2(d * H1(W) * P)
+
+Severs finds all transactions with 'P' on relevant parts of the  
+blockchain, multiplies by the provided trapdoor 'Tw', applies 'H2', and  
+checks for a matching 'Sw' in the transaction;
+
+   Tw = d * H1(W)
+   Sw = H2(Tw * P)
+        H2(d * H1(W) * P)
+
+PEKS is vulnerable to an offline keyword guessing attack, where you can  
+discover the value of the keyword being searched, if the keyword is low  
+entropy. The server/attacker can figure out the value of W, but they can't  
+generate their own trapdoors to search for other keywords.
+
+But in this case, the 'keyword' can simply be the block ID / epoch ID  
+itself, not a secret value at all. In other words, the server can only  
+search for your transactions within the blocks/epochs that you specify.
+
+Using blockID/epochID as W, this would allow a server to find all  
+transactions belonging to the payer for that blockID / epochID. The SPV  
+client would simply provide the trapdoor for each block/epoch to be  
+searched.
+
+There are extensions to PEKS which provide for 'fuzzy' matching but they  
+are 'fuzzy' within the scope of Q, not across different Q, so that doesn't  
+help provide any repudiation. So I see this as only slightly improving  
+Peter's original proposal of providing 'Q' to the searcher, but if you  
+want repudiation, not as good as Adam's solution.
+
+Perfunctory disclaimer... Hopefully this is close to correct, but please  
+don't anyone actually try to implement this!
+
+Thanks,
+Jeremy
+
+
+
