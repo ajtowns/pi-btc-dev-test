@@ -1,0 +1,88 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sun, 2 Feb 2014 07:26:10 -0500
+Subject: [Bitcoin-development] (space) efficient reusable addr via weil
+ pairing IBE (Re: Bait for reusable addresses)
+In-Reply-To: <op.xanddiq6yldrnw@laptop-air>
+References: <CAAS2fgQmsxjkQFSiCdeMoVMaqq5720KpUpdkKZOE+XytHsWw0w@mail.gmail.com>
+	<20140124090218.GA15398@savin>
+	<CANEZrP0MnXr4xjaMPg7v7vTiDQr-y7esvEBE=xk=Y0BUGXak9A@mail.gmail.com>
+	<20140124154235.GA3741@netbook.cypherspace.org>
+	<20140124161330.GA31233@petertodd.org>
+	<20140125161901.GA17457@netbook.cypherspace.org>
+	<20140202023651.GA18666@savin> <op.xanddiq6yldrnw@laptop-air>
+Message-ID: <20140202122610.GA22329@savin>
+
+On Sun, Feb 02, 2014 at 01:16:20AM -0800, Jeremy Spilman wrote:
+> >
+> >Consequently you can now securely and very network/space efficiently
+> >securely delegate searching a block by computing the private key for the
+> >IBE pub key that any sender would use for that block, and sending it as
+> >a query to a random (or node-capture defended random selected node).
+> >The node can decrypt the encrypted bloom baits with it, but remains
+> >powerless to correlate with bloom baits to other payments received by
+> >the same user in bother blocks.
+> >
+> 
+> I'm not sure I've fully wrapped my head around it.
+> 
+>   d/Q        - Identity key
+>   E          - Generate an epoch-pubkey: E = Q * H1(epoch)
+>   r/P        - Ephemeral privkey/pubkey, or discoverable from inputs
+>   S = r * K  - Shared secret (ECDE)
+
+There needs to be two separate payor pubkeys, which I called elsewhere
+the "Filter" and "Recover" pubkeys - the latter I think corresponds to
+what you meant by identity key. From those two pubkeys two separate
+shared secrets are derived.
+
+The key idea is that you can encrypt a short string of zeros with the
+"Filter" pubkey using ECDH and place the resulting "filter bait" in the
+transaction. This lets the payor give the secret key corresponding to
+that pubkey to a semi-trusted third party. That third party can then
+trial decrypt all filter bait seen in transactions in the blockchain,
+and every time the decrypted string has a sufficient number of zeros
+it's considered a filter pass and the transaction is given to the payor.
+For n zero bits one in 2^n transactions will match at random, which sets
+your false positive rate.
+
+Basically think of it as a way to outsource the work required for
+zero-prefix stealth addresses, but with (less) of a sacrifice of
+anonymity compared to just giving the third-party your recovery pubkey.
+Identity-based encryption only comes into it because it's nice to be
+able to further limit what transactions the server knows about to
+specific time intervals rather than forver into the future.
+
+Interestingly both schemes can be used at once - a short public prefix
+combined with a second private filter. What's interesting there is that
+the public prefix can do a first-pass filtering, with the second private
+filter relatively long but still providing plausible deniability - you
+can always claim 100% of the matching transactions were false positives
+because you didn't receive any funds!
+
+> The full node then uses this privkey to decrypt the same byte in all
+> the transactions in that epoch/block which match the expected
+> layout/template, e.g. given a certain length OP_RETURN, pull the
+> specific byte and decrypt.
+> 
+> This decrypted byte is then in turn used as bloom bait which may or
+> may not cause the transaction to be sent back to the SPV client.
+
+There's no bloom filters involved; as I said before "bloom bait" is a
+misleading name. "Filter bait" is a better term given it's a generic
+concept.
+
+> What encryption scheme is being used here?
+
+XOR with the ECDH-calculated nonce is fine. (run the nonce though a hash
+function first)
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000075829f6169c79d7d5aaa20bfa8da6e9edb2393c4f8662ba0
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140202/873aaab8/attachment.sig>
