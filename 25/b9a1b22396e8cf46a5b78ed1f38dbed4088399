@@ -1,0 +1,226 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 1 Feb 2014 21:36:51 -0500
+Subject: [Bitcoin-development] (space) efficient reusable addr via weil
+ pairing IBE (Re: Bait for reusable addresses)
+In-Reply-To: <20140125161901.GA17457@netbook.cypherspace.org>
+References: <CAAS2fgQmsxjkQFSiCdeMoVMaqq5720KpUpdkKZOE+XytHsWw0w@mail.gmail.com>
+	<20140124090218.GA15398@savin>
+	<CANEZrP0MnXr4xjaMPg7v7vTiDQr-y7esvEBE=xk=Y0BUGXak9A@mail.gmail.com>
+	<20140124154235.GA3741@netbook.cypherspace.org>
+	<20140124161330.GA31233@petertodd.org>
+	<20140125161901.GA17457@netbook.cypherspace.org>
+Message-ID: <20140202023651.GA18666@savin>
+
+On Sat, Jan 25, 2014 at 05:19:01PM +0100, Adam Back wrote:
+> I think I figured out a proof of existance for a space efficient way to do
+> better than bloom filters/prefix/bloom-bait.  (Must have been dreaming on it
+> as I woke up with the idea following Peter's suggestion to try prove instead
+> if its possible or not:).
+> 
+> I wrote up the details here:
+> 
+> https://bitcointalk.org/index.php?topic=431756.new
+
+One of the main reasons I post to the bitcoin-development mailing list
+rather than the forum is because the mailing list is archived by many
+different, independent, parties. The forum is not - as an example
+archive.org didn't have that URL until I manually told it to archive it.
+
+So I'm taking the liberty of reposting your two posts there below:
+
+[quote author=adam3us link=topic=431756.msg4729682#msg4729682
+date=1390660452]
+So have been talking with Greg Maxwell, Peter Todd, Jeremy Spillman,
+Mike Hearn, Bytecoin and others about reusable addresses.
+
+There is a summary of the situation here
+http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg03792.html
+and I had posed th question of whether it was possible to do better at
+all with Peter Todd:
+
+[quote author=adam3us on bitcoin-dev]
+Now while it would be clearly a very nice win if reusable addresses
+could be  made SPV-like in network characteristics and privacy, but we
+dont have a plausible mechanism yet IMO.  Close as we got was Greg's
+enhancement of my/your "bloom bait"/"prefix" concept to make multiple
+candidate baits to provide some ambiguity (still allows elimination,
+just slightly less of it).
+
+If we can find some efficient crypto to solve that last one, we could
+even adopt them generally if it was efficient enough without needing
+interactive one-use address release
+[/quote]
+
+and Peter proposed also the related problem of proving something about
+that existence or not of a solution to that problem.
+
+I think I have a proof-of-concept solution that proves by example we can
+do better in space efficiency, linkability defense and non-interactivity
+than my bloom bait, Peter Todds related prefix; and Greg Maxwell's
+extended bloom bait described
+http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg03705.html.
+
+So the idea is to use an IBE scheme as a building block in analogous way
+to my 1996 problem statement for NIFS and 1998 observation that a novel
+use for an IBE scheme can provide a generic solution to NIFS, and the
+arrival in 2001 of the first efficient / sensible trapdoor steepness (*)
+IBE with the introduction of the Weil Pairing problem by Dan Boneh and
+Matt Franklin described here
+http://en.wikipedia.org/wiki/Boneh%E2%80%93Franklin_scheme.
+
+Greg summarized IBE as follows on IRC:
+
+[quote]
+(for those who may) not be familar with IBE stuff: The idea is that the
+user has a master private key, which results in a master public key.
+Anyone can take a prior block hash and combine it with the master public
+key to get a session pubkey which could be used to encrypt a chaincode
+included in an OP_RETURN.   Using the master private key the user can
+derrive the session private key, which can then be used to recognize
+transactions using the same session key.
+
+In IBE (identity based encryption) this is all used a bit differently:
+the master keys are held by a CA, and the session ID is your email
+address, and now anyone can make a public key for you? but you need the
+CA's help to get your private key)
+[/quote]
+
+Basically as Greg said your public key is your address (an email
+address, a block hash, whatever is convenient and unique) and from that
+and the master public key of the IBE server, the server can compute a
+private key corresponding to that.  The master public is usually
+considered to be a system-wide domain parameter.   Naturally enough
+because a side effect of this is that the IBE server can decrypt
+everyones email people were never too excited about the prospect.
+
+However my 1998 NIFS observation is by acting as your own IBE server
+(each user creates their own master public server key) they can create a
+sequence (NIFS) or set (bitcoin reusable address) of public keys with
+interesting and publicly derivable properties!
+
+It is my conclusion from 1996 that to solve this with DL directly at
+least in the NIFS case appears to be not possible.
+
+
+So basically the reusable address becomes an IBE public key, the
+existing public derivation via DH or EC Elgamal/ECIES or whatever
+variant (bytecoins, mine, Peter Todd/Amir Taaki's) arrives at a factor
+that can be recovered.  So with my variant (random sender generated
+multiplication factor encrypted with ECIES) you could encrypt the factor
+with a pub=IBE-extract(master pub, id=previous block hash) using the
+previous block hash as the "identity" and the users own self-owned IBE
+"server".
+
+For Bytecoin & Peter Todd/Amir Taaki EC DH version using input or
+auxilliary addresses to save space its not even necessary to send the
+factor, its already sent.  So then you send a separate message to do
+with secure delegatable filtering, a more secure/more space efficient
+bloom filter/prefix replacement, and this is a more flexible structure.
+
+So the secure delegatable filter is you separately add an encrypted
+bloom bait Greg suggested (eg 1byte prefix communicated with public
+address.)  And you can even combine that with Greg's extended bloom bait
+above to add anonymity set within the block.
+
+Consequently you can now securely and very network/space efficiently
+securely delegate searching a block by computing the private key for the
+IBE pub key that any sender would use for that block, and sending it as
+a query to a random (or node-capture defended random selected node).
+The node can decrypt the encrypted bloom baits with it, but remains
+powerless to correlate with bloom baits to other payments received by
+the same user in bother blocks.
+
+(In practice you might need an epoch not block or overlapping test
+because the user does not have full assurance of their tx ending up in
+the pending block).
+
+About weil pairing, and new hardness crypto risk, this is also the
+hardness assumption under some ZK-SNARKs as I think used in zerocash,
+and while ZK-SNARK introduces its own complexity/crypto system risk on
+top; in my view weil pairing is slightly lower assurance/review not so
+widely used relative to EC DL problem.  Anyway the interesting thing to
+say about that is in the event this scheme got broken in the future it
+falls back to the scheme that is being proposed using prefix.  Ie its no
+worse than that from linkability and likely would retain some cost even
+if broken-- asymmetric crypto breaks are usually somewhat gradual.
+
+This looks more expensive and non-indexable though I didnt look to see
+if there is any ciphertext only or batch precomputation that could be
+squeezed out of it.
+
+Obviously its more CPU intensive and some eg fee mechanism to prevent
+node DoS could be nice, but it seems to demonstrate a proof by existence
+that it is possible to do better.
+
+
+Finally I think it maybe within possibility to do further than this
+because it is not technically necessary to delegate decryption, only to
+delegate filtering, which can be a simpler requirement.
+
+Adam
+
+(*) There was an earlier scheme by Maurer et al if I recall, but to get
+a 1024-bit security margin you had to perform a discrete log attack on a
+512-bit prime, so the key generation cost was immense, hence "sensible
+trapdoor steepness" thats very shallow in tems of work difference
+between setup cost and crypto system strength.
+[/quote]
+
+------
+
+[quote author=adam3us link=topic=431756.msg4732503#msg4732503
+date=1390669542]
+[quote author=Mike Hearn link=topic=431756.msg4730986#msg4730986
+date=1390664867]
+You would need epochs for another reason. Recall that with Bloom
+filtering the remote node is asked for blocks in batches of 500 at a
+time and the remote end handles updating the filter as transactions are
+matched. This is to avoid the performance hit of a network round-trip
+for every block.
+[/quote]
+
+I see I dont think I realized that aspect of how bloom query works.  So
+you then with IBE-based filtering could send multiple keys, one for each
+block; but you are implicitly linked by being in one query, so you'd
+just as well mark your key with your preferred epoch size and sender
+uses epoch number in the query.
+
+I think Greg is pointing out on IRC that by having a fairly small epoch
+you can choose later to go down to that epoch size or scale up by
+sending multiple epoch keys in a batch, a privacy/network round-trip
+trade off.
+
+Re my other problem with epochs ("In practice you might need an epoch
+not block or overlapping test because the user does not have full
+assurance of their tx ending up in the pending block") I think that
+maybe fixable, if the blocknumber is chosen by the sender, and
+communicated in enough bits to be mostly unambiguous in the message.
+Then the node can index them by sen block num and no ambiguity.
+
+It could be that another way to partly obscure ownership of queries
+would be to relay queries and responses and mix other peoples queries
+with your own in a batch, however as we are considering the SPV client
+case relaying other peoples queries seems hard to gather query traffic
+on demand and to use more bandwidth than it saves relative just issuing
+smaller batches.
+
+You could have relaying in the network eg using the embedded Tor but
+waiting for queries to mix with adds latency, and suffers flood attacks
+on mix-nets (send fake encrypted query traffic to flush out a tx, that
+has no-anon set vs the person doing the flooding who can distinguish
+their own queries).
+
+Adam
+
+[/quote]
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000075829f6169c79d7d5aaa20bfa8da6e9edb2393c4f8662ba0
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140201/b8c8c0cb/attachment.sig>
