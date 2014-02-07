@@ -1,0 +1,219 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 7 Feb 2014 04:21:41 -0500
+Subject: [Bitcoin-development] bitcoinj 0.11 released, with p2sh,
+ bip39 and payment protocol support
+In-Reply-To: <20140204130312.GA23538@savin>
+References: <1D8E0828-D07F-46EF-9F9F-5CA83AA9DB59@plan99.net>
+	<20140204130312.GA23538@savin>
+Message-ID: <20140207092141.GA3532@savin>
+
+Thanks for the great response! I had about a dozen or so people contact
+me with solutions for one or more questions, and even a anonymous
+donation of 75mBTC to cover the rewards.
+
+I'll start with my summaries of those solutions:
+
+On Tue, Feb 04, 2014 at 08:03:13AM -0500, Peter Todd wrote:
+> On Tue, Feb 04, 2014 at 01:01:12PM +0100, Mike Hearn wrote:
+> > Hello,
+> > 
+> > I'm pleased to announce the release of bitcoinj 0.11, a library for writing Bitcoin applications that run on the JVM. BitcoinJ is widely used across the Bitcoin community; some users include Bitcoin Wallet for Android, MultiBit, Hive, blockchain.info, the biteasy.com block explorer (written in Lisp!), Circle, Neo/Bee (Cypriot payment network), bitpos.me, Bitcoin Touch, BlueMatt's relay network and DNS crawler, academic advanced contracts research and more.
+> > 
+> > The release-0.11 git tag is signed by Andreas Schildbach's GPG key. The commit hash is 410d4547a7dd. This paragraph is signed by the same Bitcoin key as with previous releases (check their release announcements to establish continuity). Additionally, this email is signed using DKIM and for the first time, a key that was ID verified by the Swiss government.
+> > 
+> > Key: 16vSNFP5Acsa6RBbjEA7QYCCRDRGXRFH4m
+> > Signature for last paragraph: H3DvWBqFHPxKW/cdYUdZ6OHjbq6ZtC5PHK4ebpeiE+FqTHyRLJ58BItbC0R2vo77h+DthpQigdEZ0V8ivSM7VIg=
+> 
+> The above makes for a great homework problem for budding cryptographers:
+> Why did the three forms of signature, DKIM, long-lived bitcoin address,
+> and Official Swiss Government Identity fail to let you actually verify
+> you have the right code? (but make for great security theater)
+
+So as most people correctly guessed, the problem here is that Mike
+truncated the git commit hash; normally it's 160 bits long, but he only
+gave 48 of those bits. To understand why this is a problem, recall that
+what a cryptographic hash does is it takes a arbitrary block of data,
+the message, and returns a fixed length bit string, the message digest
+or simply digest. With git the message essentially your source code and
+commit history, and the digest is the git commit hash. Critically for a
+cryptographic hash to be secure the mapping between messages and digests
+must be random - it must not be infeasible to find two messages with the
+same digest. (this is called a preimage attack)
+
+The problem is that 48 bits just isn't that many bits. An attacker can
+take the bitcoinj sourcecode and modify it to do something malicious
+like generate private keys insecurely. Then they can keep modifying it
+until the last 48-bits of the commit hash match Mike's message. (this
+called a partial preimage attack) Each modification has a 1 in 2^48
+chance of succeeding. You can calculate the attackers chances exactly
+with the Binominal distribution, but a good enough approximation is
+they'd have to make about 2^48 attempts.
+
+That's not a very big number! Here's a nice visual comparison of how
+long 48 bits is, compared to the partial preimage the Bitcoin network
+cracks every 10 minutes:
+
+0000000000000001512b077de3cc7ec88d1d65dc474a52a9ac9ac14ac34d7ac8
+410d4547a7dd
+
+Literally tens of thousands of times harder. This problem is similar to
+password cracking, and they're getting speeds like ten million attempts
+per second per CPU core. Just do the math: 2^48/10million/second/core =
+46 Core Weeks. Now I can rent 32-core servers at Amazon EC2 for as
+little as $0.27 per hour (spot requests) which gives me a cost for the
+attack of about $100; my time to actually do it will cost more than
+that.
+
+
+But that calculation is missing the point; the extra bytes are really
+cheap, so you can just use a simple rule of thumb: If a partial-preimage
+attack is what you are trying to prevent, then in cryptography an
+accepted number of bits to use is 128. Maybe just 80 bits would be
+enough, or even just 64 bits, but pretty much everyone agrees 128 is
+safe and conservative. But read on, because even 128 bits isn't safe
+enough against another type of attack...
+
+
+A second issue that a few people noticed was that Mike just said
+"Andreas Schildbach's GPG key", rather than specifying the fingerprint
+of the key. By now I'd expect Mike to be confident as to what PGP key
+is actually the correct one for the human Andreas Schildbach, so there's
+absolutely no reason not state what that key is, either in the release
+notes, or by signing the key with Mike's (non-existant?) PGP key.
+Preferably both.
+
+> Bonus question: Who has the smallest work-factor for such an attack?
+
+No-one got this one correct or even tried!
+
+What if Mike Hearn himself were the attacker? For instance, US officials
+wanted to shutdown the gambling site SatoshiDice, which reportedly uses
+the bitcoinj library. One way to do this would be to seize the funds
+held by SatoshiDice, putting them out of business. If they could trick
+SatoshiDice into using a version of bitcoinj with a broken PRNG, they
+could simply wait until funds had moved into addresses generated by that
+PRNG, and/or ECC signatures were created with a known k value. (leaking
+the private key)
+
+But how to pull that off? The bitcoinj sourcecode is public, so they
+can't just backdoor bitcoinj directly - everyone would find out. What
+they need is a way to trick SatoshiDice into installing a bugged
+version, without leaving any evidence.
+
+With Mike Hearn's help they can calculate a pair of hashes, each with a
+n-bit prefix, but with only sqrt(2^n) work. This is called a
+second-preimage attack, and takes advantage of the birthday paradox,
+which as you may recall, is that in a room of just 23 people, there is a
+50% chance that two them share the same birthday.
+
+Now the US government continually generates pairs of slightly different
+git commits, one being the honest code, the other with the backdoor.
+Generating these pairs is simple enough, just change something
+insignificant like the exact timestamp of last few commits. Every hash
+generated is saved in a big hashtable, as well as compared with all
+pre-existing hashes. In this case they'll just need to do about 2^24
+tries to succeed, only 24 million attempts, which is frankly pretty
+trivial.
+
+Now that they have two collissions they have Mike release bitcoinj as
+before to the public, and at the same time they intercept the internet
+connections of the people suspected to be the SatoshiDice developers.
+For the latter a MITM attack is performed, secretly replacing the good
+copy of bitcoinj they download with the backdoored copy. The developers
+don't notice anything unusual, because both copies appear to have the
+same commit hash!
+
+The beauty of this technique is provided the disclosed hash isn't too
+long, it's still plausible that a powerful government agency brute
+forced the thing even if the backdoored code is leaked. With 48 bits
+that's obviously trivial, but even a 64-bit collision could be made at
+the cost of only a few million dollars. Thus, Mike Hearn has plausible
+deniability and can claim innocence.
+
+Moral of the story is if a second-pre-image attack is a threat, you need
+to use a lot of bits. Even a full SHA-1 commit hash is only 160 bits,
+which gives sqrt(2^160) or 2^80 security, so anything less than the full
+git commit hash is risky. Industry standard is to use at least 160 bits,
+and preferably you should always just use the full 256 bits that SHA-256
+or similar provides unless you have a really good reason not too.
+
+
+On Tue, Feb 04, 2014 at 08:17:23AM -0500, Peter Todd wrote:
+> On Tue, Feb 04, 2014 at 02:13:12PM +0100, Mike Hearn wrote:
+> > Hah, good point. If nobody completes the homework, I'll post a fixed
+> > version tomorrow :)
+> 
+> Heh, here's another 25mBTC while we're at it:
+> 
+> https://github.com/opentimestamps/opentimestamps-client/commit/288f3c17626974de7eaef4f1c9b5cd93eecf40f6
+> 
+> Why is that a bad idea?
+
+Brooks Boyd already posted a great writeup, so I'm going to reference
+his instead:
+http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg03882.html
+
+
+In closing I think it's important that we all remember we're writing
+software that handles money and the incentives to sneak backdoors into
+said software are enormous, and every worse, universal. Everyone can
+profit pretty directly from stealing cash, so the "Bad guys" we're up
+against range from your "Russian hackers" to the US government and
+everyone in between.
+
+Fortunately the nature of attacks is that for an attack to succeed,
+everything has to go right, but for it to fail, you only need a single
+person to notice something is wrong. This is why the Bitcoin Core
+development effort consists of multiple people, mutually verifying each
+other's work, and signing code with OpenPGP keys that in turn are
+verifiable via numerous different paths. Of course, many users will
+naturally not bother with that effort and outsoruce their trust to a
+single person or certificate authority, but the more advanced users with
+more stringent security needs, such as developers at exchanges and big
+merchants, can validate the code through the indepdent multiple
+independent paths OpenPGP signatures provide. Bitcoinj would do well to
+give their users that kind of security.
+
+So in the spirit of community auditing, I'll give one last 25mBTC reward
+out; I'll sneak in another obvious security flaw into something I write
+in the future, and I want to see if you guys catch it.
+
+
+As for the winners, I went by timestamp on the first email or other
+contact I got, and rewarded better descriptions where it wasn't clear.
+First of all I'm awarding the first bonus question to Vitalik, who in
+person at the Toronto Bitcoin Meetup noticed the issue immediately. He's
+no crypto-newbie, but at that point I had to give it to someone! Jeff
+Garzik will receive nothing for his answer, as it would be morally wrong
+to encourage further dad jokes.
+
+Brooks Boyd wins for #3, and thanks for the solid write up! Finally, #1
+had a lot of submissions, but the earliest really clear answere was
+privately emailed to me. Dunno if they want to be named publicly, but
+here's the SHA256 hash of their email address for bragging rights:
+
+49bf07a9ce1421effe887509a361b62283ed269d328bd3be12334f8cce7a0acd
+
+
+Finally, it'd be really awesome to have some concrete examples of git
+commits with these preimage and second-preimage attacks applied. So, I'm
+pledging 250mBTC to anyone who creates a tool that can run on Ubuntu
+Linux that takes two git commits, and brute-forces some not trivially
+noticed nonce within those commits - I suggest the timestamp - to make
+some subset of their hash collide.
+
+A fast C or C++ inner loop would be ideal - being able to create
+reasonably long collisions, best yet against arbitrary bit masks, would
+be an excellent way to show people why they need to be careful. Contact
+me if you want to take this on.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000075829f6169c79d7d5aaa20bfa8da6e9edb2393c4f8662ba0
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140207/bcdc7570/attachment.sig>
