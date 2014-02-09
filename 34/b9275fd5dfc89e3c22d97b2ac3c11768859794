@@ -1,0 +1,98 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sun, 9 Feb 2014 12:12:14 -0500
+Subject: [Bitcoin-development] Embedded consensus system upgrade procedures
+Message-ID: <20140209171214.GA20126@savin>
+
+The Problem
+===========
+
+We have an embedded consensus system and we want to be able to upgrade
+it with new rules. There inevitably will be a transition period where
+some users use clients that interpret the new rules, while others only
+interpret the old rules. Since we only rely on the host consensus system
+for timestamped proof-of-publication the the miner-vote soft-fork
+upgrade mechanism;(1) there are no validating miners in the system to
+whome trust can be outsourced.
+
+We have a problem: messages encoding actions, such as moving as asset
+from one owner to another, can be published on the the blockchain
+according to new and old rules simultaneously, double-spending the
+asset. Potentially a user with the old v1 software may be tricked into
+accepting an asset when the consensus of the v2 software is that the
+asset has already been spent, and the v1-visible transaction is invalid.
+
+
+Solution
+========
+
+Split actions into a separate "decrement" and "increment" operations,
+and ensure that v1 software can see the "decrement" of a balance, spend
+of a transaction output etc. even if it does not see the corresponding
+increment operation. This solves the double-spend problem and ensures v1
+users can't be ripped off. With obvious analogy to the PoW case, we will
+refer to this general principle as a embedded consensus system
+soft-fork.
+
+Note how with the Colored Coins technology this principle happens
+implicitly and with miner validation: colored coins are valid
+transaction outputs known to the host consensus system and moving them
+from one owner to another is guaranteed to result in the desctruction of
+the colored coin from the point of view of any older software version.
+Older software that does not support the newer colored coin kernel
+specified by the new asset definition will simply see the respective
+coins be destroyed in invalid transactions. Note how this implies that
+asset definitions created by issuers should be careful to ensure that
+kernels chosen should be designed such that the actioned specified by
+one kernel can-not be interpreted differently by another; kernels should
+be clearly incompatible with each other.
+
+
+Balance-based systems
+=====================
+
+Mastercoin is a balance-based system where transactions increment and
+decrement balances. Being balance-based, and lacking pruning, an even
+simplier "scorched earth" approach will be used where each address is
+associated with a maximum version number seen by transactions signed by
+the address. Addresses with a max version number higher than what the
+software understands are considered to be null and have no value of any
+kind. (counterparty would be wise to do the same)
+
+
+Upgrading implementation
+========================
+
+Implementations should record in their databases the blockhash
+associated with transactions that were not recognized yet affected the
+state of the consensus. For instance a colored coin implementation
+should record the blockhash and transaction ID where a given coin was
+destroyed in an invalid transaction; after upgrading these "last
+transaction understood" markers can be used to replay blockchain data to
+arrive at the new consensus.
+
+Similarly in the case of the Mastercoin system balances associated with
+addresses that have been frozen should be still allowed to increment so
+that replaying blockchain data from the last recognized transaction
+arrives at a upgraded consensus.
+
+As an aside, any embedded consensus system would be wise to have a way
+of generating a master digest representing the state of the consensus in
+the database. The Bitcoin Core gettxoutsetinfo command is a good model,
+which provides hash_serialized, a digest representing the entire UTXO
+set. In all systems this is useful for ensuring that different
+implementations and instances have in fact arrived at a consensus.
+
+
+1) BIP-16, Pay to Script Hash,
+   https://github.com/bitcoin/bips/blob/master/bip-0016.mediawiki
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000075829f6169c79d7d5aaa20bfa8da6e9edb2393c4f8662ba0
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140209/af0f5c1e/attachment.sig>
