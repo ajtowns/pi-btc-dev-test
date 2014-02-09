@@ -1,0 +1,119 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sun, 9 Feb 2014 13:04:58 -0500
+Subject: [Bitcoin-development] Decentralized digital asset exchange with
+ honest pricing and market depth
+Message-ID: <20140209180458.GB20126@savin>
+
+Alex Mizrahi recently outlined a mechanism(1) based on SIGHASH_SINGLE
+that allows colored coins and similar embedded consensus system assets
+to be securely transferred to another party in exchange for Bitcoins
+atomically. In summary his p2p 2-step-trade mechanism operates as
+follows:
+
+Alice controls a colored txout and wishes to sell it for 1BTC. Bob
+wishes to buy that txout.
+
+Alice signs a scriptSig using SIGHASH_SINGLE|ANYONECANPAY for a
+transaction with a that time. (albeit a offer floor) single input, the
+colored txout, and a single output with a scriptPubKey she controls and
+nValue=1 This transaction is not valid as the value out is greater than
+the value in.
+
+She gives this partial transaction to Bob. He can now complete the
+transaction by providing one or more inputs with a sum value >=1BTC, one
+output for the colored coins to be directed to, and optionally any other
+outputs required. (for instance for change)
+
+Bob signs his inputs with SIGHASH_ALL and broadcasts the transaction,
+completing the trade.
+
+What Alice has signed, the first txin scriptSig, guarantees that if the
+colored txout is spent she will receive 1BTC. Meanwhile what Bob has
+signed, all other txin scriptSigs, sign the colored input and output,
+guaranteeing that he will receive his coin in exchange for his money.
+Thus the trade is trust free and atomic.
+
+
+Decentralized markets and honest pricing
+========================================
+
+We can extend Mizrahi's 2-step-trade mechanism to create a decentralized
+marketplace. First of all, remember that traders wishing to sell their
+assets want to be sure that their assets offers reach the 100% of the
+audience who may wish to buy said assets; an attacker may try to
+manipulate the market to depress the price of an asset by hiding offers
+from potential buyers. Similarly buyers want assurance that the offers
+they are responding to represent all offers available.
+
+Proof-of-publication(2) offers a solution. Alice can embed her
+incomplete transaction as data in a second, valid, transaction. She
+broadcasts this secondary transaction to some agreed upon blockchain,
+either the one the colored coin is in, or potentially a secondary system
+with suitable proof-of-publication security. Bidders such as Bob can now
+scan the blockchain for offers with an acceptable price. (the offers can
+make use of techniques like prefix filters to allow Bob to only scan
+part of the blockchain, although Bob needs to know the status of all
+assets of the type he is interested in anyway)
+
+There is still some potential for manipulation with very recent offers,
+particularly those embedded in unconfirmed transactions. However
+typically markets have a large number of long-standing offers, which in
+this case would be committed to the blockchain with one or more
+confirmations.
+
+Interestingly such a system can also provide honest historical pricing
+information: any offer that goes unfilled for one or more blocks has (in
+theory) been honestly published to 100% of those watching the blockchain
+at that time. Thus we can assume the unfufilled offers at any
+given block height are honest information about the market at that time
+historically.
+
+The overhead involved involved in Alice publishing the offer is roughly
+a doubling of the overall transaction fees consumed. (remember that the
+offer transaction is incomplete, and about half the size of the
+acceptance transaction)
+
+
+Application to other embedded consensus systems
+===============================================
+
+Any embedded consensus system can make use of the 2-step-trade mechanism
+so long as it is possible to create transactions where spending a single
+transaction output moves an asset appropriately.
+
+Unfortunately extending this to circumstances where more than one input
+needs to be spent, or more than out output needs to be created, is
+difficult. SIGHASH_SINGLE by itself results in a signature where the
+index of the output is signed, but the contents - scriptPubKey and
+nValue - of all other outputs is not signed. Meanwhile all transaction
+inputs are signed and changes to that set, other than modifying the
+nSequence value in each CTxIn, is not possible.
+
+If there was a SIGHASH mode that merely truncated vin and vout based on
+the index of the scriptSig we could commit to data in either, but
+unfortunately we can't do that.
+
+An alternative could be to create a mechanism where some embedded data
+signified the creation of a temporary transfer txout, where spending
+that txout made the underlying change desired in the consensus state
+atomically.
+
+
+1) Alex Mizrahi, color kernel design considerations, Jan 7th 2014,
+   Colored coins (BitcoinX) mailing list,
+   https://groups.google.com/d/msg/bitcoinx/pON4XCIBeV4/IvzwkU8Vch0J
+
+2) Peter Todd, [Bitcoin-development] Disentangling Crypto-Coin Mining:
+   Timestamping, Proof-of-Publication, and Validation, Nov 19 2013,
+   https://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg03307.html
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000075829f6169c79d7d5aaa20bfa8da6e9edb2393c4f8662ba0
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140209/8c5bec2d/attachment.sig>
