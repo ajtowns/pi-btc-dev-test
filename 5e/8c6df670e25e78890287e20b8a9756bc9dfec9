@@ -1,0 +1,192 @@
+From: stephane@kill-bill.org (Stephane Brossier)
+Date: Tue, 11 Feb 2014 10:01:23 -0800
+Subject: [Bitcoin-development] Extension for BIP-0070 to support
+	recurring payments
+In-Reply-To: <CAEY8wq6F33814d2+97AqDoAicvh=0PigHZ03wHadMq6JqtQMLg@mail.gmail.com>
+References: <E1FDB3F2-25ED-4B99-979E-12CE943CBD66@kill-bill.org>
+	<CANEZrP10z6_UAHD97mj22kVEGyXgHPQ2PdP_8RxHT5Py+xRP_A@mail.gmail.com>
+	<D6BCC0C4-EF22-4DE8-868E-825D19C387E3@kill-bill.org>
+	<CANEZrP0FzTGmp1zbaW1VHJLk5117ZnTSehfF4uMX=+UFS+R_Dw@mail.gmail.com>
+	<0CC0BE1D-1DAA-4994-B034-EB7712F845CF@kill-bill.org>
+	<DBA255DB-4839-4C3A-BA62-BD3926995C12@kill-bill.org>
+	<CAEY8wq6F33814d2+97AqDoAicvh=0PigHZ03wHadMq6JqtQMLg@mail.gmail.com>
+Message-ID: <EAEC76DA-A490-4A61-BFB7-611D4ADF1680@kill-bill.org>
+
+Hi Kevin,
+
+On Feb 11, 2014, at 2:00 AM, Kevin Greene <kgreenek at gmail.com> wrote:
+
+> Figured I would have a crack at reviewing this since Mike is out for a bit. It was great running into you guys at the bitcoin fair in SF! Small world :)
+
+Indeed! It was great meeting you! It's always nice to meet people in person...
+
+> I like how simple this is. You just give it an url to fetch the next payment request and a date to fetch it.
+> 
+> What should happen if the client tries to fetch the PaymentRequest early or late?
+
+If the client tries to fetch too early, then  the merchant will return a PaymentRequest with no output (there is nothing to pay yet). If it fetches too late, this is merchant specific. It could be that the service got discontinued -- extreme case -- or that there are now multiple PaymentRequest pending or that the merchant decided to aggregate those into one. In that scenario, it could lead to a case where the amount to pay goes beyond the contract and the wallet would refuse to make the recurring payment.
+
+> Does it become valid after some date and stay valid for some length of time?
+
+The protocol we sketched does not include (yet) an expiration date. At this point the contract is fairly minimal, and we could envision adding more parameters such as expiration date. So at this point the behavior would be dictated by the merchant.
+
+> Also, what should happen if the client tries to consume the same PaymentRequest twice (or multiple times) during the same period?
+
+The merchant initiates the PaymentRequest and is in charge to make sure they match the invoices that the client should pay. On the client side, the wallet is responsible to verify that the contract is respected, so if a merchant were to issue multiple times the same PaymentRequest, the wallet would detect it goes beyond the bonds defined in the contract and would refuse to make the additional Payments.
+
+> I do not think daily/weekly/monthly is flexible enough. What do you think about having a concrete start time and end time when the next PaymentRequest will be valid?
+
+I agree that daily/weekly/monthly may not be flexible enough. However specifying a fixed date may be very tricky because in some cases a monthly subscription may start on a 31st of a month, and depending on the month, the due date will vary -- could be 30th, 28th, 29th, ... Also note that the frequency (daily/weekly/monthly) is not used as a polling interval, but is only used to verify the contract is respected. 
+
+There are multiple viable options to specify that contract and ideally we could/should support multiple schemes; different merchants could use different schemes, and the client would decide wether or not he is ready to accept the terms that will later be enforced by the wallet. But of course all this flexibility goes against simplicity and so this is tradeoff...
+
+
+> This also prevents the wallet from having to remember when it last sent a payment and getting skewed over time.
+
+Today, our current prototype is polling every day -- which is the lowest granularity we introduced -- and so there is no risk of getting skewed.
+
+
+> When a wallet hits the polling_url to download the next PaymentRequest, it seems we need a way to communicate an error code to the wallet, for example if the server canceled the contract without the wallet knowing. Perhaps a separate polling_status_url, with a corresponding ACK message to indicate if the PaymentRequest is available. What do you think of that idea?
+
+I think reporting such errors to the wallet would make complete sense. However i am not clear why we would a separate url for that?
+
+> One high-level comment -- the wallet in this design doesn't have any way of knowing when the payments are supposed to end. I feel this is important to show to the user before they start their wallet polling infinitely.
+
+Subscriptions are non ending by definition, but at any time the client (through the wallet) or the merchant can decide to terminate the subscriptions -- we did not yet implement cancellation in that prototype but we are planning to add it later this week. Think of your Netflix subscriptions, this is never ending (evergreen) until you decide to terminate it or Netflix does it (abuse, bills not paid,...)
+
+Thanks for taking a look!
+
+> 
+> On Sat, Feb 8, 2014 at 6:48 PM, Stephane Brossier <stephane at kill-bill.org> wrote:
+> Mike, Gavin,
+> 
+> 
+> We started to work on the merchant side to test the integration of our prototype for the recurring payments. We modified the 'Payment Request Generator' from Gavin to include a new check box 'set recurring'. We forked the code and checked in our modification here: https://github.com/killbill/paymentrequest/commit/e530f6ec528266aacfd076d7c3154ad39267c3f3
+> 
+> We also found a few issues with the code diff that we sent yesterday for bitcoinj and checked in the bug fixes  in our fork-- so the diff sent yesterday is slightly outdated.
+> 
+> So at this point we have a working prototype for bitcoinj and we are waiting for your feedbacks. We also started to look at integrating the protocol in Kill Bill to check that what is proposed supports indeed the business cases of a full recurring billing platform.
+> 
+> Hope to hear from you guys soon!
+> 
+> 
+> On Feb 7, 2014, at 6:57 PM, Stephane Brossier <stephane at kill-bill.org> wrote:
+> 
+>> Mike and all,
+>> 
+>> Pierre and I just committed a prototype implementation of the recurring payment protocol using bitcoinj. You can find the diff on our fork: 
+>> https://github.com/killbill/bitcoinj/commit/40c657c4191498f12539c60316116aa68af368a7
+>> 
+>> We did not write the server (merchant side), but wanted to have some feedback before going deeper (merchant implementation and tests). We did our best to build it on top of the existing BIP-0070 protocol-- only a few additions in the messages, but no new calls and no new uri scheme. We created a new package 'recurring' where most of the new code lives.
+>> 
+>> At a high level:
+>> 
+>> 1. Creation of the subscription:
+>> 
+>> The initial handshake for creating the subscription is exactly similar to the one for the payment protocol (PaymentRequest is used to provide the contract)
+>> 
+>> 2. Wallet can decide to poll the merchants for its active subscriptions.
+>> 
+>> Here the flow is exactly similar to the payment protocol but the wallet receives a callback to verify the payment matches the contract and should go through.
+>> 
+>> Please give us some feedback whenever you have the chance. In the meantime we will start implementing the merchant side and test the code.
+>> 
+>> Cheers!
+>> 
+>> 
+>> 
+>> On Jan 31, 2014, at 10:13 AM, Mike Hearn <mike at plan99.net> wrote:
+>> 
+>>> That looks OK at a very high level. Things you probably want to think about:
+>>> How to trigger it off the existing payment protocol (no new top level messages or mime types or uri extensions please)
+>>> Data structures to define the payment schedule
+>>> Do you allow pre-submission of time locked transactions or not?
+>>> I think as you prototype these things will become clearer.  You could try prototyping either in Bitcoin Core (C++) or bitcoinj (java, look at the PaymentSession class).
+>>> 
+>>> 
+>>> 
+>>> On Wed, Jan 29, 2014 at 3:47 AM, Stephane Brossier <stephane at kill-bill.org> wrote:
+>>> From what I have seen so far, there seems to be an agreement that this is a nice feature to add.   We are pretty new to that community and so we don't know exactly what the process is, and in particular how we reach consensus via email. I am certainly open to follow 'the way' if there is one, but one solution would be to follow Mike's suggestion on providing a (prototype) implementation first and then defining/refining the BIP. Odinn also suggested a possible retribution for our time through crowd-sourcing which I am interested to pursue if that makes sense.
+>>> 
+>>> 
+>>> We have quite some experience on the subscription side of things and while we are growing our knowledge on the Bitcoin technology (and ecosystem at large) we would benefit from:
+>>> * some feedbacks on the high level proposal
+>>> * additional requirements we might have missed
+>>> 
+>>> So, below is a high level description of what we have in mind. If this sounds reasonable, we could start working on an implementation.
+>>> 
+>>> 
+>>>  
+>>> I. Abstract
+>>> ---------------
+>>> 
+>>> This describes a protocol to enable recurring payments in bitcoins and can be seen as an extension of BIP-0070. The main goal here is to have the customer subscribe to a service of some kind (that is, agreeing on the terms of that subscription contract), and then have the wallet make recurring payments without any intervention from the customer as long as the payments match what the customer agreed on paying.
+>>> 
+>>> An example of such service would be an online streaming website, to which a user pays a fixed recurring monthly fee to access videos (a.k.a. resources). Note that there is also usage based billing: for example, the user may need to purchase additional access for premium videos (overage charges). This type of billing is more complicated and there are many variations to it used in the industry (pre-paid, ?). For the sake of discussion, we?ll focus on fixed recurring payments only, but we will keep usage in mind to make sure the protocol will be able to support it as well.
+>>> 
+>>> 
+>>> II. Motivation
+>>> ------------------
+>>> 
+>>> Subscription based services have been growing in the past few years and so the intent it to make it possible for customers to pay in bitcoins. 
+>>> 
+>>> Bitcoin?s push model presents new advantages for the customer compared to traditional payment methods: the user has control over the subscription (for example, there is no need to call the merchant to explicitly cancel the credit card payments). It also opens the door to subscription management tools in wallets (e.g. Hive apps), which would give user an overview of what they are paying each month.
+>>> 
+>>> 
+>>> III. Flow of Operations
+>>> ----------------------------------------
+>>> 
+>>> 
+>>> Creation of the subscription:
+>>> - - - - - - - - - - - - - - - - - - - - - - 
+>>> 
+>>> 1. The customer clicks 'subscribe' -> A message is sent to the merchant.
+>>> 2. The merchant sends back a message to the wallet with the details of the subscription such as the amount to be paid. In reality, there will be more information but for the purpose of the prototype implementation this is sufficient.
+>>> 3. The wallet prompts the customer for authorization.
+>>> 4. The customer authorizes (or denies) it.
+>>> 5. The wallet sends the confirmation to the merchant.
+>>> 6. The merchant confirms the subscription was created.
+>>> 
+>>> Ongoing payments:
+>>> - - - - - - - - - - - - - - - -
+>>> 
+>>> From that time on and since Bitcoin is a 'push' model, the wallet is responsible to poll the merchant for due payments associated with that subscription. Note that the merchant could specify hints to the wallet on when to poll (specific dates) or not during the registration of the subscription.
+>>> 
+>>> Note that we can't simply have the wallet push X bitcoins every month: the user account on the merchant side may have gotten credits, invoice adjustments, etc. since the last invoice, so the amount to pay for a given billing period may be lower than the regular amount. It could even be zero if the user decides to make a one-time payment to the merchant directly using a different wallet. Hence, the wallet needs to get the latest invoice balance to make sure how much it should pay. This also opens the door for the support of overage charges.
+>>> 
+>>> 
+>>> Quick note on the implementation on the merchant side: an entitlement system is a piece of logic on the merchant side which grants the user access to certain resources depending on the account status (unpaid invoices, etc.). This goes often hand in hand with a dunning system, which progressively restricts access as the user's account is more and more overdue. Since wallets can be offline for an extended period of time, payments may be missed and lead to an overdue state (e.g. extra fees, service degraded). It is the responsibility of the customer to ensure the wallet is up often enough for payments to happen.
+>>> 
+>>> 
+>>> In that recurring phase where the wallet polls the merchant, the wallet is responsible to check that payments match the subscription contract; that is, the amount, frequency of payments, ? match what the customer agreed on. If so, the payment is made without asking for explicit approval from customer, and the flow is similar to BIP-0070: The message is sent to the merchant, and in parallel, a transaction is sent to the btcnet. The merchant sends an ACK to the wallet and of course checks the states of the transactions on the btcnet to mark that payment as successful.
+>>> 
+>>> Subscription change (optional):
+>>> - - - - - - - - - - - - - - - - - - - - - - - - 
+>>> 
+>>> Optionally we could implement a change in the ongoing subscription to address the upgrade/downgrade scenarios. Of course, we could also simply support a cancellation followed by a creation of a new subscription, but having that as a one atomic message is probably better. The steps are very similar to the initial registration.
+>>> 
+>>> 1. The customer clicks 'upgrade', 'downgrade', ? -> A msg is sent to the merchant.
+>>> 2. The merchant sends back a msg to the wallet with the detail of the NEW subscription. 
+>>> 3. The wallet prompts the customer for authorization.
+>>> 4. The customer authorizes (or denies) it.
+>>> 5. The wallet sends the confirmation to the merchant.
+>>> 6. The merchant confirms the change in the subscription.
+>>> 
+>>> Cancellation of the subscription:
+>>> - - - - - - - - - - - - - - - - - - - - - - - - - 
+>>> 
+>>> The cancellation is initiated from the customer:
+>>> 
+>>> 1. The customer clicks 'cancel' -> The wallet is informed that it  should not accept any new payment associated to that subscription.
+>>> 2. The wallet sends a message to the merchant to inform about the cancellation.
+>>> 3. The merchant confirms the subscription was cancelled.
+>>> 
+>>> 
+>>> 
+>> 
+> 
+> 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140211/f7dc5236/attachment.html>
