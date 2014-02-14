@@ -1,0 +1,63 @@
+From: stephane@kill-bill.org (Stephane Brossier)
+Date: Fri, 14 Feb 2014 12:28:24 -0800
+Subject: [Bitcoin-development] Extension for BIP-0070 to support
+	recurring payments
+In-Reply-To: <CAEY8wq40RxeUYYJS2m=xq26iTd2NE64WR7QOUO0+yR-MJQCoxQ@mail.gmail.com>
+References: <E1FDB3F2-25ED-4B99-979E-12CE943CBD66@kill-bill.org>
+	<CANEZrP10z6_UAHD97mj22kVEGyXgHPQ2PdP_8RxHT5Py+xRP_A@mail.gmail.com>
+	<D6BCC0C4-EF22-4DE8-868E-825D19C387E3@kill-bill.org>
+	<CANEZrP0FzTGmp1zbaW1VHJLk5117ZnTSehfF4uMX=+UFS+R_Dw@mail.gmail.com>
+	<0CC0BE1D-1DAA-4994-B034-EB7712F845CF@kill-bill.org>
+	<DBA255DB-4839-4C3A-BA62-BD3926995C12@kill-bill.org>
+	<CAEY8wq6F33814d2+97AqDoAicvh=0PigHZ03wHadMq6JqtQMLg@mail.gmail.com>
+	<EAEC76DA-A490-4A61-BFB7-611D4ADF1680@kill-bill.org>
+	<CAEY8wq5=pAMTqDPM8yeCF+Z2=1GWmD0UDQdgacN1o3jAUh_BYA@mail.gmail.com>
+	<CAEY8wq40RxeUYYJS2m=xq26iTd2NE64WR7QOUO0+yR-MJQCoxQ@mail.gmail.com>
+Message-ID: <5F91BEBF-ECDD-4CBD-A85E-FD7E7DB3F01F@kill-bill.org>
+
+Kevin,
+
+We did a second iteration on the prototype to implement subscription cancellation and upgrade/downgrade. We checked in both the bitcoinj and php server to be able to test it.
+We also worked on our side of the merchant implementation (Kill Bill) to feel confident that the protocol will support advanced business cases. At this point it is looking promising, but more work is needed to conclude.
+
+We wanted to follow up on a few pervious points you raised:
+
+> However, continuing to think about this even more, maybe the simple memo field along with an empty set of outputs is enough already.
+
+>From our merchant side (Kill Bill), we do indeed use this field to report successes or errors. Maybe it would be useful to extend PaymentACK with a boolean success field (so the wallet doesn't commit the transaction in case of failures)?
+
+> One high-level comment -- the wallet in this design doesn't have any way of knowing when the payments are supposed to end. I feel this is important to show to the user before they start their wallet polling infinitely.
+
+We extended our RecurringPaymentDetails message to support this use case, as it solves the problem of subscription changes and cancellations for free.
+
+We introduced the concept of a subscription, referred to by a unique id (the tuple merchant_id,subscription_id should be globally unique), which has multiple contracts (RecurringPaymentContract). Besides payment bounds, each contract has a validity period: generally, a subscription will have a unique active contract at a given time and potentially one or more pending ones.
+
+For example, say you are on the gold plan (1 BTC/mo.) and want to downgrade to a bronze plan (0.5 BTC/mo.) at your next billing date. Wshen you click "Downgrade" on the merchant site, you will update your wallet with two contracts: the current valid one until your next billing date (for up to 1 BTC), and a pending one, starting at your next billing date (for up to 0.5 BTC/mo. and without an ending date).
+Upon cancellation of the bronze plan, the end date of the contract will be updated and polling will stop eventually.
+
+All of this contract metadata is returned to the wallet so the user can make an informed decision.
+
+
+Thanks for your feedbacks!
+
+S.
+
+
+On Feb 11, 2014, at 10:37 PM, Kevin Greene <kgreenek at gmail.com> wrote:
+
+> Sending this again and truncating since apparently the message body was too long.
+> 
+> Thanks for humoring my questions!
+> 
+> >I think reporting such errors to the wallet would make complete sense. However i am not clear why we would a separate url for that?
+> 
+> Hmm, thinking about this more, adding a simple status_code in PaymentRequest would be a much easier way to achieve this. However, continuing to think about this even more, maybe the simple memo field along with an empty set of outputs is enough already.
+> 
+> In bitcoinj, right now the code will throw a PaymentRequestException.InvalidOutputs exception if the set of outputs is empty with a message of "No Outputs". Because of that, there isn't a good way to tell the difference between a payment request that had no outputs and a payment request that had some invalid output(s).
+> 
+> Question to everyone:
+> How does bitcoin-qt handle a PaymentRequest with no outputs?
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140214/3987523b/attachment.html>
