@@ -1,0 +1,93 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Thu, 20 Feb 2014 10:40:34 -0500
+Subject: [Bitcoin-development] Transaction malleability in the core code:
+	update
+Message-ID: <CABsx9T3+TOQ6c7=qEhOoc+tYSp=jba-o8MA3Z8N9t05BDdYS5w@mail.gmail.com>
+
+A quick update on the state of transaction malleability work in
+Bitcoind/Bitcoin-Qt (aka Bitcoin Core). This is not about longer-term
+malleability issues, just the very short-term work being done (or already
+done) to the reference implementation.
+
+First, the problems:
+
+We've had a longstanding TODO to improve the way the core code deals with
+double-spends. From the core code's point of view, malleable transactions
+are just one particular form of double-spend.
+
+Improving double-spend handling never made it to the top of the TODO list,
+because the cases where it happened involved doing unsupported things (like
+copying your wallet.dat to another machine and then spending on both
+machines).
+
+And because there is a heavy-handed workaround if a wallet becomes confused
+because of a double-spend:  restore all of the keys, rescan for
+transactions confirmed in the blockchain, and any outputs tied up in
+double-spends get released. Coins (really, unspent transaction outputs)
+were never permanently lost, but they could be tied up and unspendable when
+associated with a 0-confirmation transaction that would never confirm.
+
+So, work in progress or done:
+
+https://github.com/bitcoin/bitcoin/pull/3659
+https://github.com/bitcoin/bitcoin/pull/3674
+
+These implements a kinder, gentler sledgehammer (-zapwallettxes) to fix a
+confused wallet. If you have a wallet with 0-confirmation transactions that
+are tying up bitcoins these should fix it.
+
+
+https://github.com/bitcoin/bitcoin/pull/3651
+https://github.com/bitcoin/bitcoin/pull/3657
+https://github.com/bitcoin/bitcoin/pull/3676
+
+These three merged pull requests implement a new command-line option:
+-nospendzeroconfchange .  The best way to get a wallet confused is to spend
+zero-confirmation change outputs that you created yourself; if the
+transaction creating the change gets mutated, then the subsequent
+transaction is invalid and will never confirm.
+
+The core code spends unconfirmed change only as a last resort. If you are a
+service using bitcoind that generates a lot of transactions then best
+practice would be to run with -nospendzeroconfchange, and use "sendmany" to
+batch payments only after previous payments have confirmed.
+
+https://github.com/bitcoin/bitcoin/pull/3025
+
+This tightens up the IsStandard() rule, so the easiest-to-implement method
+of mutating transactions is blocked. Many big mining pools are already
+running this patch.
+
+https://github.com/bitcoin/bitcoin/pull/3669
+https://github.com/bitcoin/bitcoin/pull/3671
+https://github.com/bitcoin/bitcoin/pull/3694
+
+These three get at the root of the problem; they rework the core wallet
+code to implement "handle double spends better."  See the pull requests for
+details.
+
+How can you help:
+
+Testing and code review is, as always, the bottleneck for getting out a
+release with these changes.
+
+We have a chronic problem with people running Bitcoin services on top of
+the core code waiting until there is an "official" release, and then
+assuming that somebody else has done the hard work of reviewing and testing
+the changes.
+
+YOU SHOULD NOT BE MAKING THAT ASSUMPTION!  Your particular RPC call usage
+might trigger some edge-case bug that was missed, or perhaps the size of
+your wallet triggers a performance problem introduced by a fix.
+
+Or, in other words: do not treat the core development team as if we were a
+commercial company that sold you a software library. That is not how open
+source works; if you are making a profit using the software, you are
+expected to help develop, debug, test, and review it.
+
+-- 
+--
+Gavin Andresen
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140220/6ba57731/attachment.html>
