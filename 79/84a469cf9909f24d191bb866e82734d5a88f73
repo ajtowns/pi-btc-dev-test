@@ -1,0 +1,306 @@
+From: mark@monetize.io (Mark Friedenbach)
+Date: Thu, 20 Feb 2014 18:41:05 -0800
+Subject: [Bitcoin-development] Base-32 error correction coding
+Message-ID: <5306BCC1.8040004@monetize.io>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+What follows is a proposed BIP for human-friendly base-32
+serialization with error correction encoding. A formatted version is
+viewable as part of a gist with related code:
+
+https://gist.github.com/maaku/8996338#file-bip-ecc32-mediawiki
+
+An implementation of this BIP and associated APIs is made available as
+a pull request, with comprehensive testing:
+
+https://github.com/bitcoin/bitcoin/pull/3713
+
+This format is anticipated to be useful for helpdesk-related data
+(e.g. the proposed normalized transaction ID), and future wallet
+backup & paper wallet serialization formats.
+
+
+== Abstract ==
+
+The BIP proposes an human-centered encoding format for base-32 data
+serialization. It differs from the presumptive default hexadecimal or
+base58 encodings in the following ways:
+
+1. Visually distinctive in that it includes the full range of
+alphanumeric digits in its base-32 encoding, except the characters 0,
+l, v, and 2. which are too easily confused with 1, i, u, r, or z in
+font or handwriting.
+
+2. Automatic correction of up to 1 transcription error per 31 coded
+digits (130 bits of payload data). For a 256-bit hash or secret key,
+this enables seamless recovery from up to two transcription errors so
+long as they occur in separate halves of the coded representation.
+
+3. Highly probable detection of errors beyond the error correction
+threshold, with a false negative rate on the order of 25 bits, or 1 in
+33 million likelihood.
+
+4. Case-insensitive encoding ensures that it may be displayed in an
+easier to read uniform case, and it is faster and more comfortable to
+vocally read off a base-32 encoded number than the alternatives of
+hexadecimal or base58.
+
+In addition to the error correction code transformation of base-32
+data, a padding scheme is specified for extending numbers or bit
+vectors of any length to a multiple of 5 bits suitable for base-32
+encoding.
+
+== z-base-32 ==
+
+The bitcoin reference client already has one implementation of base-32
+encoding following the RFC 3548 standard, using the following alphabet:
+
+    const char *pbase32 = "abcdefghijklmnopqrstuvwxyz234567";
+
+For error correction coded strings this BIP specifies usage of Phil
+Zimmermann's z-base-32 encoding alphabet[], which provides better
+resistance to transcriptive errors than the RFC 3548 standard:
+
+    const char *pzbase32 = "ybndrfg8ejkmcpqxot1uwisza345h769";
+
+The same RFC 3548 coder is used for z-base-32, except that unnecessary
+'=' padding characters are stripped before performing the alphabet
+substitution. For example, the hexadecimal string 'ae653be0049be3' is
+RFC 3548 encoded as 'vzstxyaetprq====', and z-base-32 encoded as
+'i31uzayruxto'.
+
+== CRC-5-USB error correction coding ==
+
+Herein we describe an error correction encoding using cyclic
+redundancy check polynomial division[], which requires 5 error
+correction digits per 26 digits of input, instead of the theoretically
+optimal 4, but is much, much easier to implement correctly then
+available non-patented error correction codes. Cyclic redundancy check
+polynomial division provides a very straightforward, patent-free
+mechanism for reliably detecting transcription errors in input, and
+performing up to 1-digit corrections per 26 digit block.
+
+=== Encoding ===
+
+The input to this error correction encoder is a sequence of 26 base-32
+digits. These digits are decoded into 5-bit unsigned integers with
+values equal to their offset into the base-32 alphabet string. If the
+input is less than 26 digits in length, it is extended with
+zero-valued digits. If For example, the string 'vzstxyaetprq' using
+the RFC 3548 alphabet becomes the code point sequence:
+
+    <21 25 18 19 23 24 0 4 19 15 17 16 0 0 0 0 0 0 0 0 0 0 0 0 0 0>'
+     |--------------input-------------|---------padding----------|
+
+Expositionally it helps to think of this array as a 26-element column
+vector of 5-bit binary integers:
+
+    <0b10101
+     0b11001
+     0b10010
+     0b10011
+     0b10111
+     0b11000
+     0b00000
+     0b00100
+     0b10011
+     0b01111
+     0b10001
+     0b10000
+     ... 14 zero elements ...>
+
+If we explode the bits of each element into 5, 1-bit columns, we get a
+26 x 5 matrix:
+
+    <1 0 1 0 1
+     1 1 0 0 1
+     1 0 0 1 0
+     1 0 0 1 1
+     1 0 1 1 1
+     1 1 0 0 0
+     0 0 0 0 0
+     0 0 1 0 0
+     1 0 0 1 1
+     0 1 1 1 1
+     1 0 0 0 1
+     1 0 0 0 0
+     ... 14 x 5 zero elements ...>
+
+The array is then transposed, such that we get a 5 x 26 matrix where
+each row represents the 5th, 4th, 3rd, 2nd, or 1st bit, respectfully,
+of each element:
+
+    <1 1 1 1 1 1 0 0 1 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 1 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     1 0 0 0 1 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 1 1 1 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     1 1 0 1 1 0 0 0 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0>
+     |---------input--------|----------padding---------|
+
+We then use each of these rows separately as input into a cyclic
+redundancy check polynomial division operation, using the CRC-5-USB
+generating polynomial <code>x^5 + x^2 + 1</code>. The result is 5
+element column vector:
+
+    <10111
+     01000
+     10010
+     00111
+     00110>
+
+The elements of this vector are then exploded horizontally, and
+affixed to the end of the bit matrix.
+
+    <1 1 1 1 1 1 0 0 1 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 1 1
+     0 1 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0
+     1 0 0 0 1 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 1 0
+     0 0 1 1 1 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1
+     1 1 0 1 1 0 0 0 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0>
+     |---------input--------|----------padding----------|--crc---|
+
+At this point, calculating the CRC checksum for each row should result
+in zero:
+
+    <0 0 0 0 0>
+
+Now we reverse the process in order to encode the output. First the
+padding bits are removed:
+
+    <1 1 1 1 1 1 0 0 1 0 1 1 1 0 1 1 1
+     0 1 0 0 0 1 0 0 0 1 0 0 0 1 0 0 0
+     1 0 0 0 1 0 0 1 0 1 0 0 1 0 0 1 0
+     0 0 1 1 1 0 0 0 1 1 0 0 0 0 1 1 1
+     1 1 0 1 1 0 0 0 1 1 1 0 0 0 1 1 0>
+     |---------input--------|--crc---|
+
+Then the matrix is once again transposed, to yield an (l+5) x 5
+matrix, where l is the number of digits in the original input:
+
+<1 0 1 0 1  -
+ 1 1 0 0 1  |
+ 1 0 0 1 0  |
+ 1 0 0 1 1  |
+ 1 0 1 1 1  i
+ 1 1 0 0 0  n
+ 0 0 0 0 0  p
+ 0 0 1 0 0  u
+ 1 0 0 1 1  t
+ 0 1 1 1 1  |
+ 1 0 0 0 1  |
+ 1 0 0 0 0  -
+ 1 0 1 0 0  -
+ 0 1 0 0 0  c
+ 1 0 0 1 1  r
+ 1 0 1 1 1  c
+ 1 0 0 1 0> -
+
+And the rows are imploded:
+
+    <21 25 18 19 23 24 0 4 19 15 17 16 20 8 19 23 18>'
+     |--------------input-------------|----crc-----|
+
+And the result is converted into z-base-32: 'i31uzayruxtoweuz1'.
+
+=== Decoding and error recovery ===
+
+The process of decoding and error detection and recovery is similar to
+encoding, and this section will not explain steps that were adequately
+covered in the encoder description.
+
+First, the input is converted from z-base-32 into a sequence of up to
+31 (26+5) 5-bit integers, with zero-valued padding inserted between
+the end of the input and the 5-digit checksum. Using our running
+example of 'i31uzayruxtoweuz1', this result is the following:
+
+    <21 25 18 19 23 24 0 4 19 15 17 16 0 0 0 0 0 0 0 0 0 0 0 0 0 0 20
+8 19 23 18>'
+
+|--------------input-------------|----------padding----------|----crc-----|
+
+The binary representation of each element is exploded horizontally,
+and the matrix transposed to yield the following 5 x 31 bit matrix:
+
+    <1 1 1 1 1 1 0 0 1 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 1 1 1
+     0 1 0 0 0 1 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0
+     1 0 0 0 1 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 1 0
+     0 0 1 1 1 0 0 0 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1
+     1 1 0 1 1 0 0 0 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0>
+     |---------input--------|----------padding----------|--crc---|
+
+A CRC calculation of each row should yield zero if the encoded string
+was transcribed correctly. If, however, a digit was wrong, that would
+result in some or all of the bits of the corresponding column being
+flipped. A property of the CRC generating polynomial used is that in
+the case of a single digit error, each row with a flipped bit would
+result in the same checksum, and that checksum value can be used as
+the index into a table indicating which bit was flipped:
+
+    // EC[0] has no meaning, because offsets are 1-based
+    const unsigned char EC[32] =
+        { 32,  4,  3, 17,  2, 30, 16, 24,
+           1,  6, 29,  8, 15, 27, 23, 12,
+           0, 25,  5, 18, 28, 13,  7,  9,
+          14, 10, 26, 19, 22, 21, 11, 20 };
+
+If all checksum values are zero, the decoder assumes the input is
+correct. If all non-zero checksum values are equal valued, the decoder
+assumes the corresponding digit was transcribed incorrectly and flips
+the bit in that column of the rows with non-zero checksums.
+
+If any of the five checksum values are non-zero, and not equal to each
+other, then there is an unrecoverable error in the input. The
+probability of two or more digits being incorrect and yet by chance
+the checksums being zero or equal valued is less than 1 in 33 million.
+
+Now that errors have been detected and single-digit errors corrected,
+the padding bits and CRC checksum bits are removed. The matrix is
+transposed, it's rows imploded, and the resulting sequence of up to 26
+characters converted into base-32 using the RFC 3548 alphabet:
+'vzstxyaetprq'.
+
+== CodedBase32 integer encoding ==
+
+Although providing an error correction coder for base-32 data
+interesting and useful in contexts where base-32 is already deployed,
+many applications involve encoding of integers which are powers of two
+in length. This section provides a standard scheme for the encoding of
+any sized bitstring into a multiple of 5 bits in length, suitable for
+direct encoding into base-32.
+
+First the size in bits of the integer is rounded up to the next
+highest power of two greater than or equal to 128. This value with a
+factor of 128 removed is known as <code>n</code>, and its base-2
+logorithm as <code>e</code>. Pseudocode:
+
+    int n = max(next_power_of_two(BITS), 128) / 128;
+    int e = log2(n);
+
+A total of <code>2*n</code> padding bits are prefixed to the
+bitstring. These consist of <code>e</code> 1 bits, a single 0 bit, and
+<code>2*n-e-1</code> user-specified bits (the "extra" field).
+
+The bitstring is now a multiple of 5 in length and can be directly
+converted into base-32.
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.14 (GNU/Linux)
+Comment: GPGTools - http://gpgtools.org
+Comment: Using GnuPG with Thunderbird - http://www.enigmail.net/
+
+iQIcBAEBAgAGBQJTBry9AAoJEAdzVfsmodw45UwP/1kjvfFMe0I+F+0Ma+sl8o3a
+U3/FlyOapIL8wZPyjXItts7/5V8kPOSPiEjnG/Oes7eBmiod2UYy+73qIHaHI6Ug
+88OMjX8hSHYz+EfxrUkb8Uiios4FNS6vo/SVjELR8vLiQoJ30T4l56QMJvMle1wj
++GDdHjNfL0F9NzqA7WY1rRRXllBCmDfLUeYS3raOx9tmGgfj/4h451RLwXouIwT6
+oBMBIJzkGLHi//0SF+xlNJb/zebD421qXLgg28ci0fz+bxMEtPM7HktCpHS+pzUu
+V211rA3eP6/gb617SHD7XcxROubpsZ0y1ieaCzjfrQ0NUDqEkYyydDh4rf2AF99R
+ODwy8bDNikhN62480Gd2PuqKftf66tUdycXMcnC9Cwe3Ejli+RKBGnTBh5ekPO3+
+Pmu/vgILuL8WojOKcAnMSk0tvA+w0kBf/b7mUzLsBpJfOMxtk3KgKrWWbuxotz0C
+VKGVICpvtrA87jpOqB36Hn1tFYRknCX9PCzPEENpJg/aK26xNTid4jtbg9MhopdS
+GuH4SBNYvvgq7VkCbq5zggh37npgHy/mmBhAmDw7ecBPw/O9jtGEUSFbSTMoaL5s
+hK5WTlsSNvvuAaFlv0qvreI1gQiJBhR9+JuZfFS1fzBXWcmDf7n8kqkbLOQr6nVJ
+O6AhIj7iHRCNfSTuhElY
+=ZHxf
+-----END PGP SIGNATURE-----
+
+
