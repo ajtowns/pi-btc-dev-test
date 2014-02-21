@@ -1,0 +1,96 @@
+From: jgarzik@bitpay.com (Jeff Garzik)
+Date: Fri, 21 Feb 2014 01:50:35 -0500
+Subject: [Bitcoin-development] Bitcoin Core trial balloon: splitting
+ blockchain engine and wallet
+In-Reply-To: <CANEZrP2siw9hGPVsPjQ6WyohacOrs8rqs5p9ZsFY5kF0URnPWg@mail.gmail.com>
+References: <CAJHLa0OD7w0Rs5ygAE4C14EWm1=x57YHG2kOee1pzxvj3FQ38g@mail.gmail.com>
+	<CANEZrP2siw9hGPVsPjQ6WyohacOrs8rqs5p9ZsFY5kF0URnPWg@mail.gmail.com>
+Message-ID: <CAJHLa0Pfc5wfGT6Rk3ZoRS-rE8Cw6AaRXDyxUCOjAYUesoCxJg@mail.gmail.com>
+
+RE "doesn't buy you anything"   Today, when unlocked, plaintext
+private keys reside in the same address space as the blockchain engine
+(BCE).  Process separation increases the difficulty of accessing key
+data from the BCE, even presuming a normal, no-chroot, same-uid,
+parent-child process relationship.  The attack surface is clearly
+changed from "one buffer overflow can touch this data."
+
+Regardless, the split makes sense given existing modularity and coding
+directions.  I wouldn't micro-focus on the "sandbox" word.
+
+On Fri, Feb 21, 2014 at 1:27 AM, Mike Hearn <mike at plan99.net> wrote:
+> Bear in mind a separate process doesn't buy you anything without a sandbox,
+> and those are expensive (in terms of complexity).
+>
+> On 21 Feb 2014 11:40, "Jeff Garzik" <jgarzik at bitpay.com> wrote:
+>>
+>> [Meta: "Bitcoin Core" is the newfangled branding of bitcoind /
+>> Bitcoin-Qt reference implementation, in case you wondering.]
+>>
+>> Several sites, including BitPay, use bitcoind outside the standard
+>> role of wallet software.  bitcoind can be used purely for payment
+>> network access and management.  I call this the "border router" role.
+>> Upcoming version 0.9 will feature the ability to disable the bitcoind
+>> wallet at compile time or runtime. This permits a more optimized
+>> border router profile, reducing process size by 40-200MB according to
+>> some reports.
+>>
+>> Recent IRC discussion have floated a rough proposal for a wallet
+>> next-step:  Running the Bitcoin Core wallet as a separate process, a
+>> separate binary, from the blockchain engine.  The wallet process would
+>> communicate with the blockchain engine using existing RPC and P2P
+>> channels, becoming a real SPV client.  This accomplishes a
+>> longstanding security goal of sandboxing away wallet keys and
+>> sensitive data from the network-exposed P2P engine, in a separate
+>> process, among other benefits.
+>>
+>> Simple forking was explored a bit.  I did some hacking in that
+>> direction, as it seemed potentially lightweight and somewhat easy to
+>> me: https://github.com/jgarzik/bitcoin/tree/fork  fork+pipe is fine
+>> for Linux and OSX/BSD.  However, Windows requires an exec-like
+>> solution to create a new process.  MSDN does give us a Unix-pipe-like
+>> solution:
+>> http://msdn.microsoft.com/en-us/library/edze9h7e%28v=vs.80%29.aspx
+>>  Others pointed to boost interprocess communication APIs, which come
+>> with their own set of caveats.  Such a solution would involve a brand
+>> new IPC protocol, and lots of brand new glue code.
+>>
+>> Separate programs seems better.  Windows forces us to achieve process
+>> separation via exec-like method.  We already have IPC: RPC + P2P.
+>> Modern OS's make localhost sockets just about as fast as other IPCs
+>> methods.  Linux, at least, employs zero-copy for localhost sockets in
+>> many situations, similar to the kernel's pipe tricks.
+>>
+>> Pieter has been working on headers-first sync:
+>> https://github.com/bitcoin/bitcoin/pull/2964  Moving along this
+>> wallet/blockchain engine split requires upping the review&test
+>> bandwidth on Pieter's PRs, such as
+>> https://github.com/bitcoin/bitcoin/pull/3514
+>>
+>> Unsure how much of the separate-binary discussion Gavin saw, so cc'd
+>> for emphasis.
+>>
+>> --
+>> Jeff Garzik
+>> Bitcoin core developer and open source evangelist
+>> BitPay, Inc.      https://bitpay.com/
+>>
+>>
+>> ------------------------------------------------------------------------------
+>> Managing the Performance of Cloud-Based Applications
+>> Take advantage of what the Cloud has to offer - Avoid Common Pitfalls.
+>> Read the Whitepaper.
+>>
+>> http://pubads.g.doubleclick.net/gampad/clk?id=121054471&iu=/4140/ostg.clktrk
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
+-- 
+Jeff Garzik
+Bitcoin core developer and open source evangelist
+BitPay, Inc.      https://bitpay.com/
+
+
