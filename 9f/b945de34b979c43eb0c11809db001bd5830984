@@ -1,0 +1,245 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Wed, 26 Feb 2014 16:00:46 +0530
+Subject: [Bitcoin-development] Extension for BIP-0070 to support
+	recurring payments
+In-Reply-To: <BFA4F8CD-529B-418D-B3B9-599C89914CD1@kill-bill.org>
+References: <E1FDB3F2-25ED-4B99-979E-12CE943CBD66@kill-bill.org>
+	<CANEZrP10z6_UAHD97mj22kVEGyXgHPQ2PdP_8RxHT5Py+xRP_A@mail.gmail.com>
+	<D6BCC0C4-EF22-4DE8-868E-825D19C387E3@kill-bill.org>
+	<CANEZrP0FzTGmp1zbaW1VHJLk5117ZnTSehfF4uMX=+UFS+R_Dw@mail.gmail.com>
+	<0CC0BE1D-1DAA-4994-B034-EB7712F845CF@kill-bill.org>
+	<DBA255DB-4839-4C3A-BA62-BD3926995C12@kill-bill.org>
+	<CAEY8wq6F33814d2+97AqDoAicvh=0PigHZ03wHadMq6JqtQMLg@mail.gmail.com>
+	<EAEC76DA-A490-4A61-BFB7-611D4ADF1680@kill-bill.org>
+	<CAEY8wq5=pAMTqDPM8yeCF+Z2=1GWmD0UDQdgacN1o3jAUh_BYA@mail.gmail.com>
+	<CAEY8wq40RxeUYYJS2m=xq26iTd2NE64WR7QOUO0+yR-MJQCoxQ@mail.gmail.com>
+	<5F91BEBF-ECDD-4CBD-A85E-FD7E7DB3F01F@kill-bill.org>
+	<81FBEA67-45A9-4531-BEA0-071CE9FAEF7E@kill-bill.org>
+	<CANEZrP0-LqFC8N500=mnKbKE+=UtFw_Y5cHR8JRC-zmmGsSAjA@mail.gmail.com>
+	<BFA4F8CD-529B-418D-B3B9-599C89914CD1@kill-bill.org>
+Message-ID: <CANEZrP2opmZhsgLvJ_WRAT0THHbtnGTZVFbcVkUYhM-DHiGxNA@mail.gmail.com>
+
+Thanks for the explanation. I agree that makes sense, and you did actually
+explain this before, I just didn't connect the dots :)
+
+The accompanying BIP should explain all this, so the rationale for the
+design and how you use it is made clear to developers.
+
+I've CCd Jeff and Stephen on this thread, so they can go review it and
+weigh in with any comments. They may want to go back to customers who
+requested this feature and ask if it'd satisfy their needs.
+
+
+On Wed, Feb 26, 2014 at 9:23 AM, Stephane Brossier
+<stephane at kill-bill.org>wrote:
+
+>
+>
+>
+>
+>
+>
+> *Hi Mike, Jeremy, Drak,Before going through your questions, I would like
+> to bring some clarity on a few key elements in that protocol. There are
+> really two aspects to it: 1. The contract negotiation; when the user first
+> subscribes, it is prompted by a contract that will define the payment
+> bounds associated with that subscription. 2. Once accepted, the wallet is
+> in charge and the user does not have to interact anymore -- this is the
+> point of the recurring payment protocol. The wallet will poll the merchant
+> and issue payments as they are requested by the merchant as long as they
+> stay within the bounds of what was specified by the contract (and accepted
+> by the customer).I think it would help to explain how we ended up with the
+> type of contract we introduced in that protocol. In an ideal world and in a
+> NON recurring scheme, the contract should simply be the exact amount to be
+> paid. In our case the exact amount may not be completely known in advance
+> -- for e.g taxes, shipping, pro-rations, ? and so we decided to introduce
+> first a max amount per payment, and also a max amount per period. It is up
+> to the merchant to decide whether to specify none, any or both bounds (max
+> amount per payment and max amount per period). By specifying both, the
+> contract is tighter and the client would feel safer to accept it. In the
+> extreme case, by specifying none, the client would be presented with a
+> contract to pay whatever is requested -- probably not a good option in the
+> Bitcoin world unless there is a high sense of trust with the merchant.
+>   From reading your comments, it appears we have not been clear on how that
+> frequency (PaymentFrequencyType) is being used. Its sole purpose is to
+> define the max amount per period in the contract. The frequency of the
+> payment is implicitly dictated by the merchant but not specified in the
+> protocol by design: the wallet has to poll with a fine granularity (ideally
+> each day when it is up) to understand if there is something pending. In the
+> same way, a specified amount was not enough in the contract, we feel it
+> would be restrictive to specify in advance when payments are due. There are
+> a lot of complex scenarios in the billing space, and having the wallet poll
+> the merchant to inquire for pending payments is the most flexible option
+> and the contract is there to ensure the client will not be abused. To give
+> a concrete example, imagine a data plan where you pay a base recurring
+> price of $70 per month, but you are charged $10 per GB of data used beyond
+> your included limit. If you exceed your limit on the 15th and the 23rd of a
+> given month, two extra payment attempts will be requested by the merchant,
+> that you couldn?t predict (this scenario is often referred to as usage
+> billing with Prepay Credits and Top-up, where the customer pays in advance
+> for blocks of N units, and once they are consumed another N are purchased).*
+>
+>
+> *See answers in your questions inlined below:*
+>
+>
+> I have the following comments:
+>
+>    1. There's no need to serialize RecurringPaymentDetails as bytes here.
+>    It's done that way outside of PaymentDetails in order to support digital
+>    signatures over protobufs that may have extensions the wallet app isn't
+>    aware of, but it's a pain and inside PaymentDetails (and therefore for most
+>    extensions) it shouldn't be necessary. So you can just use "optional
+>    RecurringPamentDetails recurring_payments = 8;"
+>
+>
+>
+> OK, we'll fix it.
+>
+>
+>
+>    1. There's only 4 possibilities here for recurrences. That seems
+>    rather restrictive. Is the cost of being more expressive really so high?
+>    Why not allow more flexible specification of periods?
+>
+>
+>    1. If there's no payment_frequency_type field then what happens? A
+>    quirk of protobufs to be aware of is that making an enum field "required"
+>    can hurt backwards compatibility. Because it will be expressed using a
+>    languages underlying enum type, if there's a new enum member added later
+>    old software that attempts to deserialize this will throw exceptions
+>    because the new "unknown" member would be unrepresentable in the old model.
+>    Making the field optional avoids this problem (it will be treated as
+>    missing instead) but means software needs to be written to know what to do
+>    when it can't read the enum value / sees enum values from the future.
+>
+>
+>
+> I hope the explanation above answers the questions.
+>
+>
+>    1. I assume the amounts are specified in terms of satoshi, and
+>    timestamps are UNIX time, but better to make that explicit.
+>
+>
+>
+> Yes.
+>
+>
+>    1. Seems there's an implicit value constraint that max_payment_amount
+>    <= max_payment_per_period. What happens if that constraint is violated?
+>    Best to document that.
+>
+>
+>
+> As explained above, contract would define none, 1 or both conditions.
+>  First the merchant should not return such 'conditions' but if it does the
+> client should not accept the contract. If the client decides to accept it
+> anyway, then the wallet just verifies both conditions are met separately
+> regardless of whether there is such violation and if so, makes the payment.
+>
+>
+>    1. What's the "merchant ID" namespace thing about? What's it for? What
+>    happens if I set my competitors merchant ID there?
+>
+>
+> I agree, we can easily get rid of it.
+>
+>
+>    1. What's the "subscription ID"? Is this stuff not
+>    duplicative/redundant with the existing merchant_data field?
+>
+>
+> In an ideal world the merchant should return unique subscriptionId (UUID
+> for instance). That subscriptionId is used in the code to identify the
+> contracts associated with the subscription. The merchant_data if i
+> understand correctly the payment protocol is opaque from the client point
+> of view, so it cannot be used by the client for that purpose.
+>
+>
+>    1. In what situations would you have >1 contract per payment request?
+>    I'm not sure I understand why it's repeated. Presumably if there are zero
+>    contracts included the data should be ignored, or an error thrown and the
+>    entire payment request rejected? Which should it be?
+>
+>
+>
+>
+> There are many example where that could  happen; for instance if you
+> subscribe to a service,  then later decide to downgrade to a lower product.
+> The merchant may decide to only let you downgrade at the end of your paid
+> period-- to avoid generating extra credit-- and in that situation you end
+> up with two contracts: One for the current product you are in and one for
+> the future product you will end up on when the downgrade becomes effective.
+>
+>
+>
+>    1. It's unclear to me given such a contract when the payment should
+>    actually occur. For instance if it's "monthly" then what day in the month
+>    would the payment occur?
+>
+>
+>
+> As outlined above in the introduction, the protocol is designed in such a
+> way that the wallet does not have to know what is the exact date when
+> payment should occur, but instead polls the merchant for pending payments.
+> There are many situations when specifying an exact payment date is not an
+> option so that flexibility is essential. A simple example would be for a
+> customer who started subscribing on the 31th of a month. Since there will
+> be months with 28/29/30 days, the payment date would change depending on
+> the month.
+>
+>
+>
+>
+>
+>    1. You'll notice I moved the comments to be above the field
+>    definitions. I know the current proto isn't done that way, but let's change
+>    it - long comments are good and putting them above the field definitions
+>    encourages people to write enough detail without being put off by line
+>    length constraints
+>
+>
+>
+> Fine.
+>
+>
+> I think the next step would be to talk to BitPay/get Jeff+Stephen involved
+> because I know they have customers that really want recurring payments, and
+> those guys will have a clearer idea of customer requirements than we do. I
+> feel uncomfortable with designing or reviewing in a vacuum without some
+> actual people who would use it chiming in, as I don't really know much
+> about the underlying business processes.
+>
+>
+>
+> We are totally open to receive feedbacks from them.. How do we bring them
+> in the discussion?
+>
+>
+> I have some other comments about the bitcoinj implementation specifically
+> - for instance, we don't have a "wallet directory" concept: everything goes
+> into the wallet file. So we'll need to think about how to structure the
+> code to allow that. Also, just using a background polling thread is likely
+> not flexible enough, as on some platforms you can't stay running all the
+> time (e.g. Android) without upsetting people, but the underlying OS can
+> wake you up at the right times, so wallet apps should have an ability to
+> control wakeup tasks. But we can discuss that over on the bitcoinj list
+> specifically. Let's keep this thread for the general protocol design.
+>
+>
+> Ok that makes sense.
+>
+>
+> BIP 70 is indeed implemented in Bitcoin Core on the C++ side, so that
+> isn't a concern. It could be done there too.
+>
+>
+> Great to know.
+>
+>
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140226/88923335/attachment.html>
