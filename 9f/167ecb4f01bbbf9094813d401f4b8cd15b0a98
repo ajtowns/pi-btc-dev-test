@@ -1,0 +1,95 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 28 Feb 2014 06:18:26 -0500
+Subject: [Bitcoin-development] Fee drop
+In-Reply-To: <op.xbundx2eyldrnw@laptop-air>
+References: <20140225044116.GA28050@savin>
+	<f35865264f37315d580a30dc49789a5a.squirrel@fulvetta.riseup.net>
+	<CANEZrP1wB9zpnD+DOnmCNycEGB+nZMt8gQrjpn5V92MMkausaA@mail.gmail.com>
+	<20140225144922.GA25549@savin>
+	<CANEZrP0pDjHr3v2w_zKnME+6GjVdvV5HYjrLH7xthbNdBniK4g@mail.gmail.com>
+	<op.xbundx2eyldrnw@laptop-air>
+Message-ID: <20140228111826.GA6798@savin>
+
+On Tue, Feb 25, 2014 at 10:09:23AM -0800, Jeremy Spilman wrote:
+> If I understand correctly, the risk here is this would open a
+> historically large discrepancy between MIN_RELAY and the expected
+> minimum fee to actually obtain block inclusion. I don't know if
+> that's true, but I think that's what Peter is saying makes it
+> different this time.
+
+That's exactly the problem.
+
+Of course every time we make a new transaction type standard we also run
+that risk, but at least it's a temporary situation and we can expect to
+get hashing power on-board fairly quickly. With such a low MIN_RELAY
+that's not true, and in an absolute sense, the funds required to DoS
+attack the network are fairly low.
+
+> On Tue, 25 Feb 2014 08:55:58 -0800, Mike Hearn <mike at plan99.net> wrote:
+> >Nodes that are encountering memory pressure can increase their min
+> >relay fee locally until their usage fits inside their resources.
+> >It's annoying to do this >by hand but by no means infeasible.
+> 
+> Perhaps this is just another way to think of the floating fee
+> problem. What does MIN_RELAY need to be so that my local resources
+> stay within some reasonable limit (and 'reasonable' means different
+> things to different nodes).
+> 
+> We have an input gate on transactions entering mempool, we persist
+> mempool, and I don't know the specifics but, I assume there's some
+> expiration policy other than block inclusion to clear out a Tx from
+> mempool. But are transactions prioritized in any way after they make
+> it into mempool today?
+
+There's currently no expiration policy at all; that's the root of the
+DoS problem I was referring too.
+
+> How closely should mempool selection align with the expected block
+> inclusion? I think if they align perfectly in theory that means
+> optimal mempool resource allocation. For example, a miner would push
+> out cheaper transactions which they were previously hashing against
+> to make room for higher fee transactions (bsaed on max block size or
+> orphan rate projections), but do we do the same for mempool? E.g.
+> 
+>   - After hitting X number of transactions, the fee has to be larger
+> than a transaction in mempool in order to get in,
+>   - That in turn that ejects a random transaction which paid less
+> fees than the incoming Tx from mempool
+>   - We would have to consider how ejection would work with chains of
+> unconfirmed transactions (cumulative average fee/kb?) but again in
+> this case, you would want to 'do what miners would do' if you could
+
+Have you seen the mempool superblock design that keeps getting
+suggested? jgarzik has the most recent write-up here:
+https://github.com/bitcoin/bitcoin/issues/3723
+
+I was working on a relatively ambitious version of it last summer that
+calculated the fee/KB for transactions, including depedencies, and then
+simply ordered the mempool with highest fee/KB first. The idea was you
+could then easily limit the total size of the mempool and drop
+transactions with the lowest fee/KB first. Transactions that paid less
+than the lowest fee/KB in a max-size mempool simply would not get
+relayed at all. Pity had to put it off for higher-priority work.
+
+What's interesting is how this makes zero-conf transactions even less
+safe: all you have to do to double-spend one (or more!) that pay X
+fee/KB is broadcast enough transactions paying X+e fee/KB to push out
+the unconfirmed tx from mepools around the network, then broadcast your
+double-spend. Obviously the economics of this are going to make attacks
+frequently profitable, especially if you can attack multiple targets at
+once. You can of course have schemes where you don't entirely drop
+transactions, saving, say, the inputs they spend and a transaction id,
+(so a rebroadcast can succeed) but that just reduces the effectiveness
+of the attack by a constant factor and makes it possible to get into
+complex situations where your funds are locked and unspendable.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000011ffdfe2bfdf8f1f983bebfa160670b85afeebbd815fdf484
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140228/c9dec419/attachment.sig>
