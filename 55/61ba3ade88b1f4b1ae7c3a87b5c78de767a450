@@ -1,0 +1,189 @@
+From: andreas@schildbach.de (Andreas Schildbach)
+Date: Sun, 02 Mar 2014 16:20:34 +0100
+Subject: [Bitcoin-development] BIP70 extension to allow for identity
+	delegation
+In-Reply-To: <CANEZrP1eABw_x8o-Z9ac23e-dVvUWfZJ-hKfAak=-NicPhUv9g@mail.gmail.com>
+References: <CANEZrP1eABw_x8o-Z9ac23e-dVvUWfZJ-hKfAak=-NicPhUv9g@mail.gmail.com>
+Message-ID: <levi7k$pkt$1@ger.gmane.org>
+
+I somehow think that it is too early for this heavy kind of extension,
+given that the first version of BIP70 isn't even deployed widely let
+alone *used*.
+
+By reading your proposal I get the idea that the current spec doesn't
+allow two (or three) different PKIs at once -- we would want this for
+migration purposes as you wrote and also because different people prefer
+different kinds of PKIs. And that's perhaps something we want to fix in
+the current (version 1) spec to prevent us running into a wall and be
+doomed to patch around the spec. Note I assume a potential PGP or
+Bitcoin-based infrastructure would also be called 'PKI'.
+
+I would prefer if your fix would stay local to X.509 (and thus only
+change X.509 specific structs rather than the top-level PaymentRequest).
+And for a future PKI we would implement identity delegation in a
+straight forward, non-kludgy way.
+
+
+On 02/28/2014 12:46 PM, Mike Hearn wrote:
+
+> Now we're starting to see the first companies deploy BIP70, we're
+> encountering a need for identity delegation. This need was long foreseen
+> by the way: it's not in BIP70 because, well, we had to draw the line for
+> v1 somewhere, and this is an issue that mostly affects payment
+> processors. But I figured I'd start a thread anyway because people keep
+> asking me about it :)
+> 
+> *_Objective_*
+> 
+> Identity delegation means that a payment request can be signed by
+> someone who is not holding the certified private key. The most obvious
+> use case for this is payment processors like BitPay and Coinbase who
+> currently have to sign payment requests as themselves. Other use cases
+> might involve untrusted sales agents who want to be able to accept
+> payment as their employer, but cannot be trusted with a long-term
+> valuable secret, e.g. because they take their phone into areas with high
+> crime rates. 
+> 
+> The lack of this is ok for v1 but not great, because:
+> 
+> 1) It requires the name of the *actual* recipient to be put in the memo
+> field, otherwise you don't have the nice receipt-like properties. The
+> memo field is just plain text though, it doesn't have any exploitable
+> structure.
+> 
+> 2) It gives a confusing UI, the user thinks they're paying e.g.
+> Overstock but their wallet UI tells them they're paying Coinbase
+> 
+> 3) Whilst these payment processors currently verify merchants so the
+> security risk is low, in future a lighter-weight model or competing
+> sites that allow open signups would give a weak security situation:  a
+> hacker who compromised your computer could sign up for some popular
+> payment processor under a false identity (or no identity), and wait
+> until you use your hacked computer to make a payment to someone else
+> using the same payment processor. They could then do an identity swap of
+> the real payment request for one of their own, and your Trezor would
+> still look the same. Avoiding this is a major motivation for the entire
+> system!
+> 
+> Also it just looks more professional if the name you see in the wallet
+> UI is correct.
+> 
+> *_Proposed implementation_*
+> 
+> We can fix this with a simple extension:
+> 
+> enum KeyType {
+>   SECP256K1 = 1
+> }
+> 
+> message ExtensionCert {
+>   required bytes signature = 1;
+>   required bytes public_key = 2;
+>   required KeyType key_type = 3;
+>   required uint32 expiry_time = 4;
+>   optional string memo = 5;
+> }
+> 
+> // modification
+> message X509Certificates {
+>   repeated bytes certificate = 1;
+>   repeated ExtensionCert extended_certs = 2;
+> }
+> 
+> message PaymentRequest {
+>   // new field
+>   optional bytes extended_signature = 6;
+> }
+> 
+> This allow us to define a so-called /extended certificate/, which is
+> conceptually the same as an X.509 certificate except simpler and Bitcoin
+> specific. To create one, you just format a ExtensionCert message with an
+> ECDSA public key from the payment processor (PP), set signature to an
+> empty array and then sign it using your SSL private key. Obviously the
+> resulting (most likely RSA) signature then goes into the signature field
+> of the ExtensionCert. The memo field could optionally indicate the
+> purpose of this cert, like "Delegation to BitPay" but I don't think it'd
+> ever appear in the UI, rather, it should be there for debugging purposes.
+> 
+> The new ExtensionCert can then be provided back to the PP who adds it to
+> the X509Certificates message. In the PaymentRequest, there are now
+> /two/ signature fields (this is for backwards compatibility). Because of
+> how the mechanism is designed they should not interfere with each other
+> - old implementations that don't understand the new extended_signature
+> field will drop it during reserialization to set signature to the empty
+> array, and thus signature should not cover that field. On the other
+> hand, extended_signature would cover signature. Thus, for full backwards
+> compatibility, you would:
+> 
+> 1) Sign the payment request using the PP's SSL cert, i.e. sign as
+> coinbase.com <http://coinbase.com>
+> 
+> 2) Then sign again using the PP's delegated ECDSA key, i.e. sign as the
+> merchant
+> 
+> The finished protobuf would show up in old clients as signed by
+> coinbase.com <http://coinbase.com> and by new clients as signed by
+> overstock.com <http://overstock.com> even though Overstock did not
+> provide their SSL key to coinbase.
+> 
+> If you have /only/ an ExtensionCert and not any X.509 cert of your own,
+> then you cannot of course make backwards compatible signatures in this
+> way, and in that case you would miss out the signature field and set the
+> pki_type to a new value:  "x509+sha256+excert". Old wallets would see
+> that they don't understand this pki_type and treat the request as
+> unverified.
+> 
+> For maximum security the merchant may choose to set very short expiry
+> times (like, a day) and then have a cron job that uploads a new
+> ExtensionCert at the end of each expiry period. This means in the case
+> of PP compromise, the system reseals very fast.
+> 
+> *_Alternatives considered_*
+> *_
+> _*
+> We could always use a new pki_type and not bother with the two signature
+> fields. However, this means old wallets will show payment requests as
+> untrusted during the transition period. Some signing is still better
+> than none, security-wise.
+> 
+> We could attempt to fix the above by introducing a use of User-Agent
+> field to the case where a payment request is fetched via HTTP, so the
+> server can customise the PaymentRequest according to the capabilities of
+> the client. However, sometimes payment requests are not fetched via
+> HTTP, for example, they may be attached to an email, sent via an IM
+> network or sent over a Bluetooth socket. Nonetheless this may be a
+> useful thing to consider for future cases where the protocol may not be
+> extended in a backwards compatible manner.
+> 
+> We could create the extension cert as an X.509 cert, rather than a
+> custom type. However most CA's set path length constraints on their
+> intermediate certs that forbid this kind of extension (I forgot why,
+> possibly some kind of anti-DoS mitigation). Also re-using X.509 for the
+> extension cert would open up the risk of it being accepted by a bogus
+> SSL stack that didn't check the key usage constraints extension, and
+> that would allow for SSL delegation as well. It seems safer to just use
+> a different format that definitely won't be accepted.
+> 
+> 
+> 
+> Feedback welcome.
+> 
+> 
+> ------------------------------------------------------------------------------
+> Flow-based real-time traffic analytics software. Cisco certified tool.
+> Monitor traffic, SLAs, QoS, Medianet, WAAS etc. with NetFlow Analyzer
+> Customize your own dashboards, set traffic alerts and generate reports.
+> Network behavioral analysis & security monitoring. All-in-one tool.
+> http://pubads.g.doubleclick.net/gampad/clk?id=126839071&iu=/4140/ostg.clktrk
+> 
+> 
+> 
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> 
+
+
+
+
