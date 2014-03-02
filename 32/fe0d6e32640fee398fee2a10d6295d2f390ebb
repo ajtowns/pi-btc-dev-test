@@ -1,0 +1,90 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Sun, 02 Mar 2014 02:38:04 -0800
+Subject: [Bitcoin-development] BIP70 extension to allow for identity
+ delegation
+In-Reply-To: <CANEZrP1eABw_x8o-Z9ac23e-dVvUWfZJ-hKfAak=-NicPhUv9g@mail.gmail.com>
+References: <CANEZrP1eABw_x8o-Z9ac23e-dVvUWfZJ-hKfAak=-NicPhUv9g@mail.gmail.com>
+Message-ID: <op.xb3btqp7yldrnw@laptop-air>
+
+On Fri, 28 Feb 2014 03:46:49 -0800, Mike Hearn <mike at plan99.net> wrote:
+
+> 3) Whilst these payment processors currently verify merchants so the  
+> security risk is low, in future a lighter-weight model or competing  
+> sites that >allow open signups would give a weak security situation: a  
+> hacker who compromised your computer could sign up for some popular  
+> payment >processor under a false identity (or no identity), and wait  
+> until you use your hacked computer to make a payment to someone else  
+> using the same >payment processor. They could then do an identity swap  
+> of the real payment request for one of their own, and your Trezor would  
+> still look the same. >Avoiding this is a major motivation for the entire  
+> system!
+
+Let me restate that, it's a huge problem...
+
+Alice's system is compromised,
+Mallory intercepts a payment request being sent to Alice from payment  
+processor X on behaf of merchant X.
+Mallory regenerates a spoof payment request which pays to M, from the same  
+payment processor
+Alice can't tell Mallory's spoofed PR apart from Merchant X's and thinks  
+she's paying Merchant X
+
+It might be a bit challenging for M to generate the new PR on-the-fly  
+without being noticed, but that's not a security guarantee.
+
+Perhaps the UI just isn't expressive enough currently to expose this  
+situation in any way, let alone reliably alert the user to the issue,  
+because there's no way for the payment processor to get authenticated  
+fields other than memo into the UI.
+
+Today the only solution is for the payment processor to strictly control  
+the 'memo' field so Mallory wouldn't be able to make his own PR that  
+looked exactly like merchant Y's. But maybe it's too subtle to make  
+payment processors embed that kind of information.
+
+So is the main goal is to provide a structured way to embed this  
+information in the PR and expect that user interfaces will display them to  
+end users? If that's the case, I don't think we need an entirely secondary  
+certificate, or cross signing from a secondary ECDSA key.
+
+A poor solution: If the UI included some sort of certificate viewer, even  
+just tied to the OS certificate viewer, and made the cert available for  
+inspection, at least the merchant would have a chance to put some fields  
+in there which a very advanced user might actually find. But this was  
+discussed a while ago and I think the primary problem is the difficulty in  
+getting a CA to let you embed any additional fields in your certificate in  
+the first place, plus you don't want to generate a new cert for each  
+merchant.
+
+A somewhat better option: Some additional fields defined in an extension  
+which are reliably shown in the UI. We could try to define specific  
+fields, like 'DelegateCN' which would possibly override the primary CN...  
+As an aside, I think you can never allow actually overriding the CN  
+displayed in the UI directly, the most you can do is add another field in  
+the UI to show this string. First I need to know it's from Payment  
+Processor X, and then maybe we can let the payment processor make some  
+additional claim, like yes you are paying irs.gov. You can't give the  
+impression that Payment Processor X is not actually man-in-the-middle.
+
+Maybe the simplest would be a single field expected to contain a delimited  
+key/value string (of course JSON) which could be shown as additional lines  
+of labeled text in the UI. I don't want to give the "merchant" too much  
+dynamic control over what the user's screen will display, but making it  
+somewhat dynamic might add some future proofing.
+
+I think any additional extension fields should be hashed using the hash  
+function specified in pki_type and signed by X509Certificates.certifcate  
+private key. No extended_certs required -- I'm thinking something like;
+
+message PaymentRequest {
+// new field
+  optional bytes extended_properties = 6;
+  optional bytes extended_properties_sig = 7;
+}
+
+
+Thanks,
+Jeremy
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140302/1195f53c/attachment.html>
