@@ -1,0 +1,60 @@
+From: elombrozo@gmail.com (Eric Lombrozo)
+Date: Wed, 5 Mar 2014 13:31:01 -0800
+Subject: [Bitcoin-development] New side channel attack that can recover
+	Bitcoin keys
+In-Reply-To: <CANEZrP25N7W_MeZin_pyVQP5pC8bt5yqJzTXt_tN1P6kWb5i2w@mail.gmail.com>
+References: <CANEZrP25N7W_MeZin_pyVQP5pC8bt5yqJzTXt_tN1P6kWb5i2w@mail.gmail.com>
+Message-ID: <0720C223-E9DD-4E76-AD6F-0308CA5B5289@gmail.com>
+
+If we don't mind sacrificing some performance when signing, there's a fairly simple way to implement a constant-time constant-cache-access-pattern secp256k1.
+It is based on the idea of branchless implementations of the field and group operations.
+
+Multiprecision arithmetic can be implemented branch-free by assuming fixed sized limbs and always performing dummy carry operations even when they aren't needed.
+
+The most critical field operation that could potentially leak data is the modular inverse. Again, if we don't mind a slow implementation, a simple constant-time implementation involves exponentiation by the field modulus minus two - which is a known constant.
+
+As for group operations in secp256k1, the main sources of leaks are the branchings that exist in typical implementations as well as optimizations for special inputs,
+i.e. http://en.wikibooks.org/wiki/Cryptography/Prime_Curve/Jacobian_Coordinates
+To avoid leaking any information, we can use the most general operation, Point Addition, in the following way:
+
+Always carry through the full point addition algorithm even if we get POINT_AT_INFINITY. Also, always carry through the POINT_DOUBLE operation even on unequal inputs. Store the three possible results (POINT_ADDITION, POINT_AT_INFINITY, and POINT_DOUBLE) and then do a branchless conditional swap with the output location as a final step.
+
+Branchless swaps can be performed using bitwise operations such as the examples here: https://github.com/CodeShark/cmp/blob/master/src/constant-time.h
+
+--------------
+
+In the case of bitcoin, signature verification is where performance optimization is really helpful - and here there are no risks of sidechannel leaks, so we can go ahead and use the most optimal implementations. But for signing, the amount of throughput required is generally not that large and constant-time implementations will be more than adequate on typical hardware.
+
+-Eric Lombrozo
+
+On Mar 5, 2014, at 4:49 AM, Mike Hearn <mike at plan99.net> wrote:
+
+> A new practical technique has been published that can recover secp256k1 private keys after observing OpenSSL calculate as little as 200 signatures:
+> 
+> http://eprint.iacr.org/2014/161.pdf
+> 
+> This attack is based on the FLUSH+RELOAD technique published last year. It works by observing L3 CPU cache timings and forcing cache line flushes using the clflush opcode. As a result, it is applicable to any x86 environment where an attacker may be able to run on the same hardware i.e. virtualised hosting environments where keys are being reused.
+> 
+> I am not currently aware of any efforts to make OpenSSL's secp256k1 implementation completely side channel free in all aspects. Also, unfortunately many people have reimplemented ECDSA themselves and even if OpenSSL gets fixed, the custom implementations probably won't. 
+> 
+> So, IMHO this is a sign for hot wallet users to start walking (but not running) towards the exits of these shared cloud services:  it doesn't feel safe to sign transactions on these platforms, so hot wallets should be managed by dedicated hardware. Of course other parts of the service, like the website, are less sensitive and can still run in the cloud. I doubt the researchers will release their code to do the side channel attack and it's rather complex to reimplement, so this gives some time for mitigation. Unfortunately the huge sums being held in some "bitbank" style hot wallets mean that attackers are well motivated to pull off even quite complex attacks.
+> ------------------------------------------------------------------------------
+> Subversion Kills Productivity. Get off Subversion & Make the Move to Perforce.
+> With Perforce, you get hassle-free workflows. Merge that actually works. 
+> Faster operations. Version large binaries.  Built-in WAN optimization and the
+> freedom to use Git, Perforce or both. Make the move to Perforce.
+> http://pubads.g.doubleclick.net/gampad/clk?id=122218951&iu=/4140/ostg.clktrk_______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140305/cd3b088f/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 801 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140305/cd3b088f/attachment.sig>
