@@ -1,0 +1,66 @@
+From: carterd@gmail.com (Dan Carter)
+Date: Thu, 06 Mar 2014 04:23:40 -0800
+Subject: [Bitcoin-development] Stealth Addresses
+In-Reply-To: <20140106120338.GA14918@savin>
+References: <20140106120338.GA14918@savin>
+Message-ID: <531868CC.807@gmail.com>
+
+I think stealth addresses combined with zk-snarks would obviate the need 
+for CoinJoin.  zk-snarks could be used to hide the coin's value and 
+stealth addresses could be used to hide the recipient for payments and 
+even mined coins.  More info on zero-knowledge snarks:
+
+http://cs.tau.ac.il/~tromer/papers/vnsnark-20131230.pdf
+http://cs.tau.ac.il/~tromer/papers/csnark-20131007.pdf
+
+Start with a mined coin: generate a coin secret, create a coinbase 
+transaction with an output to your stealth address and send 
+hash(coin-secret + reward-value) + encrypt(coin-secret + reward-value) 
+where only the recipient (you) can decrypt. (The reward value is known 
+publicly but just assume it isn't here for generality). You also embed 
+the 0.2KB zk-snark proof + 3KB verifying key that the hash result is in 
+fact SHA256(coin-secret + reward-value), where your private witnesses 
+are (coin-secret, reward-value).
+
+Now you could split a coin into as many pieces as you want in a single 
+transaction and send to multiple recipients, some pieces go to yourself 
+(change) and others to the payee, every piece would have a different 
+recipient address thanks to stealth addresses, and all values hidden 
+thanks to zk-snarks.
+
+So lets say you want to split the mined coin into two new ones.  You 
+create a transaction where the input redeems the mined coin using mined 
+tx out + your stealth address, and there are two new coins as outputs to 
+your own stealth address each having: hash(new-coin-secret + 
+new-hidden-value) + encrypt(new-coin-secret + new-hidden-value).  You 
+also embed the zk-snark proof that the two new hidden values add up to 
+the original hidden value, and that the two new hash results are in fact 
+SHA256(new-coin-secret + new-hidden-value), where your private witnesses 
+are (original-coin-secret, original-hidden-value, new-coin-secrets, 
+new-hidden-values).
+
+If you want to merge two coins into one it's just a split backwards, two 
+inputs one output, zk-snark proof that two original hidden values add up 
+to the new hidden value and that the new hash result is 
+SHA256(new-coin-secret + new-hidden-value).
+
+If you want to transfer ownership of a coin then just redeem at input, 
+and output same as mined coin except using recipient stealth address 
+(which is a public key) to encrypt(coin-secret + hidden-value).
+
+- Dan
+
+
+
+On 2014-01-06 4:03 AM, Peter Todd wrote:
+> * Abstract
+>
+> A Stealth Address is a new type of Bitcoin address and related
+> scriptPubKey/transaction generation scheme that allowers payees to
+> publish a single, fixed, address that payors can send funds efficiently,
+> privately, reliably and non-interactively. Payors do not learn what
+> other payments have been made to the stealth address, and third-parties
+> learn nothing at all. (both subject to an adjustable anonymity set)
+
+
+
