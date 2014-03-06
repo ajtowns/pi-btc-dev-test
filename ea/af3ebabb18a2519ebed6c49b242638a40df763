@@ -1,0 +1,85 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 6 Mar 2014 10:45:31 +0100
+Subject: [Bitcoin-development] Instant / contactless payments
+Message-ID: <CANEZrP3w9c_UX3dd+7LdWNXCEwjnAG+bYWxqKYo_fzakWQu=Bg@mail.gmail.com>
+
+I just did my first contactless nfc payment with a MasterCard. It worked
+very well and was quite delightful - definitely want to be doing more of
+these in future. I think people will come to expect this kind of
+no-friction payment experience and Bitcoin will need to match it, so here
+are some notes on what's involved.
+
+There are two aspects that can be implemented independently of each other:
+
+1) The physical/NFC layer.
+2) The risk analysis layer.
+
+A contactless payment needs two things to work: one is a VERY fast, low
+latency communication between payment device (phone in our case) and
+terminal. I couldn't find actual latency specs yet but it felt like using
+an Oyster card, which aims for <400msec.
+
+The other is that obviously the payment device has to decide to sign the
+transaction without any user interaction, i.e. the payment is at low risk
+of being unintentional. If you nail this it can be used for one-click web
+payments too.
+
+Andreas already did some work on embedding full blown payment requests into
+an NFC tag, but I think we need to switch this to being a packet based
+protocol (via ISO-DEP), otherwise you can't submit the Payment/tx messages
+back via NFC as well. This isn't a very complicated task and would make a
+fun project for a newbie who has Android and knows some Java. The resulting
+ISO-DEP protocol can be turned into a BIP without too much trouble.
+
+The risk analysis is the more complicated part. The real value
+Visa/MasterCard provide with NFC payments is not so much the tech (the
+clever part is the batteryless nature of the cards rather than the
+crypto/comms), but the fact that merchants are all verified and can be
+fined or evicted if they abuse the system and try to steal money. Bitcoin
+doesn't have anything like that.
+
+I think we have a few options to make it safe:
+
+1) Require some very lightweight user confirmation, like pressing the power
+button to reach the lock screen and only allowing small payments. The
+combination of physical proximity and pressing the power button is probably
+good enough for now to avoid problems. Someone should try it out and see
+how it feels.
+
+2) Have some kind of semi-centralised merchant verification/approval
+programs, like what the card networks do. The easiest way to start would be
+to piggyback on the work BitPay/Coinbase do and just auto-sign if payment
+amount is <X mBTC and the payment is via one of these processors. But this
+is hardly in the spirit of Bitcoin and is generally unsatisfying.
+
+3) Have some kind of decentralised reputation network. I spent some time
+thinking about this, but it rapidly became very complicated and feels like
+an entirely separate project that should stand alone from Bitcoin itself.
+Perhaps rather than try to make a global system, social data could be
+exchanged (using some fancy privacy preserving protocols?) so if your
+friends have decided to trust seller X, your phone automatically trusts
+them too.
+
+4) Have the touch trigger a delayed payment and the phone tries to attract
+attention to itself so the user can cancel. This way if someone tries to
+swipe money out of your pocket by getting up close on a subway or
+something, you have a chance to cancel. But it's quite hard for a small
+device to reliably attract attention quickly and it opens up the merchant
+to fraud where the user pays, leaves and then cancels the payment.
+Especially it'd be useless for things like mass transit. So I think such a
+system would have to be opt-in by the seller.
+
+5) A combination of all the above.
+
+To get the very fast light feel the actual contact period has to be quite
+short, so I bet we'd need to optimise the bootup process of the Android
+wallet app. Right now it does slow things like deserialising giant protocol
+buffers and is just generally not optimised for startup time. Loading the
+wallet, reading the payment request over NFC, checking the cert signatures,
+making the trust decision, calculating a transaction, signing it, sending
+it back to the recipient all in under 400 msec would be a tough (but fun)
+programming challenge. Some of the steps can be parallelised and modern
+phones are mostly multicore.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140306/0d93269c/attachment.html>
