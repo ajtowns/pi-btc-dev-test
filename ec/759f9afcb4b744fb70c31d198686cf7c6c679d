@@ -1,0 +1,407 @@
+From: jeanpaulkogelman@me.com (Jean-Paul Kogelman)
+Date: Tue, 11 Mar 2014 20:17:50 -0700
+Subject: [Bitcoin-development] [RFC] Proposal: Base58 encoded HD Wallet
+ root key with optional encryption
+In-Reply-To: <682B9F30-7DDC-4A9D-886E-5454D5F45665@me.com>
+References: <CANEZrP37a=EH+1P47opH0E-1TG9ozgw_1NzecJpRRJsMaZRLOw@mail.gmail.com>
+	<81f77484-3ca9-40a7-a999-884260b26be5@me.com>
+	<CAAS2fgSyegH8y1dYcijCSPLsC54mxeSNsN+3FQVDo5R9tWwAwQ@mail.gmail.com>
+	<BF62F0D0-1D13-4F19-A8F6-F588F3060A64@me.com>
+	<682B9F30-7DDC-4A9D-886E-5454D5F45665@me.com>
+Message-ID: <A6F382CD-01F7-47DF-84F4-20F81BB64259@me.com>
+
+Hi everyone,
+
+We've been hard at work updating the spec to include features that were requested. We've removed the Scrypt dependency that was present in the initial drafts, added new KDFs, added plausible deniability and have a reference implementation.
+
+
+Kind regards,
+
+
+Jean-Paul Kogelman
+
+
+---
+
+Recent changes:
+
+15-02-2014 - Updated wording of various parts.
+06-02-2014 - Added Will Yager's implementation as reference.
+05-02-2014 - Changed prefix to 2 bytes, 'RK' and 'rk' for clear version and encrypted version respectively.
+05-02-2014 - Added entropy field to encrypted version, moved KDF field from prefix into entropy field.
+05-02-2014 - Changed computation of H to use PBKDF2-HMAC-SHA512 instead of Scrypt.
+05-02-2014 - Changed checksum field to bloom field in encrypted version. Now supports 2 passwords.
+27-12-2013 - Added some clarifications such as password character set (UTF-8) and endianness of fields.
+26-12-2013 - Changed checksum to double SHA256 of private key, added 3rd party KDF support.
+01-10-2013 - Expanded the salt to be prefix + date + checksum and renamed 'master seed' to 'root key'.
+24-07-2013 - Added user selectable KDF + parameters, encoded in the prefix.
+22-07-2013 - Added 2 byte creation date field, as a result, the prefix is expanded to 3 bytes.
+
+
+BIP: 
+Title: Base58 encoded HD Wallet root key with optional encryption
+Author: Jean-Paul Kogelman
+Status: Draft
+Type: Informational
+Created: 18-07-2013
+
+Abstract
+
+This proposal describes a method for encoding and optionally encrypting a Bitcoin Hierarchical Deterministic (HD) Wallet root key. Encoded root keys are intended for use on paper wallets. Each string contains all the information needed to verify and reconstitute an HD wallet except for the optional passphrases. The encrypted version uses salting and a user selectable key derivation function (KDF) + parameters to resist brute-force attacks at varying degrees and optionally a second password for plausible deniability.
+
+The method provides two encoding methodologies in 3 lengths each (16, 32 and 64 byte root keys). One is a clear version of the root key with verification information for integrity checking and the other is an encrypted representation.
+
+Additionally a 2 byte compressed date field is present to limit the block chain rescan on wallet import.
+
+
+Motivation
+
+The extended private keys proposed in BIP 0032 are long, fixed length records and don't offer any form of security. The root key used to generate the HD wallet is typically shorter than the extended master private key that results from it. 
+
+A compact representation of the root key is easier to handle and a 2-factor version of the root key record allows for safe storage and the creation of paper wallets by 3rd parties. The KDF and its parameters are user selectable, allowing for a varying level of resistance against brute force attacks. This proposal currently defines 5 sets of parameters with room for 27 more that can be defined at a later date. Implementors are advised to contact the author with new KDF proposals.
+
+Copyright
+
+This proposal is hereby placed in the public domain.
+
+Rationale
+
+User story: As a Bitcoin user who uses HD wallets, I would like the ability to store my wallet root key in a compact form as a paper wallet.
+
+User story: As a Bitcoin user who uses HD wallets, I would like the ability to have a 3rd party create a paper wallet with my root key in it, without having access to the funds stored in the wallet.
+
+User story: As a Bitcoin user who uses HD wallets, I would like the ability to choose the strength of the root key depending on my security requirements and how I wish to store it. 
+
+User story: As a Bitcoin user who uses HD wallets, I would like the ability to import a root key into a simplified payment verification (SPV) client without having to redownload the entire block chain, but rater a limited range, to find associated transactions.
+
+User story: As a Bitcoin user who uses HD wallets, I would like to choose the KDF and its parameters that is used to hash the passphrase that protects my root key to fit my security needs and available processing power. 
+
+User story: As a Bitcoin user who uses HD wallets, I would like to outsource the KDF computation to a 3rd party with more processing power.
+
+User story: As a Bitcoin user who uses HD wallets, I would like to have a second password that can decrypt a second root key.
+
+Specification
+
+This proposal makes use of the following functions and definitions:
+
+All input/output text is to be UTF-8 encoded
+
+AES256Encrypt, AES256Decrypt: The AES block cipher, applied in ECB mode.
+
+SHA256, SHA512: The hash algorithms of the same name. 
+
+HMAC-SHA512: The HMAC message authentication code algorithm, using SHA512 as the hash function
+
+PBKDF2-HMAC-SHA512: The PBKDF2 key derivation algorithm, described in PKCS #5 v2.0 and RFC 2898, using HMAC-SHA512 as the pseudorandom function
+
+Scrypt: The key stretching algorithm of the same name
+
+Base58Check: The textual data encoding frequently used by various Bitcoin-related systems
+
+"Root Key": The 16/32/64 byte value encoded in the wallet. This value is used to derive the private keys for addresses in the Bitcoin Wallet
+
+"Master Key": The primary Bitcoin private key, which is derived from the Root Key
+
+"||" refers to concatenation, not the logical OR operation
+
+"G", "N": Constants defined as part of the secp256k1 elliptic curve. G is an elliptic curve point, and N is a large positive integer.
+
+Prefix
+
+The Base58Check representation of the wallet will start with "RK" (Root Key) if the wallet is unencrypted, and will start with "rk" if the wallet is encrypted.
+
+Proposed specification
+
+Unencrypted wallet:
+
+Prefixes:
+0x28C1: 16 byte root key, no encryption. 24 byte total length
+0x4AC5: 32 byte root key, no encryption. 40 byte total length
+0xFBB3: 64 byte root key, no encryption. 72 byte total length
+
+These are constant bytes that appear at the beginning of the Base58Check-encoded record, and their presence causes the resulting string to have a predictable prefix.
+
+"date" is a 2-byte, little endian field containing the number of weeks since jan 1st 2013. It is used to optimize blockchain scan upon wallet import.
+
+"checksum" is the first 4 bytes of SHA256(SHA256(master_secret)), where master_secret is the "Master Secret Key (IL)" from the BIP32 specification. In other words, "checksum"=SHA256(SHA256(HMAC-SHA512("Bitcoin seed", root_key)[0:32]))[0:4].
+
+"root_key" is the 16/32/64 byte root key used for the HD wallet
+
+In summary, the clear wallet looks like this:
+[prefix, 2 bytes][date, 2 bytes][checksum, 4 bytes][root_key, 16/32/64 bytes]
+
+Range in Base58Check encoding for clear 16 byte root key (prefix RK):
+Minimum value: RK52zvuD3xRhwto8JDTonxhru6awsFfNqKCTmT (based on 0x28 0xC1 plus twenty-two 0x00's)
+Maximum value: RKCsfF9RpLnrxo1kp2o7mfWYeAV1NNYxWSMRym (based on 0x28 0xC1 plus twenty-two 0xFF's)
+
+Range in Base58Check encoding for clear 32 byte root key (prefix RK):
+Minimum value: RK15fXAj9BEMooghtx2gY5YrSh23LYKS8mZnaz8oYf1EDnqAwtAADGMVUDHG (based on 0x4A 0xC5 plus thirty-eight 0x00's)
+Maximum value: RK5MUEoFU24QARcsX5HR2ieCjem468hDeQm4J2aH5zsCVJXUCGn6nsVQEFhN (based on 0x4A 0xC5 plus thirty-eight 0xFF's)
+
+Range in Base58Check encoding for clear 64 byte root key (prefix RK):
+Minimum value: RK1uXsCQAKqaa2s7YBDeaLS2KTqZcNjjQSgdSfDv4fqGkTw8KBfZ2ND4Cp7vHdzhjJ2C2Jtf4CwgScRnXvpzuQT2W4Vj2SgCyfBgpTzF (based on 0xFB 0xB3 plus seventy 0x00's)
+Maximum value: RK3B9TMn55dey3an1oHpwB81FPZboakivYtqFvCaeknPzPK4iTvoFKzxVWKcD9YfJwjkyS36bqnSqjibUurcQ7J2EsQww5zPpJNzqjkw (based on 0xFB 0xB3 plus seventy 0xFF's)
+
+
+Encrypted wallet:
+
+Prefixes:
+
+0xF83F: 16 byte root key, encrypted. 26 byte total length
+0x6731: 32 byte root key, encrypted. 43 byte total length
+0x4EB4: 64 byte root key, encrypted. 76 byte total length
+
+These are constant bytes that appear at the beginning of the Base58Check-encoded record, and their presence causes the resulting string to have a predictable prefix.
+
+"date" is a 2-byte, little endian field containing the number of weeks since jan 1st 2013. It is used to optimize blockchain scan upon wallet import. The maximum value of 0xFFFF results in: jan 1st 3269
+
+"entropy" is a 2/3/4 byte (corresponding to whether the key is 16/32/64 bytes) field. The first five bits contain the KDF type, and all other bits contain random data. This is used as a salt to make cracking the wallet password harder.
+
+"bloom_filter" is a 4 byte little-endian field containing a bloom filter to check that the user entered their password correctly.
+
+"encrypted_root_key" is the 16/32/64 byte encrypted root key used for the HD wallet
+
+In summary, the encrypted wallet looks like this:
+[prefix, 2 bytes][date, 2 bytes][entropy, 2/3/4 bytes][bloom_filter, 4 bytes][encrypted_root_key, 16/32/64 bytes]
+
+
+Range in Base58Check encoding for encrypted 16 byte root key (prefix rk):
+Minimum value: rk2V4R2ys91WigNPL5nots6a97rfMnwTkPAb2XgNo (based on 0xF8 0x3F plus twenty-four 0x00's)
+Maximum value: rk57mv9oertBLsHfncAvqnbetCBdNS1gFHQaFsD3p (based on 0xF8 0x3F plus twenty-four 0xFF's)
+
+Range in Base58Check encoding for encrypted 32 byte root key (prefix rk):
+Minimum value: rk1CYsqKjsbXa7uvncEaW4XSeVzcpq1U9yDMxd2cWwfkGf1FMjENaVThYpLRNwqo (based on 0x67 0x31 plus fourty-one 0x00's)
+Maximum value: rk7Xw5b6fidaCk489LhaiMqHkZo7RYGTmzvJY9A5joxe8KXAn8BC66cmQPYYYvy8 (based on 0x67 0x31 plus fourty-one 0xFF's)
+
+Range in Base58Check encoding for encrypted 64 byte root key (prefix rk):
+Minimum value: rk48BmQWeQbATSXbP5U6XVsXRJTs4Ea1TVZBbHLPPsboCFyxDj2Jaz2JAJno97hq6dq2bANLuWydY8QSZgKVGhPRZazXt1swPXwzVLw1QnVAz (based on 0x4E 0xB4 plus seventy-four 0x00's)
+Maximum value: rkCRtT9R9kuAapCaLQFif5uo8gUrjgKsvYmGGTpX2ZTjTfwe9M7A6KezTh7f4FDxfZFVbHypodMNnNdmWYb8mzTokHXVR1u7KicrLLFFu7GJW (based on 0x4E 0xB4 plus seventy-four 0xFF's)
+
+
+Encoding of KDF + parameters:
+
+A number of KDF functions are available, to accommodate a wide range of possible use cases. The KDFs are defined as follows:
+
+ID	KDF	Parameters
+0x00	scrypt	n = 2^14, r = 8, p = 8
+0x01	scrypt	n = 2^16, r = 16, p = 16
+0x02	scrypt	n = 2^18, r = 16, p = 16
+0x08	PBKDF2-HMAC-SHA512	iterations = 216
+0x09	PBKDF2-HMAC-SHA512	iterations = 221
+
+All other possible values (3-7 and 10-31) are reserved.
+
+Please note that KDFs 1 and 2 will probably not run on mobile devices. KDFs 8 and 9 are very memory efficient.
+
+Generation of date:
+
+The purpose of the date field is to make scanning the blockchain for transactions to/from this wallet faster. The date *must* be on or before the date of the first transaction to/from the wallet. If the date is unknown (e.g. on an embedded device) or the user does not wish to reveal the wallet creation date, this field can be set to zero (which may incur a performance penalty for the wallet software). When importing, it is advised to start scanning from a few days before the encoded date. The date field is a little-endian integer containing the number of weeks, rounded down, since Jan 1st 2013. 
+
+Examples: 
+
+sep 18th 2013 - jan 1st 2013 =  260 days =  37 weeks 1 day = rounded down becomes 0x0025
+mar  3rd 2027 - jan 1st 2013 = 5174 days = 739 weeks 1 day = rounded down becomes 0x02E3
+
+Derivation of Master Key from Root Key (please see BIP 0032 for a full description of HD wallets):
+
+1. Take 16/32/64 byte Root Key. Call it S
+2. Calculate I = HMAC-SHA512(key = "Bitcoin seed", msg = S)
+3. Let IL = I[0:32]. IL is the Master Key
+4. If IL is 0 or IL >= N, where N is the curve order of Secp256k1 (the elliptic curve used by Bitcoin), the Root Key is invalid and a new one should be chosen.
+
+Encryption:
+
+Let "passphrase" be the user's chosen passphrase
+Let "fake_passphrase" be the user's chosen second passphrase, or a randomly generated string if the user chose not to use a second passphrase
+Let "KDF" be the chosen key derivation function
+Let "root_key" be the 16/32/64 byte Root Key
+
+1. Create the correct "Prefix" and "Date" field
+2. Create the random "Entropy" field and encode the KDF number in the top 5 bits
+3. Let "salt" = Prefix || Date || Entropy
+4. Calculate "preH" = HMAC-SHA512(key = salt, msg = passphrase)
+5. Calculate "strongH" = KDF(msg = preH, salt = preH, output_len = 64) This step can be outsourced to a 3rd party, if desired.
+6. Calculate "postH" = HMAC-SHA512(key = passphrase, msg = salt)
+7. Calculate "H" = PBKDF-HMAC-SHA512(msg = postH, salt = strongH, iterations = 210, output_len = len(root_key) + 32)
+8. Calculate "whitened_key" = root_key XOR H[0:len(root_key)]
+9. Calculate "encrypted_key" = AES256Encrypt(message = whitened_key, key = HR), where HR is the last 32 bytes of H
+10. Calculate "fake_key" by decrypting encrypted_key with fake_passphrase
+11. Calculate "bloom_filter", containing root_key and fake_key. See the "Bloom Filter" section for more info.
+
+encrypted_wallet = Prefix || Date || Entropy || bloom_filter || encrypted_key
+
+Decryption of Root Key:
+
+Let "passphrase" be the passphrase provided by the user
+
+1. Extract "Prefix", "Date", "Entropy", "bloom_filter", and "encrypted_key" from the encrypted wallet
+2. Determine the correct KDF from the top 5 bits of Entropy.
+3. Let "salt" = Prefix || Date || Entropy
+4. Perform steps 4 through 7 of Encryption to derive "H"
+5. Calculate "whitened_key" = AES256Decrypt(message = encrypted_key, key = HR), where HR is the last 32 bytes of H
+6. Calculate "root_key" = whitened_key XOR H[0:len(whitened_key)]
+7. Verify that root_key is a member of bloom_filter
+
+Bloom Filter:
+
+The Bloom Filter is a data structure that allows us to check, within a range of probability, whether or not some piece of data has been added to it. In this case, we want to make sure that the user entered their password correctly, so we're checking that the decrypted root_key corresponds to the one that was added to the bloom filter when the wallet was created.
+
+Bloom Filter Creation:
+
+1. Let "bloom_filter" be an empty (set to all zeros) 32-bit, little-endian integer
+2. To add an element "X" to bloom_filter, 
+3. Calculate "E" = SHA256(SHA256(HMAC-SHA512("Bitcoin seed", X)[0:32]))[0:11]. Note, this corresponds to the same algorithm used as a checksum for un-encrypted wallets. It also corresponds to the double-SHA of the Master Key.
+4. For each of the 11 bytes in E (call each byte "B"):
+4a.   calculate "N" = B & 0x1F. N will range from 0 to 31. Set the Nth bit in bloom_filter to 1
+
+You can add more items to the bloom filter, if desired. However, the filter parameters are optimized for 2 items (one "real" password/wallet, and one "fake" password/wallet). Please note that adding more items will drastically increase the chance of a false positive when entering a password. The chance of a password similar to a correct password passing the filter becomes more likely. This will generate a different Root Key and not the original one the user intended to decrypt.
+
+Bloom Filter Verification:
+
+Let "X" be some item
+Let "bloom_filter" be the Bloom Filter you want to check if X belongs to
+
+1. Calculate "x_only_filter", which is a Bloom Filter with X added to it
+2. Ensure that any bit that is set in x_only_filter is also set in bloom_filter (i.e. x_only_filter & bloom_filter == x_only_filter)
+3. If all bits set in x_only_filter are also set in bloom_filter, you know X is probably a member of bloom_filter. If not, X is definitely *not* a member of bloom_filter.
+
+Suggestions for implementers of proposal with alt-chains
+
+This proposal is network and coin agnostic (so long as the coin in question uses SECP256K1 ECC). Alt-coin implementors are advised to change the prefixes so that encoded root keys do not start with ?RK" or ?rk?.
+
+Reference implementation
+
+Python reference implementation: https://github.com/wyager/Encrypted-HD-wallet
+
+Acknowledgements
+
+Will Yager for the Python reference implementation and rewording of parts of this specification.
+Mike Caldwell for BIP 0038, which this proposal borrows heavily from.
+
+See Also
+
+BIP 0032 Hierarchical Deterministic Wallets: https://en.bitcoin.it/wiki/BIP_0032
+BIP 0038 Passphrase-protected private key: https://en.bitcoin.it/wiki/BIP_0038
+
+Test vectors
+
+The primary password will always decrypt the same root key, regardless of KDF selection, however, the secondary password will generate a different root key for every KDF.
+
+Test 1:
+
+Root Key	000102030405060708090a0b0c0d0e0f
+Creation	04-02-2014
+Clear	RK6nEaou4eFQC4SfrHtdh9jpnEme4K9dt2jBmG
+Password	Satoshi
+Public Address	15mKKb2eos1hWa6tisdPwwDC1a5J1y9nma
+Private extended key	xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi
+Public extended key	xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8
+Second password	Alpaca
+Encrypted (KDF0)	rk354bXH1JsXTwWmuvRskFWoeUX8hMjQiseNM7wj6
+Public Address	1Ndr6DnQm5EefVhTdKjXC3vH5qGRa1FCng
+Private extended key	xprv9s21ZrQH143K3TxQaa6hd8mPR9Bw2ue1H5TMjUYuUEPEDUTxK7PZ191poMob8zbU5hsckCQoBFYtQZzbgxtYz1acbLmFQtjcbWSYhQ7kSZE
+Public extended key	xpub661MyMwAqRbcFx2sgbdhzGi7yB2RSNMreJNxXrxX2ZvD6Go6rehoYwLJecVAuhHhMPSuMStnLHbzQ4CCyPqbVyLP4F2SmiLTcE3oicmA81M
+Encrypted (KDF1)	rk354bq4dXW8VB67XSZzQdVLFJFz64v1Dh1i12VTY
+Public Address	12cbi9vTjpZ8RjinLc2fJp1iDkL96xMQoe
+Private extended key	xprv9s21ZrQH143K4JxBYKwi5dGE59G4vtRGLiyinEPxMdgYdPe6UqMrgJneacME8JQuoskvEzEZ1vnHwW8i1h4Mwm5wj5BUPJWf764QfkkvFAQ
+Public extended key	xpub661MyMwAqRbcGo2eeMUiSmCxdB6ZLM97hwuKacoZuyDXWByF2Ng7E778RrYidat9n9Ht5cYrdS4gwVBA2g8VHAro7b4Gbvo2NKTLP9STuvP
+Encrypted (KDF8)	rk354dUN5yrKvrMQRneKJvdJFf77WDJw5ZfeeRt4H
+Public Address	14z6Vm4TRxd9ueasFahwBxYJ8jfhwhX4bt
+Private extended key	xprv9s21ZrQH143K2AaodGyHvDBQFrFcDdHVJj15zqJUkU1wuLS5kFxgE9rGBvh8rAUeenfhhwC91efxn8kHbhKGeTaQkkyGFvbKiAuLcx8t8qP
+Public extended key	xpub661MyMwAqRbcEefGjJWJHM88ot66d61LfwvgoDi6JoYvn8mEHoGvmxAk3DfcWWuDBqMUmPoXA28pa2uMnQFxKQe21Df5uQAGADCpcdZHAGe
+Encrypted (KDF9)	rk354dedikaytYJ7D4btpcVfGuakfixf5yj2SnTcX
+Public Address	17tzY2huzjbcRNV7e7BshxQ8UPrZhznBgn
+Private extended key	xprv9s21ZrQH143K3Xt1wRGXFZ6D76dGLyGTWxvPv1QhkRcyPCbi6kM7WJG9dH6X9UMmzoTwoix3BsnzKf7ZkkpinPw8hyGaNLWzmcbemJVUWTj
+Public extended key	xpub661MyMwAqRbcG1xV3SoXch2wf8TkkRzJtBqziPpKJm9xFzvreHfN46adUXfeFiVokTrKsBvK3zBgDJcUThjDtXAZ2dw9SYg74YMFjENB4aa
+
+Test 2:
+
+Root Key	7f0ad7d595be13e6fe4cf1fa0fbb6ae9c26c5d9b09920709414982b6363d5844
+Creation	04-02-2014
+Clear	RK22qqMb3CozsQfTTbSVsLEgXcjekut99SuSHn6urU4vWxjiQneHWVYabWgv
+Password	Nakamoto
+Public Address	1A54ECavJaJAoLGqqNrPd9Y3cvSvkL2Roz
+Private extended key	xprv9s21ZrQH143K3f9hMVvcbY4EX4CfxsEtc6C5BMkZtgGpTGpxAscoq7SLSAcL6k5dxaZ9s4SChrtfSFoKpijuwAnhuPn76eva6W8bDr118t3
+Public extended key	xpub661MyMwAqRbcG9EATXTcxfzy563ANKxjyK7fykABT1ooL5A6iQw4NukpHShDxYgeso4NHscFmqcVEtdUt61c8RCf7FqXK9z6sgfkQvYBQPP
+Second password	hunter2
+Encrypted (KDF0)	rk2cMHki73WbrYgo7XK9kSr6CGBPsMjU3uZf3f3qxCv4QoGy63DkBoGJKhPdvUtp
+Public Address	16UCUo31Y7qDMWSs68FBAW759X4K3PZ9kN
+Private extended key	xprv9s21ZrQH143K2dojoDyxmK7SLnyqSvn56oysqu2Ctf24Rdux6JFLReRgcH5KAM1GxCTVxjpc13Mh18kSmYqUep5EkbDvQJfEEVeLZXhyuYj
+Public extended key	xpub661MyMwAqRbcF7tCuFWy8T4AtppKrPVvU2uUeHRpSzZ3JSF6dqZaySkATZEZWFcAMxqhD7oTdcaufofFy1WGLF7U21rztvTv6qmGrPq7s2W
+Encrypted (KDF1)	rk2cMJ1KizRTPbBv8zaECpcQEY66SiZcfM2yAuCpdjDbJsdgZu9xdoFDpGuTVRYe
+Public Address	15PXuaVAiU2fEEAsUjxWYHtzoM4D6FaC5F
+Private extended key	xprv9s21ZrQH143K35ajB7SFjQJAzrmGbAJyp7iBYxhB3DcY9CC8XW5GkAHXDe2HXG6hUS3iquPbGAPuZygXm43BgYamWxiDN5sFm7w12db4uvU
+Public extended key	xpub661MyMwAqRbcFZfCH8yG6YEuYtbkzd2qBLdnMM6nbZ9X1zXH53PXHxc14vcMHtfJRGTZVgj2gz8sc6sUuYoFub9HaBzkfaxguH4Byqo9NhK
+Encrypted (KDF8)	rk2cMNSiQsAATQ19Y12nhGuL2uksZVASxNXAdjqrU3KaVcLH71No442sH1YvcwDL
+Public Address	13jQ3pnGznGNTC2LVxJz1m27opav8WPVvH
+Private extended key	xprv9s21ZrQH143K3aA9djUAAX1ASAcdqtuHEXmypDNd8gNy5PH4nm7y4QrieVdw7iQgA46LCJJAxdcN4qrP87Tp8XzJQbw7aeH3LPK8G7Zj6YT
+Public extended key	xpub661MyMwAqRbcG4Ecjm1AXewtzCT8FMd8bkhacbnEh1uwxBcDLJSDcDBCVnvvrsENPhxpCZ3FYVokSvwfJJFVU9KF3ctQQJp229pgcFLavKJ
+Encrypted (KDF9)	rk2cMPALytexkDuxm6QREojvgzoKcgKNeURPXDTVzPdZmbfzM2R3RX75Qqu4Yk5r
+Public Address	1NBQsYC1vhfbkEoiPWmUb1QN36cCsMxcti
+Private extended key	xprv9s21ZrQH143K4X6wJWAQbDawhqb2DaQT7mjbPhqNBHmspzrD1J5kcnb5syHr9LQggN3PtmvkjbMVs4zgTyjWmqKS4ix7J92z59cvbkF5W1s
+Public extended key	xpub661MyMwAqRbcH1BQQXhQxMXgFsRWd38JUzfCC6EyjdJrhoBMYqQ1AauZjGev413kscEPLn4s3XmiDoL1pevGUKACx5ZhhPHvujKaVpe5TRt
+
+Test 3:
+
+Root Key	fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8 a8784817e7b7875726f6c696663605d5a5754514e4b484542
+Creation	04-02-2014
+Clear	RK2BvY13FUD6bX25tA7XDyfAn7zbXSL8pR6TRE3EHZZ8qBm9qEyZRih8x1XhhcZwjcTfpe1Qjydn4KU dia8Wf1NshUusP1D38i88MLU9
+Password	Vires In Numeris
+Public Address	1JEoxevbLLG8cVqeoGKQiAwoWbNYSUyYjg
+Private extended key	xprv9s21ZrQH143K31xYSDQpPDxsXRTUcvj2iNHm5NUtrGiGG5e2DtALGdso3pGz6ssrdK4PFmM8NSpSBHNqPqm55Qn3LqFtT2emdEXVYsCzC2U
+Public extended key	xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB
+Second password	Quis Custodiet Ipsos Custodes?
+Encrypted (KDF0)	rk5ySVmNtFzgWZFXAehk6Akvf5PanApA5Y12arynxXZF7Lhc1YqaudukJFngEBXkpc4RGqqkM3ZW4RjE7HwhWTB5Uxi7pXy7vuKouQuZZzoTP
+Public Address	1AbB8okTm3SgcHnqKskQFfBd1MndDq1G75
+Private extended key	xprv9s21ZrQH143K4PUz4iSDMmUE9uovNGnZE6jZdKPDqozk8nBHBk3FRXo3tJEt4TFfo7Tkhnc9TAzUFvg7hsg7M1SddHF6nX9bBw9Tn968Aki
+Public extended key	xpub661MyMwAqRbcGsZTAjyDiuQxhweQmjWQbKfARhnqQ9Xj1aWRjHMVyL7XjaDV9SNrb7S8YvGtTGUkrRLS3kTDbRKRq26khyJDyKDuquaBqRM
+Encrypted (KDF1)	rk5ySWZriEipJWKyL6X8Rd86cgKn9qgGC7C4QYLVCjhyuBZiKXezzf6vjyJBXtFmP1f4qzaAAP5baRhKP4yCGo6LAU9keJCvRXoU77SUNmg1o
+Public Address	1Fzh1NoMtYUBAoKQ2Lsb6rA81bKFfNx2az
+Private extended key	xprv9s21ZrQH143K4KmLN9WLjPsVmKgVXPUfAScqkGeifQpTeXFw2X4ijfWNMDMtu4qfbbHZ69VSLcCMiGLHSLaQQY7Rb3PzHMRLLqVN6mjrGHP
+Public extended key	xpub661MyMwAqRbcGoqoUB3M6XpEKMWyvrCWXfYSYf4LDkMSXKb5a4NyHTprCW3JAJ66rn947iM9iyzUoS4CSXhsDZyuaks5hueT9wtDSdm91ga
+Encrypted (KDF8)	rk5ySbwggFoh8MZ1CnxqSeKwzag9ifrECtToowiRYKRgcueyMGX39yBGwxbY7ExKeTSmCRHokToThN8pxYWA9WQKrouVuatCMjcvX8PZ16tPf
+Public Address	1AiALvRHrWwjViJn5Q6oki4qVZ5p7SepfB
+Private extended key	xprv9s21ZrQH143K3CHptaD7aNZBUAYhjmCe5ceDLttwqKoQ3F73DRHNrSAVphAX2okZDWK82Eznf4bpmv9qjHZ7nzQjv2qNqXV8YwCWQEw2jiA
+Public extended key	xpub661MyMwAqRbcFgNHzbk7wWVv2CPC9DvVSqZp9HJZPfLNv3SBkxbdQEUyfwf9rtzBwBvKTV2WDejdPupDmihidJmDTTgXpar3r48kNiGhEzC
+Encrypted (KDF9)	rk5ySd2iHrVJ1CZ86Pyt6zerNzzBHfZo2rcBAX4MKNzX7doCZnNpBMc3pPf6igTCnk796isqtaEdcfagrN8Pced9VAtENVBtpugBLnjiGd28h
+Public Address	1Gazv3FH8oDxUUzgrRmWL14X3oBY5myDdQ
+Private extended key	xprv9s21ZrQH143K3YMD7T6LoFVGttrMKj9jxGAxfCv3pv6ZQfWcuBV5pqdcjyooGrqa8NeraYUuiTWJSWuz4fVMiCuEK8tWggZ6yMZZK7xLBkx
+Public extended key	xpub661MyMwAqRbcG2RgDUdMAPS1SvgqjBsbKV6ZTbKfPFdYHTqmSioLNdx6bH6v4uA4MWygDxbDDbVGPCurrTm5RwMnh14jEaswhA6nFK1bFd2
+
+Test 4:
+
+Root Key	6ca4a27ac660c683340f59353b1375a9
+Creation	04-02-2014
+Clear	RK6nEmXZj2nqgtCVWk3s7Suvz2XtWrdhDPpJqS
+Password	???
+Public Address	1JVncPbsdB2s4zHim3VdAWNkZ8JANBZ1U9
+Private extended key	xprv9s21ZrQH143K3mJ4upPSDfXdA34yNjem6PSsXT63vm8dq8ikUJv4iiTD3PrSKtdGZXFVD689z5T7knXo55BjcHS2WL3Syp2DbGgnbgxw2QA
+Public extended key	xpub661MyMwAqRbcGFNY1qvSaoUMi4uTnCNcTcNUKqVfV6fchw3u1rEKGWmgtfUMRKLgUHNZ7dfsh8Ys6SLwUojZqScFBQL3dFGF3QywNLJVZ2o
+Second password	Bitcoin
+Encrypted (KDF0)	rk354bYQBax15mmBSLTpaVuLRb9nDuaVbEseqBWpG
+Public Address	1AGXnLksHQgovEyQvj8kY9QtFV2x8D1Nm
+Private extended key	xprv9s21ZrQH143K3BMoPfivq74do9mxCnKRTZHWScTvVyrxGtCNvGd8bCZJk1Npwnds3ghiy4TTwmwtbSkpzTFcqLup57AWqm3NvRr6sNs7ZVt
+Public extended key	xpub661MyMwAqRbcFfSGVhFwCF1NMBcScF3GpnD7EzsY4KPw9gXXTowP8zsnbJTDhU9o9Sj9M63Qx6bZhZ7gS6AzNjNehPUbqdhc6th1VA1FGVg
+Encrypted (KDF1)	rk354bi6JiGeb5suvydsNtTosocEbpWcjoK7VL9Xv
+Public Address	1DkoSDVN7aYZnGe3wUCXAjqc3cXT9oiHhG
+Private extended key	xprv9s21ZrQH143K2Su2mQR7u6pweA8kwv4y3bKkvUeJUanC4eT7VVp64VxNH5uzwY12wE315rZMMf5XJQLcNLPBF7zcgoFv29UM3R9ctDqdshr
+Public extended key	xpub661MyMwAqRbcEvyVsRx8GEmgCByFMNnpQpFMis3v2vKAwSnG338LcJGr8NDyhCcF7QV65cmybwrhCkYre87pkG3NCpckbc2itaJknWnwGGX
+Encrypted (KDF8)	rk354dLtDHN3mPNSFABTNrhKmweKPZ55LJ31EM3k6
+Public Address	1QShZTrKPJPBcstuYX5JKRHPs1HUtD7y8
+Private extended key	xprv9s21ZrQH143K43FPi9awkCScXaAY4mEJje4PhS5uk2R67QU6p7bHXbvwgRdcwU9xZozYZ9hqfjm6ccAbGgU5eN4fp7uMY59MGq8swJVQPKW
+Public extended key	xpub661MyMwAqRbcGXKrpB7x7LPM5c12UDxA6ryzVpVXJMx4zCoFMeuY5QFRXfg1tnVaP3Fv1tmhoV8jrRG29Gip9FwW7j3vGLNneaMepS1QuHP
+Encrypted (KDF9)	rk354diEYQb4EdNjyosAZGNAB8L1spefWdz7RmZfX
+Public Address	1NLVhK8AQn7p2edvTtFJgTz6itrBeHZ4Wa
+Private extended key	xprv9s21ZrQH143K2stwSFWe4rPabNH1k1EVwQKwr7poayVZNPJup716aWVjDBVRVRh8gSgZhTP4uiaNuCkFbXXJCbDSnmvwNbnCuvQqHDDj7Ew
+Public extended key	xpub661MyMwAqRbcFMyQYH3eRzLK9Q7W9TxMJdFYeWER9K2YFBe4MeKM8JpD4RrrKNRrTMT9T7FvDbvWhzAXT68HxuyZGJ9BkC6G3ZiMjj1UT76
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140311/fba653b4/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 842 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140311/fba653b4/attachment.sig>
