@@ -1,0 +1,42 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Sun, 16 Mar 2014 06:54:49 -0700
+Subject: [Bitcoin-development] Electrum 1.9.8 release
+In-Reply-To: <5325A61B.6050802@gmx.de>
+References: <5325A61B.6050802@gmx.de>
+Message-ID: <CAAS2fgR766pjD43bZawuJH9VQ7S0dQRGY9HetOuj9HR3Pk=1_A@mail.gmail.com>
+
+On Sun, Mar 16, 2014 at 6:24 AM, Thomas Voegtlin <thomasv1 at gmx.de> wrote:
+>    The encryption algorithm is ECIES, and code was was borrowed from
+>    https://github.com/jackjack-jj/jeeq.  In order to know the public
+>    key corresponding to a Bitcoin address in your wallet, you can use
+>    the 'getpubkeys' command. The 'decrypt' command assumes that the
+>    wallet has the private key corresponding to the public key passed as
+>    argument.
+
+The cryptosystem in that repository appears to be insecure in several
+ways and is not actually implementing ECIES.
+
+The most important of which is that instead of using a
+cryptographically strong mac tied to the ephemeral secret it uses a
+trivial 16 bit check value.  This means that that I can decode an
+arbitrary message encrypted to a third person if they allow me to make
+no more than 65536 queries to a decryption oracle to decrypt some
+other message.
+
+Also, in the event that a random query to a decryption oracle yields a
+result (1:2^16 times) the result directly reveals the ECDH value
+because it is only additively combined with the message value. If the
+implementation does not check if the nonce point is on the curve (an
+easy implementation mistake) the result can yield a point on the twist
+instead of the curve which is far more vulnerable to recovery of the
+private key.  ECIES uses a KDF instead of using the ECDH result
+directly to avoid this.
+
+There may be other problems (or mitigating factors) as it was very
+hard for me to follow what it was actually doing.
+
+(The particular implementation has a number of other issues, like
+apparently not using a cryptographically strong RNG for its EC nonce..
+but I assume you didn't copy that particular flaw)
+
+
