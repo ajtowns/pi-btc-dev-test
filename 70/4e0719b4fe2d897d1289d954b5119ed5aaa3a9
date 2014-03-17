@@ -1,0 +1,147 @@
+From: mark@monetize.io (Mark Friedenbach)
+Date: Mon, 17 Mar 2014 10:24:46 -0700
+Subject: [Bitcoin-development] Compact SPV proofs via block header
+	commitments
+Message-ID: <53272FDE.6090602@monetize.io>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+==Abstract==
+
+In simple payment verification (SPV) proofs it is currently necessary
+that every intervening block header be provided between two blocks in
+order to establish both connectivity and proof of work. By committing to
+a hash tree of past block headers in each block, these back references
+can be exploited to demonstrate in logarithmic space that an elided
+sequence of block headers actually represents the claimed work. This is
+particularly useful in the construction of 2-way pegging between chains,
+and as an efficiency optimization for SPV clients and headers-first
+synchronization.
+
+==Overview==
+
+The miner of a block is allowed to choose some subset of the block
+history which it creates direct links back to. These links include the
+block hash, height, and work distance from the new block, and are
+organized into a hash tree structure. The root of this hash tree is
+committed to the coinbase string, or some other identifiable position in
+the block. Bitcoin is soft-forked to include verification of the
+accuracy of the contents of this structure - if present - as a
+validation rule.
+
+When constructing an SPV proof, the prover is allowed to choose
+back-links from this structure whose relative work distance is less than
+or equal to the apparent work of the proof-of-work which contains the
+back-link structure. Apparent work in this context means the expected
+work that would be required to meet or exceed the actual block hash.
+Since back-links can only be used if the apparent work is greater than
+or equal to the distance back, constructing such a fraudulent proof is
+expected to require just as much or more work as recreating the
+underlying sequence of blocks.
+
+The result is skip list structure where "lucky" proofs of work are used
+to skip back further than a single block (recall that if you search for
+a 64-bit leading-0 proof of work, half the time you get 65 leading-0's,
+a quarter of those cases have 66 leading-0's, and so on). When
+constructing very long proofs, the solver will follow links back to the
+nearest lucky block, then use the back-links contained within that block
+to skip back to a prior lucky block, and so on until it reaches a block
+which points directly to the desired target block. Given the
+distribution of "lucky" blocks, it is expected that such compact proofs
+require revelation of log2 N links in order to prove the work required
+to build a chain of length N.
+
+==Back link selection==
+
+In fully general form, this compact SPV proof scheme works no matter the
+back-links chosen by miners, so long as they are either revealed or
+selected in a deterministic way such that full nodes can check their
+validity. In choosing which back-links to include, the primary trade-off
+is that more back-links results in better connectivity, whereas a
+limited number of links results in smaller tree structures and therefore
+fewer hashes.
+
+At one extreme you can commit to every single header in the entire
+history of the block chain, by building an incremental data structure
+such as a binary heap. Such a structure would require log N storage per
+chain and log N hash operations per block update, where N is the total
+number of blocks in the chain. The root hash of this structure is then
+committed to the block chain in a known location.
+
+At the other extreme one could allow the miner instead to commit
+whatever back-links he or she desires, and force these the hash tree
+structure to be revealed prior to block validation. This allows the
+miner to be selective in choosing back-links which provide the most
+value, although there is not yet a clearly optimal mechanism for
+choosing these links.
+
+This is an area which requires more research with the purpose of
+determining the best structure for the hash tree of block header
+commitments, and the selection of back-links.
+
+==Use cases==
+
+For SPV clients, a client that has just come online could quickly
+ascertain which block represents the most work, and retrieve compact
+proofs-of-inclusion for its transactions without having to download
+every intervening block header. This further eliminates the need for
+checkpoints in an SPV client as it can instead obtain very compact
+proofs back to the genesis block instead of the most recent checkpoint,
+at a comparable cost. Similar optimizations apply to the initial stages
+of headers-first synchronization of full nodes.
+
+Assuming the availability of (U)TxO hash-tree commitments, a compact SPV
+proof would allow a mobile client to very quickly fast-forward to the
+current most-work block from which it could then query the spend status
+of its wallet outputs.
+
+For merged-mined or slow proof-of-work side chains, the savings from
+not including every intervening block header could be very significant
+in bandwidth and processing time.
+
+Compact SPV proofs allow side chains or private accounting servers to
+experiment with very short block intervals without having a detrimental
+effect on SPV proof sizes, as the compact proofs scale logarithmically
+with the number of blocks.
+
+Finally the most important and driving use case: symmetrical two-way
+pegging between bitcoin and side-chains is made efficient enough to be
+reduced to practice by the availability of compact SPV proofs[1]. The
+compact SPV proofs allow both the necessary proofs-of-spend and
+proofs-of-reorg to fit within current blockchain size limitations, and
+provide incentives for keeping this data out of the block chain until it
+is absolutely necessary.
+
+==References==
+
+This specific compact SPV proof proposal arose from pegging discussion
+involving a number of people #bitcoin-wizards: Greg Maxwell, Matt
+Corallo, Pieter Wuille, Luke-Jr, Jorge Timon, and Mark Friedenbach. It
+is believed that the first explanation of this general idea is due to
+Andrew Miller in his 7 Aug 2012 forum post titled "The High-Value-Hash
+Highway"[2].
+
+[1]http://sourceforge.net/p/bitcoin/mailman/message/32108143/
+[2]https://bitcointalk.org/index.php?topic=98986.0
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.14 (GNU/Linux)
+Comment: GPGTools - http://gpgtools.org
+Comment: Using GnuPG with Thunderbird - http://www.enigmail.net/
+
+iQIcBAEBAgAGBQJTJy/eAAoJEAdzVfsmodw4zC4P/izBRTutwypwQ70TxPxxHYfH
+I4QOpf+MgWHxrD+DKKyqkC2icgUBQz96K1vEhA86PrmK8DITs5yGHLSw7CEF/rlG
+hZErVY65IpowPt+JnlwOqHcqaoJ277s+4qpd/D9F7L1ROAMUDzzonf7V1Znr/fax
+lL4b8whfUI5jeRQby/tMiGPUB/1YJcbGmFccTW9gkGWMvoqZiiXcW7ZKuLrq5tbW
+RFIsrSt7rv3D0Cp2Fiyaxnryr2F0QOTqahHLn50+585eHpVFrA9A5T6xiBcEMzlQ
+l5cHRZb+lVIktWuYomBiqWljPLo5qercVDrehIq9FFSYuJqzudNx9ZXrpF1ZR4in
+UfZvlYqMFO/ZOTG33JWeeMonKlVwfHH2WreggzSq/JD/cH8dUj63A266Gaf6cl83
+vEfhgVBDTXZnl5H9Z7wymja6R9m9Eo/Xf+GwRV4vyx1b9gcZXML4Zm4bTp4EXFHA
+StBGrYKmMpEb/gguk/hxJLsm0i9pVaQpMC0u3kClHTA5o0IFF9F5+mVjOb59HlDX
+AQx96TSwJzhl0l0jcxYye8bXmZFJvpzpsKRPwNISllLEagjplwK2Ub8q5du27lH5
+R2qukcso6N5weGggUu1f7NrqcBALdz4E80SSpwu4YtJ6wdI4zsypaq4leqbSRSKh
+/hLKeOV5fEGNmwTtrDmN
+=j9cm
+-----END PGP SIGNATURE-----
+
+
