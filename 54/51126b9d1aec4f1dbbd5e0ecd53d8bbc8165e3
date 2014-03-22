@@ -1,0 +1,88 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 22 Mar 2014 04:47:02 -0400
+Subject: [Bitcoin-development] Handling miner adoption gracefully for
+ embedded consensus systems via double-spending/replace-by-fee
+Message-ID: <20140322084702.GA13436@savin>
+
+There's been a lot of recent hoopla over proof-of-publication, with the
+OP_RETURN <data> length getting reduced to a rather useless 40 bytes at
+the last minute prior to the 0.9 release. Secondly I noticed a
+overlooked security flaw in that OP_CHECKMULTISIG sigops weren't taken
+into account, making it possible to broadcast unminable transactions and
+bloat mempools.(1) My suggestion was to just ditch bare OP_CHECKMULTISIG
+outputs given that the sigops limit and the way they use up a fixed 20
+sigops per op makes them hard to do fee calculations for. They also make
+it easy to bloat the UTXO set, potentially a bad thing. This would of
+course require things using them to change. Currently that's just
+Counterparty, so I gave them the heads up in my email.
+
+To make a long story short, it was soon suggested that Bitcoin Core be
+forked - the software, not the protocol - and miners encouraged to
+support it. This isn't actually as trivial as it sounds, as you need to
+add some anti-DoS stuff to deal with the fact that the hashing power
+mining the transations you are relaying may be quite small. The second
+issue is you need to add preferential peering, so the nodes in the
+network with a broader idea of what is a "allowed" transaction can find
+each other. (likely with a new service flag) It'd be a good time to
+implement replace-by-fee, partly for its anti-DoS properties.
+
+Which leaves us with a practical question: How do you gracefully handle
+a switchover? First of all I suggest that proof-of-publication
+applications adopt format flexibility, similar to how Mastercoin can
+encode its data in pay-to-pubkeyhash, bare multisig, or op_return
+outputs. Given the possibility of bare multisig going away, I'd suggest
+that P2SH multisig scriptSig encoding be added as well. Note that a
+really good implementation of all this is actually format agnostic, and
+will let PUSHDATA's used for encoding data be specified arbitrarily. I
+wrote up some code to do so awhile back as an experiment. It used the
+LSB's of the nValue field in the txouts to specify what was and wasn't
+data, along with some stenographic encryption of data and nValue. I'd be
+happy to dig that up if anyone is interested.
+
+All these methods have some overhead compared to just using OP_RETURN
+and thus cost more. So I suggest you have your software simultaneously
+double-spend the inputs to any proof-of-publication transaction with a
+second transaction that just makes use of efficient OP_RETURN. That
+second one can go to more enlightened miners. Only one or the other will
+get mined of course and the cost to publish data will be proportional to
+the relative % of hashing power in the two camps.
+
+Finally I'll be writing something more detailed soon about why
+proof-of-publication is essential and miners would be smart to support
+it. But the tl;dr: of it is if you need proof-of-publication for what
+your system does you're much more secure if you're embedded within
+Bitcoin rather than alongside of it. There's a lot of very bad advise
+getting thrown around lately for things like Mastercoin, Counterparty,
+and for that matter, Colored Coins, to use a separate PoW blockchain or
+a merge-mined one. The fact is if you go with pure PoW, you risk getting
+attacked while your still growing, and if you go for merge-mined PoW,
+the attacker can do so for free. We've got a real-world example of the
+former with Twister, among many others, usually resulting in a switch to
+a centralized checkpointing scheme. For the latter we have Coiledcoin,
+an alt that made the mistake of using SHA256 merge-mining and got killed
+off early at birth with a zero-cost 51% attack. There is of course a
+censorship risk to going the embedded route, but at least we know that
+for the forseeable future doing so will require explicit blacklists,
+something most people here are against.
+
+To MSC, XCP and others: Now I'm not going to say you shouldn't take
+advice from people who call your finance 2.0 systems scams, or maybe if
+they're nice, indistinguishable from a scam. But when you do, you should
+think for yourself before just trusting that some authority figure has
+your best interests in mind.
+
+
+1) Yes, this was responsibly disclosed to the security mailing list. It
+   was revealed to the public a few hours later on the -dev IRC channel
+   without a fix.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000009065ab15f4a036e9ec13d2e788e0ede69472e0ec396b097f
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140322/a6b454c7/attachment.sig>
