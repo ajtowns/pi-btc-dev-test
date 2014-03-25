@@ -1,0 +1,277 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 25 Mar 2014 18:05:07 -0400
+Subject: [Bitcoin-development] Privacy-Protecting Proof of Reserves without
+ the Moon-Math and without the backup angst
+Message-ID: <20140325220507.GB4846@tilt>
+
+Introduction
+------------
+
+In the wake of the Mt. Gox debacle merkle-sum-trees for
+proof-of-reserve(1) have been getting attention again. A serious
+objection to using them is exchange privacy as the merkle-sum-tree
+inherently reveals the sum total of all deposits held by a given
+service. A second, lesser, consideration is the privacy of the users'
+balances, as changes to those balances are reflected in the tree and
+various levels of aggregate information can be extracted from the
+solvency proofs. For instance consider how an attacker who had knowledge
+of a few balance changes to a particular user's account - perhaps
+because that attacker had deposited funds themselves - could then
+corrolate those balance changes with changes in merkle path proofs to
+determine an upper bound on the victim's total balance. With some effort
+and/or luck that upper bound could be even improved to the exact account
+balance by obtaining a solvency proof from an account adjacent to the
+victim's account.
+
+Real or imagined the privacy problems with merkle-sum-trees pose a
+barrier to adoption. Jesse from the exchange Kraken stated recently(2)
+on reddit:
+
+    This is asking a lot of an exchange, and I don't think information
+    is worth the price you're paying in security and privacy. Your
+    interests would be better served by a private auditor's report.
+
+While there has been much discussion recently on #bitcoin-wizards and
+other places about applying advanced cryptographic techniques - so
+called "Moon Math" - generate zero-knowledge-proofs of blinded account
+sum trees so as to not leak any information, these techniques all suffer
+from implementation complexity. Fortunately private proof-of-solvency
+without moon math is possible without significant increase in
+complexity.
+
+
+Objectives
+----------
+
+First let's look at what exactly it is that our proof-of-solvency is
+supposed to achieve. For expediency we'll refer to the third-parties
+proving solvency as 'banks' and start with the big picture:
+
+0) No more banks stealing everyone's money!
+
+Of course, since the banks have the private keys to the bitcoins in
+question the best we can actually do is much weaker:
+
+1) Prove that at some point in the past, the bank had access to a
+   private key that can be used to spend unspent txout(s) that still
+   exists now.
+
+Note how the bank may have since lost that key! But objective #1 isn't
+good enough by itself; we also need to:
+
+2) Prove that those txout(s) have no been re-used in any other proof of
+   solvency or ownership.
+
+Most discussions about merkle-sum-trees miss this critical point. To see
+why it matters, consider the example of BigBank. They have a very simple
+proof-of-solvency scheme where they simply allocate one address per
+customer, holding at least their entire balance. To prove their solvency
+to Alice they simply sign a message:
+
+    $ btc verifymessage 13pPCfupiDhWadEXTZDnqSHm5Cy2rdUDho \
+      ID6Wk3SDsg3os4cSWRtG13lODY84zoVYpfEC2Y4kfHqGqqZV9hy1xD5yRKCyjL0II3UwPirEVKxm5meJ3VVDW/0= \
+      "Hi Alice"
+
+    true
+
+Alice checks that the txouts with that address sum up to at least as
+many Bitcoins as her balance, sees that it does, and is satisfied
+BigBank is solvent.
+
+Meanwhile LittleBank is running short of funds, so they decide to
+"borrow" some from BigBank. One of their customers, Bob, asks for a
+proof-of-solvency for his balance, and LittleBank happily obliges:
+
+    $ btc verifymessage 13pPCfupiDhWadEXTZDnqSHm5Cy2rdUDho \
+      H9af7wCdJrVIPG5Z0qrSviwAsElPkGw9v5FrUBAdaBtpeEtP/G8UdwN6KxKOytqyU7ObzcQs3qa6urHceZIXDg4= \
+      "Hi Bob"
+
+    true
+
+It's rather unlikely that Alice and Bob will compare notes so this
+reuse-fraud goes undetected.
+
+
+Solving txout reuse-fraud with per-txout commitments
+----------------------------------------------------
+
+By committing the txout to one and only one purpose we can ensure that
+they can't be reused for more than one proof-of-solvency. Take the
+following scriptPubKey:
+
+    H("bigbank.com") DROP <pubkey> CHECKSIG
+
+LittleBank in our above example can't reuse that txout as it is
+obviously not committed to them. The additional data is kinda ugly and
+lacks privacy but can be replaced with the same math used in BIP32 HD
+wallet derivation:
+
+    <pubkey + H(domain)*G> CHECKSIG
+
+or in the multisig case:
+
+    n <pubkey_1 + H(domain)*G> ... <pubkey_m + H(domain)*G> m CHECKMULTISIG
+
+The "domain" must be provably globally unique; the URL of the third-party
+would be appropriate in most cases. A simple random UUID is *not*
+sufficient as there is no good way to be sure that these UUIDs have not
+been reused.
+
+
+Internal reuse-fraud
+--------------------
+
+Suppose BigBank gains a second customer, Bob. After depositing some
+funds he asks for a proof-of-solvency. BigBank has since added
+anti-reuse-fraud to their very simple one-address-per-customer scheme:
+
+    $ btc verifymessage 1HHuBBExHYqPwfgmKiBEHAGFSaLSdVayh5 \
+      H6IJztw/QM4WjbtHl51WFo5L8rXn5aONZZvpQIo/8ORz7Yx0puLD68Z2WOCmAEvFQfpz0wYSX3D28RhevYBexpQ= \
+      "Hi Bob"
+
+    true
+
+Bob then goes and verifies that the address 1HHuBBE was derived from the
+domain "bigbank.com", and finally verifies that the funds held at that
+address are sufficient to cover his balance.
+
+Alice does the same thing:
+
+    $ btc verifymessage 1HHuBBExHYqPwfgmKiBEHAGFSaLSdVayh5 \
+      H5Z1LEwagAx7s1Kj21sy98/i6/DEZpyyGDfauDVfwOUE2ewsuHqSAE1txRi5VltBs5zVoMExxMw/m4JAyXBSa+s= \
+      "Hi Alice"
+
+    true
+
+Note that the addresses are the same! Again, BigBank has committed
+re-use fraud, this time internal to the service. In our simplistic
+example of one address per customer the domain the funds are committed
+to could be extended to include Alice and Bob's usernames or email
+addresses. Again, most discussions of merkle-sum-trees gloss over this
+important point, and assume that "somehow" the bank will publish the
+merkle root publicly, e.g. at a URL.
+
+
+Merkle-sum-forests for proof-of-solvency
+----------------------------------------
+
+Rather than having a single massive tree for all accounts we can instead
+use a forrest of merkle-sum-trees, each committed to by a single txout.
+The leaves of that tree are still the hash of a customer ID and nonce,
+and a balance. However now the root of the tree and the bank domain is
+committed to in a txout. To prove solvency the bank gives the customer
+multiple merkle-paths that together sum up to the total balance held on
+their behalf. Both internal and external reuse-fraud are impossible as
+the funds are committed to the customer in question on the blockchain.
+Privacy is protected for both the exchange and the customer. The former
+because there is no need to reveal total holdings. The latter by
+splitting up the holdings among multiple tree - in many cases a given
+tree might only have one or two customers funds committed by it as well.
+
+However the requirement to actually make a transaction to change the
+balances committed to is inconvenient, potentially expensive, and makes
+the so-called "cold storage" warmer.
+
+
+Indirect merkle-sum-forest solvency proofs
+------------------------------------------
+
+By adding indirection we can get the privacy of the merkle-sum-forest
+approach without the requirement of creating blockchain transactions on
+every proof. Simply stated, if the above merkle-sum-forest is just
+committing to arbitrary nonces, we can create a second, ordered,
+merklized binary radix tree whose keys are those nonces, and whose
+values are what customers have been assigned to the funds committed to
+by the txouts associated with the nonces. Proving to the customer their
+funds are backed by actual Bitcoins is then a matter of given them a
+list of nonce inclusion proofs, as well as the merkle-paths proving
+those nonces lead to actual blockchain funds. Since the lookup tree is
+ordered each nonce may only be assigned to one specific customer.
+
+Lets look at this in detail with BigBank as the exchange, and Alice and
+Bob as the customers. For clarity we'll use OP_DROP as before. We'll say
+BigBank has one txout:
+
+    <h1> DROP <pubkey1> CHECKSIG
+
+Where h1 commits to (v1,H(n1 | 'BigBank')), (v2, H(n2 | 'BigBank')),
+(v3, H(n3 | BigBank)) with v's being values and n's being nonces.
+Alices's total balance is equal to v1+v2, and Bob's equal to v3, so she
+creates nonce->customer radix tree mapping n1->Alice, n2->Alice, and
+n3->Chalie. She publishes the root of this tree publicly and
+non-repudatably.
+
+BigBank's proof for Bob is now the two following subproofs:
+
+    Merkle path proving that n3 in nonce->customer tree
+    Merkle sum path proving that v3 allocated in txout
+
+For Alice the proof is as above, except for n1,v1 and n2,v2.
+
+
+Practical Considerations
+------------------------
+
+1) Customers request deposit addresses, but the exchange doesn't know in
+   advance how much they are going to deposit. Those addresses should
+   commit values and nonces for use in the solvency proof, so we need to
+   define a merkle-sum-tree that operates on relative amounts rather
+   than absolute.
+
+2) We'd rather not have to spend a txout just to "make change" when a
+   customer's balance changes internally. Thus rather than, say, a
+   simple binary of two value decomposition in a txout, consider making
+   available duplicate values. Q) What's optimal here? Real world data
+   would help.
+
+
+Deterministic nonces and backups
+--------------------------------
+
+There needs to be care taken in how nonces are generated - losing a
+nonce can mean losing the ability to spend the txout. What should be
+done is for the merkle-sum-trees per txout be generated deterministicly
+using "sufficient" sub values to allocate change... Which leads to a
+curious final conclusion: we can in reality skip the actual
+merkle-sum-trees, so to speak, and derive the actual nonces committed to
+in the nonce->customer tree from some deterministic splitting algorithm
+and the globally unique txout, specifically H("nonce" | txid:n).
+Essentially the nonce->customer mapping is actually a "part of a
+txout"->customer mapping, where every txout value is split into
+convenient-sized change. We still get the privacy we want, because the
+customer-containing tree is not a merkle-sum tree, and we completely
+prevent fraudulent reuse, and we don't risk losing coins in the event of
+a backup failure as all txout scriptPubKeys can be regenerated
+deterministicly from a seed.
+
+
+Future work
+-----------
+
+Implement this.
+
+
+References
+----------
+
+1) https://iwilcox.me.uk/2014/proving-bitcoin-reserves
+2) http://www.reddit.com/r/Bitcoin/comments/1yk4nv/please_ask_your_favorite_exchange_to_prove_that/cflqtn0
+3) Homomorphic Payment Addresses and the Pay-to-Contract Protocol,
+   Ilja Gerhardt, Timo Hanke, 13 Dec 2012
+
+
+Copyright
+---------
+
+This document is placed in the public domain.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000039d6ffee2cd4a4162ad9bdb665abeb5f916af96dbd0b83f9
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 665 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140325/e21dd655/attachment.sig>
