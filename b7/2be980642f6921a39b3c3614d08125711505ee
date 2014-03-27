@@ -1,0 +1,85 @@
+From: thomasv1@gmx.de (Thomas Voegtlin)
+Date: Thu, 27 Mar 2014 16:04:31 +0100
+Subject: [Bitcoin-development] New BIP32 structure
+In-Reply-To: <CAJna-HitjJbL9TnfxTY=+TvfaeNvZM6aPWmNYmHUCwmw6V8PUg@mail.gmail.com>
+References: <CANEZrP2hbBVGqytmXR1rAcVama4ONnR586Se-Ch=dsxOzy2O4w@mail.gmail.com>
+	<53340999.807@gmx.de>
+	<CAJna-HhmFya+3W67qQt0wMhW=B4vJvwdkr-5WnU+KEaKq7uaUA@mail.gmail.com>
+	<5334144A.9040600@gmx.de>
+	<CAJna-HitjJbL9TnfxTY=+TvfaeNvZM6aPWmNYmHUCwmw6V8PUg@mail.gmail.com>
+Message-ID: <53343DFF.2070406@gmx.de>
+
+>
+>     Related to this, here is another idea I would like to submit:
+>
+>     Instead of using a "gap limit" (maximal number of consecutive unused
+>     addresses), I think we should get rid of the topology, and simply count
+>     the number of unused addresses since the beginning of the sequence.
+>     Indeed, the topology of the sequence of addresses is of no interest to
+>     the user. Users often misinterpret "gap limit" as the "number of unused
+>     addresses available", so I think we should just give them what they want
+>     :) This is easier to understand, and it makes things more predictable,
+>     because the wallet will always display the same number of unused
+>     addresses (except when it is waiting for confirmations).
+>
+>
+> I'm not convinced that it is either simpler to implement nor simpler to
+> understand. I considering every "account" as completely independent
+> structure (except that it has been derived from master seed). Because of
+> this, I don't see a reason why number of generated addresses in one
+> account should affect available addresses of other account.
+
+
+Sorry if I was not clear, but no, I was not proposing that... I propose 
+to count the number of unused addresses in each account, independently.
+
+Here is an explanation with pictures:
+
+Currently, Electrum does this:
+
+x = used address
+o = unused address
+
+x x x o o x x x x o o o o o
+       |           ????????? 5 unused addresses at the end (gap limit =5)
+      existing gap, size 2
+
+Case 1:
+Suppose the user decides to use the 4th address starting from the end:
+x x x o o x x x x x o o o o
+
+After 3 confirmations, Electrum will create one extra address:
+x x x o o x x x x x o o o o o
+                     ????????? 5 final address (one new)
+
+Case 2:
+The user, who understands nothing about topology, decides to use the 
+final address:
+x x x o o x x x x o o o o x
+
+After 3 confirmations, Electrum will create 5 new addresses:
+x x x o o x x x x o o o o x o o o o o
+                     |        ????????? 5 new addresses
+                  new gap (size 4)
+
+
+You see that this leads to a number of newly created addresses that 
+depends on the address picked by the user. This is the behaviour that I 
+want to fix. I think it is bad for two reasons: First, because it is 
+unpredictable (I had a user who set his gap limit to 100, and then was 
+systematically using the last address of the list, ending up with a lot 
+of wasted addresses). Second, because the worst case scenario (case 2) 
+creates large gaps, which are less robust to blockchain reorgs than in 
+case 1. A reorg in case 1, where the last tx is cancelled will create no 
+gap. A reorg in case 2 can result in a gap that is larger than the limit 
+(5), if another transaction uses the final addresses. (this is why 
+Electrum has to wait for a few confirmations before adding addresses)
+
+
+So, what I propose is to always have a constant number of unused 
+addresses in each account, instead of something that depends on the 
+topology. (this number can be 10 or 20, I don't mind, but I guess Mike 
+might prefer 20...)
+
+
+
