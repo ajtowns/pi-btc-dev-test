@@ -1,0 +1,168 @@
+From: thomasv1@gmx.de (Thomas Voegtlin)
+Date: Thu, 27 Mar 2014 11:57:42 +0100
+Subject: [Bitcoin-development] New BIP32 structure
+In-Reply-To: <lgvobr$q44$1@ger.gmane.org>
+References: <CANEZrP2hbBVGqytmXR1rAcVama4ONnR586Se-Ch=dsxOzy2O4w@mail.gmail.com>
+	<lgvobr$q44$1@ger.gmane.org>
+Message-ID: <53340426.4040208@gmx.de>
+
+
+Le 27/03/2014 00:37, Andreas Schildbach a ?crit :
+> Thanks for starting the discussion on finding a better structure.
+>
+> For me, the most important thing is either we're 100% interoperable or
+> 0%. There should not be anything inbetween, as users will delete seeds
+> without knowing there is still money in them on another implementation.
+
+I believe you have a good point here: we should not advertise wallets as
+compatible if they are not 100% compatible.
+
+One issue that I have is bandwidth: Electrum (and mycelium) cannot
+watch as many addresses as they want, because this will create too
+much traffic on the servers. (especially when servers send utxo merkle
+proofs for each address, which is not the case yet, but is planned)
+
+For this reason Electrum imposes a constraint on the number of virgin
+addresses provided to the user. Although the current strategy used by
+Electrum can certainly be improved, it will not scale up to having every
+client watching thousands of addresses.
+
+This constraint is not so important for bloom-filter clients. So I guess 
+that
+it makes sense for Multibit to provide hundreds, or even thousands of 
+virgin
+addresses to the user, regardless of how they are used. Such a wallet will
+in general not be recoverable in Electrum, unless the user "helps" the
+recovery procedure. (or the seed has metadata telling the software that
+this is a Multibit wallet). So we have a problem here, if we advertise 
+these
+wallets as compatible.
+
+My opinion, as far as Electrum is concerned, is that merchant accounts
+should behave differently from regular user accounts: While merchants
+need to generate an unlimited number of receiving addresses, it is also
+acceptable for them to have a slightly more complex wallet recovery 
+procedure
+(for example, the wallet might show an option to "search for more 
+addresses",
+and it might not need to watch "old" addresses anymore)
+
+OTOH, I don't think we can ask regular users to do this, not only 
+because it
+adds complexity to the wallet recovery procedure (which makes it scarier),
+but also because we want fully automated synchronization between different
+instances of a wallet, using only no other source of information than 
+the blockchain.
+
+The first versions of Electrum allowed users to set the "gap limit" 
+parameter
+in their GUI preferences, but I removed it from GUI after I realized it 
+was a bad
+idea (users messed with it and did not understand what happened..)
+
+With bloom filter clients I guess the distinction between these two use 
+cases
+is not really necessary, because watching addresses is cheap. So it 
+would be
+good to hear what you and Mike think about this problem. If you decide 
+to let
+the user create hundreds of unused addresses (and I think it perfectly 
+makes
+sense for you), then I guess it would be better for Electrum to give up on
+compatibility, rather than running the risk of seeing only a subset of 
+addresses.
+Another option is to handle these seeds as "merchant" accounts.
+
+
+
+
+> I heard from multiple sources that using this standard some wallets will
+> only see a subset of the addresses/keys of some other wallets.
+> Implementation differences can always happen (and should addresses as
+> bugs), but I think its unacceptable that this source of issues is by design.
+>
+> I suggest we agree on an even simpler least common denominator and
+> wallets that want to implement some feature on top of that can do but
+> are encouraged to pick a totally different "cointype". I guess that
+> would mean removing reserved and account.
+
+>
+> I'm still thinking it might be a good idea to have a separate chain for
+> "refunds". Refunds will be rarely used and thus need a much slower
+> moving window than receiving addresses or change.
+>
+>
+> On 03/26/2014 09:49 PM, Mike Hearn wrote:
+>> Myself, Thomas V (Electrum) and Marek (Trezor) got together to make sure
+>> our BIP32 wallet structures would be compatible - and I discovered that
+>> only I was planning to use the default structure.
+>>
+>> Because I'm hopeful that we can get a lot of interoperability between
+>> wallets with regards to importing 12-words paper wallets, we
+>> brainstormed to find a structure acceptable to everyone and ended up with:
+>>
+>>    /m/cointype/reserved'/account'/change/n
+>>
+>> The extra levels require some explanation:
+>>
+>>    * cointype:  This is zero for Bitcoin. This is here to support two
+>>      things, one is supporting alt coins based off the same root seed.
+>>      Right now nobody seemed very bothered about alt coins but sometimes
+>>      feature requests do come in for this. Arguably there is no need and
+>>      alt coins could just use the same keys as Bitcoin, but it may help
+>>      avoid confusion if they don't.
+>>
+>>      More usefully, cointype can distinguish between keys intended for
+>>      things like multisig outputs, e.g. for watchdog services. This means
+>>      if your wallet does not know about the extra protocol layers
+>>      involved in this, it can still import the "raw" money and it will
+>>      just ignore/not see the keys used in more complex transactions.
+>>
+>>    * reserved is for "other stuff". I actually don't recall why we ended
+>>      up with this. It may have been intended to split out multisig
+>>      outputs etc from cointype. Marek, Thomas?
+>>
+>>    * account is for keeping essentially wallets-within-a-wallet to avoid
+>>      mixing of coins. If you want that.
+>>
+>>    * change is 0 for receiving addresses, 1 for change addresses.
+>>
+>>    * n is the actual key index
+>>
+>> For bitcoinj we're targeting a deliberately limited feature set for hdw
+>> v1 so I would just set the first three values all to zero and that is a
+>> perfectly fine way to be compatible.
+>>
+>> The goal here is that the same seed can be written down once, and meet
+>> all the users needs, whilst still allowing some drift between what
+>> wallets support.
+>>
+>> Pieter made the I think valid point that you can't really encode how
+>> keys are meant to be used into just an HDW hierarchy and normally you'd
+>> need some metadata as well. However, I feel interop between wallets is
+>> more important than arriving at the most perfect possible arrangement,
+>> which feels a little like bikeshedding, so I'm happy to just go with the
+>> flow on this one.
+>>
+>>
+>>
+>> ------------------------------------------------------------------------------
+>>
+>>
+>>
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>
+>
+>
+> ------------------------------------------------------------------------------
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+
+
+
