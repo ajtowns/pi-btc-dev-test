@@ -1,0 +1,67 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 27 Mar 2014 12:39:21 +0100
+Subject: [Bitcoin-development] New BIP32 structure
+In-Reply-To: <53340426.4040208@gmx.de>
+References: <CANEZrP2hbBVGqytmXR1rAcVama4ONnR586Se-Ch=dsxOzy2O4w@mail.gmail.com>
+	<lgvobr$q44$1@ger.gmane.org> <53340426.4040208@gmx.de>
+Message-ID: <CANEZrP1v7ZCmhhoHmuXXXvKwAV1_0a02Vkf9z4nQGNfAbZBM=A@mail.gmail.com>
+
+>
+> One issue that I have is bandwidth: Electrum (and mycelium) cannot
+> watch as many addresses as they want, because this will create too
+> much traffic on the servers. (especially when servers send utxo merkle
+> proofs for each address, which is not the case yet, but is planned)
+>
+
+This is surprising and the first time I've heard about this. Surely your
+constraint is CPU or disk seeks? Addresses are small, I find it hard to
+believe that clients uploading them is a big drain, and mostly addresses
+that are in the lookahead region won't have any hits and so won't result in
+any downloads?
+
+This constraint is not so important for bloom-filter clients.
+
+
+Bloom filters are a neat way to encode addresses and keys but they don't
+magically let clients save bandwidth. A smaller filter results in less
+upload bandwidth but more download (from the wallets perspective). So I'm
+worried if you think this will be an issue for your clients: I haven't
+investigated bandwidth usage deeply yet, perhaps I should.
+
+FWIW the current bitcoinj HDW alpha preview pre-gens 100 addresses on both
+receive and change branches. But I'm not sure what the right setting is.
+
+We also have to consider latency. The simplest implementation from a
+wallets POV is to step through each transaction in the block chain one at a
+time, and each time you see an address that is yours, calculate the next
+ones in the chain. But that would be fantastically slow, so we must instead
+pre-generate a larger lookahead region and request more data in one batch.
+Then you have to recover if that batch ends up using all the pre-genned
+addresses. It's just painful.
+
+
+> My opinion, as far as Electrum is concerned, is that merchant accounts
+> should behave differently from regular user accounts: While merchants
+> need to generate an unlimited number of receiving addresses, it is also
+> acceptable for them to have a slightly more complex wallet recovery
+> procedure
+>
+
+Maybe. I dislike any distinction between users and merchants though. I
+don't think it's really safe to assume merchants are more sophisticated
+than end users.
+
+
+> but also because we want fully automated synchronization between different
+> instances of a wallet, using only no other source of information than
+> the blockchain.
+>
+
+I think such synchronization won't be possible as we keep adding features,
+because the block chain cannot sync all the relevant data. For instance
+Electrum already has a label sync feature. Other wallets need to compete
+with that, somehow, so we need to build a way to do cross-device wallet
+sync with non-chain data.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140327/41aaeab9/attachment.html>
