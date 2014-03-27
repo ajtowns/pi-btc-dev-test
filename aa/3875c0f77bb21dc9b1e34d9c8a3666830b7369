@@ -1,0 +1,126 @@
+From: thomasv1@gmx.de (Thomas Voegtlin)
+Date: Thu, 27 Mar 2014 14:30:18 +0100
+Subject: [Bitcoin-development] New BIP32 structure
+In-Reply-To: <CANEZrP1v7ZCmhhoHmuXXXvKwAV1_0a02Vkf9z4nQGNfAbZBM=A@mail.gmail.com>
+References: <CANEZrP2hbBVGqytmXR1rAcVama4ONnR586Se-Ch=dsxOzy2O4w@mail.gmail.com>	<lgvobr$q44$1@ger.gmane.org>	<53340426.4040208@gmx.de>
+	<CANEZrP1v7ZCmhhoHmuXXXvKwAV1_0a02Vkf9z4nQGNfAbZBM=A@mail.gmail.com>
+Message-ID: <533427EA.5010300@gmx.de>
+
+
+
+Le 27/03/2014 12:39, Mike Hearn a ?crit :
+>     One issue that I have is bandwidth: Electrum (and mycelium) cannot
+>     watch as many addresses as they want, because this will create too
+>     much traffic on the servers. (especially when servers send utxo merkle
+>     proofs for each address, which is not the case yet, but is planned)
+>
+>
+> This is surprising and the first time I've heard about this. Surely your
+> constraint is CPU or disk seeks? Addresses are small, I find it hard to
+> believe that clients uploading them is a big drain, and mostly addresses
+> that are in the lookahead region won't have any hits and so won't result
+> in any downloads?
+
+
+To be honest, I have not carried out a comprehensive examination of 
+server performance. What I can see is that Electrum servers are often 
+slowed down when a wallet with a large number (thousands) of addresses 
+shows up, and this is caused by disk seeks (especially on my slow VPS).
+
+The master branch of electrum-server is also quite wasteful in terms of 
+CPU, because it uses client threads. I have another branch that uses a 
+socket poller, but that branch is not widely deployed yet.
+
+I reckon that I might have been a bit too conservative, in setting the 
+number of unused receiving addresses watched by Electrum clients (until 
+now, the default "gap limit" has always been 5). The reason is that, if 
+I increase that number, then there is no way to go back to a smaller 
+value, because it needs to be compatible with all previously released 
+versions. However, Electrum servers performance has improved over time, 
+so I guess it could safely be raised to 20 (see previous post to slush).
+
+In terms of bandwidth, I am referring to my Android version of Electrum. 
+When it runs on a 3G connection, it sometimes takes up to 1 minute to 
+synchronize (with a wallet that has hundreds of addresses). However, I 
+have not checked if this was caused by addresses or block headers.
+
+
+
+>
+>     This constraint is not so important for bloom-filter clients.
+>
+>
+> Bloom filters are a neat way to encode addresses and keys but they don't
+> magically let clients save bandwidth. A smaller filter results in less
+> upload bandwidth but more download (from the wallets perspective). So
+> I'm worried if you think this will be an issue for your clients: I
+> haven't investigated bandwidth usage deeply yet, perhaps I should.
+>
+> FWIW the current bitcoinj HDW alpha preview pre-gens 100 addresses on
+> both receive and change branches. But I'm not sure what the right
+> setting is.
+
+
+Heh, may I suggest 20 in the receive branch?
+
+For the change branch, there is no need to watch a large number of 
+unused addresses, because the wallet should try to fill all the gaps in 
+the sequence of change.
+
+(Electrum does that. It also watches 3 unused addresses at the end of 
+that sequence, in order to cope with possible blockchain reorgs causing 
+gaps. As an extra safety, it also waits for 3 confirmations before using 
+a new change address, which sometimes results in address reuse, but I 
+guess a smarter strategy could avoid that).
+
+
+
+>
+> We also have to consider latency. The simplest implementation from a
+> wallets POV is to step through each transaction in the block chain one
+> at a time, and each time you see an address that is yours, calculate the
+> next ones in the chain. But that would be fantastically slow, so we must
+> instead pre-generate a larger lookahead region and request more data in
+> one batch. Then you have to recover if that batch ends up using all the
+> pre-genned addresses. It's just painful.
+
+
+
+>
+>     My opinion, as far as Electrum is concerned, is that merchant accounts
+>     should behave differently from regular user accounts: While merchants
+>     need to generate an unlimited number of receiving addresses, it is also
+>     acceptable for them to have a slightly more complex wallet recovery
+>     procedure
+>
+>
+> Maybe. I dislike any distinction between users and merchants though. I
+> don't think it's really safe to assume merchants are more sophisticated
+> than end users.
+
+well, it depends what we mean by "merchant". I was thinking more of a 
+website running a script, rather than a brick and mortar ice cream 
+seller. :)
+
+
+>
+>     but also because we want fully automated synchronization between
+>     different
+>     instances of a wallet, using only no other source of information than
+>     the blockchain.
+>
+>
+> I think such synchronization won't be possible as we keep adding
+> features, because the block chain cannot sync all the relevant data. For
+> instance Electrum already has a label sync feature. Other wallets need
+> to compete with that, somehow, so we need to build a way to do
+> cross-device wallet sync with non-chain data.
+
+Oh, I was not referring to label sync, but only to the synchronization 
+of the list of addresses in the wallet. Label sync is an Electrum plugin 
+that relies on a centralized server. Using a third party server is 
+acceptable in that case, IMO, because you will not lose your coins if 
+the server fails.
+
+
+
