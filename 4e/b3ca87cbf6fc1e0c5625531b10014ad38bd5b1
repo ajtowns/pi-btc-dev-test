@@ -1,0 +1,172 @@
+From: mike@belshe.com (Mike Belshe)
+Date: Wed, 26 Mar 2014 23:15:50 -0700
+Subject: [Bitcoin-development] New BIP32 structure
+In-Reply-To: <53337874.7010300@gmail.com>
+References: <CANEZrP2hbBVGqytmXR1rAcVama4ONnR586Se-Ch=dsxOzy2O4w@mail.gmail.com>
+	<lgvobr$q44$1@ger.gmane.org> <53337874.7010300@gmail.com>
+Message-ID: <CABaLYCs0JzNaik8abLu-qeDgRZDu75_oeUGG3SgrQs02U=xvxA@mail.gmail.com>
+
+On Wed, Mar 26, 2014 at 6:01 PM, Alan Reiner <etotheipi at gmail.com> wrote:
+
+>  This might be tangential, but the comment about "refund" chains reminded
+> me.  Armory will be implementing multi-sig/linked wallets where a each
+> device has a parallel HDW branch and produces P2SH addresses.  For those
+> types of wallets, I plan to allocate two chains *per signing authority*.
+> If you have a shared 2-of-2 wallet split between your phone and your
+> spouse's phone, your phone would distribute addresses on P2SH chain 0 and
+> generate change addresses on P2SH chain 1.  Your spouse's phone would use
+> chains 2 and 3.
+>
+> So if you and your spouse switch to a new app that supports M-of-N linked
+> wallets, it should search for coin history along the first 2*N chains.
+>
+
+In general with multisig, we should probably discourage using a common root
+keychain for multiple keys in the same P2SH address.  The reason is because
+if you have the single, root private key, you can sign them all. This
+generally goes against the point of multisig - which was trying to
+introduce a system which had multiple keys required to unlock :-)
+
+For the BitGo BIP32 implementation we are doing the following:
+   - users create 2 extended keys
+   - bitgo creates 1 extended key for that user
+   - the user can create any number of separate branches (accounts) of P2SH
+addresses from those extended keys.
+   - change/public addresses are generated from the 0/1 branches
+   - new addresses are generated from there.
+   - each time a new change address is generated, all 3 keys in the P2SH
+are rotated.  This makes it so that for any chain depth *i* of the P2SH
+address, we're using the *i*th key in each keychain.  For privacy reasons,
+we don't need to rotate all keys.  But I think it makes management simpler
+and probably more ready for interop.
+
+So the paths in a user's keychain look exactly like BIP32's layout:
+     m/<AccountIndex>/<ExternalOrInternal>/<AddressIndex>
+
+Another issue unique to P2SH addresses is order of the keys. There has been
+talk in this list of how to sort them.  While sorting is simplifying for
+interop if you never use new change addresses, I believe sorting makes
+wallet management more difficult when BIP32 is introduced.
+
+Specifically, imagine a P2SH address with keys held by Bob, Charlie, and
+Dana.  If you sort the pubkeys, then with each BIP32 chain, the order of
+the keys could be different.  By maintaining key order, we always know
+which of the pubkeys belongs to which user without having to do any lookups.
+
+Obviously this can all be calculated too.  But the sorting seems gratuitous
+to me - it adds complexity but offers little value.  On the other hand, it
+can be really handy to know that key #0 for this address is always Bob's
+key, regardless of how deep the chaining goes.
+
+Mike
+
+
+
+>
+> -Alan
+>
+>
+>
+>
+> On 03/26/2014 07:37 PM, Andreas Schildbach wrote:
+>
+> Thanks for starting the discussion on finding a better structure.
+>
+> For me, the most important thing is either we're 100% interoperable or
+> 0%. There should not be anything inbetween, as users will delete seeds
+> without knowing there is still money in them on another implementation.
+> I heard from multiple sources that using this standard some wallets will
+> only see a subset of the addresses/keys of some other wallets.
+> Implementation differences can always happen (and should addresses as
+> bugs), but I think its unacceptable that this source of issues is by design.
+>
+> I suggest we agree on an even simpler least common denominator and
+> wallets that want to implement some feature on top of that can do but
+> are encouraged to pick a totally different "cointype". I guess that
+> would mean removing reserved and account.
+>
+> I'm still thinking it might be a good idea to have a separate chain for
+> "refunds". Refunds will be rarely used and thus need a much slower
+> moving window than receiving addresses or change.
+>
+>
+> On 03/26/2014 09:49 PM, Mike Hearn wrote:
+>
+>  Myself, Thomas V (Electrum) and Marek (Trezor) got together to make sure
+> our BIP32 wallet structures would be compatible - and I discovered that
+> only I was planning to use the default structure.
+>
+> Because I'm hopeful that we can get a lot of interoperability between
+> wallets with regards to importing 12-words paper wallets, we
+> brainstormed to find a structure acceptable to everyone and ended up with:
+>
+>   /m/cointype/reserved'/account'/change/n
+>
+> The extra levels require some explanation:
+>
+>   * cointype:  This is zero for Bitcoin. This is here to support two
+>     things, one is supporting alt coins based off the same root seed.
+>     Right now nobody seemed very bothered about alt coins but sometimes
+>     feature requests do come in for this. Arguably there is no need and
+>     alt coins could just use the same keys as Bitcoin, but it may help
+>     avoid confusion if they don't.
+>
+>     More usefully, cointype can distinguish between keys intended for
+>     things like multisig outputs, e.g. for watchdog services. This means
+>     if your wallet does not know about the extra protocol layers
+>     involved in this, it can still import the "raw" money and it will
+>     just ignore/not see the keys used in more complex transactions.
+>
+>   * reserved is for "other stuff". I actually don't recall why we ended
+>     up with this. It may have been intended to split out multisig
+>     outputs etc from cointype. Marek, Thomas?
+>
+>   * account is for keeping essentially wallets-within-a-wallet to avoid
+>     mixing of coins. If you want that.
+>
+>   * change is 0 for receiving addresses, 1 for change addresses.
+>
+>   * n is the actual key index
+>
+> For bitcoinj we're targeting a deliberately limited feature set for hdw
+> v1 so I would just set the first three values all to zero and that is a
+> perfectly fine way to be compatible.
+>
+> The goal here is that the same seed can be written down once, and meet
+> all the users needs, whilst still allowing some drift between what
+> wallets support.
+>
+> Pieter made the I think valid point that you can't really encode how
+> keys are meant to be used into just an HDW hierarchy and normally you'd
+> need some metadata as well. However, I feel interop between wallets is
+> more important than arriving at the most perfect possible arrangement,
+> which feels a little like bikeshedding, so I'm happy to just go with the
+> flow on this one.
+>
+>
+>
+> ------------------------------------------------------------------------------
+>
+>
+>
+> _______________________________________________
+> Bitcoin-development mailing listBitcoin-development at lists.sourceforge.nethttps://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>  ------------------------------------------------------------------------------
+> _______________________________________________
+> Bitcoin-development mailing listBitcoin-development at lists.sourceforge.nethttps://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+>
+>
+> ------------------------------------------------------------------------------
+>
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140326/3f6fcb3b/attachment.html>
