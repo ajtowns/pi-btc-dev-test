@@ -1,0 +1,52 @@
+From: bip@mattwhitlock.name (Matt Whitlock)
+Date: Thu, 03 Apr 2014 17:42:32 -0400
+Subject: [Bitcoin-development] Presenting a BIP for Shamir's Secret
+	Sharing of Bitcoin private keys
+In-Reply-To: <CAC7yFxSE8-TWPN-kuFiqdPKMDuprbiVJi7-z-ym+AUyA_f-xJw@mail.gmail.com>
+References: <CAC7yFxSE8-TWPN-kuFiqdPKMDuprbiVJi7-z-ym+AUyA_f-xJw@mail.gmail.com>
+Message-ID: <3837746.jqWvB0Uxrs@crushinator>
+
+On Thursday, 3 April 2014, at 4:41 pm, Nikita Schmidt wrote:
+> I agree with the recently mentioned suggestion to make non-essential
+> metadata, namely key fingerprint and degree (M), optional.  Their
+> 4-byte and 1-byte fields can be added individually at an
+> implementation's discretion.  During decoding, the total length will
+> determine which fields are included.
+
+The fingerprint field, Hash16(K), is presently specified as a 16-bit field. Rationale: There is no need to consume 4 bytes just to allow shares to be grouped together. And if someone has more than 100 different secrets, they probably have a good system for managing their shares and won't need the hash anyway.
+
+> Encoding for the testnet is not specified.
+
+Hmm, is that actually needed?
+
+> Speaking of encoding, is it not wasteful to allocate three different
+> application/version bytes just for the sake of always starting with
+> 'SS'?  It would be OK if it were accepted as a BIP, but merely as a
+> de-facto standard it should aim at minimising future chances of
+> collision.
+
+I agree on principle, however I think the more user-acceptable behavior is for all base58-encoded Shamir shares to begin with a common prefix, such as "SS". Users are accustomed to relying on the prefix of the base58 encoding to understand what the object is: "1" for mainnet pubkey hash, "3" for mainnet script hash, "5" for uncompressed private key, "P" for passphrase-protected private key, etc.
+
+> I'd add a clause allowing the use of random coefficients instead of
+> deterministic, as long as the implementation guarantees to never make
+> another set of shares for the same private key or master seed.
+
+I'm not sure that's necessary, as this is an Informational BIP. Implementations are free to ignore it. Shares with randomly selected coefficients would work just fine in a share joiner that conforms to the BIP, so I would expect implementors to feel free to ignore the deterministic formula and use randomly selected coefficients.
+
+> What about using the same P256 prime as for the elliptic curve?  Just
+> for consistency's sake.
+
+The initial draft of this BIP used the cyclic order (n) of the generator point on the secp256k1 elliptic curve as the modulus. The change to the present scheme was actually done for consistency's sake, so all sizes of secret can use a consistently defined modulus.
+
+> Also, I'm somewhat inclined towards using the actual x instead of j in
+> the encoding.  I find it more direct and straightforward to encode the
+> pair (x, y).  And x=0 can denote a special case for future extensions.
+>  There is no technical reason behind this, it's just for (subjective)
+> clarity and consistency.
+
+There is a technical reason for encoding j rather than x[j]: it allows for the first 256 shares to be encoded, rather than only the first 255 shares.
+
+If you want a sentinel value reserved for future extensions, then you might take notice that 0xFFFF is an invalid key fingerprint, along with several other values, and also that 0xFF is an unusable value of M?2, as that would imply M=257, but the scheme can only encode up to 256 shares, so one would never have enough shares to meet the threshold. I considered having the two optional fields be mandatory and allowing 0xFFFF and 0xFF as "redacted" field values, but I like allowing the shares to be shorter if the optional fields are omitted. (Imagine engraving Shamir secret shares onto metal bars by hand with an engraving tool. Fewer characters is better!)
+
+
+
