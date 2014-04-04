@@ -1,0 +1,75 @@
+From: bip@mattwhitlock.name (Matt Whitlock)
+Date: Fri, 04 Apr 2014 12:03:37 -0400
+Subject: [Bitcoin-development] Presenting a BIP for Shamir's Secret
+	Sharing of Bitcoin private keys
+In-Reply-To: <CAC7yFxQXn=c7CEC326yMx4bF7Cv7Gc62shS7xU0XvSp5sQSGZw@mail.gmail.com>
+References: <CAC7yFxSE8-TWPN-kuFiqdPKMDuprbiVJi7-z-ym+AUyA_f-xJw@mail.gmail.com>
+	<3837746.jqWvB0Uxrs@crushinator>
+	<CAC7yFxQXn=c7CEC326yMx4bF7Cv7Gc62shS7xU0XvSp5sQSGZw@mail.gmail.com>
+Message-ID: <1529077.7WHAYP4Dpn@crushinator>
+
+On Friday, 4 April 2014, at 5:51 pm, Nikita Schmidt wrote:
+> On 4 April 2014 01:42, Matt Whitlock <bip at mattwhitlock.name> wrote:
+> > The fingerprint field, Hash16(K), is presently specified as a 16-bit field. Rationale: There is no need to consume 4 bytes just to allow shares to be grouped together. And if someone has more than 100 different secrets, they probably have a good system for managing their shares and won't need the hash anyway.
+> 
+> Right, of course.  Sorry, I didn't notice there was an update.  Two
+> bytes are plenty.
+> 
+> I'm worried however about the dependency on SHA-512, which may be
+> stretching it for a tiny embedded application.  The other uses of
+> HashL can be avoided.  We are balancing here between consistency with
+> the rest of this proposal, where everything is done via HashL, and
+> consistency with the general practice of generating fingerprints with
+> SHA-256, like in Base58Check.
+
+I'd be fine with changing the key fingerprint algorithm to something else. Do you like CRC16?
+
+> >> Speaking of encoding, is it not wasteful to allocate three different
+> >> application/version bytes just for the sake of always starting with
+> >> 'SS'?  It would be OK if it were accepted as a BIP, but merely as a
+> >> de-facto standard it should aim at minimising future chances of
+> >> collision.
+> >
+> > I agree on principle, however I think the more user-acceptable behavior is for all base58-encoded Shamir shares to begin with a common prefix, such as "SS". Users are accustomed to relying on the prefix of the base58 encoding to understand what the object is: "1" for mainnet pubkey hash, "3" for mainnet script hash, "5" for uncompressed private key, "P" for passphrase-protected private key, etc.
+> 
+> Yes, "5" for uncompressed private key and "K" or "L" for compressed
+> private key.  One A/VB and three prefixes in base58.  Am I the only
+> one to see this as a counter-example?
+> 
+> However, thinking about this, I can find logic in wanting to stabilise
+> text prefixes at a cost of six A/V bytes (as per the latest spec).
+> There are only 58 first characters versus 256 AVBs, so we should
+> rather be saving the former.
+
+The type of a base58-encoded object is determined not only by the application/version byte but by the payload length as well. For example, a base58-encoded object with an application/version byte of 0x80 but a payload length of 16 bytes would not be mistakable for a Bitcoin private key, even though AVB 0x80 does denote a Bitcoin private key when the payload length is 32 or 33 bytes. So it's not as simple as saying that this proposal costs 6 AVBs. It really costs one AVB for 18-byte payloads, one AVB for 21-byte payloads, one AVB for 34-byte payloads, one AVB fo 37-byte payloads, one AVB for 66-byte payloads, and one AVB for 69-byte payloads.
+
+> >> What about using the same P256 prime as for the elliptic curve?  Just
+> >> for consistency's sake.
+> >
+> > The initial draft of this BIP used the cyclic order (n) of the generator point on the secp256k1 elliptic curve as the modulus. The change to the present scheme was actually done for consistency's sake, so all sizes of secret can use a consistently defined modulus.
+> 
+> Fair enough.  Although I would have chosen the field order (p) simply
+> because that's how all arithmetic already works in bitcoin.  One field
+> for everybody.  It's also very close to 2^256, although still smaller
+> than your maximum prime.  Now of course with different bit lengths we
+> have to pick one consistency over others.
+
+As Gregory Maxwell pointed out, you can't use p when you're dealing with private keys, as that is the order of the finite field over which the elliptic curve is defined, but private keys are not points on that curve; a private key is a scalar number of times to multiply the generator point. That means you have to use the order of the generator point as the modulus when working with private keys.
+
+> >> Also, I'm somewhat inclined towards using the actual x instead of j in
+> >> the encoding.  I find it more direct and straightforward to encode the
+> >> pair (x, y).  And x=0 can denote a special case for future extensions.
+> >>  There is no technical reason behind this, it's just for (subjective)
+> >> clarity and consistency.
+> >
+> > There is a technical reason for encoding j rather than x[j]: it allows for the first 256 shares to be encoded, rather than only the first 255 shares.
+> 
+> Wow, big deal.  It's hard to imagine anyone needing exactly 256
+> shares, but who knows.  And with j = x (starting from 1) we'd get
+> user-friendly share numbering and simpler formulas in the spec and
+> possibly in the implementation, with no off-by-one stuff.  And M
+> instead of M-2...
+
+It's common for implementation limits to be powers of two. I don't foresee any off-by-one errors, as the spec is clear on the value of each byte in the encoding.
+
+
