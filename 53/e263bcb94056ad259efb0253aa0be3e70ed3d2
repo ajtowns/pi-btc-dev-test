@@ -1,0 +1,89 @@
+From: nikita@megiontechnologies.com (Nikita Schmidt)
+Date: Fri, 4 Apr 2014 17:51:07 +0400
+Subject: [Bitcoin-development] Presenting a BIP for Shamir's Secret
+ Sharing of Bitcoin private keys
+In-Reply-To: <3837746.jqWvB0Uxrs@crushinator>
+References: <CAC7yFxSE8-TWPN-kuFiqdPKMDuprbiVJi7-z-ym+AUyA_f-xJw@mail.gmail.com>
+	<3837746.jqWvB0Uxrs@crushinator>
+Message-ID: <CAC7yFxQXn=c7CEC326yMx4bF7Cv7Gc62shS7xU0XvSp5sQSGZw@mail.gmail.com>
+
+On 4 April 2014 01:42, Matt Whitlock <bip at mattwhitlock.name> wrote:
+> The fingerprint field, Hash16(K), is presently specified as a 16-bit field. Rationale: There is no need to consume 4 bytes just to allow shares to be grouped together. And if someone has more than 100 different secrets, they probably have a good system for managing their shares and won't need the hash anyway.
+
+Right, of course.  Sorry, I didn't notice there was an update.  Two
+bytes are plenty.
+
+I'm worried however about the dependency on SHA-512, which may be
+stretching it for a tiny embedded application.  The other uses of
+HashL can be avoided.  We are balancing here between consistency with
+the rest of this proposal, where everything is done via HashL, and
+consistency with the general practice of generating fingerprints with
+SHA-256, like in Base58Check.
+
+Similarly, re-assembly software suddenly finds itself having to
+implement Hash16 just to check this particular fingerprint.  So I'd
+vote for a more traditional approach here, also considering that HashL
+is designed specifically to generate numbers in a finite field.
+
+>
+>> Encoding for the testnet is not specified.
+>
+> Hmm, is that actually needed?
+
+It's been a tradition to support it in general, however I guess it's
+not really needed here.  I'm happy without a dedicated testnet
+encoding.
+
+>
+>> Speaking of encoding, is it not wasteful to allocate three different
+>> application/version bytes just for the sake of always starting with
+>> 'SS'?  It would be OK if it were accepted as a BIP, but merely as a
+>> de-facto standard it should aim at minimising future chances of
+>> collision.
+>
+> I agree on principle, however I think the more user-acceptable behavior is for all base58-encoded Shamir shares to begin with a common prefix, such as "SS". Users are accustomed to relying on the prefix of the base58 encoding to understand what the object is: "1" for mainnet pubkey hash, "3" for mainnet script hash, "5" for uncompressed private key, "P" for passphrase-protected private key, etc.
+
+Yes, "5" for uncompressed private key and "K" or "L" for compressed
+private key.  One A/VB and three prefixes in base58.  Am I the only
+one to see this as a counter-example?
+
+However, thinking about this, I can find logic in wanting to stabilise
+text prefixes at a cost of six A/V bytes (as per the latest spec).
+There are only 58 first characters versus 256 AVBs, so we should
+rather be saving the former.
+
+>> What about using the same P256 prime as for the elliptic curve?  Just
+>> for consistency's sake.
+>
+> The initial draft of this BIP used the cyclic order (n) of the generator point on the secp256k1 elliptic curve as the modulus. The change to the present scheme was actually done for consistency's sake, so all sizes of secret can use a consistently defined modulus.
+
+Fair enough.  Although I would have chosen the field order (p) simply
+because that's how all arithmetic already works in bitcoin.  One field
+for everybody.  It's also very close to 2^256, although still smaller
+than your maximum prime.  Now of course with different bit lengths we
+have to pick one consistency over others.
+
+>
+>> Also, I'm somewhat inclined towards using the actual x instead of j in
+>> the encoding.  I find it more direct and straightforward to encode the
+>> pair (x, y).  And x=0 can denote a special case for future extensions.
+>>  There is no technical reason behind this, it's just for (subjective)
+>> clarity and consistency.
+>
+> There is a technical reason for encoding j rather than x[j]: it allows for the first 256 shares to be encoded, rather than only the first 255 shares.
+
+Wow, big deal.  It's hard to imagine anyone needing exactly 256
+shares, but who knows.  And with j = x (starting from 1) we'd get
+user-friendly share numbering and simpler formulas in the spec and
+possibly in the implementation, with no off-by-one stuff.  And M
+instead of M-2...
+
+>
+> If you want a sentinel value reserved for future extensions, then you might take notice that 0xFFFF is an invalid key fingerprint, along with several other values, and also that 0xFF is an unusable value of M-2, as that would imply M=257, but the scheme can only encode up to 256 shares, so one would never have enough shares to meet the threshold. I considered having the two optional fields be mandatory and allowing 0xFFFF and 0xFF as "redacted" field values, but I like allowing the shares to be shorter if the optional fields are omitted. (Imagine engraving Shamir secret shares onto metal bars by hand with an engraving tool. Fewer characters is better!)
+
+Exactly.  Thank you.  Without these fields, a secret share still fits
+into a 29x29 QR code.  Add one more byte and it'll need a 33x33.
+Imagine engraving that onto metal plates!  Or the hassle of going
+above 32 bits per line in a tiny embedded system.
+
+
