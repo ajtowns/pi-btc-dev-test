@@ -1,0 +1,65 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Thu, 10 Apr 2014 04:50:55 -0700
+Subject: [Bitcoin-development] Bitcoind-in-background mode for SPV
+	wallets
+In-Reply-To: <CAPg+sBjWL_hKhWW-6i=WAHnx+Ue5JE=A9RrxnWuAYOXw19qiDw@mail.gmail.com>
+References: <CA+s+GJCn9U2kmyMH6w3o+m99NCfO0ws=SccvGBYJv07WVuF=eA@mail.gmail.com>
+	<CAAt2M18z_Qkqat1OETiXAz0QQey4+y5J6=pC7nkoJfyfrpj3=A@mail.gmail.com>
+	<CAAS2fgScWkentFy7Ak0bpYVLsOFL+xkwPm5QRu9ENeX9oCtPug@mail.gmail.com>
+	<534570A2.9090502@gmx.de>
+	<CA+s+GJAXu3SEXFDDwi85dNFjO2rfPXJrg-aKHYwbogAHfu3vfQ@mail.gmail.com>
+	<0B038624-8861-438E-B7B1-566B4A8E126B@bitsofproof.com>
+	<CA+s+GJCQSCUyq7Ajv0EgZ8Vbcv4Xt7G-y_8D12fsoKjyFjnhwg@mail.gmail.com>
+	<CAPg+sBjWL_hKhWW-6i=WAHnx+Ue5JE=A9RrxnWuAYOXw19qiDw@mail.gmail.com>
+Message-ID: <CAAS2fgTkgddRGGXuuAza-A=Dgjfr5aNF8yxDePPixN4M7Rbpyg@mail.gmail.com>
+
+On Thu, Apr 10, 2014 at 4:32 AM, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+> There were earlier discussions.
+
+On this list.
+
+> The two ideas were either using one or a few service bits to indicate
+> availability of blocks, or to extend addr messages with some flags to
+> indicate this information.
+>
+> I wonder whether we can't have a hybrid: bits to indicate general
+> degree of availability of blocks (none, only recent, everything), but
+> indicate actual availability only upon actually connecting (through a
+> "version" extension, or - preferably - a separate message). Reason is
+> that the actual blocks available are likely to change frequently (if
+> you keep the last week of blocks, a 3-day old addr entry will have
+> quite outdated information), and not that important to actual peer
+> selection - only to drive the decision which blocks to ask after
+> connection.
+
+I think you actually do need the kept ranges to be circulated,
+otherwise you might need to hunt for a very long time to find the
+right nodes with the blocks you need.  Alternatively, you give up and
+don't hunt and pick some node that has them all and we get poor load
+distribution. I'd rather be in a case where the nodes that have the
+full history are only hit as a last resort.
+
+WRT the changing values, I think that is pretty uniquely related to
+the most recent blocks, and so instead I think that should be handled
+symbolically (e.g. the hybrid approach... a flag for the "I keep the
+most recent 2000 blocks", I say 2000 because thats about where the
+request offset historgrams flattened out) or as a single offset range
+"I keep the last N=200",  and the flag or the offset would be in
+addition to whatever additional range was signaled. The latter could
+be infrequently changing.
+
+Signaling _more_ and more current range data on connect seems fine to
+me, I just don't think it replaces something that gets relayed.
+
+Based on the safety against reorgs and the block request access
+patterns we observed I'm pretty sure we'd want any node serving blocks
+at all to be at least the last N (for some number between 144 and 2000
+or so). Based on the request patterns if just the recent blocks use up
+all the space you're willing to spend, then I think thats probably
+still the optimal contribution...
+
+(Just be glad I'm not suggesting coding the entire blockchain with an
+error correcting code so that it doesn't matter which subset you're
+holding)
+
+
