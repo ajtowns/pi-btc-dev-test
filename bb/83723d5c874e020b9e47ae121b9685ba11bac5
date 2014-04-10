@@ -1,0 +1,120 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Thu, 10 Apr 2014 18:30:32 +0100
+Subject: [Bitcoin-development] Bitcoind-in-background mode for SPV
+	wallets
+In-Reply-To: <c3726067-5a9f-45b9-b798-1070bdde2ac4@email.android.com>
+References: <CA+s+GJCn9U2kmyMH6w3o+m99NCfO0ws=SccvGBYJv07WVuF=eA@mail.gmail.com>
+	<CAAt2M18z_Qkqat1OETiXAz0QQey4+y5J6=pC7nkoJfyfrpj3=A@mail.gmail.com>
+	<CAAS2fgScWkentFy7Ak0bpYVLsOFL+xkwPm5QRu9ENeX9oCtPug@mail.gmail.com>
+	<534570A2.9090502@gmx.de>
+	<CA+s+GJAXu3SEXFDDwi85dNFjO2rfPXJrg-aKHYwbogAHfu3vfQ@mail.gmail.com>
+	<0B038624-8861-438E-B7B1-566B4A8E126B@bitsofproof.com>
+	<CA+s+GJCQSCUyq7Ajv0EgZ8Vbcv4Xt7G-y_8D12fsoKjyFjnhwg@mail.gmail.com>
+	<CAPg+sBjWL_hKhWW-6i=WAHnx+Ue5JE=A9RrxnWuAYOXw19qiDw@mail.gmail.com>
+	<CAAS2fgTkgddRGGXuuAza-A=Dgjfr5aNF8yxDePPixN4M7Rbpyg@mail.gmail.com>
+	<c3726067-5a9f-45b9-b798-1070bdde2ac4@email.android.com>
+Message-ID: <CAE-z3OV4w+vQ0b6h9E+7cSyxkKENduyfHenhdF3q3-0i2chnGQ@mail.gmail.com>
+
+Error correction is an interesting suggestion.
+
+If there was 10000 nodes and each stored 0.1% of the blocks, at random,
+then the odds of a block not being stored is 45 in a million.
+
+Blocks are stored on average 10 times, so there is already reasonable
+redundancy.
+
+With 1 million blocks, 45 would be lost in that case, even though most are
+stored multiple times.
+
+With error correction codes, the chances of blocks going missing is much
+lower.
+
+For example, if there was 32 out of 34 Reed-Solomon-like system, then 2
+blocks out of 34 could be lost without any actual data loss for the network.
+
+As a back of the envelop check, the odds of 2 missing blocks landing within
+34 of another is 68/1000000.  That means that the odds of 2 missing blocks
+falling in the same correction section is 45 * 34 / 1000000 = 0.153%.  Even
+in that case, the missing blocks could be reconstructed, as long as you
+know that they are missing.
+
+The error correction code has taken it from being a near certainty that
+some blocks would be lost to less than 0.153%.
+
+A simple error correction system would just take 32 blocks in sequence and
+then compute 2 extra blocks.
+
+The extra blocks would have to be the same length as the longest block in
+the 32 being corrected.
+
+The shorter blocks would be padded with zeroes so everything is the same
+size.
+
+For each byte position in the blocks you compute the polynomial that goes
+through byte (x, data(x)), for x = 0 to 31.  This could be a finite field,
+or just mod 257.
+
+You can then compute the value for x=32 and x = 33.  Those are the values
+for the 2 extra blocks.
+
+If mod 257 is used, then only the 2 extra blocks have to deal with symbols
+from 0 to 256.
+
+If you have 32 of the 34 blocks, you can compute the polynomial and thus
+generate the 32 actual blocks.
+
+This could be achieved by a soft fork by having a commitment every 32
+blocks in the coinbase.
+
+It makes the header chain much longer though.
+
+Longer sections are more efficient, but need more calculations to recover
+everything.  You could also do interleaving to handle the case where entire
+sections are missing.
+
+
+On Thu, Apr 10, 2014 at 12:54 PM, Peter Todd <pete at petertodd.org> wrote:
+
+> -----BEGIN PGP SIGNED MESSAGE-----
+> Hash: SHA512
+>
+>
+>
+> On 10 April 2014 07:50:55 GMT-04:00, Gregory Maxwell <gmaxwell at gmail.com>
+> wrote:
+> >(Just be glad I'm not suggesting coding the entire blockchain with an
+> >error correcting code so that it doesn't matter which subset you're
+> >holding)
+>
+> I forgot to ask last night: if you do that, can you add new blocks to the
+> chain with the encoding incrementally?
+> -----BEGIN PGP SIGNATURE-----
+> Version: APG v1.1.1
+>
+> iQFQBAEBCgA6BQJTRoZ+MxxQZXRlciBUb2RkIChsb3cgc2VjdXJpdHkga2V5KSA8
+> cGV0ZUBwZXRlcnRvZGQub3JnPgAKCRAZnIM7qOfwhYudCAC7ImifMnLIFHv1UifV
+> zRxtDkx7UxIf9dncDAcrTIyKEDhoouh0TmoZl3HKQ3KUEETAVKsMzqXLgqVe6Ezr
+> ny1bm0pQlkBCZFRwuZvmB27Y3mwC8PD6rT9ywtWzFjWd8PEg6/UaM547nQPw7ir0
+> 27S3XMfE/BMiQWfWnWc/nqpbmJjd8x/dM3oiTG9SVZ7iNxotxAqfnW2X5tkhJb0q
+> dAV08wpu6aZ5hTyLpvDxXDFjEG119HJeLkT9QVIrg+GBG55PYORqE4gQr6uhrF4L
+> fGZS2EIlbk+kAiv0EjglQfxWM7KSRegplSASiKEOuX80tqLIsEugNh1em8qvG401
+> NOAS
+> =CWql
+> -----END PGP SIGNATURE-----
+>
+>
+>
+> ------------------------------------------------------------------------------
+> Put Bad Developers to Shame
+> Dominate Development with Jenkins Continuous Integration
+> Continuously Automate Build, Test & Deployment
+> Start a new project now. Try Jenkins in the cloud.
+> http://p.sf.net/sfu/13600_Cloudbees
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140410/1f9c48ef/attachment.html>
