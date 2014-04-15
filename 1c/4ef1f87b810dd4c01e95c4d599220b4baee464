@@ -1,0 +1,93 @@
+From: chris@beams.io (Chris Beams)
+Date: Tue, 15 Apr 2014 18:39:35 +0200
+Subject: [Bitcoin-development] Bug in 2-of-3 transaction signing in
+	Bitcoind?
+In-Reply-To: <7270706.tTNIRFK64H@crushinator>
+References: <1756895.gV83Q4MX2a@crushinator> <1832687.kEVurC5ttk@crushinator>
+	<CABaLYCu7by9AsurAcjzjo4QR_3Ln6DZrq7GPH_KxTokUbGTEeg@mail.gmail.com>
+	<7270706.tTNIRFK64H@crushinator>
+Message-ID: <981A0A04-EAE7-45BE-81FC-92A40A6B2DA4@beams.io>
+
+Hi Matt,
+
+Looks interesting. Is the source available?
+
+
+On Apr 15, 2014, at 6:27 PM, Matt Whitlock <bip at mattwhitlock.name> wrote:
+
+On Tuesday, 15 April 2014, at 8:47 am, Mike Belshe wrote:
+For what it is worth, I found btcd (the go implementation of bitcoind) has
+much better error/diagnostics messages.  It would have given you more than
+"-22 TX Rejected".  I used it to debug my own multi-sig transactions and it
+was very helpful.
+
+I'll have to check that out.
+
+
+A follow-up on my initial post... I did just successfully create, sign, and transmit another 2-of-3 transaction, so once again, I'm sorry I bothered this list. But since I did (and am now doing so again), I'll give a little more background on what we've been up to. It's not quite as simple as what I've shared thus far.
+
+We have built a tool from scratch in C++ that is kind of a Swiss Army knife of Bitcoin. It does all sorts of key and address conversions, hash functions, encoding and decoding, script disassembly, BIP38 encryption/decrytion, the Shamir Secret Sharing that I've posted about here on this list before, and transaction building and signing. It has its own wallet and it's own UTXO cache that contains only TXOs that are relevant to the objects in its wallet. It synchronizes its cache by scanning bitcoind's block data files. (It memory maps them and can do a full scan of the entire block chain in about a minute!) The wallet can contain keys, seeds, and multi-signature aggregates (which in turn can comprise keys and seeds). What we've been testing is deriving sequences of multi-sig P2SH addresses from a set of public seeds, sending bitcoins to those addresses, then using our tool to find those outputs in the block chain and to create transactions that redeem them, and then signing those trans
+actions by supplying the private seeds to the tool.
+
+Our tool is quite a bit easier to use than Bitcoind. (I was frankly appalled at the command-line syntax that was necessary to get Bitcoind to sign a P2SH multi-sig transaction.)
+
+$ ./btctool privkey < /dev/random > privseed1
+$ ./btctool privkey < /dev/random > privseed2
+$ ./btctool privkey < /dev/random > privseed3
+$ pubseed1=$(./btctool pubkey < privseed1)
+$ pubseed2=$(./btctool pubkey < privseed2)
+$ pubseed3=$(./btctool pubkey < privseed3)
+$ ./chaintool init
+$ ./chaintool add demo 2 ":${pubseed1}" ":${pubseed2}" ":${pubseed3}"
+$ ./chaintool ls
+demo    2 :036447c7edc861b9f41fa0f611d81784f19ce692f37e8772b55c37c743cd526b49 :03c831711ea65decc06b0f3ccb4b9f1ba1a99a6933e520f6e7e4c3dbb4f015b701 :0347f2a0a346f21538fc451b95a600bc64ce5d2d28b89bf547697f3a77195d8dd1
+$ ./btctool addresses 1 2 "${pubseed1}" "${pubseed2}" "${pubseed3}"
+3GQd1tosFCE7Vo4TAiDHEKTaBgoyZTeL6R
+$ bitcoind sendtoaddress 3GQd1tosFCE7Vo4TAiDHEKTaBgoyZTeL6R 0.01
+6a9538f496f4c2d7f50c342fa6f6f76904a3b19f55f3a54a0003fc00b327d81b
+(I waited here for the tx to get into a block)
+$ ./chaintool sync /var/lib/bitcoin/.bitcoin/blocks 2> /dev/null
+$ ./chaintool listunspent
+[
+       {
+               "txid": "6a9538f496f4c2d7f50c342fa6f6f76904a3b19f55f3a54a0003fc00b327d81b",
+               "vout": 1,
+               "address": "3GQd1tosFCE7Vo4TAiDHEKTaBgoyZTeL6R",
+               "scriptPubKey": "a914a1701be36532f05a74511fca89afce180c58189587",
+               "amount": 1000000,
+               "confirmations": 1
+       }
+]
+$ cat > outputs << EOF
+13QAKNuh9uFcEiNAsct6LSF1qWQR6HLarT 50000
+1FV4Fm3VCXfWy7BAXzT8t5qqTvEKZSad9v
+EOF
+$ tx=$(./chaintool createtx 10000 demo < outputs)
+(I manually edited ${tx} at this point to add an OP_RETURN output. We're currently working toward using OP_RETURN in a provable solvency scheme.)
+$ signedtx1=$(./chaintool signtx "${tx}" < privseed1)
+input #0: need 1 of [:03c831711ea65decc06b0f3ccb4b9f1ba1a99a6933e520f6e7e4c3dbb4f015b701, :0347f2a0a346f21538fc451b95a600bc64ce5d2d28b89bf547697f3a77195d8dd1]
+$ signedtx2=$(./chaintool signtx "${signedtx1}" < privseed2)
+$ bitcoind sendrawtransaction "${signedtx2}"
+b485b185c77d803f75e1ccfee1b5072846c9e0728f4c955ca40dce82263f8f16
+$ exit
+
+:-)
+
+------------------------------------------------------------------------------
+Learn Graph Databases - Download FREE O'Reilly Book
+"Graph Databases" is the definitive new guide to graph databases and their
+applications. Written by three acclaimed leaders in the field,
+this first edition is now available. Download your free book today!
+http://p.sf.net/sfu/NeoTech
+_______________________________________________
+Bitcoin-development mailing list
+Bitcoin-development at lists.sourceforge.net
+https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 841 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140415/508cfd71/attachment.sig>
