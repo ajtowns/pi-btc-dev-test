@@ -1,0 +1,144 @@
+From: bip@mattwhitlock.name (Matt Whitlock)
+Date: Tue, 15 Apr 2014 11:00:36 -0400
+Subject: [Bitcoin-development] Bug in 2-of-3 transaction signing in Bitcoind?
+Message-ID: <1756895.gV83Q4MX2a@crushinator>
+
+For the life of me, I cannot figure out what's wrong with this. It seems like Bitcoind has lost its mind. I'm trying to redeem a 2-of-3 multisig P2SH output using a raw transaction.
+
+
+Here's the address that the P2SH output was sent to:
+
+$ bitcoind createmultisig 2 '["03566474f987a012a69a08097253394ebd681454df29c3f1fb0495a5b45490f928", "03927407ca158155d0d30366395ca9cdc7d93cfa0a5b22181374431c15aae7b358", "02cff98aba464f5d4ebac5e6417f142326235f5a0a59708ba6231471cce4ee0747"]'
+{
+    "address" : "33snuCcVUmn9iBG345keJRzMfVwz7Uo87C",
+    "redeemScript" : "522103566474f987a012a69a08097253394ebd681454df29c3f1fb0495a5b45490f9282103927407ca158155d0d30366395ca9cdc7d93cfa0a5b22181374431c15aae7b3582102cff98aba464f5d4ebac5e6417f142326235f5a0a59708ba6231471cce4ee074753ae"
+}
+
+
+The transaction containing the output is ec7d985ae265a3a79c68d852e0e52cf4177c3362d7a25fb718be82f980f39285. It's the second output.
+
+
+So I ask Bitcoind to create a raw transaction to spend the output:
+
+$ bitcoind createrawtransaction '[{"txid":"ec7d985ae265a3a79c68d852e0e52cf4177c3362d7a25fb718be82f980f39285", "vout":1}]' '{"19YNEu4ZqX3nU9rJMuMcDy3pzFhactZPmk":0.00050000, "1J2qtR7HBbE4rkNAgZCo4hZUEd2Z4jtSgz":0.00040000}'
+01000000018592f380f982be18b75fa2d762337c17f42ce5e052d8689ca7a365e25a987dec0100000000ffffffff0250c30000000000001976a9145dafa18ab21debe3d20f2c39e88d630f822bd29e88ac409c0000000000001976a914bad35cd767b657daa4a735b32e3d1f1dab52872d88ac00000000
+
+
+And here is the decoded transaction, for completeness:
+
+$ bitcoind decoderawtransaction 01000000018592f380f982be18b75fa2d762337c17f42ce5e052d8689ca7a365e25a987dec0100000000ffffffff0250c30000000000001976a9145dafa18ab21debe3d20f2c39e88d630f822bd29e88ac409c0000000000001976a914bad35cd767b657daa4a735b32e3d1f1dab52872d88ac00000000
+{
+    "txid" : "8d731e6e333d805f6c8b569e1a608d14127d61d3123b699355133b2c757c16fb",
+    "version" : 1,
+    "locktime" : 0,
+    "vin" : [
+        {
+            "txid" : "ec7d985ae265a3a79c68d852e0e52cf4177c3362d7a25fb718be82f980f39285",
+            "vout" : 1,
+            "scriptSig" : {
+                "asm" : "",
+                "hex" : ""
+            },
+            "sequence" : 4294967295
+        }
+    ],
+    "vout" : [
+        {
+            "value" : 0.00050000,
+            "n" : 0,
+            "scriptPubKey" : {
+                "asm" : "OP_DUP OP_HASH160 5dafa18ab21debe3d20f2c39e88d630f822bd29e OP_EQUALVERIFY OP_CHECKSIG",
+                "hex" : "76a9145dafa18ab21debe3d20f2c39e88d630f822bd29e88ac",
+                "reqSigs" : 1,
+                "type" : "pubkeyhash",
+                "addresses" : [
+                    "19YNEu4ZqX3nU9rJMuMcDy3pzFhactZPmk"
+                ]
+            }
+        },
+        {
+            "value" : 0.00040000,
+            "n" : 1,
+            "scriptPubKey" : {
+                "asm" : "OP_DUP OP_HASH160 bad35cd767b657daa4a735b32e3d1f1dab52872d OP_EQUALVERIFY OP_CHECKSIG",
+                "hex" : "76a914bad35cd767b657daa4a735b32e3d1f1dab52872d88ac",
+                "reqSigs" : 1,
+                "type" : "pubkeyhash",
+                "addresses" : [
+                    "1J2qtR7HBbE4rkNAgZCo4hZUEd2Z4jtSgz"
+                ]
+            }
+        }
+    ]
+}
+
+
+Now I'll sign the transaction with 2 of 3 keys:
+
+$ bitcoind signrawtransaction 01000000018592f380f982be18b75fa2d762337c17f42ce5e052d8689ca7a365e25a987dec0100000000ffffffff0250c30000000000001976a9145dafa18ab21debe3d20f2c39e88d630f822bd29e88ac409c0000000000001976a914bad35cd767b657daa4a735b32e3d1f1dab52872d88ac00000000 '[{"txid":"ec7d985ae265a3a79c68d852e0e52cf4177c3362d7a25fb718be82f980f39285", "vout":1, "scriptPubKey":"a91417f9f4ba5c2f2b9334805f91bbbf90a19aaa3d5687", "redeemScript":"522103566474f987a012a69a08097253394ebd681454df29c3f1fb0495a5b45490f9282103927407ca158155d0d30366395ca9cdc7d93cfa0a5b22181374431c15aae7b3582102cff98aba464f5d4ebac5e6417f142326235f5a0a59708ba6231471cce4ee074753ae"}]' '["Ky7EQeg71YHeftLc31tt8AoNSezFEgUCbvwYak1eKksg6gQww6FF", "KxAXrjTMZJN1Egqkckdz9TXyB2kyJ68wu7CiJk6Rygmr9zv2nScG"]'
+{
+    "hex" : "01000000018592f380f982be18b75fa2d762337c17f42ce5e052d8689ca7a365e25a987dec01000000fc004730440220781ae7e3e309289f53cc2c4016adfb5a1d0081157d4366b9f77f0358b7aeccbb022009c7297f60088b1815d6970c8e246e6b516ff8fce5e85de209004d8cc29e460201473044022018a23405ca72c52222577f78c2356bdb8ba36259edb1320b90e2c31188e6317602201972db07bf5ef8e30221d3707ce6eb7ab748527ec8e7ca14241350920f03257f014c69522103566474f987a012a69a08097253394ebd681454df29c3f1fb0495a5b45490f9282103927407ca158155d0d30366395ca9cdc7d93cfa0a5b22181374431c15aae7b3582102cff98aba464f5d4ebac5e6417f142326235f5a0a59708ba6231471cce4ee074753aeffffffff0250c30000000000001976a9145dafa18ab21debe3d20f2c39e88d630f822bd29e88ac409c0000000000001976a914bad35cd767b657daa4a735b32e3d1f1dab52872d88ac00000000",
+    "complete" : true
+}
+
+
+And here's the decode of the signed transaction:
+
+$ bitcoind decoderawtransaction 01000000018592f380f982be18b75fa2d762337c17f42ce5e052d8689ca7a365e25a987dec01000000fc004730440220781ae7e3e309289f53cc2c4016adfb5a1d0081157d4366b9f77f0358b7aeccbb022009c7297f60088b1815d6970c8e246e6b516ff8fce5e85de209004d8cc29e460201473044022018a23405ca72c52222577f78c2356bdb8ba36259edb1320b90e2c31188e6317602201972db07bf5ef8e30221d3707ce6eb7ab748527ec8e7ca14241350920f03257f014c69522103566474f987a012a69a08097253394ebd681454df29c3f1fb0495a5b45490f9282103927407ca158155d0d30366395ca9cdc7d93cfa0a5b22181374431c15aae7b3582102cff98aba464f5d4ebac5e6417f142326235f5a0a59708ba6231471cce4ee074753aeffffffff0250c30000000000001976a9145dafa18ab21debe3d20f2c39e88d630f822bd29e88ac409c0000000000001976a914bad35cd767b657daa4a735b32e3d1f1dab52872d88ac00000000
+{
+    "txid" : "a01bff867229de4bb622b0ebdd8cd293d6b9ad2fb576612974ae89ed5798eb3e",
+    "version" : 1,
+    "locktime" : 0,
+    "vin" : [
+        {
+            "txid" : "ec7d985ae265a3a79c68d852e0e52cf4177c3362d7a25fb718be82f980f39285",
+            "vout" : 1,
+            "scriptSig" : {
+                "asm" : "0 30440220781ae7e3e309289f53cc2c4016adfb5a1d0081157d4366b9f77f0358b7aeccbb022009c7297f60088b1815d6970c8e246e6b516ff8fce5e85de209004d8cc29e460201 3044022018a23405ca72c52222577f78c2356bdb8ba36259edb1320b90e2c31188e6317602201972db07bf5ef8e30221d3707ce6eb7ab748527ec8e7ca14241350920f03257f01 522103566474f987a012a69a08097253394ebd681454df29c3f1fb0495a5b45490f9282103927407ca158155d0d30366395ca9cdc7d93cfa0a5b22181374431c15aae7b3582102cff98aba464f5d4ebac5e6417f142326235f5a0a59708ba6231471cce4ee074753ae",
+                "hex" : "004730440220781ae7e3e309289f53cc2c4016adfb5a1d0081157d4366b9f77f0358b7aeccbb022009c7297f60088b1815d6970c8e246e6b516ff8fce5e85de209004d8cc29e460201473044022018a23405ca72c52222577f78c2356bdb8ba36259edb1320b90e2c31188e6317602201972db07bf5ef8e30221d3707ce6eb7ab748527ec8e7ca14241350920f03257f014c69522103566474f987a012a69a08097253394ebd681454df29c3f1fb0495a5b45490f9282103927407ca158155d0d30366395ca9cdc7d93cfa0a5b22181374431c15aae7b3582102cff98aba464f5d4ebac5e6417f142326235f5a0a59708ba6231471cce4ee074753ae"
+            },
+            "sequence" : 4294967295
+        }
+    ],
+    "vout" : [
+        {
+            "value" : 0.00050000,
+            "n" : 0,
+            "scriptPubKey" : {
+                "asm" : "OP_DUP OP_HASH160 5dafa18ab21debe3d20f2c39e88d630f822bd29e OP_EQUALVERIFY OP_CHECKSIG",
+                "hex" : "76a9145dafa18ab21debe3d20f2c39e88d630f822bd29e88ac",
+                "reqSigs" : 1,
+                "type" : "pubkeyhash",
+                "addresses" : [
+                    "19YNEu4ZqX3nU9rJMuMcDy3pzFhactZPmk"
+                ]
+            }
+        },
+        {
+            "value" : 0.00040000,
+            "n" : 1,
+            "scriptPubKey" : {
+                "asm" : "OP_DUP OP_HASH160 bad35cd767b657daa4a735b32e3d1f1dab52872d OP_EQUALVERIFY OP_CHECKSIG",
+                "hex" : "76a914bad35cd767b657daa4a735b32e3d1f1dab52872d88ac",
+                "reqSigs" : 1,
+                "type" : "pubkeyhash",
+                "addresses" : [
+                    "1J2qtR7HBbE4rkNAgZCo4hZUEd2Z4jtSgz"
+                ]
+            }
+        }
+    ]
+}
+
+
+And now I'll try to transmit the transaction to the network:
+
+$ bitcoind sendrawtransaction 01000000018592f380f982be18b75fa2d762337c17f42ce5e052d8689ca7a365e25a987dec01000000fc004730440220781ae7e3e309289f53cc2c4016adfb5a1d0081157d4366b9f77f0358b7aeccbb022009c7297f60088b1815d6970c8e246e6b516ff8fce5e85de209004d8cc29e460201473044022018a23405ca72c52222577f78c2356bdb8ba36259edb1320b90e2c31188e6317602201972db07bf5ef8e30221d3707ce6eb7ab748527ec8e7ca14241350920f03257f014c69522103566474f987a012a69a08097253394ebd681454df29c3f1fb0495a5b45490f9282103927407ca158155d0d30366395ca9cdc7d93cfa0a5b22181374431c15aae7b3582102cff98aba464f5d4ebac5e6417f142326235f5a0a59708ba6231471cce4ee074753aeffffffff0250c30000000000001976a9145dafa18ab21debe3d20f2c39e88d630f822bd29e88ac409c0000000000001976a914bad35cd767b657daa4a735b32e3d1f1dab52872d88ac00000000
+error: {"code":-22,"message":"TX rejected"}
+
+
+Whoops!
+
+So, what gives?
+
+
