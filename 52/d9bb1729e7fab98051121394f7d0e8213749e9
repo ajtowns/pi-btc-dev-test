@@ -1,0 +1,122 @@
+From: brianchoffman@gmail.com (Brian Hoffman)
+Date: Thu, 17 Apr 2014 10:37:45 -0400
+Subject: [Bitcoin-development] Timed testing
+In-Reply-To: <CAC1+kJMrpx0tyE8d0wkwjBthhSPMCdr=9LrJHQFTF4G1vg4MAg@mail.gmail.com>
+References: <CAC1+kJMrpx0tyE8d0wkwjBthhSPMCdr=9LrJHQFTF4G1vg4MAg@mail.gmail.com>
+Message-ID: <CAADm4BAFSrEp1aHaS1LgZMJ7-fDhYRJ1ndZDYK8hfmJ+a7iBFg@mail.gmail.com>
+
+"So my question to the community is, how invasive is this to bitcoin's
+source code?"
+
+I'd say not very considering you have regression testing mode.
+
+
+On Thu, Apr 17, 2014 at 8:25 AM, Jorge Tim?n <jtimon at monetize.io> wrote:
+
+> I'm implementing a new testing mode that produces blocks
+> periodically. You can get what I have so far here:
+>
+> https://github.com/jtimon/bitcoin/tree/timed
+>
+> It depends on pull request #3824 with some improvements on
+> CChainParams, but after that the changes required to add this new
+> mode are very small:
+>
+>
+> https://github.com/jtimon/bitcoin/commit/445321928a143cb9a6f56777cbb7479dd32c3bcd
+>
+> I guess I need a new genesis block, different magic numbers, etc. So
+> this is definitely not ready.
+> You can run it like this:
+>
+> bitcoind -timedtest -gen=1 blocktime=2000
+>
+> blocktime defaults to 1000 milliseconds for timedtest mode and 0 for
+> the rest of the modes.
+>
+> What could this testing mode be useful for?
+>
+> Basically, simulations.
+> For example, you could run several nodes implementing different mining
+> policies. Let's say I want to mine 50% of the blocks with standard policy,
+> 25% with policy A and 25% with policy B. I can run 1 one for each of
+> one with block times 2000, 1000 and 1000 respectively.
+>
+> Maybe I want to detect performance bottlenecks by stressing this mode
+> with as many transaction as can be processed, maybe removing the
+> block size limits in the simulations.
+>
+> But this still doesn't serve for hardfork or double-spend attacks
+> simulations without calculating any pow, which would be another
+> interesting feature for a new testing mode.
+> I would like to implement the new mode following as the concept of
+> private chains described in freimarkets:
+>
+> http://freico.in/docs/freimarkets.pdf
+>
+> https://github.com/jtimon/freimarkets/blob/master/doc/freimarkets_specs.org#private-ledgers
+>
+> https://github.com/jtimon/freimarkets/blob/master/doc/freimarkets_specs.org#off-chain-transactions
+>
+> I know this could be considered a "non-bitcoinish" application and
+> therefore be controversial as discussed in PR 3824, so I want to keep
+> the conversation focused on testing use cases useful to bitcoin itself
+> only: additional changes can be implemented elsewhere.
+> One way I think you could support chain races simulations by using a
+> private mode could be the following:
+>
+> 1) The private mode works like the timed mode in how often it
+>    produces blocks.
+>
+> 2) In private mode you replace the pow-related fields with a
+>    blockPubkeyScript and a lastBlockSigScript fields. In the genesis
+>    block, lastBlockSigScript is empty and the initial
+>    blockPubkeyScript can be an optional parameter like blocktime. You
+>    can set any valid script, probably p2sh, maybe with multisig to
+>    allow different nodes to sign.
+>
+> 3) In this context, longer chains mean "more work". Another way to
+>    see it is that all blocks just contain work==1 in them.
+>
+> So let's say we want to simulate an attack using 50% standard and 50%
+> attacker blocks. You set up the private mode script to be a 1 of 2
+> multisig and make each node sign always with the same private key
+> (maybe an additional parameter).
+> You make the attacker reject any blocks from height X that he hasn't
+> signed himself to get the result you wanted: the standard node will
+> produce blocks on top of the longest chain while the attacker will
+> only hash on top of his own blocks.
+>
+> So my question to the community is, how invasive is this to bitcoin's
+> source code?
+> In my opinion, done properly could actually result (apart from getting
+> the new features) in more readable code, not less, since you will
+> probably need to make sure proof of work functionality is properly
+> encapsulated during the implementation process (see PR 3839 for a first
+> step on that direction).
+> But, should I push a private mode to the core or just the timed one
+> and implement the private mode elsewhere?
+>
+> Of course other comments on the parameters, defaults or any other
+> design or implementation details are also welcomed.
+>
+> --
+> Jorge Tim?n
+>
+> http://freico.in/
+>
+>
+> ------------------------------------------------------------------------------
+> Learn Graph Databases - Download FREE O'Reilly Book
+> "Graph Databases" is the definitive new guide to graph databases and their
+> applications. Written by three acclaimed leaders in the field,
+> this first edition is now available. Download your free book today!
+> http://p.sf.net/sfu/NeoTech
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140417/b7b7e1bd/attachment.html>
