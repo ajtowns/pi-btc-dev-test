@@ -1,0 +1,53 @@
+From: mark@monetize.io (Mark Friedenbach)
+Date: Mon, 21 Apr 2014 09:00:09 -0700
+Subject: [Bitcoin-development] Economics of information propagation
+In-Reply-To: <a9a262a9-c70f-470d-81e0-ca32c41d8dc5@email.android.com>
+References: <mailman.122233.1398039406.2207.bitcoin-development@lists.sourceforge.net>
+	<52CDA01B-13BF-4BB8-AC9A-5FBBB324FD15@sant.ox.ac.uk>
+	<CACh7GpFGEvR+_qArYCkgi7AW4coSeH741ob4hmBpj6G3MayNAQ@mail.gmail.com>
+	<a9a262a9-c70f-470d-81e0-ca32c41d8dc5@email.android.com>
+Message-ID: <53554089.1010503@monetize.io>
+
+That wasn't what I was saying. Right now the primacy of a block is
+determined by the time at which the `block` message is received, which
+is delays due to both the time it takes to transmit the block data and
+the time it takes to validate. Headers-first, on the other hand, has the
+option of basing primacy on the time the block header is received, which
+is O(1) time to transmit and to SPV-validate. Mining on that block
+doesn't actually commence until the full block is received and validated.
+
+To see how this works, take an example: two blocks with a common parent
+are found relatively close to each other, block A and block B. A is
+found first but is a large block with the maximum block size and many
+slow scripts. B is found a few seconds later and is an empty block. In
+the current regime it is entirely possible that block B, the later but
+smaller block, would get received and processed first by more mining
+peers than the larger block A, exactly as described in Jonathan Levin's
+email.
+
+With headers-first, however, the cost of propagation of the block header
+is the same and we should expect block A to win out over block B nearly
+every time. Miners will continue working on the old, known valid parent
+block until the contents of block A are received and processed. So the
+smaller block B is still found, and since it's data moves across the
+network faster, miners even briefly mine on block B. But as soon as they
+receive and process the contents of block A, they switch to that.
+
+The earlier, larger block A will only become stale if *two* blocks are
+found in the extra time it takes for block A to propagate the network.
+That is a substantially different risk, and probably a negligible
+concern to most miners.
+
+On 04/20/2014 09:06 PM, Peter Todd wrote:
+> That is mistaken: you can't mine on top of just a block header,
+> leaving small miners disadvantaged as they are earning no profit
+> while they wait for the information to validate the block and update
+> their UTXO sets. This results in the same problem as before, as the
+> large pools who mine most blocks can validate either instantly - the
+> self-mine case - or more quickly than the smaller miners.
+> 
+> Of course, in reality smaller miners can just mine on top of block
+> headers and include no transactions and do no validation, but that is
+> extremely harmful to the security of Bitcoin.
+
+
