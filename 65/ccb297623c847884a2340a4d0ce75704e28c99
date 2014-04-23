@@ -1,0 +1,141 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 23 Apr 2014 11:05:55 -0400
+Subject: [Bitcoin-development] Economics of information propagation
+In-Reply-To: <52CDA01B-13BF-4BB8-AC9A-5FBBB324FD15@sant.ox.ac.uk>
+References: <mailman.122233.1398039406.2207.bitcoin-development@lists.sourceforge.net>
+	<52CDA01B-13BF-4BB8-AC9A-5FBBB324FD15@sant.ox.ac.uk>
+Message-ID: <20140423150555.GE19430@savin>
+
+On Mon, Apr 21, 2014 at 01:30:28AM +0000, Jonathan Levin wrote:
+
+CC'ing bitcoin-research - may be more appropriate to move the discussion
+there as this discussion is delving into future scenarios.
+
+> Hi all,
+> 
+> I am a post-graduate economist writing a paper on the incentives of mining. Even though this issue has been debated in the forums, I think it is important to get a sense of the magnitude of the incentives at play and determine what implications this has for the transaction fee market.
+> 
+> As it has been pointed out before the marginal cost for miners does not stem from the private cost of the miner validating the signature and including it in the list of transactions in the block but rather the increased probability that the block will be orphaned as a result of slower propagation. Gavin did some back of the envelope worst case calculations but these overstated the effect of propagation delay. The reason being the 80ms additional time to reach 50% of the network is spread throughout the time that it takes to reach 50% of the network. During this time miners are notified about the block and treat it as the longest chain and hence are no longer mining with the aim to produce a competing block. 
+> 
+> I am looking to calculate the change in the curvature of the probability mass function that a block hears about my block in any given second as a function of the block size. Although there is likely to be significant noise here, there seems to be some stable linear relationships with the time that it takes to reach different quartiles. Has anyone done this? I have used some empirical data that I am happy to share but ideally I would like analytical solutions.
+> 
+> Following Peter Todd, I also find the concerning result that propagation delays results in increasing returns to higher shares of the hashing power. Indeed it may well be in the interest of large pools to publish large blocks to increase propagation delays on the network which would increase orphan rates particularly for small miners and miners that have not invested in sufficient bandwidth / connectivity. If a small miner hears about a block after 4.5 seconds on average there is a 0.7% chance that there is already a block in circulation.  Large miners can increase the time that it takes for small miners to hear about blocks by increasing the size of their blocks. For example if the time that it takes for a small miner to hear about the block goes to 12 seconds there is a 2 percent chance there is already a block in circulation for the small miner. There is also a 1.2% chance that there will be a competing block published after a small miner propagates in the time that it gets to full propagation. Am I getting this right that the probability of a miner?s block being orphaned is comprised of the probability that the miner was not the first to find a valid block and the probability that given they are first, someone else in the absence of hearing about it finds a competing valid block. 
+> 
+> One question is: Are orphans probabilistic and only resolved after hearing about a new block that lengthens the chain or is there a way to know in advance?
+
+They're probabilistic; mining is progress free so per unit hashing power
+every miner has an equal chance of finding a block. As for resolution,
+well, currently nodes (and miners) mine on the block they saw first; if
+they learn about another block at the same height they stick to the
+block they are already mining on. First seen at same height is probably
+generally economically rational as the first block you see probably
+propagated to the most nodes, although tweaks to that are probably
+possible.
+
+> Is it frowned upon to mine on top of a block that you have just found even though it is very likely going to end up an orphan?
+
+Not at all, in fact mining on top of the block is the best thing to do
+because it *prevents* your block from ending up as an orphan. Basically
+imagine I find block b1a, and you find conflicting block b1b. What I
+need to do is find block b2a, which is on top of b1a, before you find
+block b1b to avoid my block being orphaned. The best way to do that is
+mining on top of my block - that's what's most rational for me.
+
+> Would be happy to share the draft form of the paper and receive any feedback.
+
+Sure thing.
+
+> Finally, at coinometrics we are working on a modified client to capture information on network propagation and would invite any suggestions of any other useful statistics that would be useful in the development of software. 
+
+
+So looking at the replies your post got in the past few days it looks
+like there's some misinformation going around. First of all is the
+question of how harmful it is if miners mine on top of blocks that they
+haven't actually validated, and yes, that's extremely harmful. For
+instance if I were an attacker I could mine an invalid block that makes
+coins out of thin air and use it to defraud SPV-wallet-using clients;
+everyone who is mining without validating is helping me succesfully pull
+off that attack by increasing the chance I'll get enough confirms to
+trick my target into thinking the coins are real. (remember I could have
+stolen the hashing power by hacking into a pool)
+
+Mark Friedenbach suggested headers first where the block header and
+block contents are propagated around the network separately. What that
+results in has a few different scenarios:
+
+1) Fee's don't matter and miners aren't forced to validate
+
+This is the scenario we're in right now. The block reward comprises the
+supermajority of mining income, and it is possible to mine a block
+without first validating the contents of the previous block. When a
+miner receives a block header that extends the longest known blockchain
+they can immediately switch to it and start mining.
+
+Whether or not doing so is rational is just a matter of what's the
+probability that the previous block was invalid? If it was, the miner
+mining it just wasted 25BTC, $12.5k, so you can be almost sure it is
+valid and you don't need to wait. Of course, if you then find a block,
+you can pull the same trick all over again and the next guy might be
+mining on top of two blocks they haven't validated, and so on.
+
+Obviously this presents a very nasty failure mode if the majority of
+miners follow this behavior and a block is invalid, or even just gets
+lost. Similarly in the majority scenario there's no direct incentive to
+actually propagate your blocks - they'll still get accepted to the main
+chain anyway.
+
+That said, small and large miners make roughly the same amount as the
+block reward dominates and blocks of any size will get confirmations
+fairly quickly.
+
+
+2) Fee's do matter and miners aren't forced to validate
+
+Now transaction fees represent a non-trivial portion of a miner's
+income. Centralization incentives would depend on to what extent fees do
+matter. Again, there's some nasty failure modes possible. That large,
+slow-to-propagate blocks still get confirmed, yet small miners can't
+mine transaction fees is likely a major centralization incentive.
+
+3) Miners are forced to validate
+
+Or at least, we can force miners to actually have the previous block.
+Andrew Miller's Permacoin is one approach; some varients of UTXO
+commitments have this as a side-effect too. On the one hand this solves
+the really nasty failure modes that headers-first has; on the other hand
+you're back to the centralization incentives we have right now.
+
+
+What's important however to remember is that any attempt at saying
+things like "[A]s soon as [Miners] receive and process the contents of
+block A, they switch to that." - as Mark suggested(2) - doesn't belong
+in an economic analysis as such rules are unenforcable. For instance
+that'd suggest that in the forced-validation headers-first scenario a
+large miner who received a block header, then found block themselves,
+would switch to mining the block they *didn't* find simply because they
+"got the header first". Obviously this is not economically rational for
+them to do so they won't, leading to the same centralization incentives
+as always.
+
+As for why that's economically irrational: so the large miner finds that
+second block and broadcasts it around the network. Do you the small
+miner keep mining on the shorter chain just because the large miner
+broke the gentlemans agreement to respect header times? Of course not,
+time is relative and you have no idea whether or not anyone else is
+doing so. If you mine on the shorter chain you're side is going to need
+to find two blocks to catch up - not likely. Secondly you risk forking
+the network due to a consensus failure, say by a divergent times the
+headers were received.
+
+1) http://cs.umd.edu/%7Eamiller/permacoin.pdf
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000000278031f86c71265f6eaf1fe9ce6cc831dc4f956676a7a7f7
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140423/084a5c8d/attachment.sig>
