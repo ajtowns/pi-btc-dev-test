@@ -1,0 +1,100 @@
+From: tomh@thinlink.com (Tom Harding)
+Date: Tue, 22 Apr 2014 20:45:53 -0800
+Subject: [Bitcoin-development] Double-spending unconfirmed transactions
+ is a lot easier than most people realise
+In-Reply-To: <20140422213128.GB2578@savin>
+References: <20140422213128.GB2578@savin>
+Message-ID: <53574581.3040004@thinlink.com>
+
+
+Since no complete solution to preventing 0-confirmation respends in the 
+bitcoin network has been proposed, or is likely to exist, when 
+evaluating partial solutions let's ask "what kind of network does this 
+move toward?"
+
+Does the solution move toward a network with simple rules, where the 
+certainty that decreases from the many-confirmations state, down to 1 
+confirmation, does not immediately disappear just below the time of 1 
+confirmation?
+
+A network where transaction submitters consider their (final) 
+transactions to be unchangeable the moment they are transmitted, and 
+where the network's goal is to confirm only transactions all of whose 
+UTXO's have not yet been seen in a final transaction's input, has a 
+chance to be such a network.  If respend attempts are broadcast widely, 
+then after a time on the order of transaction propagation time (<< 1 
+minute) has passed, participants have a good chance to avoid relying on 
+a transaction whose funds are spent to someone else.  This is both 
+because after this time the network is unlikely to split on the primacy 
+of one spend, and because the recipient, able to see a respend attempt, 
+can withhold delivery of the good or service until confirmation.
+
+Or, does the solution move toward a network that
+  - Requires participants to have knowledge of the policies of multiple 
+entities, like Eligius and whoever maintains the blacklist mentioned below?
+  - Requires a transaction submitter to intently monitor transactions 
+and try to climb over the top of attempted respends with 
+"scorched-earth" triple spends, until a random moment some time between, 
+let's say, 5 and 15 minutes in the future?
+  - Punts the problem to off-network solutions?
+
+
+On 4/22/2014 1:31 PM, Peter Todd wrote:
+> You may have seen my reddit post of the same title a few days ago:
+>
+> http://www.reddit.com/r/Bitcoin/comments/239bj1/doublespending_unconfirmed_transactions_is_a_lot/
+>
+> I've done some more experiments since, with good results. For instance
+> here's a real-world double-spend of the gambling service Lucky Bit:
+>
+> Original: 7801c3b996716025dbac946ca7a123b7c1c5429341738e8a6286a389de51bd20
+>
+> 01000000012a14c8e6ce1e625513847b2ff271b3e6a1849f2a634c601b7f383ef710483f79000000006a4730440220692d09f5415f23118f865b81430990a15517954fd14a8bda74a5a38c4f2f39450220391f6251e39cdd3cab7363b912b897146a0a78e295f6ecd23b078c9f64ca7ae8012103a11c09c09874833eedc58a031d01d161ab4d2eba3874959537c5609ef5d5401fffffffff030c4d0f00000000001976a914d5245b64fcf8e873a9d1c0bfe2d258492bec6cc888ac400d0300000000001976a914da5dde8abec4f3b67561bcd06aaf28b790cff75588ac10270000000000001976a914c4c5d791fcb4654a1ef5e03fe0ad3d9c598f982788ac00000000
+>
+> Double-spend: f4e8e930bdfa3666b4a46c67544e356876a72ec70060130b2c7078c4ce88582a
+>
+> 01000000012a14c8e6ce1e625513847b2ff271b3e6a1849f2a634c601b7f383ef710483f79000000006a473044022074f0c6912b482c6b51f1a91fb2bdca3f3dde3a3aed4fc54bd5ed563390011c2d02202719fe49578591edfbdd4b79ceeaa7f9550e4323748b3dbdd4135f38e70c476d012103a11c09c09874833eedc58a031d01d161ab4d2eba3874959537c5609ef5d5401fffffffff01d9c90f00000000001976a914d5245b64fcf8e873a9d1c0bfe2d258492bec6cc888ac00000000
+>
+> The double-spend was mined by Eligius and made use of the fact that
+> Eligius blacklists transactions to a number of addresses considered to
+> be "spam" by the pool operators; affected transactions are not added to
+> the Eligus mempool at all. Lucky Bit has a real-time display of bets as
+> they are accepted; I simply watched that display to determine whether or
+> not I had lost. With Eligius at 8% and the house edge at 1.75% the
+> attack is profitable when automated. My replace-by-fee patch(1) was
+> used, although as there are only a handful of such nodes running - none
+> connected directly to Eligius from what I can determine - I submitted
+> the double-spend transactions to Eligius directly via their pushtxn
+> webform.(2)
+>
+> Of course, this is an especially difficult case, as you must send the
+> double-spend after the original transaction - normally just sending a
+> non-standard tx to Eligius first would suffice. Note how this defeats
+> Andresen's double-spend-relay patch(3) as proposed since the
+> double-spend is a non-standard transaction.
+>
+> In discussion with Lucky Bit they have added case-specific code to
+> reject transactions with known blacklisted outputs; the above
+> double-spend I preformed is no longer possible. Of course, if the
+> (reused) Lucky Bit addresses are added to that blacklist, that approach
+> isn't viable - I suggest they switch to a scheme where addresses are not
+> reused. (per-customer? rotated?) They also have added code to keep track
+> of double-spend occurances and trigger human intervention prior to
+> unacceptable losses. Longer term as with most services (e.g. Just-Dice)
+> they intend to move to off-chain transactions. They are also considering
+> implementing replace-by-fee scorched earth(4) - in their case a single
+> pool, such as Eligius, implementing it would be enough to make the
+> attack unprofitable. It may also be enough security to allow users to
+> use their deposits prior to the first confirmation in a Just-Dice style
+> off-chain implementation.
+>
+> 1) https://github.com/petertodd/bitcoin/tree/replace-by-fee-v0.9.1
+>
+> 2) http://eligius.st/~wizkid057/newstats/pushtxn.php
+>
+> 3) https://github.com/bitcoin/bitcoin/pull/3354 and
+>     https://github.com/bitcoin/bitcoin/pull/3883
+>
+> 4) https://bitcointalk.org/index.php?topic=251233.msg2669189#msg2669189
+
+
