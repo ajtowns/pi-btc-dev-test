@@ -1,0 +1,88 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 24 Apr 2014 08:59:53 -0400
+Subject: [Bitcoin-development] 0 confirmation txs using replace-by-fee
+ and game theory
+In-Reply-To: <CAC1+kJM3pSq8YfwbX167rQ0=0Y_hozRQ3pggDN524=LUfOdTqg@mail.gmail.com>
+References: <CAC1+kJM3pSq8YfwbX167rQ0=0Y_hozRQ3pggDN524=LUfOdTqg@mail.gmail.com>
+Message-ID: <20140424125953.GC16884@savin>
+
+On Thu, Apr 24, 2014 at 12:48:54PM +0200, Jorge Tim?n wrote:
+> Here is a solution to the problem of having 0 confirmation
+> transactions
+
+FWIW I'm running an experiment right now to detect how easy it is to
+doublespend 0-conf transactions I need to collect more data, but initial
+results indicate that transaction propagation is sufficiently unreliable
+that double-spending frequently works without miners using
+replace-by-fee even when both transactions pay high fees, there is a 60
+second delay between first and second, and there's only about four
+replace-by-fee nodes on the network.
+
+With replace-by-fee scorched-earth the success rate of such
+double-spends would be significantly reduced as the attacker would need
+to get lucky with bad propagation not just once, but twice in a row.
+
+> that relies on game
+> theory and most miners implementing replace-by-fee and child-pays-for-parent.
+> 
+> This has been proposed before
+> http://sourceforge.net/p/bitcoin/mailman/message/30876033/
+> I'm just going to describe the general idea in more detail.
+
+Just to be clear, while that post is mine, original credit for the idea
+actually goes to John Dillon as far as I know; I first heard about it
+from him in private discussion.
+
+> Replace-by-fee and child-pays-for parent cannot be prohibited by a
+> protocol rule.
+> I believe all miners will eventually implement these policies because
+> it is the more rational way for them to prioritize transactions.
+> Finally I hope they do because it would make 0-confirmation
+> transactions possible as described in this post.
+> So I can't find any reasoning against replace-by-fee unless my example
+> is terribly flawed.
+> Am I missing something?
+
+A few things:
+
+1) Replace-by-fee doesn't protect against sybil attacks; only
+confirmations are solid evidence that a transaction has actually reached
+the mining power and your communication channel to that mining power
+isn't being blocked. Keep in mind that Bitcoin depends on the existence
+of a jam-free network, and very importantly, lets you detect when that
+network has failed and you are being jammed. No unconfirmed transaction
+scheme can solve this problem in a decentralized network.
+
+2) Replace-by-fee scorched earth does require you to keep private keys
+online to sign the replacements. Not a big deal, but it's yet another
+reason why you wouldn't want to use it for high-value stuff.
+
+3) It doesn't directly solve finney attacks(1) where the miner mines the
+transaction in private. However finney attacks are only relevant if
+there is high centralization of hashing power, and all other proposed
+mechanisms, e.g. coinbase reallocation, themselves do a lot of harm to
+decentralization. (just look at how coinbase reallocation lets large
+pools bully smaller miners out of business by blacklisting their blocks)
+
+One interesting thing with regard to finney attacks and replace-by-fee
+though is that enforcing hasher visibility of the blocks they are mining
+- what getblocktemplate was meant to do voluntarily - lets any hasher
+detect a finney attack double-spend and broadcast it. They have a weak
+incentive to do so - the scorched earth reply is a high-fee transaction
+of course and pre-broadcasting transactions makes blocks propagate
+faster - at which point you're back to a public double-spend.  Enforcing
+visibility of block contents to hashers is definitely a good thing for
+decentralization.
+
+1) https://bitcointalk.org/index.php?topic=3441.msg48384#msg48384
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000093d8af23978adc9e201a1f2e2dc52844f9013a1da3621572
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140424/5fb4a89a/attachment.sig>
