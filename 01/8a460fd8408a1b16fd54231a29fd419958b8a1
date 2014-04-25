@@ -1,0 +1,89 @@
+From: sergiolerner@certimix.com (Sergio Lerner)
+Date: Fri, 25 Apr 2014 01:52:44 -0300
+Subject: [Bitcoin-development] =?windows-1252?q?SmartSPV_=96_A_better_Simp?=
+ =?windows-1252?q?lified_Payment_Verification_for_Smartphones?=
+Message-ID: <5359EA1C.6050404@certimix.com>
+
+In a previous e-mail Mike Hearn asked me how I was going to handle 17K
+block headers a day in my NimbleCoin currency in a the SPV mode.
+I designed a variation of the standard headers-only SPV mode I called
+SmartSPV. This mode could also be implemented by BitcoinJ for Bitcoin.
+
+The method is explained here:
+http://bitslog.wordpress.com/2014/04/25/smartspv-a-better-simplified-payment-verification-for-smartphones/
+
+But I copy the whole blog post in this e-mail so you don't need to click
+on it.
+
+
+    SmartSPV ? A better Simplified Payment Verification for Smartphones
+
+NimbleCoin <http://NimbleCoin.com> is a new cryptocurrency I?ll be
+hopefully launching soon. One of its nice features is that it uses the
+FastBlock5
+<http://bitslog.wordpress.com/2014/02/17/5-sec-block-interval/> protocol
+(a 5 seconds block interval) to achieve near instant payments. Because
+NimbleCoin also implements merged mining
+<http://bitslog.wordpress.com/2014/02/20/safe-merged-mining/>, each
+block header can be as large as 700 bytes (including Merkle branch and
+coinbase transaction). Yesterday Mike Hearn asked my a difficult
+question: how would NimbleCoin SPV nodes (such as the ones running on
+smartphones) process tons of headers if the bandwidth is limited or the
+clients are disconnected from the Internet for long periods?
+
+The answer is Smart-SPV, a variation of the standard SPV headers-only
+<https://en.bitcoin.it/wiki/Thin_Client_Security> mode that allows a
+smartphone to keep a fairly accurate state of the wallet balance without
+downloading all the missing headers and without sacrificing battery life
+and time.
+
+Headers-only SPV clients
+<http://bitcoin.stackexchange.com/questions/11054/understanding-spv-simple-payment-verification>
+downloads a complete copy of the headers for all blocks in the entire
+blockchain but not all the transactions. In order to update the user
+wallet, SPV clients ask their peers to filter those blocks that contains
+transactions that the SPV is interested in, such as those that have
+payments to their own bitcoin addresses. This is done using bloom
+filters <https://github.com/bitcoin/bips/blob/master/bip-0037.mediawiki>.
+
+In Smart-SPV mode, when a client is missing block headers two things
+happen simultaneously:
+
+1. The client starts downloading block headers from the last one solved
+backwards.
+
+2. The client starts downloading the blocks headers from the first
+missing header, forward.
+
+While the client catches up with all the missing blocks, the wallet
+balance may not be fully reliable. Nevertheless if a new payment is
+received and confirmed, or a new payment is made, the wallet will
+increased the balance and show it. This is what the user expects.
+
+*How it works*
+
+A live block is a block which is the last block of the block-chain and
+it?s received on time (it has a time-stamp near the current time). Each
+time a live block is received, it is flagged as LIVE and this flag is
+stored permanently with the block.  A live transaction is a transaction
+that is included in a live block. When a live transaction is confirmed
+by 6 blocks flagged as LIVE the transaction is considered mature. A
+mature transaction may be included in a block that is still orphan. All
+mature transactions are scanned and used to compute the balance of the
+wallet. Also all transactions that are included in blocks rooted at the
+last checkpoint and finishing in the last live block are also considered
+mature (this is the standard condition). Since the wallet always
+modifies the balance according to mature transactions, an payment is
+received and acknowledged even if the branch where it is included is
+still orphaned. If the SPV client clock is correctly synchronized, the
+Smart-SPV protocol does not pose any additional security risk different
+from the known SPV limitations.
+
+
+
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140425/952ccb87/attachment.html>
