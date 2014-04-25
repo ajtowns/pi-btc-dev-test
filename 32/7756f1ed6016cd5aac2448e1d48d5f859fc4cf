@@ -1,0 +1,90 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 25 Apr 2014 17:14:26 -0400
+Subject: [Bitcoin-development] BIP - Hash Locked Transaction
+In-Reply-To: <CAAS2fgQc_UgwYgc0kVso-cL6xqP-2MGg2JoWDHYyAUXhQkyaoA@mail.gmail.com>
+References: <CAE-z3OVsQAya3RDzMTvKNK4hLGQVjFOp6Bseo=xK4ApOdPCh8g@mail.gmail.com>
+	<CAE28kUT4rZJHzww5gsdkCyzyKV6q2bV4h4rL_hzAcvhtCpKW4w@mail.gmail.com>
+	<20140425201403.GA8994@savin>
+	<CAAS2fgQc_UgwYgc0kVso-cL6xqP-2MGg2JoWDHYyAUXhQkyaoA@mail.gmail.com>
+Message-ID: <20140425211426.GD8994@savin>
+
+On Fri, Apr 25, 2014 at 01:19:48PM -0700, Gregory Maxwell wrote:
+> On Fri, Apr 25, 2014 at 1:14 PM, Peter Todd <pete at petertodd.org> wrote:
+> > Actually I did some work looking at this problem a few months ago and
+> > other than somewhat larger transactions it looks like implementing
+> > oracles by having the oracle reveal ECC secret keys works better in
+> > every case. Notably the oracle can prove they really do have the key by
+> > signing a challenge message, and with some ECC math the transaction can
+> > include keys that have been derived from the oracle keys, blinding what
+> > purposes the oracle is being used for from the oracle itself.
+> 
+> I think the hash-locked transactions are very useful, and I think
+> Peter agrees (no?)
+
+Yup. Revealing EC points is *not* a replacement for the hash-locked
+case.
+
+> But I agree with him that that for the oracle case the EC public
+> points are superior. (Also: Reality keys works like this.)
+
+Same again, and on top of that the EC public point method still works
+better in many circumstances with what are currently non-standard
+transactions rather than trying to shoe-horn everything into one big
+CHECKMULTISIG.
+
+
+Along those lines, rather than doing up yet another format specific type
+as Tier Nolan is doing with his BIP, why not write a BIP looking at how
+the IsStandard() rules could be removed? Last year John Dillon proposed
+it be replaced by a P2SH opcode whitelist(1) and I proposed some
+extensions(2) to the idea to make sure the whitelist didn't pose
+transaction mutability issues; very similar to Pieter Wuille's proposed
+soft-fork to stamp-out mutability.(3)
+
+The key reasons to have IsStandard() right now are the following:
+
+1) Mitigate transaction mutability.
+
+Pieter's soft-fork mitigates mutability well, and can be applied even
+more easily as an IsStandard() rule.
+
+
+2) Reduce the potential for scripting bugs to impact the ecosystem.
+
+The scripting system has had a lot more testing since IsStandard() was
+implemented. Additionally we have a large pool mining non-standard
+transactions anyway, mostly negating the value of IsStandard() for this
+purpose.
+
+
+3) Ensure that after a soft-fork upgrade transactions considered
+   IsStandard() by the the remaining non-upgraded hashing power continue
+   to be valid.
+
+We don't want that hashing power to be able to be tricked into mining
+invalid blocks. Future soft-forks for transactions will most likely be
+done by either incrementing the transaction version number, or by
+redefining one of the OP_NOPx opcodes with new functionality. We just
+need to ignore transactions with version numbers that we are not
+familiar with and additionally not include any of the OP_NOPx opcodes in
+the whitelist.
+
+
+One last detail is that sigops should be taken into account when
+calculating fees; Luke-Jr's accept non-standard patch has code to do
+this already.
+
+1) http://www.mail-archive.com/bitcoin-development%40lists.sourceforge.net/msg02606.html
+2) http://www.mail-archive.com/bitcoin-development%40lists.sourceforge.net/msg02611.html
+3) https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000000231ff812c54986461c6f76414390f88e41476a2c2c877304
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140425/6cb7df59/attachment.sig>
