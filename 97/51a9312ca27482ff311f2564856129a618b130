@@ -1,0 +1,132 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 26 Apr 2014 07:23:12 -0400
+Subject: [Bitcoin-development] Eliminating double-spends with two-party
+ self-escrow for high value transactions
+Message-ID: <20140426112312.GA17949@savin>
+
+In the majority of high-value transactions the fact that funds will be
+sent is known prior to when they actually are. For instance, if Alice is
+to meet Bob in person to buy a car or sell some Bitcoins, both parties
+know the transaction will probably happen in the near future some time
+before it actually does. Existing escrow solutions already take
+advantage of this fact; for instance Localbitcoins provides sellers the
+ability to escrow their funds with Localbitcoins prior to when the funds
+are released to the buyer.
+
+However with nLockTime a third-party escrow agent is *not* required.
+Instead prior to Alice sending the funds to the escrow address, she has
+Bob sign a refund transaction that unlocks at some time in the future.
+Generally the transaction does go through, and Alice and Bob sign a
+second transaction sending the funds to Bob. Sometimes it doesn't, and
+Alice either gets Bob to sign a transaction sending the funds back to
+her, or in the worst-case, just waits for the timeout to elapse.
+
+Note that this technique can be used in addition to a third-party escrow
+agent - the third-party then only plays a role in exceptional
+circumstances.
+
+
+Implementation sketch: Mycelium Local Trader
+--------------------------------------------
+
+The Mycelium Local Trader(1) is functionality built into the Mycelium
+Android wallet that helps users trade cash for bitcoins by finding
+traders in their local area. To attempt to prevent double-spends it uses
+"transaction confidence", a technique that attempts to determine how
+many nodes on the network a given transaction has propagated too. Of
+course this technique is fragile and vulnerable to many attacks.
+
+Local Trader already has pre-meetup buyer to seller communication built
+in. Within the application the buyers and sellers communicate and
+negotiate the amount and price of the Bitcoins prior to arranging a
+meeting place. We can extend this to self-escrow as follows:
+
+1) Alice publishes her offer to sell Bitcoins for cash.
+
+2) Bob replies to the offer with an unused pubkey, B.
+
+3) Alice creates tx1 paying a CHECKMULTISIG scriptPubKey spendable by
+   the co-operation of her pubkey, A, and Bob's pubkey, B. She signs tx1
+   but does not publish it.
+
+4) Alice creates tx_refund which is nLockTime'd until some point in the
+   future and returns the output of tx1 to an address she controls. Note
+   how tx_refund depends on the signed tx1.
+
+5) Alice sends Bob the hash of tx_refund for him to sign. As Bob does
+   not have the actual transaction Bob can't selectivly target tx1 for a
+   transaction mutability attack. Bob is free to sign the hash as the
+   pubkey has never been used before. Note that the tx_refund hash
+   Bob signs should be calculated with SIGHASH_SINGLE|SIGHASH_ANYONECANPAY
+   to allow Alice to, for instance, add fees.
+
+6) Bob replies with the signature.
+
+7) Alice checks the validity of the signature, and if satisfied,
+   publishes tx1 to the network.
+
+8) Alice and/or Bob travel to actually meet in person. If this takes
+   time t the probability of a block being generated during that
+   time is P=1-e^(1/10mins*t) For instance, with a travel time of 30
+   minutes we get 95% success, 1 hour 99.75%, and 2 hours 99.999%
+   success.
+
+9a) If the cash is handed over successfully Alice signs a
+    SIGHASH_SINGLE|SIGHASH_ANYONECANPAY signature for the tx1 output
+    spending the funds to a scriptPubKey specified by Bob and gives that
+    signature to him.
+
+10a) Bob creates a transaction spending the output, adds Alice's
+     signature to it, and finally signs it himself. He broadcasts this
+     transaction to the network, completing the transfer.
+
+9b) If the cash is NOT handed over successfully Alice and Bob can either
+    co-operate to cancel the transaction immediately, sending the
+    escrowed funds back to Alice, or Alice can wait until the timeout to
+    use the signature she had Bob prepare in advance.
+
+
+While the above is relatively complex, from the user's point of view the
+process is quite similar to how Mycelium already works:
+
+Alice: Publish offer -> Accept offer  -> Travel -> Release funds
+Bob:   Browse ads    -> Reserve funds -> Travel -> Accept
+
+The chief difference being that the funds for the transaction have been
+reserved, and if the transaction does not go through, will not be
+unlocked without the co-operation of the other party, or the expiration
+of the timeout.
+
+
+Transaction Malleability
+------------------------
+
+While the above is fairly secure if transactions aren't being mutated
+en-mass, better protections would be desirable. First of all adding a
+third-party escrow to the two-party escrow is a prudent last ditch
+measure to ensure that if malleability is an issue the third-party can
+release locked funds manually; note how SIGHASH_SINGLE is used as
+opposed to SIGHASH_NONE to prevent that third-party from having access
+to the funds. Secondly a future soft-fork such as Pieter Wuille's
+BIP62(2) can eliminate malleability. In particular, a soft-fork that
+enabled the creation of signatures that did *not* include the txin txid
+would be particularly valuable; in step 4 above Bob's refund signature
+signed over the scriptPubKey and nLockTime only would cover all possible
+cases whre a refund would be needed, such as accidental multiple
+payments and previously unknown sources of malleability.
+
+
+1) http://www.reddit.com/r/Bitcoin/comments/236k5d/mycelium_local_trader_is_now_available/
+
+2) https://github.com/bitcoin/bips/blob/master/bip-0062.mediawiki
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000009c143a1773a5dc24477ec151689bc78ffdd00a232bd533c8
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140426/97b21175/attachment.sig>
