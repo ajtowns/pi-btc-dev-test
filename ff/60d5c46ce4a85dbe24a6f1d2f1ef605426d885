@@ -1,0 +1,99 @@
+From: sergiolerner@certimix.com (Sergio Lerner)
+Date: Sat, 26 Apr 2014 22:08:15 -0300
+Subject: [Bitcoin-development] About Compact SPV proofs via block header
+	commitments
+Message-ID: <535C587F.90005@certimix.com>
+
+I read the post in this threads about Compact SPV proofs via block
+header commitments (archived e-mail in
+https://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg04318.html).
+I was working on the same problem almost at the same time, which is
+something that's becoming very common nowadays..
+
+The proposal starts with the following claim:
+
+"In simple payment verification (SPV) proofs it is currently necessary
+that every intervening block header be provided between two blocks in
+order to establish both connectivity and proof of work."
+
+I think this is false. Let's first assume that at the time of an attack
+we're connected only to the attacker (no honest nodes). An
+non-interactive SPV proof needs to prove that a transaction belongs to
+the best chain because creating a counterfeit proof cost more than the
+amount of money involved in the proof. Suppose that the proof consist at
+least of a block header and a merkle branch to the claimed transaction.
+
+Do the proof need connectivity with the last checkpoint known by the
+verifier? (here checkpoint is any block known for sure to be in the best
+chain)
+
+Not much, because connectivity only proves that the proof was not
+pre-computed before the checkpoint. Only if the checkpoint is very near
+(say 10 blocks back) it brings some practical evidence that the attacker
+did not have much time to prepare an attack.
+ 
+Do the proof need to know the interleaving proof-of-work?
+
+Not much. If the distance between blocks is less than 2016 blocks, then
+the difficulty may have change only by a factor of 4. Currently
+difficult adjustments are much lower (I suppose that about 1.1 or so).
+Then one can assume that the proof block target difficulty is almost the
+same as the last known difficulty if the block distance is less than
+2016. If the distance is more, we just load all the interleaving
+re-target blocks to detect the actual difficulty.
+
+Do the proof need to have a certain number of  confirmations?
+
+Yes and no, because this is the only evidence that the prover has either
+spend money in creating the fake block or took a genuine block.
+The cost of creating a fake block can be approximated as the minimum of:
+- The current reward of the block (since currently fees are much lower
+than the reward)
+- The average block fees (when the reward goes to zero)
+- The minimum electricity cost of mining the block.
+
+As time passes one could assume that the electricity cost of mining will
+approach the other two. 
+
+But there is the problem of parallel synchronized attacks: if an
+attacker can reuse the same fake SPV proof to attack several victims,
+then the reward for cheating increases proportionally but the cost stays
+the same.
+For instance, if 6 confirmations are required, and each block can hold
+2000 transactions, the attacker can find 2000 victims and re-use the
+same 6 block chain to "prove" payments to 2000 victims. Also the cost of
+mining 6 blocks can be amortized by mining 7, and attacking in the first
+two 4000 victims, etc...
+
+Any scheme than relies on non-interactive SPV proofs will fail if
+Bitcoin will scale up-to a point where victims can be easily found and
+synchronized.
+So I think one should assume that at least one peer is honest...
+
+But if we assume than during the attack least one peer is honest, then
+we could directly ask every peer to give us the blocks of their
+best-chains at the same heights of the presented proof.  No back-links
+are necessary.  If any peer shows a different block, then we should
+carefully detect which of the two nodes is the one attacking us and ban
+it, by downloading the best-chain headers from the last checkpoint to
+the block of the proof.  This would be rare so I don't see when the
+back-links can help.
+
+The use case should be:
+
+==Use cases==
+
+For SPV client that has just come online asks peers what is the last block height/time. 
+If a peer replies with an old block, then that peer is still downloading the block-chain and it's ignored.
+For the remaining peers, the client starts asking for parents blocks until all parents agree (this is the last common parent). 
+If (U)TxO hash-tree commitments are available, then the wallet is updated using this data from the common parent block. 
+
+At the same time the client retrieves compact non-interactive proofs-of-inclusion (possibly orphan) for its transactions 
+without having to download every intervening block header.
+
+Is there something wrong with this?
+ 
+Best regards,
+Sergio.
+
+
