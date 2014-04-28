@@ -1,0 +1,107 @@
+From: sergiolerner@certimix.com (Sergio Lerner)
+Date: Mon, 28 Apr 2014 11:32:33 -0300
+Subject: [Bitcoin-development] About Compact SPV proofs via block header
+ commitments
+In-Reply-To: <535D38E9.60209@monetize.io>
+References: <535C587F.90005@certimix.com>
+	<535C60C8.5030605@monetize.io>	<535C6DEC.9040505@certimix.com>
+	<535CA722.1000704@monetize.io> <535CF9BB.5010209@certimix.com>
+	<535D38E9.60209@monetize.io>
+Message-ID: <535E6681.6000509@certimix.com>
+
+
+On 27/04/2014 02:05 p.m., Mark Friedenbach wrote:
+>
+> On 04/27/2014 05:36 AM, Sergio Lerner wrote:
+>>> Without invoking moon math or assumptions of honest peers and
+>>> jamming-free networks, the only way to know a chain is valid is to 
+>>> witness the each and every block. SPV nodes on the other hand,
+>>> simply trust that the most-work chain is a valid chain, based on
+>>> economic arguments about the opportunity cost of mining invalid
+>>> blocks.
+>> I argue that you cannot talk about "the most-work chain" without 
+>> actually making an assumption about honest peers.
+> I should have said "without invoking moon math or interactive protocols
+> requiring honest peers over jamming-free networks." The interactive
+> protocol was more the point than the honest peers and jamming-free
+> network. Yes, without an honest peer and an un-jammed network, you might
+> never learn about the most-work chain in the first place. But having the
+> security of the proof not depend on query access to an honest full node
+> is absolutely necessary for some applications and certainly desirable in
+> others.
+The problem is not having or not access to a honest full node. The SPV
+client MUST have access to a honest full node sometime.
+The problem is WHEN. One can make the security assumption that during an
+attack (someone gives you a fake block) you also loose the possibility
+to reach any honest node. Then SPV proofs come into play.
+
+Here are the security assumptions I added to my post about SmartSPV to
+clarify this:
+
+*Security Assumptions
+*
+
+First let?s review the main security assumption of headers-only SPV:
+
+  * The attacker does not control all your communications with the
+    payment network.
+
+This means that there is at least a single connected peer that behaves
+honestly. This assumption is quite strong and may not hold during short
+periods of time, such as during application power-on (when only a few
+peers have been connected), or when moving to a place where the ISP is
+untrusted. For SmartSPV we?ll require weaker security assumptions:
+
+  * The attacker cannot control all your communications with the payment
+    network for more than a fixed period of time (e.g. 2016 blocks for
+    Bitcoin or approximately 15 days)
+  * The attacker is rational: it won?t spend an huge amount of money to
+    steal a much smaller amount.
+
+This assumptions imply that the attacker may control all your Internet
+connections while he sends you a malicious block branch containing a
+fake payment to you.
+
+
+>
+>> First this is a method that uses NPPs, not SPV proofs. Since the
+>> method chooses all peers that are synchronized (have the latest
+>> current block) then going back means only skipping a potential short
+>> fork (which I suppose has never been more than 3 blocks during normal
+>> network conditions). You're looking for a common ancestor, not the
+>> checkpoint. So the linear scan is actually O(1). The exact value can
+>> be approximated by the sum of the convergent infinite geometrical
+>> sequence of forking probabilities, which it's about 1.03 without
+>> considering selfish-mining, and probably less than 2.03 considering
+>> it.
+> Unless you're connected to attacker nodes which are wildly divergent
+> from each other. It's relatively easy to create a massive fake history
+> of difficulty-1 blocks.
+Since in my use case (SmartSPV) I proposed you start from the most
+recent block and go backwards, the attacker must compete in PoW with the
+real current difficulty informed.
+Suppose the SPV client looks for 6-block chains backwards starting from
+the last current block. Suppose you know or estimate the current network
+difficulty. Suppose a malicious peer creates a fake 6-block chain Cm and
+the honest peer gives you the 6-block chain Ch. If Ch has not the
+expected work it's discarded. If both has the expected work, then you
+better not true any of them and walk their parents until you find a
+common parent. That's the block you should trust. If you don't have an
+honest node connected, then the only decide to trust or not Cm is by
+it's accumulated work (and you have already a bound for it)
+
+
+> If you assume honest peers things get very easy. But that's not a safe
+> assumption to be making. With back-link block-history commitments, on
+> the other hand, an interactive protocol allows you to do a binary search
+> to find common ancestors, and have trust that the intermediate links
+> actually exist.
+So you agree that:  you need a periodic connection to a honest node, but
+during an attack you may loose that connection. This is the assumption
+we should be working on, and my use case (described in
+http://bitslog.wordpress.com/2014/04/25/smartspv-a-better-simplified-payment-verification-for-smartphones/)
+assumes that.
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140428/aac02c8f/attachment.html>
