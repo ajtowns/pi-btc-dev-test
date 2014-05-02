@@ -1,0 +1,156 @@
+From: sergiolerner@certimix.com (Sergio Lerner)
+Date: Fri, 02 May 2014 08:48:38 -0300
+Subject: [Bitcoin-development] Block collision resolution using the DECOR
+ protocol and Bonneau's Kickbacks problem
+In-Reply-To: <CAOe4Ui=OaVLvh0vUnNv-1j41YB4B2x896DQ5b6xt4oUJ5oLPFg@mail.gmail.com>
+References: <mailman.122233.1398039406.2207.bitcoin-development@lists.sourceforge.net>
+	<52CDA01B-13BF-4BB8-AC9A-5FBBB324FD15@sant.ox.ac.uk>
+	<20140423150555.GE19430@savin>
+	<CAOe4Ui=OaVLvh0vUnNv-1j41YB4B2x896DQ5b6xt4oUJ5oLPFg@mail.gmail.com>
+Message-ID: <53638616.2030009@certimix.com>
+
+The Bonneau's Kickbacks problem is interesting because it is a
+destabilizing incentive.
+Just by luck yesterday I was working on the same problem. I found a way
+to prevent Kickbacks and provide a conflict resolution strategy that
+benefits all member of the network.
+I will repost my blog post here, but the original has very nice diagrams
+and is full of hyperlinnk, so I recommend you see the original post...
+
+Even faster block-chains with DECOR protocol
+
+One of the most interesting papers ever written about the Bitcoin
+block-chain design is ?Accelerating Bitcoin?s Transaction Processing? by
+Sompolinsky and Zohar. The paper presents the GHOST protocol which aims
+to achieve higher TPS securely by changing the way nodes decide which is
+the best chain fork. One of the issues that is not considered by the
+paper is the existence of a selfish bias independent of the miner?s
+hashing power. When a miner solves a block, and a competing block is
+also received, the miner will mine on top of his own solved block. This
+is not only a consequence of the best-chain selection policy, there is a
+strong incentive to do so. By mining on top of your own solved block,
+you double the expected reward while keeping the same winning
+probabilities. As a informal comparison, in Satoshi?s security model,
+the rogue miner is irrational and malicious. For example, the
+confirmation interval computations assume a rogue miner having 10% of
+the network hashing power will try to mine a selfish chain in order to
+try to outperform the global best-chain even if the odds are against
+him. In Sopolinky/Zohar security model, the miners are rational, but use
+a sub-optimal strategy. For example when two blocks compete, all miners
+will chose one of them arbitrarily (all choose the same block). Although
+this may be optimal for a fully cooperative network it?s not what miners
+will optimally choose for themselves. In Eyal/Sirer security model, the
+rogue miner is rational and uses an strategy believed by the authors to
+be optimal.
+In this post we improve Sopolinky/Zohar model assuming the attacker uses
+Eyal/Sirer selfish strategy and the standard double-betting strategy.
+
+Double-betting Strategy by Default
+
+The double-betting is a mining strategy pre-programmed in the in Satoshi
+reference miner. When a miner mines a block and a competing block is
+also detected, the miner won?t switch to the other chain because is has
+the same length, so mining will continue on the ?selfish? fork. Of
+course there is nothing inherently selfish with this strategy since the
+miner has not enough information about which of the two forks is the one
+which the majority of the miners are mining on top of. Nevertheless the
+division of hashing power in forks is against the common good and
+reduces both the network TPS and the network confirmation time.
+
+Tit for Tat and identities
+
+If the two competing miners could detect the other miners identity in
+blocks, they could apply a cooperative strategy like Tit for Tat.
+Whenever two competing blocks are found by two miners without having any
+previous interaction, the conflict is resolved by both miners mining on
+top of the block with lower hash digest. If the two miners have
+interacted before, the conflict is resolved by both miners mining in the
+block that was solved by the opposite miner chosen in the previous
+interaction. If a miner acts selfishness and breaks the ties, then the
+other miner opts to apply an equivalent retaliation in the next block
+conflict. The retaliation is only considered successful if the miner who
+retaliates wins the ties. This strategy may in practice for at least
+four reasons:
+
+Sometimes a miner may solve two blocks in a row without noticing that
+the first one had a conflicting sibling. Then the competing miner would
+retaliate.
+If more than two miners are competing, it?s more complex to decide which
+block should be chosen as parent.
+All miners must dynamically maintain information of all previous
+interactions between all other miners.
+Some miners want to preserve anonymity and won?t publish identifying
+information.
+
+The first two reasons can be disregarded since the conflicting events
+may have a very low probability. The third is only a minor technical
+difficulty. But the last reason may be very strong.
+
+DECOR (DEterministic COnflict Resolution)
+
+I present here a reward strategy I called DECOR that incentives
+resolving conflicts in a deterministic way that benefits all conflicting
+miners at the same time. This strategy practically eliminates any
+possibly block-chain reversal when miners are rational. To make this
+explanation clearer we?ll assume that all block rewards and fees are
+equal so each miner receives exactly the same net payment for a block.
+Also the reward percentages proposed can be varied as long as some
+relations between are maintained. The idea is that whenever two miners
+Alice and Bob mine two competing blocks (a block conflict) both decide
+to mine on top of the block with the lower hash. First, all conflicting
+blocks headers that are not very old are forwarded to allow all peers to
+compare block hashes. If a miner Carol (or Alice or Bob) solves a
+following block, she includes in his block a reference to the uncle
+block header that was left out of the main chain. This reference is
+stored either in the block header, the coinbase field or in a special
+transaction. The uncle block owner will get automatically 50% of the
+reward of his main-chain sibling if uncle hash is higher than sibling
+hash or 35% if not. The sibling also pays a 10% to Carol. Also the
+sibling burns 10% if the uncle hash is higher than the sibling hash or
+35% if not. This strategy sets incentives for conflicting miners to
+choose always the parent with the lowest hash and to always reference a
+lost uncle in the following blocks.
+
+Mining strategy:
+
+If there is no block Y having a sibling X in the main chain whose reward
+has not matured then mine in the standard way and exit this procedure
+Add a reference to Y in the new block that is being prepared.
+Let x := BlockRewardPlusFees(X)
+Let q := x*0.5
+Let z :=x*0.1
+If Hash(X)>Hash(Y) then q :=q-(x*0.2) and z :=z+(x*0.2)
+Add a transaction that has as input the coinbase output of X and has
+four outputs: the first output pays q coins to the address specified in
+the coinbase output of block Y, the second output pays (x*0.1) coins to
+an owned address, the third output burns z coins, and the forth output
+pays the remaining coins to the same address as the input address. All
+users accept this transaction as valid even if it?s unsigned if a
+correct uncle is referenced.
+
+The following diagrams show an example of how two miners Alice and Bob
+will prefer mining on top of the same parent (A1) after a block A1
+(created by Alice) is in conflict with a block B1 created by Bob. Carol
+is a third miner that is not in conflict with neither Alice nor Bob. In
+the diagrams the first letter indicates who created the block and the
+number following indicates the block height. The arrows point to each
+block parent.Bob-op
+
+
+Although I?m giving no formal proof, It?s evident that the best strategy
+for Alice and Bob is to choose the same parent for the following block.
+
+GHOST+DECOR
+
+The DECOR strategy can be implemented along with the GHOST protocol. In
+fact both protocols have things in common, such as the need to forward
+block headers that are siblings of blocks in the best chain. Using both
+protocols together, along with route optimizations proposed here, maybe
+2000 TPS can be achieved today.
+
+
+
+Best regards,
+Sergio.
+
+
