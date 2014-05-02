@@ -1,0 +1,144 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Fri, 2 May 2014 17:39:44 +0200
+Subject: [Bitcoin-development] BIP70 implementation guidance
+Message-ID: <CANEZrP15TKPcWnjdnfbRd9KxrS_5F=07gTL1DxyMo1os-sVOpA@mail.gmail.com>
+
+A bunch of different people either have implemented or are implementing
+BIP70 at the moment. Here's a bunch of things I've been telling people in
+response to questions. At some point I'll submit a pull req with this stuff
+in but for now it's just an email.
+
+*Error handling during signature checking*
+
+I've had queries around the right behaviour here. BIP 70 is underspecified
+and we should fix it IMO. If PKI checking fails you should just treat the
+request as if it's unsigned. The reason is that there is no incentive for
+an attacker to break the signature instead of just removing it entirely, so
+an attacker would never trigger any error flows you put in. However,
+someone who is signing their request with an unknown CA or using an
+upgraded version of the protocol that isn't entirely backwards compatible
+*could* trigger signature checking failure.
+
+Therefore, in order to make introducing new (possibly community run) CA's
+or new variations on signing possible, please treat any errors as if there
+was no signature at all. This is not what browsers do,  but browsers have
+an advantage - they were already given an identity and told to expect a
+secure protocol when the user typed in the web address with an
+https://prefix (or clicked a link). Unfortunately a Bitcoin wallet has
+no context
+like this.
+
+One person asked me whether this makes the whole scheme pointless because a
+MITM can just delete the signature. The answer is no - downgrade attacks
+are always possible on systems that start out insecure. The solution is to
+train users to expect the upgrade and refuse to go ahead if it's not there.
+Training users to expect signed payment requests will be a big task similar
+to the way the browser industry trained users to look for the padlock when
+typing in credit card details, but it must be done.
+
+Because wallets lack context there's no equivalent to HSTS for us either.
+So in your GUI's try to train the user - when showing a signed payment
+request, tell them to expect the recipient name to appear in future and
+that they should not proceed if it doesn't. This gives us a kind of mental
+HSTS.
+
+*Extended validation certs*
+
+When a business is accepting payment, showing the name of the business is
+usually better than showing just the domain name, for a few reasons:
+
+   1. Unless your domain name *is* your business name like blockchain.info,
+   it looks better and gives more info.
+
+   2. Domain names are more phishable than EV names, e.g. is the right name
+   bitpay.com or bit-pay.com or bitpay.co.uk?
+
+   3. More important: Someone who hacks your web server or DNS provider can
+   silently get themselves a domain name SSL cert issued, probably without you
+   noticing. Certificate transparency will eventually fix that but it's years
+   away from full deployment. It's much harder for a hacker to get a bogus EV
+   cert issued to them because there's a lot more checking involved.
+
+EV certs still have the domain name in the CN field, but they also have the
+business name in the OU field.
+
+In theory we are supposed to have extra code to check that a certificate
+really was subject to extended validation before showing the contents of
+this field. In practice either bitcoinj nor Bitcoin Core actually do, they
+just always trust it. It'd be nice to fix that in future.
+
+You should show the organisation data instead of the domain name if you
+find it, for EV certs.
+
+*pki=none*
+
+Signing is optional in BIP 70 for good reasons. One implementor told me
+they were considering rejecting unsigned payment requests. Do not do this!
+A MITM can easily rewrite the bitcoin URI to look as if BIP70 isn't in use
+at all.
+
+Even though today most (all?) payment requests you'll encounter are signed,
+it's important that signing is optional because in future we need
+individual people to start generating payment requests too, and many of
+them won't have any kind of memorisable digital identity. Plus other people
+just won't want to do it. BIP70 is about lots of features, signing is only
+one.
+
+*S/MIME certs*
+
+Email address certs look a bit different to SSL certs. You can get one for
+free from here
+
+    https://comodo.com/home/email-security/free-email-certificate.php
+
+In these certs the display name can be found in the Subject Alternative
+Name field with a type code of 1. Example code:
+
+
+https://github.com/bitcoinj/bitcoinj/commit/feecc8f48641cd02cafc42150abba4e4841ea33d
+
+You won't encounter many of these today except on Gavin's test site, but in
+future people may wish to start creating and signing their own payment
+requests for individual purposes using these certs (especially as they are
+free). So please try to handle them correctly.
+
+*Broadcast vs upload*
+
+Please upload transactions and commit them to your wallet when the server
+responds with 200 OK, but expect the merchant to broadcast them. Don't give
+the user an option to pick - it's pointless as there's no obvious right
+answer.
+
+*Testing*
+
+You can find a test site here:
+
+http://bitcoincore.org/~gavin/createpaymentrequest.php
+
+It's testnet only. For testing regular payment requests on the main
+network, I use BitPay as they were the first seller-side implementation:
+
+http://bitgivefoundation.org/donate-now/
+
+*Memo contents*
+
+Please put something useful here, ideally what is actually being sold but
+failing that, the name of the merchant if you're a payment processor. Don't
+be like BitPay and put large random numbers in the memo field but nothing
+about what's actually purchased.
+
+This is not particularly important today except for cosmetic reasons,
+because wallets don't store the payment requests they saw to disk. But in
+future they will and then a properly signed memo field + the transactions
+used for payment give us a digital receipt. Receipts are useful for things
+like filing expense reports, proving a purchase when returning an item to a
+merchant, etc.
+
+*Expiry times*
+
+Don't be too aggressive with these. Although today it doesn't matter much,
+some users may be trying to pay from multi-party accounts that require
+multiple humans to coordinate to make a payment.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140502/e56ae858/attachment.html>
