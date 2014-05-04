@@ -1,0 +1,68 @@
+From: tomh@thinlink.com (Tom Harding)
+Date: Sat, 03 May 2014 17:29:00 -0700
+Subject: [Bitcoin-development] A statistical consensus rule for reducing
+	0-conf double-spend risk
+Message-ID: <536589CC.8080005@thinlink.com>
+
+This idea was suggested by "Joe" on 2011-02-14 
+https://bitcointalk.org/index.php?topic=3441.msg48484#msg48484 .  It 
+deserves another look.
+
+Nodes today make a judgment regarding which of several conflicting 
+spends to accept, and which is a double-spend.  But there is no 
+incorporation of these collective judgments into the blockchain.  So 
+today, it's the wild west, right up until the next block.  To address this:
+
+  - Using its own clock, node associates a timestamp with every 
+transaction upon first seeing its tx hash (at inv, in a block, or when 
+created)
+  - Node relays respend attempts (subject to anti-DOS rules, see github 
+PR #3883)
+  - Eventually, node adds a consensus rule:
+     Do not accept blocks containing a transaction tx2 where
+         - tx2 respends an output spent by another locally accepted 
+transaction tx1, and
+         - timestamp(tx2) - timestamp(tx1) > T
+
+What is T?
+
+According to http://bitcoinstats.com/network/propagation/ recent tx 
+propagation has a median of 1.3 seconds.  If double-spender introduces 
+both transactions from the same node, assuming propagation times 
+distributed exponentially with median 1.3 seconds, the above consensus 
+rule with reject threshold T = 7.4 seconds would result in 
+mis-identification of the second-spend by less than 1% of nodes.*
+
+If tx1 and tx2 are introduced in mutually time-distant parts of the 
+network, a population of nodes in between would be able to accept either 
+transaction, as they can today.  But the attacker still has to introduce 
+them at close to the same time, or the majority of the network will 
+confirm the one introduced earlier.
+
+Merchant is watching also, and these dynamics mean he will not have to 
+watch for very long to gain confidence if he was going to get 
+double-spent, he would have learned it by now.  The consensus rule also 
+makes mining a never-broadcast double-spend quite difficult, because the 
+network assigns it very late timestamps.  Miner has to get lucky and 
+find the block very quickly.  In other words, it converges to a Finney 
+attack.
+
+This would be the first consensus rule that anticipated less than 100% 
+agreement.  But the parameters could be chosen so that it was still 
+extremely conservative.  Joe also suggested a fail-safe condition: drop 
+this rule if block has 6 confirmations, to prevent a fork in unusual 
+network circumstances.
+
+We can't move toward this, or any, solution without more data. Today, 
+the network is not transparent to double-spend attempts, so we mostly 
+have to guess what the quantitative effects would be.  The first step is 
+to share the data broadly by relaying first double-spend attempts as in 
+github PR #3883.
+
+
+*Calcs:
+For Exp(lambda), median ln(2)/lambda = 1.3 ==> lambda = .533
+Laplace(0,1/lambda) < .01 ==> T = 7.34 seconds
+
+
+
