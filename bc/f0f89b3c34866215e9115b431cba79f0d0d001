@@ -1,0 +1,87 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Fri, 9 May 2014 14:05:24 +0200
+Subject: [Bitcoin-development] ECDH in the payment protocol
+Message-ID: <CANEZrP3VNXSc2cd3b9pz9iC2BR0-vG=tfYwMyUGBGaWPq+geXQ@mail.gmail.com>
+
+I wrote an article about an ECDH extension for BIP 70:
+
+   https://medium.com/p/cb2f81962c1b
+
+The article is meant for people who don't follow bitcoin-development so
+I'll summarise it here:
+
+   - The notion of being able to publish a piece of data once and use it to
+   receive lots of payments without any coordination is really useful. This is
+   the idea behind the stealth address proposal.
+
+   - Stealth addresses don't fit with the payment protocol, because they're
+   a new kind of address (obviously).
+
+   - Stealth addresses are not backwards compatible. If you give someone a
+   stealth address and their wallet doesn't support it, they can't pay you,
+   not even with worse privacy. Sometimes people may optionally want that
+   behaviour but stealth addresses have it all the time.
+
+   - The proposed stealth address design makes huge sacrifices to try and
+   keep everything within the block chain. It bloats the chain with OP_RETURN
+   stuff that isn't a part of the validation. But more seriously, the only way
+   to make it efficient enough for lightweight clients is to reduce the
+   "stealthyness". The more efficient you make your address the less private
+   it becomes. This is somewhat similar to the dilemma we have with Bloom
+   filtering, except Bloom filters are transient and can only be used to link
+   addresses by someone who observes them on the wire. Stealth addresses
+   record the relationship in the block chain forever.
+
+   - The design makes these sacrifices to avoid moving data around outside
+   the block chain. But with BIP 70 that's the direction we're heading in
+   anyway. So by adding ECDH to the payment protocol and putting our effort
+   into making BIP 70 work really well for everyone, we end up killing
+   multiple birds with one stone. The same work that resolves the privacy
+   problems inherent in the stealth address design also allows us to attach
+   messages to payments and other commonly requested features.
+
+There's a straw man in the article that I recreate here:
+
+message Output {
+   optional uint64 amount = 1 [default = 0];
+   optional bytes script = 2;
+   *optional boolean accept_ecdh = 3;  // Requires script to be a
+pay-to-pubkey output.*
+}
+
+message Payment {
+   optional bytes merchant_data = 1;
+   repeated bytes transactions = 2;
+   repeated Output refund_to = 3;
+   optional string memo = 4;
+   *repeated bytes ecdh_nonces = 5;*
+}
+
+The way the nonces are combined to arrive at the address could be the same
+as in the current stealth address spec. A wallet that doesn't understand
+ECDH but does understand raw BIP 70 would deliver the money to the base
+address, which receiving wallets would look for too - so it's backwards
+compatible. The nonces stay out of the block chain. The transactions are
+delivered directly to the recipient so there's no problems with trying to
+make it fit with Bloom/prefix filtering.
+
+To make this work there obviously has to be a backchannel from payer to
+payee. BIP 70 is mostly used by web shops today so that back channel is
+just HTTPS to the website itself, but shops benefit less from ECDH than
+others do. So we need a simple email-like store and forward network where
+HTTP POSTs to a server get queued up and delivered later (or possibly
+forwarded to another store-and-forward network like the Android push
+network). Most of the article discusses how best to build such a thing.
+
+The justification for the original stealth address design can be summed up
+as "it's easier to [ab]use the Bitcoin network for delivery of short
+messages than use a different system". But there are just so many features
+we may want to add into the Payment message in future it seems better to
+crack the SaF problem earlier rather than continue trying to jam a square
+peg into a round hole. There are lots of very reliable SAF networks around
+(email, instant messaging, etc) so it doesn't seem infeasible.
+
+Thoughts welcome!
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140509/05d1c2d1/attachment.html>
