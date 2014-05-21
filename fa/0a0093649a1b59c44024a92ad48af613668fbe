@@ -1,0 +1,67 @@
+From: dave@dtrt.org (David A. Harding)
+Date: Wed, 21 May 2014 16:25:02 -0400
+Subject: [Bitcoin-development] PSA: Please sign your git commits
+In-Reply-To: <7B48B9D4-5FB0-42CA-A462-C20D3F345A9A@beams.io>
+References: <CA+s+GJBNWh0Py9KB4Y+B19ACeHOygtkLrPw5SbZ0SrVs50pqvg@mail.gmail.com>
+	<7B48B9D4-5FB0-42CA-A462-C20D3F345A9A@beams.io>
+Message-ID: <20140521202502.GA439@localhost.localdomain>
+
+On Wed, May 21, 2014 at 06:39:44PM +0200, Chris Beams wrote:
+> I [was] searching for a way to enable signing by default [...]
+> Unfortunately, there isn't one, meaning it's likely that most folks
+> will forget to do this most of the time.
+
+For all of my projects, I now I put this script in
+.git/hooks/post-commit and post-merge:
+
+    #!/bin/bash -eu
+
+    if ! git log -n1 --show-signature | grep -q 'gpg: Good signature'
+    then
+        yes "FORGOT TO SIGN COMMIT MESSAGE"
+        exit 1
+    fi
+
+So anytime I forget to sign, I get an obvious error and can immediately
+run git commit --amend -S.
+
+To automatically add a script like the one above to all new projects (plus
+quickly add it old current projects), you can follow these instructions:
+
+    http://stackoverflow.com/questions/2293498/git-commit-hooks-global-settings
+
+> If you're really serious about it, you should probably reject pull
+> requests without signed commits; otherwise, signing becomes
+> meaningless because only honest authors do it
+
+I find signing my commits quite useful even on projects without a
+default signing policy because it lets me diff from the last time I
+provably reviewed the code.  Here's my script for that:
+
+    #!/bin/bash -eu
+
+    KEY=F29EC4B7
+
+    last_signed_commit=$( git log --topo-order --show-signature --pretty=oneline \
+        | grep -m1 " gpg: Signature made.*RSA key ID $KEY" \
+        | sed 's/ .*//' \
+        | grep .
+    ) || { echo "No signed commit found.  Dying..." ; exit 1 ; }
+
+    set -x
+    git diff $last_signed_commit
+
+By diffing against the last signed commit I made, I also review any
+commits that were made using my name but which I didn't actually make,
+such as squashes and rebases of my commits (and, of course, forgeries).
+
+For anyone who's bored and wants to read a lot of text, I think the
+definitive work on git signing is this:
+
+    http://mikegerwitz.com/papers/git-horror-story.html
+
+-Dave
+-- 
+David A. Harding
+
+
