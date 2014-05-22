@@ -1,0 +1,66 @@
+From: chris@beams.io (Chris Beams)
+Date: Thu, 22 May 2014 03:09:35 +0200
+Subject: [Bitcoin-development] PSA: Please sign your git commits
+In-Reply-To: <20140521202502.GA439@localhost.localdomain>
+References: <CA+s+GJBNWh0Py9KB4Y+B19ACeHOygtkLrPw5SbZ0SrVs50pqvg@mail.gmail.com>
+	<7B48B9D4-5FB0-42CA-A462-C20D3F345A9A@beams.io>
+	<20140521202502.GA439@localhost.localdomain>
+Message-ID: <D60239BA-5329-463F-9870-7B28661E9581@beams.io>
+
+
+On May 21, 2014, at 10:25 PM, David A. Harding <dave at dtrt.org> wrote:
+
+> On Wed, May 21, 2014 at 06:39:44PM +0200, Chris Beams wrote:
+>> I [was] searching for a way to enable signing by default [...]
+>> Unfortunately, there isn't one, meaning it's likely that most folks
+>> will forget to do this most of the time.
+> 
+> For all of my projects, I now I put this script in
+> .git/hooks/post-commit and post-merge:
+> 
+>    #!/bin/bash -eu
+> 
+>    if ! git log -n1 --show-signature | grep -q 'gpg: Good signature'
+>    then
+>        yes "FORGOT TO SIGN COMMIT MESSAGE"
+>        exit 1
+>    fi
+
+Funny, I was just in the middle of writing a pre-push hook to do something similar when I decided to check my email :) Your post-commit approach is indeed simpler, so I've gone with it for the moment [1]. Thanks.
+
+However, I noticed in the process of testing that this approach messes with rebase workflows. For example: if I make several commits (all of which are properly signed), and then rebase to reorder them, rebase ends up hanging because it delegates to `commit` and the use of `yes` in the post-commit hook blocks forever. I've changed `yes` to `echo` to avoid this, but it still means that one must be rather diligent to keep signatures in place when rebasing. Gerwitz does address rebasing in the presence of commit sigs in the "horror story" doc you linked to [2], but there's no magic: this makes the whole rebasing process considerably more tedious, and linearly so with however many commits you're modifying.
+
+This may amount to a rationale for going with a pre-push hook after all, i.e. in order to defer the check for signatures until the last possible moment. This would allow for cheap iterative rebasing once again.
+
+I suppose the proper solution would be a `git config` option such as 'commit.sign', that if set to true would mean your commits are always signed, even if rebase is the one calling `commit`. This would obviate the need for the alias I mention below as well.
+
+
+> So anytime I forget to sign, I get an obvious error and can immediately
+> run git commit --amend -S.
+
+If one is already in the habit of using an alias for `commit` (I've long used `ci` for concision), the -S can be included in the alias:
+
+    git config alias.ci 'commit -S'
+
+
+> To automatically add a script like the one above to all new projects (plus
+> quickly add it old current projects), you can follow these instructions:
+> 
+>    http://stackoverflow.com/questions/2293498/git-commit-hooks-global-settings
+
+This was a great tip, thanks!
+
+- Chris
+
+[1]: https://github.com/cbeams/dotfiles/commit/58d6942
+[2]: http://mikegerwitz.com/papers/git-horror-story.html#_option_3
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140522/16681d8b/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 842 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140522/16681d8b/attachment.sig>
