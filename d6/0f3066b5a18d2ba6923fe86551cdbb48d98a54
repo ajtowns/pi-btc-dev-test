@@ -1,0 +1,47 @@
+From: dscvlt@gmail.com (Ashley Holman)
+Date: Sat, 24 May 2014 13:27:05 +0930
+Subject: [Bitcoin-development] Cut-through propagation of blocks
+Message-ID: <CAOXABZohe93SSRm1FN5ai2H97eBJV2j+LAjA-39YAaNmX=ep0Q@mail.gmail.com>
+
+Hi,
+
+On this list there has been some discussion around techniques to speed up
+block propagation, with a particular focus on reducing the extra orphan
+risk carried by larger blocks.
+
+The current store-and-forward method means that larger blocks will
+propagate with higher latency.  One proposed solution has been to broadcast
+two separate messages: a fast, fixed-size header message, and a 2nd, slower
+body message containing the full block.  Whilst this allows larger blocks
+to compete equally with smaller blocks on the "which came first" rule, it
+creates a new area of uncertain delay between receiving the header, and
+receiving the body, where there may be perverse incentives to mine empty
+blocks on top of not-yet-valid headers.
+
+So I would like to propose another method which is hopefully a less
+significant change to the existing protocol rules, but should help reduce
+the latency gap between large and small blocks.
+
+* Skip the inv/getdata sequence for new blocks - just push them out
+directly to save 1 roundtrip per hop
+*  When receiving a new block from a peer, as soon as we have the first 80
+bytes (header) we can validate the PoW and, with only a low-level change to
+the networking code, begin streaming that block to our peers (in the style
+of cut-through switching).
+* No other rules need to change.  Block primacy can still be determined as
+of the moment they are fully validated and accepted, but now the latency
+caused by larger blocks is only (1 * BlockSize * BottleneckHopSpeed),
+instead of (Sum[n=0 to NumHops](BlockSize * NodeBandwidth(n))).
+* As far as I can tell, this shouldn't change any game theory or incentives
+because nodes still receive blocks exactly as they do now, just sooner.
+ The difference is, invalid blocks that meet the PoW will be broadcast to
+everyone, but this is nothing new since someone can peer with you and send
+you an invalid block already.  Network DoS should not be a possibility
+since it is very expensive to make invalid blocks that meet network PoW.
+
+Thoughts?
+
+Thanks
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140524/62e3e230/attachment.html>
