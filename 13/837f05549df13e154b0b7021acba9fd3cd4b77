@@ -1,0 +1,49 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Sat, 24 May 2014 16:16:43 -0700
+Subject: [Bitcoin-development] Cut-through propagation of blocks
+In-Reply-To: <CAOXABZohe93SSRm1FN5ai2H97eBJV2j+LAjA-39YAaNmX=ep0Q@mail.gmail.com>
+References: <CAOXABZohe93SSRm1FN5ai2H97eBJV2j+LAjA-39YAaNmX=ep0Q@mail.gmail.com>
+Message-ID: <CAAS2fgSJh83YEZjRfL81sKjC=nSKHtWT1qzS0evLJ9Gy6qdA1w@mail.gmail.com>
+
+On Fri, May 23, 2014 at 8:57 PM, Ashley Holman <dscvlt at gmail.com> wrote:
+> Hi,
+> On this list there has been some discussion around techniques to speed up
+> block propagation, with a particular focus on reducing the extra orphan risk
+> carried by larger blocks.
+> The current store-and-forward method means that larger blocks will propagate
+> with higher latency.
+
+FWIW, there are a lot of improvements which can be made before more
+complex changes like cut-through-forwarding that change the protocol.
+
+For example, the reference software has a 100ms sleep in p2p message
+processing which could be replaced with a semaphore, this would
+dramatically lower latency for block relaying.
+
+Likewise nodes which are becoming bandwidth overloaded could adapt
+their concurrent connection counts down (and ones that are underloaded
+could accept more connections).
+
+Relaying to multiple peers could be done in parallel instead of
+serialized, and the order in which peers are relayed to could be
+adapted to place more apparently useful and faster peers first, e.g.
+every time a peer is the first to tell you about a block or
+transaction you accept they move up the list, every time their socket
+send queue fills they move down.
+
+Luke-Jr had implemented cut through behavior previously and had posted
+a patch, but absent those other network processing improvements it
+didn't appear to help.
+
+
+If you want to go full out crazy in optimizing in this space, there
+are fancier things that can be done to further reduce latency and
+increase efficiency:
+https://en.bitcoin.it/wiki/User:Gmaxwell/block_network_coding  ... but
+some of this stuff really should be done as a seperate protocol. There
+is no need to have Bitcoin transport all using a single protocol, and
+we can get better robustness and feature velocity if there are a
+couple protocols in use (you could just run a block-transport-protocol
+daemon that connects to your local node via the classic protocol).
+
+
