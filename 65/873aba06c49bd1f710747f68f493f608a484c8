@@ -1,0 +1,107 @@
+From: etotheipi@gmail.com (Alan Reiner)
+Date: Sat, 24 May 2014 20:04:33 -0400
+Subject: [Bitcoin-development] Cut-through propagation of blocks
+In-Reply-To: <CAOXABZoOnYSRf0Ktqxh8dx20Zi=E5gkp-8-C3-0ECudK=q05uA@mail.gmail.com>
+References: <CAOXABZohe93SSRm1FN5ai2H97eBJV2j+LAjA-39YAaNmX=ep0Q@mail.gmail.com>	<CAAS2fgSJh83YEZjRfL81sKjC=nSKHtWT1qzS0evLJ9Gy6qdA1w@mail.gmail.com>
+	<CAOXABZoOnYSRf0Ktqxh8dx20Zi=E5gkp-8-C3-0ECudK=q05uA@mail.gmail.com>
+Message-ID: <53813391.7040503@gmail.com>
+
+On 05/24/2014 07:41 PM, Ashley Holman wrote:
+> On Sun, May 25, 2014 at 8:29 AM, Bernd
+> Jendrissek <bitcoin at bpj-code.co.za
+> <mailto:bitcoin at bpj-code.co.za>> wrote:
+>
+>     The difference is that with cut-through forwarding of blocks, a
+>     sufficiently motivated attacker (being willing to blow 25BTC's worth
+>     of electricity on the effort) can subjugate the entire Bitcoin network
+>     to its DoS attack, rather than having to connect to every node
+>     individually and then still have those individual nodes reject that
+>     invalid block without relaying any knowledge of its existence.
+>
+>
+> That is true, but they could also apply the same hash power to mine
+> valid blocks and would achieve the same outcome (their blocks would go
+> to everyone), except they would get paid for it.  I wonder if it
+> should even be called DoS, due to the extreme and costly rate-limiting
+> thats implied.
+>
+>  
+>
+>     An attack could also take the form of a block body that never arrives
+>     - a sort of teergrube attack, where the goal is to get the network
+>     mining empty block upon empty block on top of that valid-PoW header
+>     whose body never arrives. It doesn't have to be with an explicitly
+>     invalid block.
+>
+>
+> Thank you for raising this, as I share this concern.  There is another
+> similar attack: if I send you a new block very slowly, I occupy all
+> your upstream peer slots indefinitely until the block is complete,
+> because there is no out-of-band messaging capability or ability to
+> cancel a message.
+>
+> There is also sub-optimal logic in choosing to download a block only
+> from the first person to offer it.  It means you are fetching it from
+> the lowest latency path, but what really matters is who can give it to
+> you fastest.  If there are multiple people who can send you a block at
+> once, and you have some idea of your spare upstream bandwidth
+> capacity, why not let two or more peers compete to send you the block
+> fastest?
+>
+> So to implement this type of thing,  the p2p protocol should allow for
+> multiplexing of messages.  Something like HTTP chunked encoding.  It
+> could be in the form of:
+>
+> <msgid><chunksize><rawbytes>, <msgid><chunksize><rawbytes>,  etc etc
+>
+> You only send a chunk once you've got the whole chunk in your buffer,
+> so it's not possible to get hung up on a single slow message.   One
+> block can overtake another along the same hop path if it is being
+> streamed faster.
+>
+> On Sun, May 25, 2014 at 8:46 AM, Gregory Maxwell <gmaxwell at gmail.com
+> <mailto:gmaxwell at gmail.com>> wrote: 
+>
+>     If you want to go full out crazy in optimizing in this space, there
+>     are fancier things that can be done to further reduce latency and
+>     increase efficiency:
+>     https://en.bitcoin.it/wiki/User:Gmaxwell/block_network_coding  ... but
+>     some of this stuff really should be done as a seperate protocol. There
+>     is no need to have Bitcoin transport all using a single protocol, and
+>     we can get better robustness and feature velocity if there are a
+>     couple protocols in use (you could just run a block-transport-protocol
+>     daemon that connects to your local node via the classic protocol).
+>
+>
+> What about a separate project which is a mesh router specifically
+> designed for low-latency transmission of blocks?  It could support
+> things like a more sophisticated/configurable routing table, and have
+> some kind of discovery where it tries to optimise its topology.  There
+> could even be some way for nodes to prove their hash power, so pools
+> can find each other and directly peer / prioritise sends.
+>
+
+I think the most important change is modifying the way Bitcoin Core
+prioritizes blocks.  Right now it uses the first full block verified. 
+Instead, it should consider the first valid header received as highest
+priority, but only mine on it once it has done full verification of the
+block.  In other words, nodes will mine on whatever full/verified block
+they have with the earliest header-received time.  If another header
+comes in and the tx list is received before the first tx list is done,
+then the node will mine the second block *until* it receives and
+verifies the first block, then it will switch to mining that first
+block.  Most of the time there's no race, it will simply mine the block
+N-1 for an extra 1-3 seconds until it receives and verifies the full
+block for the new header.
+
+This at least solves part of the problem:  nodes are still only mining
+on full blocks, but priority is given to *headers* that come first which
+is independent of block size.   As long as a block isn't found within
+the 1-3 seconds, then each miner will switch when they finish receiving
+and verifying it.  If miners are concerned about that 1-3 second gap,
+they should perhaps focus on making sure the tx they are mining are
+well-propagated already, so that most of the network has most of the
+transactions already in their memory pool by the time their block is mined.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140524/37cf72a1/attachment.html>
