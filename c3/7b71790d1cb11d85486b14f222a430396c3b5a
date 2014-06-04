@@ -1,0 +1,72 @@
+From: rdwnj@yahoo.com (Ron)
+Date: Wed, 4 Jun 2014 12:13:45 -0700 (PDT)
+Subject: [Bitcoin-development] error "Bitcoin cannot be compiled without
+	assertions." <<<<NOT
+In-Reply-To: <mailman.192896.1401886427.2163.bitcoin-development@lists.sourceforge.net>
+Message-ID: <1401909225.83663.YahooMailBasic@web124505.mail.ne1.yahoo.com>
+
+________________________________________________________
+ Message: 2
+ Date: Wed, 4 Jun 2014 08:15:08 -0400
+ From: Jeff Garzik <jgarzik at bitpay.com>
+ Subject: Re: [Bitcoin-development] # error "Bitcoin cannot
+ be compiled
+ ??? without assertions." <<<<NOT
+ To: Mike Hearn <mike at plan99.net>
+ Cc: "bitcoin-development at lists.sourceforge.net"
+ ??? <bitcoin-development at lists.sourceforge.net>,
+ Ron <rdwnj at yahoo.com>
+ Message-ID:
+ ???
+ <CAJHLa0PTTHfvd-1BR5s2k-4UW6V6qLEyAbF2YSRxOOSjtH9+_Q at mail.gmail.com>
+ Content-Type: text/plain; charset=UTF-8
+ 
+ Yes, check macros like that can be useful.
+ 
+ I like the kernel's policy, which parallels our direction:
+ 1) Enable and use lightweight assertions for most users.
+ 2) No assertions with side effects
+ 
+ If you want to compile them out, that's fine, but they
+ should always
+ be present in production software.
+ _____________________________________________________
+
+I don't think many of you actually read what I said, and you went off on your own tangents.
+
+I said:
+this commit and code with all side effects removed from the assertions.
+in Vol 37, Issue 4
+
+I intentionally left the gcc code alone.  Only the MSC code is assert "fixed".  I would have hoped that someone would have noticed and incorporated these changes into the gcc code.  Simply by removing the #ifdef _MSC_VER ... #else ...  #endif etc. etc.  
+
+Did I say I compiled them out? No!  Did anyone bother to look at my code or what I said?
+
+Here is an example from main.cpp  CTransaction::UpdateCoins(...
+-    // add outputs
++    // add outputs      sure looks like an assert with side effects here!?
++#ifdef _MSC_VER
++    bool
++        fTest = inputs.SetCoins(txhash, CCoins(*this, nHeight));
++    #ifdef _DEBUG
++        assert(fTest);
++    #else
++    if( !fTest )
++        releaseModeAssertionfailure( __FILE__, __LINE__, __PRETTY_FUNCTION__ );
++    #endif
++#else
+     assert(inputs.SetCoins(txhash, CCoins(*this, nHeight)));
++#endif
+
+Note that I do the test, and if debugging, I let it abort() the program if it fails.  Note that in release mode it calls a new function on failure, that I leave you to discover what it does.  I see that this assert has been "fixed" in 0.9.x, but I think my "fix" is better, since it allows release mode code to run better, if not identically.
+
+I changed every assert() in the bitcoind 086 sources to behave this way.  Since C++ is perniciously baroque, it is not clear if a side effect can or has occurred in the most innocuous of C++ statements. Is the example above side-effect free?
+
+Here is a piece of what I made my decision on:
+http://www.gnu.org/software/libc/manual/html_node/Consistency-Checking.html and the link to the book previously given.
+
+Also, no one answered the question about bitcoin-qt, to whit, can or should it be compiled in RELEASE mode because of this?  Should it have always been compiled in DEBUG mode in the past too?
+
+Ron 
+
+
