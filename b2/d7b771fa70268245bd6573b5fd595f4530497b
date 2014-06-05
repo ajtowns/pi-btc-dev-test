@@ -1,0 +1,66 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Thu, 5 Jun 2014 21:34:15 +0200
+Subject: [Bitcoin-development] Future Feature Proposal - getgist
+In-Reply-To: <2ADB9019-825E-410A-ADED-A7237CBC323C@ricmoo.com>
+References: <34798C1C-FDA7-4A4C-B136-DBD4E59C254D@ricmoo.com>
+	<CANEZrP1vVY1jnV8Kdg5OWEt=Rba2PPcs3ke4tMWc6fS4wGPpOw@mail.gmail.com>
+	<2ADB9019-825E-410A-ADED-A7237CBC323C@ricmoo.com>
+Message-ID: <CAPg+sBhRQWE6_arjQi55Ars8mOCQkouCOAqVAuHrBzOD60GEqQ@mail.gmail.com>
+
+On Thu, Jun 5, 2014 at 7:43 PM, Richard Moore <me at ricmoo.com> wrote:
+> I was considering names like getcheckpoints() to use the terminology that
+> already seemed to be in place, but they were too long :)
+>
+> I have been using getheaders() in my thick client to quickly grab all the
+> headers before downloading the full blocks since I can grab more at a time.
+> Even with getblocks(), there is the case for a  getgist() call. Right now
+> you call getblocks(), which can take some time to get the corresponding
+> inv(), at which time you can then start the call to getdata() as well as the
+> next call to getblocks().
+>
+> With a gist, for example of segment_count 50, you could call getgist(), then
+> with the response, you could request 50 getblocks() each with a
+> block_locator of 1 hash from the gist (and optimally the stop_hash of the
+> next hash in the gist) to 50 different peers, providing 25,000 (50 x 500)
+> block hashes.
+
+I don't understand. If you're using getheaders(), there is no need to
+use getblocks() anymore. You just do a getdata() immediately for the
+block hashes you have the headers but not the transactions for.
+
+In general, I think we should aim for as much verifiability as
+possible. Much of the reference client's design is built around doing
+as much validation on received data as soon as possible, to avoid
+being misled by a particular peer. Getheaders() provides this: you
+receive a set of headers starting from a point you already know, in
+order, and can validate them syntactically and for proof-of-work
+immediately. That allows building a very-hard-to-beat tree structure
+locally already, at which point you can start requesting blocks along
+the good branches of that tree immediately - potentially in parallel
+from multiple peers. In fact, that's the planned approach for the
+headers-first synchronization.
+
+The getgist() proposed here allows the peer to basically give you
+bullshit headers at the end, and you won't notice until you've
+downloaded every single block (or at least every single header) up to
+that point. That risks wasting time, bandwidth and diskspace,
+depending on implementation.
+
+Based on earlier experimenting with my former experimental
+headersfirst branch, it's quite possible to have 2 mostly independent
+synchronization mechanisms going on; 1) asking and downloading headers
+from every peer, and validating them, and 2) asking and downloading
+blocks from multiple peers in parallel, for blocks corresponding to
+validated headers. Downloading the headers succeeds within minutes,
+and within seconds you have enough to start fetching blocks. After
+that point, you can keep a "download window" full with outstanding
+block requests, and as blocks go much slower than headers, the headers
+process never becomes a blocker for blocks to download.
+
+Unless we're talking about a system with billions of headers to
+download, I don't think this is a worthwhile optimization.
+
+-- 
+Pieter
+
+
