@@ -1,0 +1,55 @@
+From: me@ricmoo.com (Richard Moore)
+Date: Thu, 5 Jun 2014 13:43:38 -0400
+Subject: [Bitcoin-development] Future Feature Proposal - getgist
+In-Reply-To: <CANEZrP1vVY1jnV8Kdg5OWEt=Rba2PPcs3ke4tMWc6fS4wGPpOw@mail.gmail.com>
+References: <34798C1C-FDA7-4A4C-B136-DBD4E59C254D@ricmoo.com>
+	<CANEZrP1vVY1jnV8Kdg5OWEt=Rba2PPcs3ke4tMWc6fS4wGPpOw@mail.gmail.com>
+Message-ID: <2ADB9019-825E-410A-ADED-A7237CBC323C@ricmoo.com>
+
+I was considering names like getcheckpoints() to use the terminology that already seemed to be in place, but they were too long :)
+
+I have been using getheaders() in my thick client to quickly grab all the headers before downloading the full blocks since I can grab more at a time. Even with getblocks(), there is the case for a  getgist() call. Right now you call getblocks(), which can take some time to get the corresponding inv(), at which time you can then start the call to getdata() as well as the next call to getblocks().
+
+With a gist, for example of segment_count 50, you could call getgist(), then with the response, you could request 50 getblocks() each with a block_locator of 1 hash from the gist (and optimally the stop_hash of the next hash in the gist) to 50 different peers, providing 25,000 (50 x 500) block hashes.
+
+Currently:
+>>> getblocks()
+<<< inv()
+>>> getdata()
+<<< block(), block(), block(), ? (x 500)
+
+Saturates one peer, while leaving the rest un-used. Step 1 and 2 can be repeated and dispatched to different peers, but there is still the latency between the two calls.
+
+Gist:
+>>> getgist()
+<<< inv()
+>>> getblocks(), getblocks(), getblocks(), ? (x segment_count, 1 per peer)
+<<< inv(), inv(), inv(), ? (x segment_count, 1 per peer)
+>>> getdata(), getdata(), getdata(), ? (x segment_count, 1 per peer)
+<<< block(), block(), block(), ? (x (500 * segment_count), ie. 500 in per peer)
+
+Each peer can be saturated.
+
+I will try to run some experiments this weekend to get numbers as to whether there is actually any performance improvement using a gist, or whether the getdata(), block() latency ends up dominating the time anyways.
+
+
+RicMoo
+
+
+On Jun 4, 2014, at 11:42 PM, Mike Hearn <mike at plan99.net> wrote:
+
+> Why do you want to optimise this? getheaders is used by SPV clients not full nodes. SPV clients like bitcoinj can and do simply ship with gist files in them, then getheaders from the last "checkpoint"   (I wish I hadn't reused terminology like that but this is what bitcoinj calls them).
+> 
+> In practice when I look at performance issues with current SPV clients, getheaders speed is not on my radar.
+
+.???`?.??.???`?.??.???`?.??.???`?.??.???`?.?><(((?>
+
+Richard Moore ~ Founder
+Genetic Mistakes Software inc.
+phone: (778) 882-6125
+email: ricmoo at geneticmistakes.com
+www: http://GeneticMistakes.com
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140605/a9500408/attachment.html>
