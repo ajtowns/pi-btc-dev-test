@@ -1,0 +1,51 @@
+From: me@ricmoo.com (Richard Moore)
+Date: Mon, 9 Jun 2014 14:13:19 -0400
+Subject: [Bitcoin-development] BIP38 Encrypted Address Discussion
+Message-ID: <B1320E37-B63A-418A-9742-E2E967E71B14@ricmoo.com>
+
+Hey all again,
+
+I am implementing BIP38 wallets right now, and had another idea I would like to put out there for discussion.
+
+Right now the scrypt pbkdf is (16384, 8, 8) for (N, r, p), but I was wondering if it would make sense to include an extra byte in the address which would encode the parameters used? For now, they are fine, as it takes over 3 minutes to to hash once in my pure-Python implementation in CPython (3 seconds in pypy). But with all the latest scrypt mining ASICS hitting the market, and the difficulty rising of the scrypt alt coins, it may become more profitable in the future to try hacking wallets to gobble up their funds. Currently all the hardware is tuned for (1024, 1, 1) and with adaptive-N, it only targets upgrading the N value, so having p =r = 8 certainly means that hardware won?t affect BIP 38? But who knows in the future if they start making Adaptive-N-r-p ASICS.
+
+It also provides a way to vastly secure more important master keys? Maybe for a key that is cold storage of millions of dollars that won?t be touched for multiple years, I don?t mind waiting an hour on commodity hardware to decrypt it.
+
+I was thinking, for example, if we used 1 byte, c, we could use a formula:
+
+N = 2 ** (c + 11)
+r = 2 ** c
+p = r
+
+Although, even a full byte is overkill? Maybe we can use the top three bits for something else? With 5 bits, the space becomes:
+
+c = 0 => (1024, 1, 1)  (same as scrypt mining, albeit requires twice the dkLength)
+c = 3  => (16384, 8, 8) (current specs)
+c = 31 => (2199023255552,2147483648, 2147483648) (highest difficulty, requiring (5.6 * 10 ** 12) Gigabytes of memory per hash)
+
+Anyways, just thinking out loud? I think even this space is too large? We could also use the top 5 bits for N and lower 3 bits of r, p, if more granularity seems more useful (maybe somebody *wants* their passwords easy to parallelize but still difficult to break?)
+
+N = 2 ** (10 + ((c >> 3) & 0x1f))
+r = p = 2 ** ((c & 0x07) * 3)
+
+Would put N = [1024, 2048, ..., 2199023255552] and r = p = [1, 8, 64, 512, ..., 2097152]
+
+The biggest issue would be backwards compatibility. The 6P should obviously stay the same, as it ?requires something extra? and the thing required is a passphrase. But maybe we could use one of the reserved bits to indicate that the address is adaptive? The decoded length of the address will also change though, which could pose issues if, for example, bounds checks aren?t being done (bad, but it happens) or in the case of things like python implementations, might assume the length correct an use derived_half2 = decoded[23:] which would now come back with the last byte of derived_half1 and be one byte too long, unchecked, passed into AES, an exception is raised because it is not one 16-byte block. These however seem assumptions that the developer should guard against.
+
+This would retain backward compatibility though, as without the adaptive bit set, new and old implementations can decode the address fine (new implementations assuming c = 3); new implementations can detect the adaptive bit and select the correct kdrf parameters. old implementations on adaptive addresses would hopefully fail upon seeing the length is wrong or that the reserved bits are not 0, otherwise the checksum should fail? But if it does by some 1 in 4 billion chance match, the wallet may successfully import a newly created private key and address? Does this seem likely, or are current implementations ensuring the decoded length and bits are set to 0?
+
+Otherwise, we *could* if all else fails, use ?6A? for adaptive, or ?6p?? But I don?t really like polluting the namespace for a minor tweak.
+
+Randomly,
+RicMoo
+
+.???`?.??.???`?.??.???`?.??.???`?.??.???`?.?><(((?>
+
+Richard Moore ~ Founder
+Genetic Mistakes Software inc.
+phone: (778) 882-6125
+email: ricmoo at geneticmistakes.com
+www: http://GeneticMistakes.com
+
+
+
