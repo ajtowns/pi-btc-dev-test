@@ -1,0 +1,97 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 10 Jun 2014 13:08:46 -0400
+Subject: [Bitcoin-development] Bloom bait
+In-Reply-To: <CAJHLa0OJffXU_LkmVhCJ80mphc5zEPuDZzuSKvpLkrNUWU7Y1w@mail.gmail.com>
+	<CANEZrP33n+UBE+0Zb_mh=+qjJA+C+Nny9quC5B0HpuLC1XygMA@mail.gmail.com>
+Message-ID: <20140610170846.GB21293@savin>
+
+On Tue, Jun 10, 2014 at 06:38:23PM +0800, Mike Hearn wrote:
+> >
+> > As I explained in the email you're replying to and didn't quote, bloom
+> > filters has O(n) cost per query, so sending different bloom filters to
+> > different peers for privacy reasons costs the network significant disk
+> > IO resources. If I were to actually implement it it'd look like a DoS
+> > attack on the network.
+> >
+> 
+> DoS attack? Nice try.
+
+Suppose I wrote an single address lookup tool for Android that connected
+to multiple peers and used bloom filters to find the history of a
+specific address. Of course, I don't want to use too much bandwidth
+being on mobile, so I'll use as specific a bloom filter as possible. I
+might even connect to multiple peers to speed up the lookup.
+
+Is this any different from my bloom filter IO attack code? Nope. Hence,
+splitting up bloom filter requests for better privacy will certainly
+look like a DoS attack and will certainly greatly increase the load on
+the network.
+
+
+> Now consider a prefix filtering implementation. You need to calculate a
+> sorted list of all the data elements and tx hashes in the block, that maps
+> to the location in the block where the tx data can be found. These
+> per-block indexes take up extra disk space and, realistically, would likely
+> be implemented using LevelDB as that's a tool which is designed for
+> creating and using these kinds of tables, so then you're both loading the
+> block data itself (blocks are sized about right currently to always fit in
+> the default kernel readahead window) AND also seeking through the indexes,
+> and building them too. A smart implementation might try and pack the index
+> next to each block so it's possible to load both at once with a single
+> seek, but that would probably be more work, as it'd force building of the
+> index to be synchronous with saving the block to disk thus slowing down
+> block relay. In contrast a LevelDB based index would do the bulk of the
+> index-building work on a separate core.
+
+That's exactly the kinds of optimizations obelisk is implementing to
+make its prefix lookup database fast. Also those optimizations are
+situation dependent, for instance "packing the index next to each block"
+is irrelevant if you put archival blockchain data on a slow HD, and
+indexes on a fast SSD, something some obelisk servers do.
+
+More to the point, your showing quite clearly there isn't just one
+optimal way to do it. Applying a bloom filter, or a prefix filter, or
+some as yet unknown filter, to blockchain data is a service and that
+service has different tradeoffs compared to just serving up archival
+block history. There is zero reason not to make that service something
+you advertise with NODE_BLOOM - after all, you already have the code in
+bitcoinj to do the exact same thing by checking the advertised protocol
+version.
+
+
+On Tue, Jun 10, 2014 at 09:02:00AM -0400, Jeff Garzik wrote:
+> Most of this description of disk activity is true, but it omits one
+> key point:  Total cached data (working set).  It is a binary, first
+> order question:  are you hitting pagecache, or the disk?  When nodes
+> act as archival data sources, the pagecache pressure is immense.  When
+> nodes just primarily serve recent blocks, that data is being served
+> out of pagecache. As I directly observed running public nodes, the
+> disks were running constantly, impacting all clients, even clients
+> downloading only recent blocks.
+> 
+> Luckily, headers are served out of RAM, so that part of the sync is always fast.
+> 
+> NODE_BLOOM -- and block download in general -- will tend to be slower
+> than it could be, due to the working set almost always being larger
+> than available pagecache.  Fix that problem, NODE_BLOOM will always
+> operate out of pagecache, and disk activity will not be an issue.
+> 
+> Once you start hitting the disk, you've already lost.
+
+Yup. I discussed this with Matt Corallo at the financial crypto
+conference a few months back and he made the same point. Unfortunately
+we'll need an upgrade to let nodes advertise ranges of blocks to begin
+to fix that issue, and even then it still shows quite clearly how it's
+not optimal if we force everyone to share blockchain data in the same
+way.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000023c7fc084ed84b891cc2fa90e4a34708d6b2370d3ec1c85d
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140610/8239070c/attachment.sig>
