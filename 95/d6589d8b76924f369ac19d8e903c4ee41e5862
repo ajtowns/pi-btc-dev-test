@@ -1,0 +1,75 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Tue, 10 Jun 2014 18:38:23 +0800
+Subject: [Bitcoin-development] Bloom bait
+In-Reply-To: <20140608213534.GA4191@savin>
+References: <20140606081933.GA29458@savin>
+	<20140606084852.GA30247@netbook.cypherspace.org>
+	<20140606090441.GA19256@savin>
+	<20140606104543.GA31085@netbook.cypherspace.org>
+	<20140606164639.GB14891@savin>
+	<CAAS2fgTKiPMPOazNTPL8+3Ov1xOj=H+yK3u+sd_pe=nyDSPgTw@mail.gmail.com>
+	<20140606170524.GA29195@savin>
+	<CAAS2fgT3CfJ9Lf2H2BYVfUeJoF0RBi+EMmAghj5G2vJPtahmjg@mail.gmail.com>
+	<20140606174545.GB29195@savin>
+	<CANEZrP0BEod6b5joJBMPDv_NAxAh9Kio3aniZ3sH6f9Q4nozpQ@mail.gmail.com>
+	<20140608213534.GA4191@savin>
+Message-ID: <CANEZrP33n+UBE+0Zb_mh=+qjJA+C+Nny9quC5B0HpuLC1XygMA@mail.gmail.com>
+
+>
+> As I explained in the email you're replying to and didn't quote, bloom
+> filters has O(n) cost per query, so sending different bloom filters to
+> different peers for privacy reasons costs the network significant disk
+> IO resources. If I were to actually implement it it'd look like a DoS
+> attack on the network.
+>
+
+DoS attack? Nice try.
+
+Performance is subtle, disk iops especially so. I suspect you'd find - if
+you implemented it - that for the kinds of loads Bitcoin is processing both
+today and tomorrow prefix filtering either doesn't save any disk seeks or
+actively makes it worse.
+
+Consider a client that is syncing the last 24 hours of chain. bitcoind
+pre-allocates space for blocks in large chunks, so most blocks are laid out
+sequentially on disk. Almost all the cost of a disk read is rotational
+latency. Once the head is in place data can be read in very fast and modern
+kernels will attempt to adaptively read ahead in order to exploit this,
+especially if a program seems to be working through a disk file
+sequentially. The work of Bloom filtering parts of the chain for this
+client boils down to a handful of disk seeks at best and the rest of the
+work is all CPU/memory bound as the block is parsed into objects and tested
+against the filter. A smarter filtering implementation than ours could do
+SAX-style parsing of the block and avoid the overhead of turning it all
+into objects.
+
+Now consider a prefix filtering implementation. You need to calculate a
+sorted list of all the data elements and tx hashes in the block, that maps
+to the location in the block where the tx data can be found. These
+per-block indexes take up extra disk space and, realistically, would likely
+be implemented using LevelDB as that's a tool which is designed for
+creating and using these kinds of tables, so then you're both loading the
+block data itself (blocks are sized about right currently to always fit in
+the default kernel readahead window) AND also seeking through the indexes,
+and building them too. A smart implementation might try and pack the index
+next to each block so it's possible to load both at once with a single
+seek, but that would probably be more work, as it'd force building of the
+index to be synchronous with saving the block to disk thus slowing down
+block relay. In contrast a LevelDB based index would do the bulk of the
+index-building work on a separate core.
+
+At *some* block size and client load the additional data storage and
+increased pressure on the page cache would probably make it worthwhile. But
+I find it unlikely to be true at current traffic levels, or double or
+triple today's levels. So I'd rather we spend our very limited collective
+time on finding ways to increase usage rather than worrying about resources
+which are not presently scarce.
+
+(as an aside, some of the above analysis would be invalidated if most nodes
+end up running on SSDs, but I doubt most are. It'd be neat to export
+storage tech via some kind of stats message - LevelDB is designed for HDDs
+not SSDs so at some point a new storage subsystem might make sense if the
+network switched over).
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140610/c4a4cf3e/attachment.html>
