@@ -1,0 +1,115 @@
+From: jgarzik@bitpay.com (Jeff Garzik)
+Date: Tue, 10 Jun 2014 09:02:00 -0400
+Subject: [Bitcoin-development] Bloom bait
+In-Reply-To: <CANEZrP33n+UBE+0Zb_mh=+qjJA+C+Nny9quC5B0HpuLC1XygMA@mail.gmail.com>
+References: <20140606081933.GA29458@savin>
+	<20140606084852.GA30247@netbook.cypherspace.org>
+	<20140606090441.GA19256@savin>
+	<20140606104543.GA31085@netbook.cypherspace.org>
+	<20140606164639.GB14891@savin>
+	<CAAS2fgTKiPMPOazNTPL8+3Ov1xOj=H+yK3u+sd_pe=nyDSPgTw@mail.gmail.com>
+	<20140606170524.GA29195@savin>
+	<CAAS2fgT3CfJ9Lf2H2BYVfUeJoF0RBi+EMmAghj5G2vJPtahmjg@mail.gmail.com>
+	<20140606174545.GB29195@savin>
+	<CANEZrP0BEod6b5joJBMPDv_NAxAh9Kio3aniZ3sH6f9Q4nozpQ@mail.gmail.com>
+	<20140608213534.GA4191@savin>
+	<CANEZrP33n+UBE+0Zb_mh=+qjJA+C+Nny9quC5B0HpuLC1XygMA@mail.gmail.com>
+Message-ID: <CAJHLa0OJffXU_LkmVhCJ80mphc5zEPuDZzuSKvpLkrNUWU7Y1w@mail.gmail.com>
+
+Most of this description of disk activity is true, but it omits one
+key point:  Total cached data (working set).  It is a binary, first
+order question:  are you hitting pagecache, or the disk?  When nodes
+act as archival data sources, the pagecache pressure is immense.  When
+nodes just primarily serve recent blocks, that data is being served
+out of pagecache. As I directly observed running public nodes, the
+disks were running constantly, impacting all clients, even clients
+downloading only recent blocks.
+
+Luckily, headers are served out of RAM, so that part of the sync is always fast.
+
+NODE_BLOOM -- and block download in general -- will tend to be slower
+than it could be, due to the working set almost always being larger
+than available pagecache.  Fix that problem, NODE_BLOOM will always
+operate out of pagecache, and disk activity will not be an issue.
+
+Once you start hitting the disk, you've already lost.
+
+
+
+On Tue, Jun 10, 2014 at 6:38 AM, Mike Hearn <mike at plan99.net> wrote:
+>> As I explained in the email you're replying to and didn't quote, bloom
+>> filters has O(n) cost per query, so sending different bloom filters to
+>> different peers for privacy reasons costs the network significant disk
+>> IO resources. If I were to actually implement it it'd look like a DoS
+>> attack on the network.
+>
+>
+> DoS attack? Nice try.
+>
+> Performance is subtle, disk iops especially so. I suspect you'd find - if
+> you implemented it - that for the kinds of loads Bitcoin is processing both
+> today and tomorrow prefix filtering either doesn't save any disk seeks or
+> actively makes it worse.
+>
+> Consider a client that is syncing the last 24 hours of chain. bitcoind
+> pre-allocates space for blocks in large chunks, so most blocks are laid out
+> sequentially on disk. Almost all the cost of a disk read is rotational
+> latency. Once the head is in place data can be read in very fast and modern
+> kernels will attempt to adaptively read ahead in order to exploit this,
+> especially if a program seems to be working through a disk file
+> sequentially. The work of Bloom filtering parts of the chain for this client
+> boils down to a handful of disk seeks at best and the rest of the work is
+> all CPU/memory bound as the block is parsed into objects and tested against
+> the filter. A smarter filtering implementation than ours could do SAX-style
+> parsing of the block and avoid the overhead of turning it all into objects.
+>
+> Now consider a prefix filtering implementation. You need to calculate a
+> sorted list of all the data elements and tx hashes in the block, that maps
+> to the location in the block where the tx data can be found. These per-block
+> indexes take up extra disk space and, realistically, would likely be
+> implemented using LevelDB as that's a tool which is designed for creating
+> and using these kinds of tables, so then you're both loading the block data
+> itself (blocks are sized about right currently to always fit in the default
+> kernel readahead window) AND also seeking through the indexes, and building
+> them too. A smart implementation might try and pack the index next to each
+> block so it's possible to load both at once with a single seek, but that
+> would probably be more work, as it'd force building of the index to be
+> synchronous with saving the block to disk thus slowing down block relay. In
+> contrast a LevelDB based index would do the bulk of the index-building work
+> on a separate core.
+>
+> At some block size and client load the additional data storage and increased
+> pressure on the page cache would probably make it worthwhile. But I find it
+> unlikely to be true at current traffic levels, or double or triple today's
+> levels. So I'd rather we spend our very limited collective time on finding
+> ways to increase usage rather than worrying about resources which are not
+> presently scarce.
+>
+> (as an aside, some of the above analysis would be invalidated if most nodes
+> end up running on SSDs, but I doubt most are. It'd be neat to export storage
+> tech via some kind of stats message - LevelDB is designed for HDDs not SSDs
+> so at some point a new storage subsystem might make sense if the network
+> switched over).
+>
+>
+>
+> ------------------------------------------------------------------------------
+> HPCC Systems Open Source Big Data Platform from LexisNexis Risk Solutions
+> Find What Matters Most in Your Big Data with HPCC Systems
+> Open Source. Fast. Scalable. Simple. Ideal for Dirty Data.
+> Leverages Graph Analysis for Fast Processing & Easy Data Exploration
+> http://p.sf.net/sfu/hpccsystems
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+
+
+
+-- 
+Jeff Garzik
+Bitcoin core developer and open source evangelist
+BitPay, Inc.      https://bitpay.com/
+
+
