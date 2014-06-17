@@ -1,0 +1,75 @@
+From: gavin@bitcoinfoundation.org (Gavin Andresen)
+Date: Tue, 17 Jun 2014 15:40:36 -0400
+Subject: [Bitcoin-development] Proposal: relax the IsStandard rules for P2SH
+	transactions
+Message-ID: <CABsx9T2+_tLOPELm+K54D=6SNkHg1ZeO_T1jSM=CQZYJKGODFw@mail.gmail.com>
+
+Assuming there is rough consensus, I'll make this a pull request (see
+https://github.com/gavinandresen/bitcoin-git/tree/relax_isstandard for code
+changes).
+
+----
+
+Now that we are finally starting to see the use of multi-signature and
+other more complicated transaction forms in applications I think it is time
+to open up the "IsStandard" transaction rules on the main Bitcoin network.
+
+There are two main risks to doing this:
+
+1. The risk that one of the seldom-used opcodes has a not-yet-discovered
+chain-forking bug. I believe that risk to be very low; we have never seen
+such a bug on the test network (where all transaction forms are allowed)
+and have never found a bug after writing extensive unit tests.
+2. The risk of opening up a denial-of-service attack (either bloat the
+blockchain or use an excessive amount of CPU time) via a very
+expensive-to-store-or-verify transaction. This proposal does not entirely
+eliminate IsStandard checks to mitigate the potential for DoS attacks.
+
+Proposal
+--------
+Allow any Script containing 15 or fewer signature operations as a
+pay-to-script-hash (P2SH) Script to be relayed and mined by the reference
+implementation.
+
+This should be a simple change to the AreInputsStandard() method in the
+reference implementation.
+
+Discussion
+----------
+P2SH Scripts are limited to 520 bytes, and are currently limited to one of
+the "standard" transaction forms on the main network. In practice that
+means you can currently encode a n-of-15 OP_CHECKMULTISIG which can be
+redeemed as a 'standard' transaction.
+
+Allowing any P2SH Script would allow an attacker to craft a single standard
+transaction output that requires on the order of 200 ECDSA signature
+checking operations to validate-- an order of magnitude more than is
+currently allowed. Therefore I am proposing that we keep the current
+15-signature-checking-operations-per-transaction-output limit in place, but
+allow any combination of enabled Script opcodes. So, for example, you might
+have a P2SH Script that is redeemed with 2-of-2 OR 2-of-3 using:
+```
+OP_IF 2 pubkey1 pubkey2 2 OP_CHECKMULTISIG OP_ELSE 2 pubkey3 pubkey4
+pubkey5 3 OP_CHECKMULTISIG OP_ENDIF
+```
+(this would count as 5 signature operations)
+
+Restricting arbitrary Scripts to P2SH transaction types limits unspent
+transaction output set bloat in two ways:
+1. The Scripts are not stored in UTXO set.
+2. They are limited to 520 bytes by the Script rule on the amount of data
+that can be pushed onto the stack.
+
+The reference implementation's wallet will still only recognize P2SH
+transactions that use one of the standard transaction forms. To actually
+USE a new transaction form will require specialized wallets or specialized
+applications.
+
+-- 
+--
+Gavin Andresen
+Chief Scientist, Bitcoin Foundation
+https://www.bitcoinfoundation.org/
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140617/68c2ab99/attachment.html>
