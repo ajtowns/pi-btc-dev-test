@@ -1,0 +1,89 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 17 Jun 2014 20:15:03 -0400
+Subject: [Bitcoin-development] Proposal: relax the IsStandard rules for
+ P2SH transactions
+In-Reply-To: <CABsx9T2+_tLOPELm+K54D=6SNkHg1ZeO_T1jSM=CQZYJKGODFw@mail.gmail.com>
+References: <CABsx9T2+_tLOPELm+K54D=6SNkHg1ZeO_T1jSM=CQZYJKGODFw@mail.gmail.com>
+Message-ID: <20140618001503.GA8360@savin>
+
+On Tue, Jun 17, 2014 at 03:40:36PM -0400, Gavin Andresen wrote:
+> Assuming there is rough consensus, I'll make this a pull request (see
+> https://github.com/gavinandresen/bitcoin-git/tree/relax_isstandard for code
+> changes).
+
+I'm also working on a very similar patch with some additional
+protections to ensure forwards compatibility during soft-fork upgrades
+and provide protections against transaction malleability.
+
+> Now that we are finally starting to see the use of multi-signature and
+> other more complicated transaction forms in applications I think it is time
+> to open up the "IsStandard" transaction rules on the main Bitcoin network.
+
+Agreed.
+
+> There are two main risks to doing this:
+> 
+> 1. The risk that one of the seldom-used opcodes has a not-yet-discovered
+> chain-forking bug. I believe that risk to be very low; we have never seen
+> such a bug on the test network (where all transaction forms are allowed)
+> and have never found a bug after writing extensive unit tests.
+
+Agreed.
+
+The script execution code is probably in the 99.9th percentile of open
+source code in terms of code review.
+
+> 2. The risk of opening up a denial-of-service attack (either bloat the
+> blockchain or use an excessive amount of CPU time) via a very
+> expensive-to-store-or-verify transaction. This proposal does not entirely
+> eliminate IsStandard checks to mitigate the potential for DoS attacks.
+
+3. The risk that non-upgraded miners produce invalid blocks after a
+   soft-fork due to them mining transactions that are now invalid.
+
+4. Transaction malleability.
+
+> Proposal
+> --------
+> Allow any Script containing 15 or fewer signature operations as a
+> pay-to-script-hash (P2SH) Script to be relayed and mined by the reference
+> implementation.
+> 
+> This should be a simple change to the AreInputsStandard() method in the
+> reference implementation.
+
+In addition to these changes the soft-fork-safe patch I'm working on
+would do the following:
+
+a) Define an opcode whitelist of soft-fork-safe opcodes.
+
+This whitelist includes every opcode but the invalid opcodes, and most
+importantly, the OP_NOPx opcodes that may be redefined in a future
+soft-fork with new behavior. This rule, along with rejecting transations
+with unknown nVersion's, ensures that a miner still running an old
+version of Bitcoin Core will only mine transactions that the new version
+of Bitcoin Core considers valid.
+
+b) Consider scripts that leave extra items on the stack after execution
+   to be non-standard.
+
+As per Pieter Wuille's BIP62 "Dealing with malleability" extra scriptSig
+pushes are a malleability source. If adding extra pushes causes a
+transaction to be invalid, scriptPubKeys will in most cases be
+automatically non-malleable. This change I've already submitted as a
+separate pull-req: https://github.com/bitcoin/bitcoin/pull/4311
+
+
+I'd be happy to add the above to your existing patch and submit the
+pull-req for you.
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000000407e409a626b01bfb275cb88768ca74f3ea9bd87b2e7e1d9
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 685 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140617/ce84f461/attachment.sig>
