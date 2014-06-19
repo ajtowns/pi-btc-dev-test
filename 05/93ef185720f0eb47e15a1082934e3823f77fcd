@@ -1,0 +1,158 @@
+From: kevinsisco61784@gmail.com (Kevin)
+Date: Thu, 19 Jun 2014 13:11:44 -0400
+Subject: [Bitcoin-development] BlockPow: A Practical Proposal to prevent
+ mining pools AND reduce payoff variance:
+In-Reply-To: <53A316BE.5040508@certimix.com>
+References: <53A316BE.5040508@certimix.com>
+Message-ID: <53A319D0.9080309@gmail.com>
+
+On 6/19/2014 12:58 PM, Sergio Lerner wrote:
+>
+> I propose a setting that prevent mining pools AND reduce payoff 
+> variance which requires two changes: increasing the block-rate and 
+> changing the Bitcoin PoW (but still allowing current Bitcoin ASICs to 
+> work (as far as I know)). The block rate must be increased at least 20 
+> times and block must still be near full (e.g. there must be at least 
+> 20 more transactions/second than there is today)
+>
+> BlockPow is kind of PoW that only practically prevents mining pools 
+> for certain cryptocurrency settings based on concepts similar to 
+> parmacoin, but in a much simple degree. The idea is that if miners try 
+> to join a pool, then they incur in overhead of transmitting 
+> information and earn less than working solo. Let b (the payload) 
+> contain a full block. b must contain all the transactions and the 
+> header, and not only the transaction hashes. b should not hide 
+> anything. Let h be the block header (which contains the previous block 
+> hash and the Merkle tree root of the transactions). Let d be the 
+> difficulty. hash-block-length(b) returns the number of blocks 
+> processed by the hash function when fed with the block b. The target 
+> is divided by hash-block-length(b) so that the difficulty does not 
+> depend on the length of the block. Some other function can be used to 
+> encourage nodes to add more or less transactions.
+>
+> Def: Basic BlockPoW concept
+>
+> For each r in the nonce-range: if H ( H( r || b ) || h || r) ) < 2^-d/ 
+> hash-block-length(b) then return r
+>
+> return null
+>
+> The header (h) is appended to the hashed message to allow SPV clients 
+> to verify the PoW without requiring the full block to be downloaded. 
+> Peers can send only (x,r,h) to SPV nodes, where x = H( r || b ), so 
+> they can verify the PoW. The verification procedure is obvious, and is 
+> skipped here. r is inserted at the beginning of the message to prevent 
+> pool administrators from keeping a secret mid-state of the hash 
+> function secret in order to prevent block stealing and also to force 
+> the miner to know b in the inner mining loop.
+>
+> So now mining requires the knowledge of the block b to be mined, and b 
+> must be received at each block-chain epoch. This could create an 
+> incentive not to include any transaction and use an almost empty b, 
+> because that way the bandwidth requirements is decreased. But this 
+> incentive should not exists normally, since by including transactions 
+> the solo miner gets an additional revenue from fees, which is lost if 
+> the block is empty. Anyway, to prevent this possible incentive we can 
+> append to b a subset of previous blocks (e.g 100 blocks). The block 
+> subset to include could be derived from a peudo-random function seeded 
+> by the previous block hash. Then a node would still need to download 
+> part or all the block-chain in order to mine.
+>
+> Now if the miner wants to be a dumb node and take part of a pool, then 
+> the current working unsolved block (the template) must be sent each 
+> time from the pool admin to each miner. If the pool admin hosts 1000 
+> miners, then to serve them with fresh block templates he needs 1000 
+> times more bandwidth that the miners, making this much more expensive. 
+> If miners create another network topology to distribute templates, 
+> they are incurring in the same overhead as being actively part of the 
+> cryptocurrency network, so they gain nothing.
+>
+> For example, in a block-chain with a 5 seconds block-rate, such as in 
+> NimbleCoin <http://nimbleCoin.org>, each block can be as large as 200 
+> Kbytes (100 tps are allowed). A miner will require the block template 
+> to be ready as fast as possible, say before 3 seconds, so as not to 
+> loose more than 60% of the times the transaction fees present in the 
+> block template. This means that a pool admin serving 1000 clients must 
+> have a upload bandwidth of at least 60 Mbytes/sec, and load balance 
+> servers, because all miners will demand the block template at the same 
+> time and will compete for it.
+>
+> The same miner, working solo, will not loose the 60% of block fees. If 
+> block fees are 10% of block reward, then solo miners earn 6% more than 
+> pool miners. Also, having a block rate of 5 seconds allows solo miners 
+> to receive payments more often and so it reduces the payment variance.
+>
+> This method to discourage mining pools only work as long as time is 
+> takes to transmit a block is comparable to the block interval time, 
+> e.g. 20%. This seems not to be a problem since if the cryptocurrency 
+> becomes popular, then we can expect blocks to be near full, while if 
+> is is not, then nobody will care about mining pools.
+>
+> For this method to work for Bitcoin, Bitcoin should reduce the block 
+> rate to at least 1 minute, and keep blocks of at least 10 Mbytes. Or 
+> go the NimbleCoin way, and reduce the block interval to 5 seconds. The 
+> sole reduction of the block rate from 10 minutes to 5 seconds would 
+> reduce notably the mining reward variance, which is the main reason 
+> miners don't mine solo.
+>
+> BitcoinBlockPow
+>
+> The basic BlockPoW is incompatible with Bitcoin ASICs as is but it can 
+> be made partially compatible with some tweaks: The value b is replaced 
+> by a a a subset or an integrity check of the block.
+>
+> Using a subset:
+>
+> First the hashMerkleRoot and hashPrevBlock fields are replaced by the 
+> fields: ChildBlock (32 bytes) and ScatteredBlockBytes (32 bytes). 
+> ChildBlock is the hash of a message with stores the old hashMerkleRoot 
+> and hashPrevBlock. ScatteredBlockBytes is a pseudo-random subset of 
+> bytes taken from the block template being mined. The seed for the 
+> pseudo-random function that selects the subset is  the hashMerkleRoot 
+> plus the block time. When a miner scans all the 32bit nonce space, 
+> then a new hashMerkleRoot must be created to increase the extra-nonce 
+> field or the time must be updated. When this happens, a new subset of 
+> pseudo-random 32 block bytes must be collected. If the miner only 
+> stores 10% of the block template (e.g. 100 Kbytes instead of 1 Mbyte), 
+> then the probability he can build the ScatteredBlockBytes by 
+> brute-forcing the seed is 10^-32. If the miner performs 100 GH/sec, 
+> then the 32-bit nonce will overflow every 20 msec and the miner could 
+> request the ScatteredBlockBytes from the pool admin using a bandwidth 
+> of 1 Kbyte/s. A pool hosting 6 PH/sec (such as Eligious, which has 8%) 
+> would need to stream more than 60 Mb/s of ScatteredBlockBytes fields. 
+> A mining pool having 50% would need to stream 500 Mb/s, which is quite 
+> challenging. So miners will download the block normally, and become 
+> active part of the network.
+>
+> Using an integrity check:
+>
+> ScatteredBlockBytes  is replaced by a field BlockHash defined as H( 
+> full-block-with-zero-nonce ). Obviously the header must be at the 
+> beginning of the block to force the re-hash.
+>
+> Best regards,
+>  Sergio.
+>
+>
+>
+> ------------------------------------------------------------------------------
+> HPCC Systems Open Source Big Data Platform from LexisNexis Risk Solutions
+> Find What Matters Most in Your Big Data with HPCC Systems
+> Open Source. Fast. Scalable. Simple. Ideal for Dirty Data.
+> Leverages Graph Analysis for Fast Processing & Easy Data Exploration
+> http://p.sf.net/sfu/hpccsystems
+>
+>
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+Why do you want to punish pools?
+
+
+-- 
+Kevin
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140619/47807d7c/attachment.html>
