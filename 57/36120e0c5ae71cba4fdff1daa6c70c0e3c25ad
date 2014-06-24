@@ -1,0 +1,80 @@
+From: laanwj@gmail.com (Wladimir)
+Date: Tue, 24 Jun 2014 11:07:16 +0200
+Subject: [Bitcoin-development] Plans to separate wallet from core
+In-Reply-To: <CAC1+kJOQ2uBo2peYKZJyPSQL6qzk6Yu-cF-tPs3GzVS6cAc53w@mail.gmail.com>
+References: <CAC1+kJNjcPkaHiR8mzofwXE4+4UX5nmxX5Q3rZv37v-K40p1Tw@mail.gmail.com>
+	<CA+s+GJDVBQVu8yH9jLu_rQmk=dsJuMUctT-iK0zzOJRYgE8k9w@mail.gmail.com>
+	<CAC1+kJOQ2uBo2peYKZJyPSQL6qzk6Yu-cF-tPs3GzVS6cAc53w@mail.gmail.com>
+Message-ID: <CA+s+GJBT9u+LMqTfrTwUQrGbnrqj2u==1kmx17uQyY8899O8sw@mail.gmail.com>
+
+On Mon, Jun 23, 2014 at 10:15 PM, Jorge Tim?n <jtimon at monetize.io> wrote:
+> On 6/23/14, Wladimir <laanwj at gmail.com> wrote:
+>> It's least surprising if the wallet works as a SPV client by default.
+>> Then, users can use it without first setting up a core. Thus the idea
+>> would be to use P2P primarily.
+>
+> So first bitcoind will support SPV mode then we separate the wallet?
+> Are the core and the wallet share any code (say, the p2p messages via
+> a sub-repo or something)?
+
+Yes, they will share code. At least the basic data structures and
+serialization and deserialization. Probably also part of the network
+code and utilities like argument parsing (although that's not a hard
+requirement - it may be an opportunity to do things better).
+
+So part of Bitcoin Core will have to be turned into a library or
+libraries. Movement toward this is already in progress for a while.
+
+>> There could be a mode to use a trusted core by RPC for
+>> mempool/conflicted transaction validation and such. But I'm not sure
+>> about this - as we've seen, pure-SPV wallets work pretty well. If you
+>> want it to act as an edge router you can point a SPV wallet at your
+>> trusted core as well.
+>
+> I thought we would first separate wallet from core (maintaining the
+> full-node wallet status) and then implement an optional SPV mode for
+> the core (and transitively for "qt-wallet", which would support both
+> full and SPV mode).
+
+We want to move away from "full node wallets". In the beginning it
+made some sense to jump-start the network, but the more the chain
+grows the less unwieldy they become.
+
+My main argument for the split is that full nodes and wallets have
+completely different usage scenarios:
+
+- A wallet should be online as little as possible, ideally only when
+you do transactions or want to check for them.
+
+- A full node should be online 24/7 or it is virtually useless to the network.
+
+>> There are no plans for adding Electrum-like functionality to bitcoind.
+>> There is already Electrum. Let's not reinvent any wheels.
+>
+> I'm sorry, but I still don't know what Electrum has to do with all this.
+
+I suggest you look at the interface for Electrum. It probably does
+exactly what you expected the interface between the Bitcoin Core
+wallet and Bitcoin Core to become. Electrum server keeps some extra
+indices that can be queried by the wallets. It already exists!
+
+But IMO this is a passed stage. SPV wallets w/ Bloom filtering can
+work without any special servers, so why require a 'close binding' to
+a trusted bitcoin core?
+
+(As said - I'm fine with optional close binding to a core using RPC
+with slight security benefits like utxo queries and conflicted
+transaction checking, and to get the dynamic fee data, but it should
+not be required)
+
+>> It does not need to keep a full chain database. But it needs its own
+>> record of the chain, headers-only + what concerns the keys in the
+>> wallet.
+>
+> Why cannot consume that data from a bitcoind node that always run alongside it?
+
+To not require having a bitcoind node always running alongside it.
+
+Wladimir
+
+
