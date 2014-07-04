@@ -1,0 +1,80 @@
+From: etotheipi@gmail.com (Alan Reiner)
+Date: Fri, 04 Jul 2014 06:53:47 -0400
+Subject: [Bitcoin-development] ASIC-proof mining
+In-Reply-To: <10566815.3CllqoMfON@momentum>
+References: <10566815.3CllqoMfON@momentum>
+Message-ID: <53B687BB.9010103@gmail.com>
+
+Just a thought on this -- I'm not saying this is a good idea or a bad
+idea, because I have spent about zero time thinking about it, but
+something did come to mind as I read this.  Reading 20 GB of data for
+every hash might be a bit excessive.  And as the blockchain grows, it
+will become infeasible to continue.  However, what comes to mind is the
+ROMix algorithm defined by Colin Percival, which was the pre-cursor to
+scrypt.  Which is actually what Armory uses for key stretching because
+it's far simpler than scrypt itself while maintaining the memory-hard
+properties (the downside is that it's much less flexible in allowing the
+user to trade-off compute time vs memory usage).
+
+ROMix works by taking N sequential hashes and storing the results into a
+single N*32 byte lookup table.   So if N is 1,000,000, you are going to
+compute 1,000,000 and store the results into 32,000,000 sequential bytes
+of RAM.  Then you are going to do 1,000,000 lookup operations on that
+table, using the hash of the previous lookup result, to determine the
+location of next lookup (within that 32,000,000 bytes).  Assuming a
+strong hash function, this means its impossible to know in advance what
+needs to be available in RAM to lookup, and it's easiest if you simply
+hold all 32,000,000 bytes in RAM.
+
+Something similar could be applied to your idea.  We use the hash of a
+prevBlockHash||nonce as the starting point for 1,000,000 lookup
+operations.  The output of the previous lookup is used to determine
+which block and tx (perhaps which chunk of 32 bytes within that tx) is
+used for the next lookup operation.   This means that in order to do the
+hashing, you need the entire blockchain available to you, even though
+you'll only be using a small fraction of it for each "hash".  This might
+achieve what you're describing without actually requiring the full 20 GB
+of reading on ever hash.
+
+-Alan
+
+
+
+On 07/04/2014 06:27 AM, Andy Parkins wrote:
+> Hello,
+>
+> I had a thought after reading Mike Hearn's blog about it being impossible to 
+> have an ASIC-proof proof of work algorithm.
+>
+> Perhaps I'm being dim, but I thought I'd mention my thought anyway.
+>
+> It strikes me that he's right that it's impossible for any algorithm to exist 
+> that can't be implemented in an ASIC.  However, that's only because it's 
+> trying to pick an algorithm that is CPU bound.  You could protect against ASCI 
+> mining (or rather, make it irrelevant that it was being used) by making the 
+> algorithm IO-bound rather than CPU-bound.
+>
+> For example, what if the proof-of-work hash for a block were no longer just 
+> "hash of block", which contains the hash of the parent block, but instead were 
+> hash of 
+>
+>    [NEW_BLOCK] [ALL_PREVIOUS_BLOCKS] [NEW_BLOCK]
+>
+> [ALL_PREVIOUS_BLOCKS] is now 20GB (from memory) and growing.  By prefixing and 
+> suffixing the new block, you have to feed every byte of the blockchain through 
+> the hashing engine (the prefix prevents you caching the intermediate result).  
+> Whatever bus you're using to feed your high speed hashing engine, it will 
+> always be faster than the bus -- hence you're now IO-bound, not CPU-bound, and 
+> any hashing engine will, effectively, be the same.
+>
+> I'm making the assumption that SHA-256 is not cacheable from the middle 
+> outwards, so the whole block-chain _has_ to be transferred for every hash.
+>
+> Apologies in advance if this is a stupid idea.
+>
+>
+>
+> Andy
+
+
+
