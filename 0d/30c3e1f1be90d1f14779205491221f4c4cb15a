@@ -1,0 +1,152 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Thu, 10 Jul 2014 16:44:11 +0200
+Subject: [Bitcoin-development] Draft BIP for geutxos message
+In-Reply-To: <CANEZrP1t3Pz3FOgxkxsj+sSgyQhPxfUTdCGXTC7=yxeZkGt-DQ@mail.gmail.com>
+References: <CANEZrP1t3Pz3FOgxkxsj+sSgyQhPxfUTdCGXTC7=yxeZkGt-DQ@mail.gmail.com>
+Message-ID: <CANEZrP3++BPQsX_oxw-BTOgOhf5Gt1oaGz=hJ_iBcwVCzrS+ZA@mail.gmail.com>
+
+I took the number out, it is now just "the getutxo bip" until a number is
+assigned.
+
+
+On Thu, Jul 10, 2014 at 4:29 PM, Mike Hearn <mike at plan99.net> wrote:
+
+> I opened up a pull req for a draft BIP for getutxo.
+>
+>    https://github.com/bitcoin/bips/pull/88
+>
+> I include a rendering below for your reading convenience. If you'd like to
+> comment on design/security/etc then please first familiarise yourself with
+> the long discussions that were already had here:
+>
+>    https://github.com/bitcoin/bitcoin/pull/4351
+>
+>
+>   BIP: 45
+>   Title: getutxo message
+>   Author: Mike Hearn <hearn at vinumeris.com>
+>   Status: Draft
+>   Type: Standards Track
+>   Created: 2014-06-10
+>
+>  Table of Contents
+>
+>    - Abstract
+>       <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#Abstract>
+>       - Motivation
+>       <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#Motivation>
+>       - Specification
+>       <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#Specification>
+>       - Backward compatibility
+>       <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#Backward_compatibility>
+>       - Authentication
+>       <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#Authentication>
+>       - Implementation
+>       <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#Implementation>
+>
+>
+> <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#abstract>
+> Abstract
+>
+> This document describes a small P2P protocol extension that performs UTXO
+> lookups given a set of outpoints.
+>
+> <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#motivation>
+> Motivation
+>
+> All full Bitcoin nodes maintain a database called the unspent transaction
+> output set. This set is how double spending is checked for: to be valid a
+> transaction must identify unspent outputs in this set using an identifier
+> called an "outpoint", which is merely the hash of the output's containing
+> transaction plus an index.
+>
+> The ability to query this can sometimes be useful for a lightweight/SPV
+> client which does not have the full UTXO set at hand. For example, it can
+> be useful in applications implementing assurance contracts to do a quick
+> check when a new pledge becomes visible to test whether that pledge was
+> already revoked via a double spend. Although this message is not strictly
+> necessary because e.g. such an app could be implemented by fully
+> downloading and storing the block chain, it is useful for obtaining
+> acceptable performance and resolving various UI cases.
+>
+> Another example of when this data can be useful is for performing floating
+> fee calculations in an SPV wallet. This use case requires some other
+> changes to the Bitcoin protocol however, so we will not dwell on it here.
+>
+> <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#specification>
+> Specification
+>
+> Two new messages are defined. The "getutxos" message has the following
+> structure:
+>
+>  Field Size DescriptionData typeComments 1check mempoolbool Whether to
+> apply mempool transactions during the calculation, thus exposing their
+> UTXOs and removing outputs that they spend. ?outpointsvector The list of
+> outpoints to be queried. Each outpoint is serialized in the same way it is
+> in a tx message.
+>
+> The response message "utxos" has the following structure:
+>
+>  Field Size DescriptionData typeComments 4chain heightuint32 The height
+> of the chain at the moment the result was calculated. 32chain tip hash
+> uint256 Block hash of the top of the chain at the moment the result was
+> calculated. ?hit bitmapbyte[] An array of bytes encoding one bit for each
+> outpoint queried. Each bit indicates whether the queried outpoint was found
+> in the UTXO set or not. ?result utxosresult[] A list of result objects
+> (defined below), one for each outpoint that is unspent (i.e. has a bit set
+> in the bitmap).
+>
+> The result object is defined as:
+>
+>  Field Size DescriptionData typeComments 4tx versionuint32 The version
+> number of the transaction the UTXO was found in. 4heightuint256 The
+> height of the block containing the defining transaction, or 0x7FFFFFFF if
+> the tx is in the mempool. ?outputCTxOut The output itself, serialized in
+> the same way as in a tx message.
+> <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#backward-compatibility>Backward
+> compatibility
+>
+> Nodes indicate support by advertising a protocol version above 70003 and
+> by setting a new NODE_GETUTXO flag in their nServices field, which has a
+> value of 2 (1
+>
+> <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#authentication>
+> Authentication
+>
+> The UTXO set is not currently authenticated by anything. There are
+> proposals to resolve this by introducing a new consensus rule that commits
+> to a root hash of the UTXO set in blocks, however this feature is not
+> presently available in the Bitcoin protocol. Once it is, the utxos message
+> could be upgraded to include Merkle branches showing inclusion of the UTXOs
+> in the committed sets.
+>
+> If the requesting client is looking up outputs for a signed transaction
+> that they have locally, the client can partly verify the returned output by
+> running the input scripts with it. Currently this verifies only that the
+> script is correct. A future version of the Bitcoin protocol is likely to
+> also allow the value to be checked in this way. It does not show that the
+> output is really unspent or was ever actually created in the block chain
+> however.
+>
+> If the requesting client has a mapping of chain heights to block hashes in
+> the best chain e.g. obtained via getheaders, then they can obtain a proof
+> that the output did at one point exist by requesting the block and
+> searching for the output within it. When combined with Bloom filtering this
+> can be reasonably efficient.
+>
+> Note that even when the outputs are being checked against something this
+> protocol has the same security model as Bloom filtering: a remote node can
+> lie through omission by claiming the requested UTXO does not exist / was
+> already spent (they are the same, from the perspective of a full node).
+> Querying multiple nodes and combining their answers can be a partial
+> solution to this, although as nothing authenticates the Bitcoin P2P network
+> a man in the middle could still yield incorrect results.
+>
+> <https://github.com/mikehearn/bips/commit/6058b92f5d9804ee4104649f53afc2fa53248c81?short_path=35c7795#implementation>
+> Implementation
+>
+> https://github.com/bitcoin/bitcoin/pull/4351/files
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140710/35e305eb/attachment.html>
