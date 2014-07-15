@@ -1,0 +1,154 @@
+From: jgarzik@bitpay.com (Jeff Garzik)
+Date: Tue, 15 Jul 2014 11:53:36 -0400
+Subject: [Bitcoin-development] BIP 38 NFC normalisation issue
+In-Reply-To: <lq3hjc$s4a$1@ger.gmane.org>
+References: <CANEZrP3ZzCBohXWZmZxE=ofP74Df4Hd-hCLH6jYn=JKbiqNQXA@mail.gmail.com>
+	<CAObn+gfbH61kyv_ttT4vsQuNFRWLB5H3xaux7GQ0co82ucO_eA@mail.gmail.com>
+	<CAJHLa0MMaQU7Xu=vo0Z2C5h5M-Oa9_a648yDRrw6UR=r81X66w@mail.gmail.com>
+	<lq3hjc$s4a$1@ger.gmane.org>
+Message-ID: <CAJHLa0PieYWVC798NeXWG25hhid9iYbNyzm2cK-yEdTb1W39Sw@mail.gmail.com>
+
+On whitespace:  Security UX testing I've seen shows it is mentally
+easier for some users to memorize and use longer passphrases, if they
+are permitted spaces.  I've not seen anything written on use of
+tabs/NLs/FFs in passphrases.
+
+I can see the logic of some systems, that convert \s+ into ' ' for
+purposes of password hashing, even though that might frustrate a
+security nerd or two.
+http://security.stackexchange.com/questions/32691/why-not-allow-spaces-in-a-password
+
+I do think control characters should be filtered.
+
+On Tue, Jul 15, 2014 at 11:32 AM, Andreas Schildbach
+<andreas at schildbach.de> wrote:
+> Can you provide the rationale for standard practice? For example, why
+> should whitespace be allowed? I regularly use trim() on any passphrase
+> (or other input ftm).
+>
+> So what's the action point? Should we amend the spec to filter control
+> characters? That would get rid of the \u0000 problem.
+>
+>
+> On 07/15/2014 05:17 PM, Jeff Garzik wrote:
+>> Unicode guarantees that null-terminated strings still work.  U+0000
+>> terminates a unicode (or C) string.  strlen() gets the string byte
+>> count.  mbstowcs() gets the character count.
+>>
+>> Whitespace can be problematic, but should be allowed.  Control
+>> characters should be filtered.  Emoticons probably cannot be filtered
+>> without substandard approaches such as character blacklists, a road
+>> you do not want to travel.
+>>
+>> (all this is simply standard practice)
+>>
+>>
+>> On Tue, Jul 15, 2014 at 9:07 AM, Eric Winer <enwiner at gmail.com> wrote:
+>>> I don't know for sure if the test vector is correct NFC form.  But for what
+>>> it's worth, the Pile of Poo character is pretty easily accessible on the
+>>> iPhone and Android keyboards, and in this string it's already in NFC form
+>>> (f09f92a9 in the test result).  I've certainly seen it in usernames around
+>>> the internet, and wouldn't be surprised to see it in passphrases entered on
+>>> smartphones, especially if the author of a BIP38-compatible app includes a
+>>> (possibly ill-advised) suggestion to have your passphrase "include special
+>>> characters".
+>>>
+>>> I haven't seen the NULL character on any smartphone keyboards, though - I
+>>> assume the iOS and Android developers had the foresight to know how much
+>>> havoc that would wreak on systems assuming null-terminated strings.  It
+>>> seems unlikely that NULL would be in a real-world passphrase entered by a
+>>> sane user.
+>>>
+>>>
+>>> On Tue, Jul 15, 2014 at 8:03 AM, Mike Hearn <mike at plan99.net> wrote:
+>>>>
+>>>> [+cc aaron]
+>>>>
+>>>> We recently added an implementation of BIP 38 (password protected private
+>>>> keys) to bitcoinj. It came to my attention that the third test vector may be
+>>>> broken. It gives a hex version of what the NFC normalised version of the
+>>>> input string should be, but this does not match the results of the Java
+>>>> unicode normaliser, and in fact I can't even get Python to print the names
+>>>> of the characters past the embedded null. I'm curious where this normalised
+>>>> version came from.
+>>>>
+>>>> Given that "pile of poo" is not a character I think any sane user would
+>>>> put into a passphrase, I question the value of this test vector. NFC form is
+>>>> intended to collapse things like umlaut control characters onto their prior
+>>>> code point, but here we're feeding the algorithm what is basically garbage
+>>>> so I'm not totally surprised that different implementations appear to
+>>>> disagree on the outcome.
+>>>>
+>>>> Proposed action: we remove this test vector as it does not represent any
+>>>> real world usage of the spec, or if we desperately need to verify NFC
+>>>> normalisation I suggest using a different, more realistic test string, like
+>>>> Z?rich, or something written in Thai.
+>>>>
+>>>>
+>>>>
+>>>> Test 3:
+>>>>
+>>>> Passphrase ????? (\u03D2\u0301\u0000\U00010400\U0001F4A9; GREEK UPSILON
+>>>> WITH HOOK, COMBINING ACUTE ACCENT, NULL, DESERET CAPITAL LETTER LONG I, PILE
+>>>> OF POO)
+>>>> Encrypted key: 6PRW5o9FLp4gJDDVqJQKJFTpMvdsSGJxMYHtHaQBF3ooa8mwD69bapcDQn
+>>>> Bitcoin Address: 16ktGzmfrurhbhi6JGqsMWf7TyqK9HNAeF
+>>>> Unencrypted private key (WIF):
+>>>> 5Jajm8eQ22H3pGWLEVCXyvND8dQZhiQhoLJNKjYXk9roUFTMSZ4
+>>>> Note: The non-standard UTF-8 characters in this passphrase should be NFC
+>>>> normalized to result in a passphrase of0xcf9300f0909080f09f92a9 before
+>>>> further processing
+>>>>
+>>>>
+>>>>
+>>>>
+>>>>
+>>>> ------------------------------------------------------------------------------
+>>>> Want fast and easy access to all the code in your enterprise? Index and
+>>>> search up to 200,000 lines of code with a free copy of Black Duck
+>>>> Code Sight - the same software that powers the world's largest code
+>>>> search on Ohloh, the Black Duck Open Hub! Try it now.
+>>>> http://p.sf.net/sfu/bds
+>>>> _______________________________________________
+>>>> Bitcoin-development mailing list
+>>>> Bitcoin-development at lists.sourceforge.net
+>>>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>>>
+>>>
+>>>
+>>> ------------------------------------------------------------------------------
+>>> Want fast and easy access to all the code in your enterprise? Index and
+>>> search up to 200,000 lines of code with a free copy of Black Duck
+>>> Code Sight - the same software that powers the world's largest code
+>>> search on Ohloh, the Black Duck Open Hub! Try it now.
+>>> http://p.sf.net/sfu/bds
+>>> _______________________________________________
+>>> Bitcoin-development mailing list
+>>> Bitcoin-development at lists.sourceforge.net
+>>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>>
+>>
+>>
+>>
+>
+>
+>
+> ------------------------------------------------------------------------------
+> Want fast and easy access to all the code in your enterprise? Index and
+> search up to 200,000 lines of code with a free copy of Black Duck
+> Code Sight - the same software that powers the world's largest code
+> search on Ohloh, the Black Duck Open Hub! Try it now.
+> http://p.sf.net/sfu/bds
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
+
+-- 
+Jeff Garzik
+Bitcoin core developer and open source evangelist
+BitPay, Inc.      https://bitpay.com/
+
+
