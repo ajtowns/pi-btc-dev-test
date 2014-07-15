@@ -1,0 +1,135 @@
+From: boydb@midnightdesign.ws (Brooks Boyd)
+Date: Tue, 15 Jul 2014 10:13:44 -0500
+Subject: [Bitcoin-development] BIP 38 NFC normalisation issue
+In-Reply-To: <CAObn+gfbH61kyv_ttT4vsQuNFRWLB5H3xaux7GQ0co82ucO_eA@mail.gmail.com>
+References: <CANEZrP3ZzCBohXWZmZxE=ofP74Df4Hd-hCLH6jYn=JKbiqNQXA@mail.gmail.com>
+	<CAObn+gfbH61kyv_ttT4vsQuNFRWLB5H3xaux7GQ0co82ucO_eA@mail.gmail.com>
+Message-ID: <CANg-TZAe2PO9nwQktmDSJFtaLsg6hogOw6mj0SaROdJJr33vog@mail.gmail.com>
+
+I was part of adding in that test vector, and I think it's a good test
+vector since it is an extreme edge-case of the current definition: If the
+BIP38 proposal allows any password that can be in UTF-8, NFC normalized
+form, those characters cover the various edge cases (combining characters,
+null character, astral range) that if your implementation doesn't handle,
+then it can't really be said to be "BIP38-compatible/compliant", right?
+
+The "passphrase" in the test vector is NOT in NFC form; that's the point.
+Whatever implementation gets designed has to assume the input is not
+already NFC-normalized and needs to handle/sanitize that input before
+further processing. To test your implementation for compliance, you should
+not be inputting the NFC-normalized bytestring as the password input, you
+should be entering the original passphrase as the test. My original pull
+request for this change (https://github.com/bitcoin/bips/pull/29) shows a
+Python and a NodeJS way to input that test vector password as intended.
+
+Some input devices may already handle the input as NFC, which is great, but
+per the BIP38 proposal, that shouldn't be assumed, so various
+implementations are cross-compatible. If one implementation assumes the
+input is already NFC, they may encode/decode the password incorrectly, and
+lock a user out of their wallet. Android allows different user keyboards to
+be used, so I'm guessing there's one somewhere that allows manual entry of
+unicode codepoints that could be used to enter a null character, and with
+the next version of iOS, Apple devices will also get custom keyboard
+options, too, so even if the default Apple keyboard does NFC-form properly,
+other developers' keyboards may not. So while it is an extreme edge case,
+that is not very likely to be used as a "real password" by any user, that's
+what test vectors are for: to test for the edge case that you might not
+have expected and handled in your implementation.
+
+Brooks
+
+
+On Tue, Jul 15, 2014 at 8:07 AM, Eric Winer <enwiner at gmail.com> wrote:
+
+> I don't know for sure if the test vector is correct NFC form.  But for
+> what it's worth, the Pile of Poo character is pretty easily accessible on
+> the iPhone and Android keyboards, and in this string it's already in NFC
+> form (f09f92a9 in the test result).  I've certainly seen it in usernames
+> around the internet, and wouldn't be surprised to see it in passphrases
+> entered on smartphones, especially if the author of a BIP38-compatible app
+> includes a (possibly ill-advised) suggestion to have your passphrase
+> "include special characters".
+>
+> I haven't seen the NULL character on any smartphone keyboards, though - I
+> assume the iOS and Android developers had the foresight to know how much
+> havoc that would wreak on systems assuming null-terminated strings.  It
+> seems unlikely that NULL would be in a real-world passphrase entered by a
+> sane user.
+>
+>
+> On Tue, Jul 15, 2014 at 8:03 AM, Mike Hearn <mike at plan99.net> wrote:
+>
+>> [+cc aaron]
+>>
+>> We recently added an implementation of BIP 38 (password protected private
+>> keys) to bitcoinj. It came to my attention that the third test vector may
+>> be broken. It gives a hex version of what the NFC normalised version of the
+>> input string should be, but this does not match the results of the Java
+>> unicode normaliser, and in fact I can't even get Python to print the names
+>> of the characters past the embedded null. I'm curious where this normalised
+>> version came from.
+>>
+>> Given that "pile of poo" is not a character I think any sane user would
+>> put into a passphrase, I question the value of this test vector. NFC form
+>> is intended to collapse things like umlaut control characters onto their
+>> prior code point, but here we're feeding the algorithm what is basically
+>> garbage so I'm not totally surprised that different implementations appear
+>> to disagree on the outcome.
+>>
+>> Proposed action: we remove this test vector as it does not represent any
+>> real world usage of the spec, or if we desperately need to verify NFC
+>> normalisation I suggest using a different, more realistic test string, like
+>> Z?rich, or something written in Thai.
+>>
+>>
+>>
+>> Test 3:
+>>
+>>    - Passphrase ????? (\u03D2\u0301\u0000\U00010400\U0001F4A9; GREEK
+>>    UPSILON WITH HOOK <http://codepoints.net/U+03D2>, COMBINING ACUTE
+>>    ACCENT <http://codepoints.net/U+0301>, NULL
+>>    <http://codepoints.net/U+0000>, DESERET CAPITAL LETTER LONG I
+>>    <http://codepoints.net/U+10400>, PILE OF POO
+>>    <http://codepoints.net/U+1F4A9>)
+>>    - Encrypted key:
+>>    6PRW5o9FLp4gJDDVqJQKJFTpMvdsSGJxMYHtHaQBF3ooa8mwD69bapcDQn
+>>    - Bitcoin Address: 16ktGzmfrurhbhi6JGqsMWf7TyqK9HNAeF
+>>    - Unencrypted private key (WIF):
+>>    5Jajm8eQ22H3pGWLEVCXyvND8dQZhiQhoLJNKjYXk9roUFTMSZ4
+>>    - *Note:* The non-standard UTF-8 characters in this passphrase should
+>>    be NFC normalized to result in a passphrase of0xcf9300f0909080f09f92a9 before
+>>    further processing
+>>
+>>
+>>
+>>
+>>
+>> ------------------------------------------------------------------------------
+>> Want fast and easy access to all the code in your enterprise? Index and
+>> search up to 200,000 lines of code with a free copy of Black Duck
+>> Code Sight - the same software that powers the world's largest code
+>> search on Ohloh, the Black Duck Open Hub! Try it now.
+>> http://p.sf.net/sfu/bds
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>
+>>
+>
+>
+> ------------------------------------------------------------------------------
+> Want fast and easy access to all the code in your enterprise? Index and
+> search up to 200,000 lines of code with a free copy of Black Duck
+> Code Sight - the same software that powers the world's largest code
+> search on Ohloh, the Black Duck Open Hub! Try it now.
+> http://p.sf.net/sfu/bds
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140715/298353e5/attachment.html>
