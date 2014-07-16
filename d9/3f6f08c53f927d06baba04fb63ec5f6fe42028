@@ -1,0 +1,241 @@
+From: andreas@schildbach.de (Andreas Schildbach)
+Date: Thu, 17 Jul 2014 00:02:45 +0200
+Subject: [Bitcoin-development] BIP 38 NFC normalisation issue
+In-Reply-To: <CACq0ZD6Nib4kU8kAo6jdXamw7NTTd5_JwO4x1fsVOMP2-F1=cA@mail.gmail.com>
+References: <CANEZrP3ZzCBohXWZmZxE=ofP74Df4Hd-hCLH6jYn=JKbiqNQXA@mail.gmail.com>	<CAObn+gfbH61kyv_ttT4vsQuNFRWLB5H3xaux7GQ0co82ucO_eA@mail.gmail.com>	<CANg-TZAe2PO9nwQktmDSJFtaLsg6hogOw6mj0SaROdJJr33vog@mail.gmail.com>	<CANEZrP3E2mdvOUHiW9W_hM3Z_kn9um8E6aX5vf-S9tA7KgnpUQ@mail.gmail.com>	<CACq0ZD5qTc-2f+puPaXMDFZNWUx8kvOZQMxqkM_e4YafhTW7cA@mail.gmail.com>	<lq5fvo$4s6$1@ger.gmane.org>	<CANEZrP0x2Ypb063VkcoE+h_OHfRVOusmXB2X1VQx77sZhAuTFw@mail.gmail.com>	<lq5l5a$4fl$1@ger.gmane.org>
+	<lq5m78$j23$1@ger.gmane.org>
+	<CACq0ZD6Nib4kU8kAo6jdXamw7NTTd5_JwO4x1fsVOMP2-F1=cA@mail.gmail.com>
+Message-ID: <lq6sq5$71h$1@ger.gmane.org>
+
+Please excuse me. I had a more thorough look at the original problem and
+found that the only problem with the original test case was that you
+cannot specify codepoints from the SMP using \u in Java. I always tried
+\u010400 but that doesn't work.
+
+Here is a fix for bitcoinj. The test now passes.
+
+https://github.com/bitcoinj/bitcoinj/pull/143
+
+We can (and probably should) still need to filter control chars, I'll
+have a look at that now again.
+
+
+On 07/16/2014 11:06 PM, Aaron Voisine wrote:
+> If I first remove \u0000, so the non-normalized passphrase is
+> "\u03D2\u0301\U00010400\U0001F4A9", and then NFC normalize it, it
+> becomes "\u03D3\U00010400\U0001F4A9"
+> 
+> UTF-8 encoded this is: 0xcf93f0909080f09f92a9 (not the same as what
+> you got, Andreas!)
+> 
+> Encoding private key: 5Jajm8eQ22H3pGWLEVCXyvND8dQZhiQhoLJNKjYXk9roUFTMSZ4
+> with this passphrase, I get a BIP38 key of:
+> 6PRW5o9FMb4hAYRQPmgcvVDTyDtr6R17VMXGLmvKjKVpGkYhBJ4uYuR9wZ
+> 
+> I recommend rather than simply removing control characters from the
+> password that instead the spec require that passwords containing
+> control characters are invalid. We don't want people trying to be
+> clever and putting them in thinking they are adding to the password
+> entropy.
+> 
+> Also for UI compatibility across many platforms, I'm also in favor
+> disallowing any character below U+0020 (space)
+> 
+> I can submit a PR once we figure out why Andreas's passphrase was
+> different than what I got.
+> 
+> Aaron Voisine
+> breadwallet.com
+> 
+> 
+> On Wed, Jul 16, 2014 at 4:04 AM, Andreas Schildbach
+> <andreas at schildbach.de> wrote:
+>> Damn, I just realized that I implement only the decoding side of BIP38.
+>> So I cannot propose a complete test vector. Here is what I have:
+>>
+>>
+>> Passphrase: ????? (\u03D2\u0301\u0000\U00010400\U0001F4A9; GREEK
+>> UPSILON WITH HOOK, COMBINING ACUTE ACCENT, NULL, DESERET CAPITAL LETTER
+>> LONG I, PILE OF POO)
+>>
+>> Passphrase bytes after removing ISO control characters and NFC
+>> normalization: 0xcf933034303066346139
+>>
+>> Bitcoin Address: 16ktGzmfrurhbhi6JGqsMWf7TyqK9HNAeF
+>>
+>> Unencrypted private key (WIF):
+>> 5Jajm8eQ22H3pGWLEVCXyvND8dQZhiQhoLJNKjYXk9roUFTMSZ4
+>>
+>>
+>> Can someone calculate the encrypted key from it (using whatever
+>> implementation) and I will verify it decodes properly in bitcoinj?
+>>
+>>
+>>
+>> On 07/16/2014 12:46 PM, Andreas Schildbach wrote:
+>>> I will change the bitcoinj implementation and propose a new test vector.
+>>>
+>>>
+>>>
+>>> On 07/16/2014 11:29 AM, Mike Hearn wrote:
+>>>> Yes sorry, you're right, the issue starts with the null code point.
+>>>> Python seems to have problems starting there too. It might work if we
+>>>> took that out.
+>>>>
+>>>>
+>>>> On Wed, Jul 16, 2014 at 11:17 AM, Andreas Schildbach
+>>>> <andreas at schildbach.de <mailto:andreas at schildbach.de>> wrote:
+>>>>
+>>>>     Guys, you are always talking about the Unicode astral plane, but in fact
+>>>>     its a plain old (ASCII) control character where this problem starts and
+>>>>     likely ends: \u0000.
+>>>>
+>>>>     Let's ban/filter ISO control characters and be done with it. Most
+>>>>     control characters will never be enterable by any keyboard into a
+>>>>     password field. Of course I assume that Character.isISOControl() works
+>>>>     consistently across platforms.
+>>>>
+>>>>     http://docs.oracle.com/javase/7/docs/api/java/lang/Character.html#isISOControl%28char%29
+>>>>
+>>>>
+>>>>     On 07/16/2014 12:23 AM, Aaron Voisine wrote:
+>>>>     > If the user creates a password on an iOS device with an astral
+>>>>     > character and then can't enter that password on a JVM wallet, that
+>>>>     > sucks. If JVMs really can't support unicode NFC then that's a strong
+>>>>     > case to limit the spec to the subset of unicode that all popular
+>>>>     > platforms can support, but it sounds like it might just be a JVM
+>>>>     > string library bug that could hopefully be reported and fixed. I get
+>>>>     > the same result as in the test case using apple's
+>>>>     > CFStringNormalize(passphrase, kCFStringNormalizationFormC);
+>>>>     >
+>>>>     > Aaron Voisine
+>>>>     > breadwallet.com <http://breadwallet.com>
+>>>>     >
+>>>>     >
+>>>>     > On Tue, Jul 15, 2014 at 11:20 AM, Mike Hearn <mike at plan99.net
+>>>>     <mailto:mike at plan99.net>> wrote:
+>>>>     >> Yes, we know, Andreas' code is indeed doing normalisation.
+>>>>     >>
+>>>>     >> However it appears the output bytes end up being different. What
+>>>>     I get back
+>>>>     >> is:
+>>>>     >>
+>>>>     >> cf930001303430300166346139
+>>>>     >>
+>>>>     >> vs
+>>>>     >>
+>>>>     >> cf9300f0909080f09f92a9
+>>>>     >>
+>>>>     >> from the spec.
+>>>>     >>
+>>>>     >> I'm not sure why. It appears this is due to the character from
+>>>>     the astral
+>>>>     >> planes. Java is old and uses 16 bit characters internally - it
+>>>>     wouldn't
+>>>>     >> surprise me if there's some weirdness that means it doesn't/won't
+>>>>     support
+>>>>     >> this kind of thing.
+>>>>     >>
+>>>>     >> I recommend instead that any implementation that wishes to be
+>>>>     compatible
+>>>>     >> with JVM based wallets (I suspect Android is the same) just
+>>>>     refuse any
+>>>>     >> passphrase that includes characters outside the BMP. At least
+>>>>     unless someone
+>>>>     >> can find a fix. I somehow doubt this will really hurt anyone.
+>>>>     >>
+>>>>     >>
+>>>>     ------------------------------------------------------------------------------
+>>>>     >> Want fast and easy access to all the code in your enterprise?
+>>>>     Index and
+>>>>     >> search up to 200,000 lines of code with a free copy of Black Duck
+>>>>     >> Code Sight - the same software that powers the world's largest code
+>>>>     >> search on Ohloh, the Black Duck Open Hub! Try it now.
+>>>>     >> http://p.sf.net/sfu/bds
+>>>>     >> _______________________________________________
+>>>>     >> Bitcoin-development mailing list
+>>>>     >> Bitcoin-development at lists.sourceforge.net
+>>>>     <mailto:Bitcoin-development at lists.sourceforge.net>
+>>>>     >> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>>>     >>
+>>>>     >
+>>>>     >
+>>>>     ------------------------------------------------------------------------------
+>>>>     > Want fast and easy access to all the code in your enterprise?
+>>>>     Index and
+>>>>     > search up to 200,000 lines of code with a free copy of Black Duck
+>>>>     > Code Sight - the same software that powers the world's largest code
+>>>>     > search on Ohloh, the Black Duck Open Hub! Try it now.
+>>>>     > http://p.sf.net/sfu/bds
+>>>>     >
+>>>>
+>>>>
+>>>>
+>>>>     ------------------------------------------------------------------------------
+>>>>     Want fast and easy access to all the code in your enterprise? Index and
+>>>>     search up to 200,000 lines of code with a free copy of Black Duck
+>>>>     Code Sight - the same software that powers the world's largest code
+>>>>     search on Ohloh, the Black Duck Open Hub! Try it now.
+>>>>     http://p.sf.net/sfu/bds
+>>>>     _______________________________________________
+>>>>     Bitcoin-development mailing list
+>>>>     Bitcoin-development at lists.sourceforge.net
+>>>>     <mailto:Bitcoin-development at lists.sourceforge.net>
+>>>>     https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>>>
+>>>>
+>>>>
+>>>>
+>>>> ------------------------------------------------------------------------------
+>>>> Want fast and easy access to all the code in your enterprise? Index and
+>>>> search up to 200,000 lines of code with a free copy of Black Duck
+>>>> Code Sight - the same software that powers the world's largest code
+>>>> search on Ohloh, the Black Duck Open Hub! Try it now.
+>>>> http://p.sf.net/sfu/bds
+>>>>
+>>>>
+>>>>
+>>>> _______________________________________________
+>>>> Bitcoin-development mailing list
+>>>> Bitcoin-development at lists.sourceforge.net
+>>>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>>>
+>>>
+>>>
+>>>
+>>> ------------------------------------------------------------------------------
+>>> Want fast and easy access to all the code in your enterprise? Index and
+>>> search up to 200,000 lines of code with a free copy of Black Duck
+>>> Code Sight - the same software that powers the world's largest code
+>>> search on Ohloh, the Black Duck Open Hub! Try it now.
+>>> http://p.sf.net/sfu/bds
+>>>
+>>
+>>
+>>
+>> ------------------------------------------------------------------------------
+>> Want fast and easy access to all the code in your enterprise? Index and
+>> search up to 200,000 lines of code with a free copy of Black Duck
+>> Code Sight - the same software that powers the world's largest code
+>> search on Ohloh, the Black Duck Open Hub! Try it now.
+>> http://p.sf.net/sfu/bds
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> 
+> ------------------------------------------------------------------------------
+> Want fast and easy access to all the code in your enterprise? Index and
+> search up to 200,000 lines of code with a free copy of Black Duck
+> Code Sight - the same software that powers the world's largest code
+> search on Ohloh, the Black Duck Open Hub! Try it now.
+> http://p.sf.net/sfu/bds
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> 
+
+
+
+
