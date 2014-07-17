@@ -1,0 +1,122 @@
+From: keziahw@gmail.com (Kaz Wesley)
+Date: Thu, 17 Jul 2014 14:35:35 -0700
+Subject: [Bitcoin-development] Squashing redundant tx data in blocks on the
+	wire
+Message-ID: <CA+iPb=EaX=bvOjNtZ+LnYTMRLQQ9nFcrefAkBdv8eActoX_b8A@mail.gmail.com>
+
+OVERVIEW
+
+To improve block propagation, add a new block message that doesn't include
+transactions the peer is known to have. The message must never require an
+additional round trip due to any transactions the peer doesn't have, but
+should
+be compatible with peers sometimes forgetting transactions they have known.
+
+APPROACH
+
+For peers advertising support for squashed blocks: a node tracks what txes
+it
+knows each peer has seen (inv received, tx sent, tx appeared in competing
+block
+known to peer). Nodes push block contents as txes-not-already-known +
+txids-known.
+
+A node should be able to forget invs it has seen without invalidating what
+peers
+know about its known txes. To allow for this, a node assembles a bloom
+filter of
+a set of txes it is going to forget, and sends it to peers. The node can
+erase
+the txes as soon as no blocks requested before the filter was pushed are in
+flight (relying on the assumption that messages can be expected to be
+processed
+in order).
+
+When a node receives a forgotten-filter, it ORs it into its
+forgotten-filter for
+that peer. Any transactions matching the forgotten-filter are always
+included in
+full with a block. If the filter is getting full, the node can just clear it
+along with peer.setTxKnown.
+
+COSTS
+
+Bloom filtering:
+Since the bloom filter is likely to grow slowly and can be dropped when it
+is
+becoming full, a cheap set of hash functions and element size can be used to
+keep overhead more restricted than the bloom filtering done for spv. It's
+important for testing txes against the filter to be fast so that it doesn't
+delay pushing the block more than the squashing helps.
+Nodes currently forget txes rarely, so the bloom filters would only need to
+be
+used at all under conditions that are not currently common -- but I think
+they're important to include to allow for different node behavior in this
+regard
+in the future.
+
+Tracking txes known to peers:
+A multimap of txid->peerId would obviate the current setCurrentlyKnown, and
+would not take much more space since each additional peer adds about 1
+peerId
+per txid (setCurrentlyKnown keeps a uint256 per peer per txid, although it
+tracks somewhat fewer txid per node).
+
+Potential vulnerabilities:
+- Since the bloom filters will have lower maximum overhead than the current
+SPV
+  filters and can be dropped at will, this shouldn't enable any resource
+  exhaustion attacks that aren't already possible.
+- A squashed block with bogus or missing data would be easily detected not
+to
+  produce the correct merkle root for its BlockHeader.
+
+BENEFITS
+
+Assuming a fairly typical 500 tx block with transaction sizes averaging 300b
+(both on the low side), for a 150kb block:
+
+% pruned | block size reduction | relative size reduction
+-------- | -------------------- | -----------------------
+100      | 134 kB               | 89%
+50       | 67 kB                | 45%
+25       | 33.5 kB              | 17%
+
+I've been doing some logging, and when my node pushes a block to a peer it
+seems
+to typically know that a peer has seen most of the txes in the block. Even
+in
+the case of a small block with only 25% known-known transactions, total
+network
+bandwidth saved is greater than the bloom filters transmitted unless a node
+is
+forgetting transactions so rapidly that it pushes new maximum-size
+forget-filters every block.
+
+So this is a net gain even in total bandwidth usage, but most importantly
+it's
+an improvement in block propagation rate and in how block propagation rate
+scales with additional transactions.
+
+IMPLEMENTATION QUESTIONS
+
+How should block squashing capability be advertised -- new service bit?
+
+Bloom filters:
+- How fast to test against could a suitable bloom filter be made?
+- How much memory would each filter need to take, at maximum?
+- Can the inputs all being 32 byte hashes be used to optimize filter hash
+  calculations?
+
+ROADMAP
+
+If there's support for this proposal, I can begin working on the specific
+implementation details, such as the bloom filters, message format, and
+capability advertisment, and draft a BIP once I have a concrete proposal for
+what those would look like and a corresponding precise cost/benefit
+analysis.
+
+--kaz
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140717/810d2f69/attachment.html>
