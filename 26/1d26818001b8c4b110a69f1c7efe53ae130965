@@ -1,0 +1,137 @@
+From: el33th4x0r@gmail.com (=?UTF-8?Q?Emin_G=C3=BCn_Sirer?=)
+Date: Fri, 18 Jul 2014 17:51:06 -0700
+Subject: [Bitcoin-development] Decentralizing ming
+In-Reply-To: <CAJHLa0PZsTjB7O_JuPsMUzfrWAB9yW+x0bEKWo3JyGebKr42ZA@mail.gmail.com>
+References: <CAJHLa0PWF38N0-CFY9b3FzFdN2NfLduWHCeCQHXQOKirDYn0Pw@mail.gmail.com>
+	<CAJna-HhhqYGSVwapvR_5yvRY3gc6wXGaNXm_dkP4Tid7F1SsLw@mail.gmail.com>
+	<CANEZrP0HxfJYaTxYdxh3ANLOMma_J9A93A0LjB47PHdiaNo5NA@mail.gmail.com>
+	<CANEZrP2+tufB0jbgqdCc9t_XLbs9pnX9t8jUGfLA_xLDhEts8Q@mail.gmail.com>
+	<CAJHLa0PZsTjB7O_JuPsMUzfrWAB9yW+x0bEKWo3JyGebKr42ZA@mail.gmail.com>
+Message-ID: <CAPkFh0uk9uAODo2Pp654xapoD=J=3HukMouCSdnYZuAN43Y=2A@mail.gmail.com>
+
+I thought I'd chime in and point out some research results that might help.
+Even if they don't, there is a cool underlying technique that some of you
+might find interesting.
+
+The problem being tackled here is very similar to "set reconciliation,"
+where
+peer A thinks that the set of transactions that should be in the block is
+S_A,
+and peer B has actually included set S_B, and S_A and S_B are expected
+to not differ much. Ideally, one would like the communication complexity
+between A and B to be O(delta), not O(S_B) as it is right now. And ideally,
+one would like B to send a single message to A, and for A to figure out the
+difference between the two sets, without any lengthy back and forth
+communication. In essence, I would like to give you some magical packet
+that is pretty small and communicates just the delta between what you and
+I know.
+
+This paper from Cornell describes a scheme for achieving this:
+   Yaron Minsky, Ari Trachtenberg, Richard Zippel: Set reconciliation with
+nearly optimal communication complexity. IEEE Transactions on Information
+Theory 49(9): 2213-2218 (2003)
+   http://ipsit.bu.edu/documents/ieee-it3-web.pdf
+
+Those of you looking for a TL;DR should read the intro and then skip to
+page 8 for the example. The underlying trick is very cool, comes from the
+peer-to-peer/gossip literature, and it is underused. It'd be really cool if
+it
+could be applied to this problem to reduce the size of the packets.
+
+This approach has three benefits over the Bloom filter approach (if I
+understand the Bloom filter idea correctly):
+
+(1) Bloom filters require packets that are still O(S_A),
+
+(2) Bloom filters are probabilistic, so require extra complications
+when there is a hash collision. In the worst case, A might get confused
+about which transaction B actually included, which would lead to a
+fork. (I am not sure if I followed the Bloom filter idea fully -- this may
+not happen with the proposal, but it's a possibility with a naive Bloom
+filter implementation)
+
+(3) Bloom filters are interactive, so when A detects that B has included
+some transactions that A does not know about, it has to send a message
+to figure out what those transactions are.
+
+Set reconciliation is O(delta), non-probabilistic, and non-interactive. The
+naive version requires that one have some idea of the size of the delta,
+but I think the paper has some discussion of how to handle the delta
+estimate.
+
+I have not gone through the full exercise of actually applying this trick to
+the Bitcoin p2p protocol yet, but wanted to draw your attention to it.
+If someone is interested in applying this stuff to Bitcoin, I'd be happy
+to communicate further off list.
+
+- egs
+
+
+
+On Fri, Jul 18, 2014 at 6:44 AM, Jeff Garzik <jgarzik at bitpay.com> wrote:
+
+> Yes.  That, and several other things.  If you can figure out how to
+> propagate a block without re-propagating all the transactions everyone
+> already has, you address the large-blocks-slower-to-relay problem, and
+> additionally create an incentive for miners to mine blocks consisting
+> of publicly broadcast transactions (versus a bunch of secret ones
+> mined with secret agreements).
+>
+> Democratizing transaction selection takes a bit of power away from the
+> miners and gives it back to the network at large.  GBT is another
+> piece of that puzzle.
+>
+>
+> On Fri, Jul 18, 2014 at 6:43 AM, Mike Hearn <mike at plan99.net> wrote:
+> > Oops, sorry, I see the subject line changed. This is what I get for
+> working
+> > down the thread list top to bottom :)
+> >
+> > I think the best path forward now is to finish off getblocktemplate
+> support
+> > in the various tools so it's possible to pool for payout purposes without
+> > giving up control of block creation modulo the coinbase. Combined with
+> the
+> > recent sipa performance enhancing goodness, it would hopefully persuade
+> some
+> > non-trivial chunk of hashpower to go back to running their own node and
+> > start the process of turning pools merely into payout trackers rather
+> than
+> > block selectors.
+> >
+> >
+> > On Fri, Jul 18, 2014 at 12:41 PM, Mike Hearn <mike at plan99.net> wrote:
+> >>
+> >> Jeff, I think the message you're replying to got clipped.
+> >>
+> >> Satoshi's only comment AFAIK on the topic of GPU mining was to wish for
+> a
+> >> gentlemen's agreement to postpone it as long as possible, to help make
+> sure
+> >> the distribution of coins was as even as possible. Indeed this predated
+> >> pooled mining.
+> >>
+> >
+>
+>
+>
+> --
+> Jeff Garzik
+> Bitcoin core developer and open source evangelist
+> BitPay, Inc.      https://bitpay.com/
+>
+>
+> ------------------------------------------------------------------------------
+> Want fast and easy access to all the code in your enterprise? Index and
+> search up to 200,000 lines of code with a free copy of Black Duck
+> Code Sight - the same software that powers the world's largest code
+> search on Ohloh, the Black Duck Open Hub! Try it now.
+> http://p.sf.net/sfu/bds
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140718/e0c8569d/attachment.html>
