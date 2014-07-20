@@ -1,0 +1,69 @@
+From: keziahw@gmail.com (Kaz Wesley)
+Date: Sun, 20 Jul 2014 14:01:22 -0700
+Subject: [Bitcoin-development] Trickle and transaction propogation
+Message-ID: <CA+iPb=GVyfYAjSRitt8LW-LLvi8U5F=noQ9igOQKmHyi8-DACA@mail.gmail.com>
+
+The inv trickling mechanism currently serves two purposes:
+- protect casual users' privacy by slightly obscuring a tx's originating node
+- reduce invs unnecessarily sent both directions for a connection
+It has some drawbacks:
+- it slows transaction propagation
+- it delays knowledge between two nodes of what txes are mutually known
+These drawbacks will be especially costly once optimizations based on
+mutually-known transactions are available (in progress, see "sparse
+blocks" thread).
+
+Both of the benefits of trickling can be achieved more efficiently and
+without the costs to transaction propagation and mutual transaction
+knowledge.
+
+Privacy: trickling helps hide the origin of 3/4 of the transactions a
+node is pushing by preventing most of the node's neighbors from seeing
+the transactions from that node right away; by the time a peer becomes
+the trickle node, it may have received the same inv from another of
+its peers.
+This staggering of introduction of new invs to the network could be
+made more effective by scheduling staggered pushes of wallet
+transactions to each peer in a structure similar to mapAskFor.
+This does have the drawback that someone who has established multiple
+connections to a node can observe that some invs are pushed at
+different times, suggesting they are in the stagger set. I don't see
+any straightforward way to remedy this, but trickling is also
+vulnerable to sybil attacks, and floods 1/4 of its transactions
+immediately anyway -- so I think staggered push would be an overall
+privacy improvement.
+Likelihood of a partial sybil obtaining inv origin information could
+be reduced by a policy of ending staggering and pushing to all peers
+once another peer has received the tx from elsewhere and inved the
+transaction back to the original node; if the staggering is
+sufficiently slow, only one or two nodes would receive the initial
+push to the network and after that the inv would be treated
+indistinguishably from if it originated externally.
+
+Redundant invs: without trickling, when two nodes receive transactions
+at around the same time they may each send each other an inv before
+receiving the other's. Trickling reduces this by giving all
+non-trickleSend nodes a chance to send first. Thus just eliminating
+trickling would at most double inv traffic. Although invs are small
+they are numerous, being the only common message potentially sent from
+every node to all its neighbors.
+A more efficient solution to the who-sends-first problem would be for
+connections to have directional parity:
+- a node initiating a connection would announce its parity (even or odd)
+- an inv is sent right away to peers with matching parity, but only
+sent against parity if a certain timeout has elapsed without the inv
+being received
+In order to allow for nodes with few peers (i.e. -connect) or nodes on
+local connections that might as well flood everything to each other,
+parity could be specified as a mask (fEven << 1 & fOdd). Peers from
+pre-directional-parity versions can be treated as having the mask
+fully set.
+
+Both push staggering and directional parity admit simple
+implementations. The specific staggering delay distribution would need
+some thought; it could be set slower than the typical trickle cycle
+period for better than current privacy, since general transaction
+propagation would not impeded by heavy staggering. What do you think
+of this approach? Any gotchas/improvements/alternatives?
+
+
