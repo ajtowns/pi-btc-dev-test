@@ -1,0 +1,30 @@
+From: mark@coinqy.com (Mark van Cuijk)
+Date: Sun, 27 Jul 2014 08:55:38 +0200
+Subject: [Bitcoin-development] "On behalf of" BIP 70 extension proposal
+Message-ID: <B097D5C5-8E9E-461D-8FF3-58A661AFB3CB@coinqy.com>
+
+When I asked a non-tech friend to do a BIP 70 payment using our wallet as a first round of user experience testing, he made the remark the he wanted to do a payment to a merchant, but instead our software shows a payment to ?BitPay, Inc.?
+
+This can be problematic for a couple of reasons:
+- As a user you don?t need to know and trust individual payment processors. As long as you can identify and authenticate the merchant, you should be able to rely on the merchant?s choice for a payment processor.
+- An attacker can become a client of a payment processor, use it to create a PaymentRequest message and send this message to a victim as part of a MITM attack; the victim now thinks he is paying a merchant through the payment processor, but is actually paying the attacker through the payment processor.
+
+I have a proposal that can be transformed into a BIP or into an extension of BIP 70 and adds a way to include merchant identity in the PaymentRequest message and I?d like to see a discussion on this topic.
+
+At this moment, the PaymentRequest message contains a pki_data field with a certificate chain to authenticate the entity that generates the message, which in the above case is the payment processor.
+
+I?m proposing to extends the PaymentRequest message with three more fields:
+- payee_pki_type
+- payee_pki_data
+- payee_mandate
+
+The payee_pki_type and payee_pki_data fields can be of the same format as the pki_type and pki_data fields, except that they authenticate the identity of the merchant, instead of the identity of the payment processor. The payee_mandate fields contains a claim by the merchant, signed using his own private key, that he grants the payment processor the right to collect the payment on his behalf.
+
+The solution is backwards compatible, since existing wallets can ignore these fields. They will not show the identity of the merchant, but keep showing the identity of the payment processor, they are still able to verify the signature in the PaymentRequest message and therefore can complete the payment process.
+
+A wallet that understands this extension, needs to check the validity of both certificate chains when present and also the validity of the mandate. If all is fine, it can now show the identity information from the merchant certificate instead of (or besides) the identity of the payment processor and allow an end user to correctly identify the merchant.
+
+A payment processor supporting this extension may offer it as an optional service to clients. A client that wishes to use this extension needs to obtain his own certificate from a CA and use it to sign a mandate. One potential obstacle is that this process probably needs to be repeated both when the certificate of the merchant or the certificate of the payment processor expires, but we may be able to address that when defining the format of the mandate.
+
+/Mark
+
