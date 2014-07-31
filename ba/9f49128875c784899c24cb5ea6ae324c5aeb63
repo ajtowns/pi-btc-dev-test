@@ -1,0 +1,175 @@
+From: keziahw@gmail.com (Kaz Wesley)
+Date: Thu, 31 Jul 2014 13:47:35 -0700
+Subject: [Bitcoin-development] Squashing redundant tx data in blocks on
+ the wire
+In-Reply-To: <CAPkFh0vKFnKRE-sd-Z9t1zB73VLPsiaQ3o=OYgBqqtUE4_rTaw@mail.gmail.com>
+References: <CA+iPb=EaX=bvOjNtZ+LnYTMRLQQ9nFcrefAkBdv8eActoX_b8A@mail.gmail.com>
+	<CABsx9T2PSa3MpfMMDCb8ACVF5vDOZOFLEK9zfP9PakgHA4U16w@mail.gmail.com>
+	<CAPkFh0vKFnKRE-sd-Z9t1zB73VLPsiaQ3o=OYgBqqtUE4_rTaw@mail.gmail.com>
+Message-ID: <CA+iPb=GC7iw1LP6boyfX22oMO2k2=YcAuRhE0E3OzzJHYapsow@mail.gmail.com>
+
+I don't see how set reconciliation alone would be practical for
+condensed block exchange -- if the keys are txids it'd require a round
+trip to request the missing tx; if we could somehow get the "What's
+the Difference" approach to effectively operate on full transactions
+instead, the log(keysize) factor overhead would make any transactions
+not mutually-known very expensive to exchange (at keysize=32b, data
+would need to be 80% mutually-known just to break even). There's also
+the complication and/or overhead of establishing an "expected block"
+to reconcile with the actual block.
+
+The approach of remembering what invs have been transmitted both
+directions along each connection is less elegant; it requires
+remembering a lot of communication history, introducing a major point
+of statefulness to the protocol, and custom-compacting blocks for each
+peer. But it is also very effective at squeezing bytes, cheap in cpu
+cycles, and the implementation is fairly simple. The wealth of mutual
+knowledge already available in the current protocol allows
+accomplishing the goal of exchanging blocks efficiently by solving a
+much easier problem than its context-less cousin. I have my doubts
+that it is possible for even an optimal contextless solution to do as
+well as channel memory in terms of bytes exchanged or computational
+complexity -- you can't beat making use of the available information.
+
+I have an implementation of inv-history-tracking that uses a 2b/tx
+alternative to getdata for tx, and I've had that running between two
+nodes for ~2 weeks now. I've been working on a better implementation
+of that plus the sparseblock messages, and I'll have the sparseblock
+prototype (suitable for something like Gregory's remember-last-N
+approach) up and running in a couple of days or so. The prototype
+handles assigning compact identifiers to transactions and using those
+in block messages; there's a lot of bit-packing sort of tweaks that
+can be done that I'm not including in the initial prototype. The
+prototype will be able to log history-hit rates, so if we run a few
+sparseblocks nodes connected to each other for a while we should get a
+good idea of how much efficiency gain this provides, and how it can be
+improved. This approach even without the intensive bit packing has a
+total vtx transmission size of 2*nTxKnown + 1*nTxUnknown +
+nBytesTxUnknown, where only a small window of very recent transactions
+and any transactions that have fallen out of the history limit would
+be mutually known but not known to be known.
+
+It would be possible to nearly eliminate even that overhead for both
+known and unknown transactions with compact descriptions of block tx
+inclusion and ordering policies as Gavin brought up, for which
+something like scripts defining priority formulas would be a possible
+implementation (https://gist.github.com/kazcw/43c97d3924326beca87d#ordering-policy
+-- n.b. most of the rest of the gist is currently outdated). But since
+priority scripts are themselves more complicated than the rest of the
+sparseblock implementation, and basic sparseblocks achieve the vast
+majority of bandwidth savings, I think it's worth implementing
+sparseblocks without priority scripts now and then using priority
+scripts for sparseblocks2 along with all the other things they can do
+later.
+
+Set reconciliation does look like a great way to synchronize mempools.
+I've been thinking, contextless low-cost mempool exchange would enable
+a node to have one or more "roaming" peer slots -- connect to a node,
+fill in each other's mempools, move on to another peer. It seems like
+this would go a long way to mitigate potential pathological network
+topologies -- it would make it very difficult to sybil attack a node
+(barring an attacker in a position to spoof IP addresses), and if a
+serious bug or DoS attack caused the network to start to partition
+itself due to DoS bans, it only takes occasional roamers crossing the
+partition to keep both sides generally in sync.
+Efficient mempool synchronization would also increase the efficacy of
+channel-memory sparseblocks: it picks up transactions too old to have
+been exchanged via invs, and could also allow nodes to know exactly
+what transactions their peers have discarded.
+
+
+
+On Thu, Jul 31, 2014 at 8:31 AM, Gavin Andresen <gavinandresen at gmail.com> wrote:
+> I've been reading up on set reconciliation algorithms, and thinking about
+> constant-bandwidth propagation of new block announcements.
+>
+> Emin:  the approach in this paper:
+> What's the Difference? Efficient Set Reconciliation without Prior Context
+>  http://conferences.sigcomm.org/sigcomm/2011/papers/sigcomm/p218.pdf
+>
+> ... looks like it would be much better suited for Bitcoin's use case,
+> because
+>
+> a) it looks much easier to implement (no polynomial math)
+> b) CPU/latency versus bandwidth tradeoff looks better (somewhat higher
+> bandwidth than Yaron's method, but much lower CPU/latency cost)
+>
+> Kaz: how much time do you have to work on this?  Perhaps we can get a
+> road-map for a prototype and split up work. I actually think the first step
+> might be to gather a couple days worth of tx / block message broadcasts from
+> a few network nodes and then create a test/benchmark harness that will tell
+> us how much overlap there is in what nodes know and how much faster our
+> newer algorithms are.
+>
+> --
+> --
+> Gavin Andresen
+
+On Thu, Jul 31, 2014 at 12:10 PM, Emin G?n Sirer <el33th4x0r at gmail.com> wrote:
+> Hi Gavin,
+>
+> Great find. I read (and sadly forgot) this paper back in 2011 and indeed,
+> I'd also pick this approach over Yaron's. My reasons:
+>
+> a. this paper provides a more concrete implementation roadmap that has been
+> explored thoroughly. While I understand Yaron's technique, there are still
+> various design decisions (e.g. estimating the set difference involves a
+> doubling process; representing TX ids seems to take up a lot of space) that
+> are left unspec'ed for an implementation. (In general, Yaron is a
+> theoretician at heart and Varghese is a very practical guy, there will be
+> far fewer unforeseen issues with a Varghese tried and tested algorithm).
+>
+> b. on the surface, this paper seems to use a bit more bandwidth in that it
+> requires O(size of set diff * log of keyspace) vs. Yaron's claim of O(size
+> of set diff). But I believe that in practice Yaron's method would also have
+> an O(log of keyspace) multiplier in place because the roots of his
+> polynomial (the TX ids) have to be represented as numbers, and that requires
+> log-of-keyspace bits. I suspect that Yaron is cleverly folding that factor
+> into the constant factor of O notation, and Varghese et al are being polite
+> by not pointing it out too overtly. So I suspect that the two schemes are
+> actually identical in terms of space complexity.
+>
+> c. this technique is far more efficient in decoding than Yaron's, which
+> requires Gaussian elimination, which in turn is O(d^3).
+>
+> If Bitcoin adopts this technique, it'll be adopting one of the best known
+> techniques from the research community.
+>
+> BTW, don't hesitate to ping me with researchy issues in the future; I'll
+> gladly point the effort in the right direction if I can.
+>
+> - egs
+>
+>
+>
+> On Thu, Jul 31, 2014 at 6:31 PM, Gavin Andresen <gavinandresen at gmail.com>
+> wrote:
+>>
+>> I've been reading up on set reconciliation algorithms, and thinking about
+>> constant-bandwidth propagation of new block announcements.
+>>
+>> Emin:  the approach in this paper:
+>> What's the Difference? Efficient Set Reconciliation without Prior Context
+>>  http://conferences.sigcomm.org/sigcomm/2011/papers/sigcomm/p218.pdf
+>>
+>> ... looks like it would be much better suited for Bitcoin's use case,
+>> because
+>>
+>> a) it looks much easier to implement (no polynomial math)
+>> b) CPU/latency versus bandwidth tradeoff looks better (somewhat higher
+>> bandwidth than Yaron's method, but much lower CPU/latency cost)
+>>
+>> Kaz: how much time do you have to work on this?  Perhaps we can get a
+>> road-map for a prototype and split up work. I actually think the first step
+>> might be to gather a couple days worth of tx / block message broadcasts from
+>> a few network nodes and then create a test/benchmark harness that will tell
+>> us how much overlap there is in what nodes know and how much faster our
+>> newer algorithms are.
+>>
+>> --
+>> --
+>> Gavin Andresen
+>
+>
+
+
