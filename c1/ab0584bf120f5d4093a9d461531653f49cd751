@@ -1,0 +1,42 @@
+From: keziahw@gmail.com (Kaz Wesley)
+Date: Thu, 31 Jul 2014 17:58:23 -0700
+Subject: [Bitcoin-development] deterministic transaction expiration
+Message-ID: <CA+iPb=HkxeVPF0SynxCPgUkq4msrdfayFrVNFjzg29rFwqXv1w@mail.gmail.com>
+
+There is currently little in place for managing transaction lifetime
+in the network's mempools (see discussion in github in #3722 "mempool
+transaction expiration", and it seems to be a major factor blocking
+some mempool exchange, see #1833/1918, #3721). Expiry per-node a
+certain amount of wall time after receipt has been proposed, but
+that's a fragile mechanism -- a single node could keep all relayable
+transactions alive forever by remembering transactions until most
+nodes have dropped them and then releasing them back into the wild.
+
+I have a proposal for a way to add finite and predictable lifespans to
+transactions in mempools: we d?e?s?t?r?o?y? ?t?h?e?
+?r?e?s?u?r?r?e?c?t?i?o?n? ?h?u?b? use nLockTime and a new standardness
+rule. It could be done in stages, would not necessarily require even a
+soft fork, and does not cause problems with reorgs like the proposal
+in #3509:
+1. start setting nLockTime to the current height by default in newly
+created transactions (or slightly below the current height, for
+reorg-friendliness)
+2. once users have had some time to upgrade to clients that set
+nLockTime, start discouraging transactions without nLockTime --
+possibly with a slightly higher fee required for relay
+3. start rate-limiting relay of transactions without an nLockTime
+(maybe this alone could be used to achieve [2])
+4. add a new IsStandard rule rejecting transactions with an nLockTime
+more than N blocks behind the current tip (for some fixed value N, to
+be determined)
+
+Transactions would stop being relayed and drop out of mempools a fixed
+number of blocks from their creation; once that window had passed, the
+sender's wallet could begin to expect the transaction would not be
+confirmed. In case a reorg displaces a transaction until after its
+expiry height, a miner can still put it back in the blockchain; the
+expiry height is just a relay rule. Also, a user who needed to get
+their original "expired" transaction confirmed could still do so by
+submitting it directly to a miner with suitable policies.
+
+
