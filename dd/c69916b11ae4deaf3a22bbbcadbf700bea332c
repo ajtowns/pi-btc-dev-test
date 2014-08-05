@@ -1,0 +1,81 @@
+From: keziahw@gmail.com (Kaz Wesley)
+Date: Tue, 5 Aug 2014 12:10:50 -0700
+Subject: [Bitcoin-development] deterministic transaction expiration
+In-Reply-To: <CAJHLa0O2wFq2Vs5Bes_8x1q_j0VC+U4DQkx=6GqT8w5e8Lh5Qg@mail.gmail.com>
+References: <CA+iPb=HkxeVPF0SynxCPgUkq4msrdfayFrVNFjzg29rFwqXv1w@mail.gmail.com>
+	<CAJHLa0O2wFq2Vs5Bes_8x1q_j0VC+U4DQkx=6GqT8w5e8Lh5Qg@mail.gmail.com>
+Message-ID: <CA+iPb=ET+A-qB8TgPX8D-ut1DWnq9tZJ=14igfRVWO6eog6Xgw@mail.gmail.com>
+
+> In general, if a transaction has not made it into a block within 144*X blocks, there is _some_ reason it is getting rejected by the miners.
+
+This is the crux of my concern: relay policy and miner priorities will
+not necessarily always be in sync, and node resource management
+shouldn't rely on them being compatible. There are other solutions
+than transaction expiration; I think Gavin's idea from the
+block-squashing thread, in which miners explicitly provide information
+about their policies, would go a long way to address this. But even
+when mechanisms for reconciling nodes' expectations about miners'
+behavior with miners' actual behavior are available, it may be
+desirable to keep an expiry mechanism in place in case of glitches
+between node understanding of policy and actual miner policy.
+
+Any approach based on beginning a transaction expiry countdown when a
+transaction is received (as in mempool janitor) seems unviable to me:
+once a node has forgotten a transaction, it must be susceptible to
+reaccepting it; all the functionality of such an expiry mechanism
+depends on the network not containing any nodes with slightly
+different relay behavior from bitcoind. I could accidentally
+debilitate mempool janitors across the entire network if I set up two
+nodes to exchange mempools whenever they reconnected to each other,
+and restarted each frequently.
+
+That's why I think including information in the transaction itself, as
+with my nLockTime/IsStandard proposal, is necessary for transactions
+to reliably eventually die off from mempools.
+There's a modification I've been thinking about: allow a transaction's
+lifetime to be refreshed (even after expiry) by a child transaction,
+along the lines of child-pays-for-parent fee policy. This would
+eliminate the need to reuse a key to make a replacement for an expired
+transaction (when submitting the tx directly to a miner is not an
+option), as well as alleviating the potential inconvenience in cases
+like Peter brought up, where nLockTime is used for exchanged locked
+transactions as part of a multi-transaction contract. With
+child-refreshes-parent, a transaction's receivers and senders would
+have the ability to keep trying to get their payment confirmed, but
+anyone on the network can't just keep all transactions alive.
+
+
+On Tue, Aug 5, 2014 at 10:48 AM, Jeff Garzik <jgarzik at bitpay.com> wrote:
+> Glad this was brought up.
+>
+> Transaction expiration is something that I have wanted to see happen in
+> bitcoin for a long, long time.  The user experience of unconfirming
+> transactions setting around in limbo is just horrible.  Bitcoin software by
+> necessity has gotten better about attaching fees so this sort of behavior is
+> uncommon, but that does not eliminate the problem.
+>
+> Of course, we cannot presume that a transaction will truly disappear -- The
+> Internet Never Forgets -- but given a bit of mempool adjusting, we can
+> achieve the next best thing:  the majority of the network "forgets" the
+> transaction and becomes willing to relay a respend of some or all of the
+> inputs.  This uses existing client logic where the client must rebroadcast a
+> transaction until it is confirmed.
+>
+> In general, if a transaction has not made it into a block within 144*X
+> blocks, there is _some_ reason it is getting rejected by the miners.
+>
+> The mempool janitor is a garbage collector design.  This is inferior to the
+> "superblock" model described at
+> https://github.com/bitcoin/bitcoin/issues/3723   Other models can also
+> achieve similar results.
+>
+> There are a lot of issues tied together here:  transaction expiration, the
+> desire to cap the mempool ram usage, scalability, DoS prevention, ...
+> mempool ties a lot together.
+>
+> --
+> Jeff Garzik
+> Bitcoin core developer and open source evangelist
+> BitPay, Inc.      https://bitpay.com/
+
+
