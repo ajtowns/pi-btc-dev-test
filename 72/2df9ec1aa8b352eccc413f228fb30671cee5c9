@@ -1,0 +1,82 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 7 Aug 2014 01:03:50 +0000
+Subject: [Bitcoin-development] SIGHASH_ANYONECANPAY extra inputs DoS attack
+Message-ID: <20140807010350.GC9272@localhost.localdomain>
+
+tl;dr: Transactions with SIGHASH_ANYONECANPAY-using inputs can be DoS
+attacked by attackers adding extra inputs to them that make the fee/byte
+paid unfavorable to miners, while still being high enough to be relayed.
+While just a nuisance DoS attack, this is a serious obstacle towards
+using ANYONECANPAY.
+
+
+Background: What uses ANYONECANPAY?
+-----------------------------------
+
+1) Crowdfunds/assurance contracts: e.g. Hearn's upcoming Lighthouse, as
+well as Armory's implementation.
+
+2) Fee bumping: receiver or sender can add inputs w/ ANYONECANPAY to get
+a tx confirmed without the (expensive) overhead of a second CPFP tx.
+
+3) Privacy: inputs are more deniable in some cases, e.g. dust used for
+fees, which anyone could have added.
+
+4) Replace-by-fee scorched earth: best implementations(1) depend on fee
+bumping.
+
+
+Partial defense: replace-by-fee
+-------------------------------
+
+The attacker's modified transaction will usually, but not always, be
+replaced by the intended one as the latter will have higher fees.
+However replace-by-fee implementations must charge adequately for
+network bandwidth consumed, so there will be edge-cases where the
+replacement does not happen.
+
+
+Transaction fee/byte optimization
+---------------------------------
+
+Each input that does not use SIGHASH_ALL can be evaluated in terms of
+whether or not it increases the fees/byte paid by the transaction. Thus
+we can optimize a transaction to pay the highest fees/byte by doing the
+following:
+
+    def optimize_tx(tx):
+        tx2 = CTransaction(vin=[], vout=tx.vout, nLockTime=tx.nLockTime)
+
+        for txin in <tx.vin sorted by fees/byte>:
+            if <txin depends on other txins>:
+                continue
+
+            if <tx2 is valid>:
+                prev_fee_per_byte = tx2.fees / len(tx2.serialized())
+                tx2.vin.append(txin)
+                if tx2.fees / len(tx2.serialized()) < prev_fee_per_byte:
+                    # adding txin decreased fees/byte
+                    tx2.vin.pop()
+                    return tx2
+
+            else:
+                tx2.vin.append(txin)
+
+        return tx
+
+Essentially txin's that reduce the profitability of the transaction are
+dropped, including the attacker's added txins. Meanwhile txins that
+increase the profitability can be added by anyone.
+
+
+1) "[Bitcoin-development] Replace-by-fee scorched-earth without child-pays-for-parent",
+   Apr 28th 2014, Peter Todd,
+   https://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg05211.html
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140807/38ccaaf3/attachment.sig>
