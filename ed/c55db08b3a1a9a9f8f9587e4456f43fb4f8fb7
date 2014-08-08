@@ -1,0 +1,51 @@
+From: tomh@thinlink.com (Tom Harding)
+Date: Fri, 08 Aug 2014 10:38:08 -0700
+Subject: [Bitcoin-development] deterministic transaction expiration
+In-Reply-To: <CALxbBHXh-Fktsr96PMXdohJdgcUKoNreJ-ZuApKOX3-qSkdk2w@mail.gmail.com>
+References: <CA+iPb=HkxeVPF0SynxCPgUkq4msrdfayFrVNFjzg29rFwqXv1w@mail.gmail.com>
+	<CAJHLa0O2wFq2Vs5Bes_8x1q_j0VC+U4DQkx=6GqT8w5e8Lh5Qg@mail.gmail.com>
+	<CA+iPb=ET+A-qB8TgPX8D-ut1DWnq9tZJ=14igfRVWO6eog6Xgw@mail.gmail.com>
+	<53E1A8AF.4030206@thinlink.com>
+	<CAJHLa0MfRhCPX8H92qc1kSebc=WrUzmSgbG331t4-zDHhTNu4w@mail.gmail.com>
+	<CANEZrP3eEiLxYfsAURRm4ysfS4TRgXxa_THxJ43cVH1OyR95JQ@mail.gmail.com>
+	<53E23F49.3020605@thinlink.com>
+	<CAJHLa0OtPA3DGQuJhp3zkK5dnBux6TFAw3qDsBdO0zaxrqBgRg@mail.gmail.com>
+	<CALxbBHXh-Fktsr96PMXdohJdgcUKoNreJ-ZuApKOX3-qSkdk2w@mail.gmail.com>
+Message-ID: <53E50B00.8030505@thinlink.com>
+
+Having explored more drastic approaches, it looks like Kaz' basic idea 
+stands well.  His #1...
+
+> 1. start setting nLockTime to the current height by default in newly
+> created transactions (or slightly below the current height, for
+> reorg-friendliness)
+
+is already implemented in bitcoin-qt #2340, and a "final call" on 
+merging it was already sent to this list.  After some thought I agree 
+with its policy of eventually setting nLockTime at current-height + 1 by 
+default.  This is the "best reasonably expected height" of any tx 
+created right now.  It discourages fee-sniping, and if a reorg happens 
+anyway, it won't actually delay inclusion of tx beyond the reasonable 
+expectation sans reorg.
+
+However right now, #2340 takes a very cautious approach and sets to 
+current-height - 10 by default, with randomness to mitigate worries 
+about loss of privacy.
+
+Kaz' #2, #3 and #4 are future actions.  #4 only goes most of the way ...
+
+> 4. add a new IsStandard rule rejecting transactions with an nLockTime
+> more than N blocks behind the current tip (for some fixed value N, to
+> be determined)
+
+... a janitor mechanism is desirable to purge mempool of txes more than 
+N behind current-height.
+
+Nodes dropping a tx N blocks after they became eligible to be mined (the 
+meaning of nLockTime) makes sense.  It is not an overloading or new use 
+for nLockTime, but a logical extension of it.  As Kaz pointed out, this 
+solves a big problem with expiring by locally measured age: 
+unintentional resurrection.
+
+
+
