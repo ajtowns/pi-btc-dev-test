@@ -1,0 +1,133 @@
+From: tim.ruffing@mmci.uni-saarland.de (Tim Ruffing)
+Date: Sat, 09 Aug 2014 12:04:51 +0200
+Subject: [Bitcoin-development] CoinShuffle: decentralized CoinJoin
+	without trusted third parties
+In-Reply-To: <1530801.palqu9XdN4@1337h4x0r>
+References: <8137823.B0x87S28xY@calzone> <1530801.palqu9XdN4@1337h4x0r>
+Message-ID: <5456835.U3gAI91RM4@calzone>
+
+You are raising valid questions and one goal of our posting here is indeed to 
+discuss exactly these system issues.
+
+On Thursday 07 August 2014 15:00:11 you wrote:
+> I think the description at your website leaves out the truly interesting
+> part: How do you decentralize this securely?
+> - How do Alice, Bob, Charlie and Dave communicate, i.e. which network is
+> used for communication and how?
+The simplest approach is obviously to use direct connections to a randomly 
+elected leader, who is also responsible for the broadcasts.
+One advantage of CoinShuffle is that the unlinkability between input and 
+output addresses is guaranteed, no matter which underlying network you use. 
+(Still, it is a good idea in general to hide your IP address but we can let 
+the user decide here.)
+
+Of course, there would be other possibilities, such as overlay networks. 
+Coinmux, a CoinJoin prototype by Michael Pearce (http://coinmux.com/) uses 
+TomP2P, a distributed hash table, for communication. 
+
+Do you have any hints regarding this point?
+
+> - How does Alice know that Bob, Charlie and Dave are not the same person?
+> (= how do you prevent a Sybil attack?)
+> 
+> Because thats the real problem with mixing it seems - ensuring that your
+> mixing partners are actually 100 people and not just 1 attacker. There are
+> probably many mixing algorithms which work if you solve that problem, but I
+> don't see how you offer a solution for it :(
+It's true that there are a few proposals for mixing protocols which all have 
+their advantages and disadvantages. However, it's not true that the mixing 
+itself becomes simple if you solve the problem of Sybil attacks. Still, mixing 
+is difficult to get right: Even if there are no Sybil attacks, you have to 
+ensure that the participants (or a server) cannot break unlinkability or steal 
+money. Actually that's why there are several proposals for mixing protocols, 
+because there is no obvious perfect solution.
+
+Regarding your question:
+It is indeed very important to get this right. Fundamentally, there is nothing 
+that prevents the attacker from creating a lot of identities participating in 
+a lot of CoinJoins. However, there are ways that make it hard for the attacker 
+to put an honest user together only with malicious users.
+
+For a moment, assume that you can reliably establish a pool of users that 
+would like to participate in the protocol. (I will discuss this later.) 
+You have to divide the users to individual groups, i.e., CoinJoins runs. If 
+the assignment cannot be influenced by the attacker, then the probability that 
+there are also honest users in a run is quite high. Of course, the attacker is 
+able to reduce your anonymity set but they cannot just put you together only 
+with their malicious identities.
+
+Note that the attacker has to pay transaction fees for joining many 
+transaction. One could even increase the required fee depending on the number 
+of users in the pool (enforced by honest CoinShuffle participants that would 
+not accept CoinJoins that pay a lower transaction fee).
+
+And making sure that the attacker cannot influence the assignment is simple: 
+One can use the hash of all users' public keys in the pool to determine the 
+assignment for example.
+ 
+For the initial setup step, i.e., creating the pool of participants, you need 
+some kind of "bulletin board". 
+
+One possibility is to use an underlying peer-to-peer network. Bitcoin itself 
+is the first that comes to the mind but it does not allow arbitrary messages. 
+So if we do not want to change the Bitcoin protocol, chans in Bitmessage are a 
+very promising possibility. Bitmessage relies basically on the same broadcast 
+mechanism as Bitcoin. If you as a peer use enough outgoing connections to 
+other peers, it's very difficult for an attacker to ensure that your message 
+will not be spread among the network. (Btw, people have used this to do 
+CoinJoin  manually already 
+https://forum.namecoin.info/viewtopic.php?f=2&t=1694 .)
+Solutions like distributed hashtables (TomP2P again) are another possibility. 
+We are not sure which of those approaches provides the best robustness against 
+malicious nodes that try to stop single participants from reaching the 
+network. For the setup step, latency is not an issue, so Bitmessage is indeed 
+a promising candidate here.
+ 
+I think that in general, P2P is the way to go here, but there are other 
+approaches as well:
+
+ - A possibility is to have a lot of servers acting as bulletin 
+boards. The user sends his announcement message to all of the servers and 
+the user waits until at some of the servers send back a guarantee to 
+include the user. After some time, the servers agree on the pool of the users 
+just by taking all the users that have registered with at least one of the 
+servers. There are well-understood protocols to achieve this goal or similar 
+goals, because essentially the same problem arises in e-voting (see 
+http://arxiv.org/pdf/1401.4151 for just one example. this paper provides also 
+a detailed discussion of related protocols in section 9).
+Of course, the disadvantage of this approach is that the protocol is not 
+really decentralized anymore.
+
+ - If you really want to be on the safe side, you can include your 
+announcement messages in the Bitcoin blockchain, e.g., by adding your 
+announcement message to an unspendable output, at the cost of an additional 
+transaction. I know that putting data to the blockchain is discouraged but let 
+me explain why it is useful here: If you want to do several CoinJoins in a 
+row, you can include your announcement message for the second CoinJoin in the 
+transaction of the first CoinJoin, so your announcement is very robust but you 
+do not need an additional transaction, because you can piggy-back on the frist 
+transaction.
+
+Additionally, it is possible to combine these approaches by joining several 
+pools. 
+
+Another interesting point that my co-author Aniket Kate mentioned is that you 
+can look at that problem as a social issue: You could combine this with 
+information from your friends. You can participate in a CoinJoin only if your 
+friends tell you that they also participate in the same run. They do not even 
+have to reveal their input address, they just have to reveal that their 
+address is in a particular run. Of course, this is not yet a technical 
+solution but a very interesting idea.
+
+Don't get me wrong. We don't think that there is a perfect solution the 
+two issues that you mentioned but we are pretty sure there are several that 
+work well enough in practice if they are implemented correctly. 
+
+Tim
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 648 bytes
+Desc: This is a digitally signed message part.
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140809/65784dc2/attachment.sig>
