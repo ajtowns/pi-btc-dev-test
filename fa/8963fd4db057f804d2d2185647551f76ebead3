@@ -1,0 +1,60 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Sun, 10 Aug 2014 20:07:54 +0200
+Subject: [Bitcoin-development] Synchronization: 19.5 % orphaned blocks
+ at height 197'324
+In-Reply-To: <20140810140719.GA20493@mcelrath.org>
+References: <53E776D1.1010503@bitwatch.co>
+	<20140810140719.GA20493@mcelrath.org>
+Message-ID: <CAPg+sBhPaO3oxXhuKN=YDZZZmW5pAaC2ay0uVHhTOB1UirUMaA@mail.gmail.com>
+
+On Sun, Aug 10, 2014 at 4:07 PM, Bob McElrath <bob_bitcoin at mcelrath.org> wrote:
+> I had the same problem (repeatedly) which came down a hardware problem.
+
+This is actually an independent problem (though something to be aware
+of). Flaky hardware can make synchronization fail completely - as it
+relies on being able to exactly assess the validity of everything in
+the blockchain.
+
+Stilll...
+
+> mbde at bitwatch.co [mbde at bitwatch.co] wrote:
+>> Hello all,
+>>
+>> I'm currently synchronizing a new node and right now, at a progress of a
+>> height of 197'324 blocks, I count in my debug.log an aweful amount of
+>> 38'447 orphaned blocks which is about 19.5 %.
+>>
+>> It has been I while since I watched the synchronization process closely,
+>> but this number seems pretty high to me.
+
+Orphan blocks during synchronization are unfortunately very common,
+and the result of a mostly broken download logic in the client. They
+are blocks that are further ahead in the chain than the point where
+you're currently synchronized to, and thus can't be validated yet.
+Note that 'orphan' here means 'we do not know the parent'; it doesn't
+just mean 'not in the main chain'. They are blocks that are received
+out of order.
+
+As Jeff mentions, headers-first synchronization fixes this problem
+(and many other download-logic related things), by first verifying the
+headers in the chain (thus already having partially validated
+everything), and then downloading the blocks (in not necessarily the
+right order) anymore, from multiple peers in parallel. There is
+currently a pull request for it, but it's not production ready
+(#4468).
+
+>> I'm wondering about the following: would it be possible for a malicious
+>> party to generate chains of blocks with low difficulity which are not
+>> part of the main chain to slow down the sync process?
+
+Yes and no. While you're still synchronization, and don't actually
+know the best chain, a peer could send you stale branches (with valid
+proof of work), which you would accept, store and process. But it has
+to be done very early, as once you learn of a good-enough chain, a
+branch with more proof of work would be requires due to some
+heuristics designed to exactly prevent such an attack.
+
+-- 
+Pieter
+
+
