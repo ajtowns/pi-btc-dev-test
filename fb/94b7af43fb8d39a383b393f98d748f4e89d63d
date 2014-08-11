@@ -1,0 +1,231 @@
+From: ctpacia@gmail.com (Chris Pacia)
+Date: Mon, 11 Aug 2014 02:30:16 -0400
+Subject: [Bitcoin-development] CoinShuffle: decentralized CoinJoin
+ without trusted third parties
+In-Reply-To: <CAB+qUq6_ukUYnBkb3exOM+rSRSBz1ho2j60G1oxnLx4_zM91SQ@mail.gmail.com>
+References: <8137823.B0x87S28xY@calzone>
+	<CAB+qUq6_ukUYnBkb3exOM+rSRSBz1ho2j60G1oxnLx4_zM91SQ@mail.gmail.com>
+Message-ID: <CAB+qUq4BcQPFHVR_odG=yJ5OAKFdn_Kh8C4-m_g+kMVvrREgzg@mail.gmail.com>
+
+Actually getUTXO would probably work here as well. It isn't authenticated
+but it should be good enough for this purpose. The worst that would happen
+is the tx doesn't confirm.
+On Aug 11, 2014 2:25 AM, "Chris Pacia" <ctpacia at gmail.com> wrote:
+
+> One issue I do see is the protocol requires participants to check the
+> inputs submitted by others are valid. Lite clients (at least of the p2p
+> variety) cannot perform this check.
+>
+> You could skip the verification part and if the inputs turn out to be
+> invalid then you'll find out when it doesn't confirm. This would problem
+> open the protocol up to dos attacks and prevent part of the "blame" phase
+> from working properly.
+>
+> Alternatively you can have the participants submit the merkle proof for
+> the input. This would require inputs to have at least one confirmation,
+> however.
+> On Aug 6, 2014 6:42 PM, "Tim Ruffing" <tim.ruffing at mmci.uni-saarland.de>
+> wrote:
+>
+>> Hey,
+>>
+>> We (a group of researchers in Germany) propose a decentralized protocol
+>> for
+>> CoinJoin, a way to mix coins among users to improve anonymity. Our
+>> protocol is
+>> called CoinShuffle. We believe that CoinShuffle is a way to implement
+>> CoinJoin
+>> in the original spirit of Bitcoin, i.e., decentralized and without trusted
+>> third parties. (If you are not familiar with CoinJoin, the idea is
+>> explained
+>> here: https://bitcointalk.org/index.php?topic=279249.0 )
+>>
+>> The protocol is essentially a clever way to create a CoinJoin transaction.
+>> Recall that the idea of CoinJoin is mixing with one SINGLE transaction
+>> that
+>> has multiple input addresses and multiple fresh output addresses (i.e.,
+>> one
+>> pair of addresses per user). The advantage of CoinJoin over mixing with a
+>> server or trusted party is that nobody can steal coins. Each user can
+>> check if
+>> the single transaction sends enough coins to his fresh output address. If
+>> this
+>> is not the case, the user can just refuse to sign the transaction and
+>> nothing
+>> (bad) happens.
+>>
+>> The difficulty in CoinJoin is to let the participants announce their fresh
+>> output addresses without breaking anonymity: Of course, if a participant
+>> of
+>> the protocol just announces "I have 1 BTC at address X now" and "I would
+>> like
+>> to have it back at address Y", then everybody can link X and Y and mixing
+>> is
+>> useless. A naive approach is to send these two messages via a secure
+>> channel
+>> to a server that organizes the whole mixing. While the server cannot steal
+>> coins, the server still has to be trusted for anonymity, because it knows
+>> which input addresses belong to which output addresses.
+>>
+>> We present the list of CoinShuffle's features at the end of this e-mail.
+>> An
+>> overview over the technical details can be found on the project page:
+>> http://crypsys.mmci.uni-saarland.de/projects/CoinShuffle/
+>>
+>> Moreover, for the full details, have a look at the research paper on
+>> CoinShuffle that can be found here:
+>> http://crypsys.mmci.uni-saarland.de/projects/CoinShuffle/coinshuffle.pdf
+>>
+>> The paper has been accepted at a major European academic conference on
+>> security (ESORICS). We will present the idea there.
+>>
+>> Our Proof-of-concept Implementation
+>> -----------------------------------
+>> There is a proof-of-concept implementation (written in Python) available
+>> on
+>> our project page. It is really only a proof-of-concept and it implements
+>> only
+>> the announcement of the addresses, not the creation of the transaction.
+>> Moreover, the code is CERTAINLY INSECURE and not well-written; our only
+>> goal
+>> was to demonstrate feasibility and estimate the performance of our
+>> approach.
+>>
+>>
+>> Our Future Plans
+>> ----------------
+>> Now we are planning a full, open-source implementation of the protocol. Of
+>> course, we would like to build on top of an existing wide-spread client.
+>> Since
+>> we do not have much experience in the design of existing Bitcoin clients,
+>> we
+>> would appreciate any help in the process. In particular, we did not decide
+>> which of the existing clients we would like to extend. Any hints towards
+>> this
+>> decisions would very helpful. Help in design and coding would be great
+>> but we
+>> also would like to hear your comments, criticism, and improvements for the
+>> protocol itself.
+>>
+>> CoinShuffle Features
+>> --------------------
+>> CoinShuffle has the following features:
+>>
+>>  - Decentralization / no third party:
+>> There is no (trusted or untrusted) third party in a run of the protocol.
+>> (Still, as in all mixing solutions, users need some way to gather together
+>> before they can run the protocol. This can be done via a P2P protocol if a
+>> decentralized solution is desired also for this step.)
+>>
+>>
+>>  - Unlinkability of input and output addresses:
+>> Nobody, in particular no server (there is none!), can link input and
+>> output
+>> addresses of a mixing transaction, as long as there are at least two
+>> honest
+>> participants in run of the protocol.
+>>
+>> (This is not a weakness: If there is only one honest participant,
+>> meaningful
+>> mixing is just impossible, no matter how it is organized. If all the other
+>> participants collude, they know all their input and output addresses and
+>> can
+>> immediately determine the output address of the honest participant.)
+>>
+>>  - Security against thefts:
+>> As explained above, nobody can steal coins during the mixing because of
+>> the
+>> CoinJoin principle.
+>> Every participant can verify that his money will not be stolen.
+>> Otherwise, he
+>> refuses to sign the transaction and nothing will happen.
+>>
+>>  - Robustness against denial-of-service:
+>> In CoinJoin, a single malicious (or malfunctioning) client suffices to
+>> stop
+>> the whole protocol (e.g., by just refusing to sing the transaction
+>> without a
+>> proper reason.) This can easily lead to DoS attacks but these can be
+>> countered
+>> in CoinShuffle.
+>>
+>> While in case of disruption, the current run of the protocol has to stop,
+>> CoinShuffle addresses this problem as follows:  In case of active
+>> disruption,
+>> i.e., some participant sends wrong messages, the protocol provides a
+>> proof of
+>> this misbehavior. Then the honest protocol parties can start a new run of
+>> the
+>> protocol without the misbehaving participant. Also in case of passive
+>> disruption, i.e., some participant does not respond (for whatever
+>> reason), the
+>> remaining participants can agree on starting a new run without this
+>> participant. This ensures that the protocol will finally succeed even in
+>> the
+>> presence of malicious participant (although this can take quite a while
+>> then).
+>>
+>>  - Only public-key encryption and signatures:
+>> The protocol requires only well-established cryptographic primitives.
+>> Besides
+>> signatures and hash functions (that are already used by Bitcoin), only
+>> standard public-key encryption is necessary.
+>>
+>>  - Efficiency:
+>> A run of the protocol with 30 participants takes less than 100 seconds
+>> (in a
+>> setting with reasonable bandwidth and delay). This is not much, given
+>> that 10
+>> min (on average) are required to confirm the mixing transaction anyway.
+>>
+>> The costs are almost completely caused by communication. The computation
+>> overhead is minimal. (This is the main achievement actually. In theory,
+>> it is
+>> clear that a protocol with all the properties can be built. However,
+>> generic
+>> constructions cannot be used in practice yet, because the computation and
+>> communication costs are huge.)
+>>
+>> - Compatibility:
+>> As CoinShuffle works on top of Bitcoin, it is fully compatible with the
+>> current Bitcoin system. No changes to the Bitcoin protocol are required.
+>>
+>>
+>> By the way: The NXT cryptocurrency picked up our idea and an
+>> implementation of
+>> CoinShuffle for a part of NXT is under way. (
+>> https://twitter.com/comefrombeyond/status/485429369268350977 )
+>>
+>>
+>> TL,DR:
+>> Mixing is the way to improve anonymity in Bitcoin now, as it does not
+>> require
+>> changes to the Bitcoin protocol. We propose CoinShuffle, a decentralized
+>> protocol to perform mixing in a secure way without trusted third parties,
+>> see
+>> http://crypsys.mmci.uni-saarland.de/projects/CoinShuffle/ for a technical
+>> overview. Our next step is to implement the protocol. Help in design and
+>> coding would be great but we also would like to hear your comments,
+>> criticism,
+>> and improvements for the protocol itself.
+>>
+>> Best,
+>> Tim Ruffing, Pedro Moreno-Sanchez, Aniket Kate
+>>
+>>
+>> ------------------------------------------------------------------------------
+>> Infragistics Professional
+>> Build stunning WinForms apps today!
+>> Reboot your WinForms applications with our WinForms controls.
+>> Build a bridge from your legacy apps to the future.
+>>
+>> http://pubads.g.doubleclick.net/gampad/clk?id=153845071&iu=/4140/ostg.clktrk
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>
+>>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140811/a7c006fb/attachment.html>
