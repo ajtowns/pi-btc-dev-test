@@ -1,0 +1,71 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 20 Sep 2014 12:24:16 -0400
+Subject: [Bitcoin-development] From block 0 to block 72499 the Merkle
+ root is the same as the coinbase transaction id. Why is that?
+In-Reply-To: <CAGpx8BUav93VTHyaBcuqk+FmsNBrq_ue8L4exfZ1iq8Om_WGiA@mail.gmail.com>
+References: <CAGpx8BUav93VTHyaBcuqk+FmsNBrq_ue8L4exfZ1iq8Om_WGiA@mail.gmail.com>
+Message-ID: <20140920162416.GA28251@muck>
+
+On Sat, Sep 20, 2014 at 08:38:15AM -0700, Peter Grigor wrote:
+> From block 0 to block 72499 the Merkle root is the same as the
+> coinbase transaction id. Why is that?
+
+It's because of how the merkle tree algorithm works:
+
+    uint256 CBlock::BuildMerkleTree() const
+    {
+        vMerkleTree.clear();
+
+So here all the txids are pushed onto the vMerkleTree vector:
+
+        BOOST_FOREACH(const CTransaction& tx, vtx)
+            vMerkleTree.push_back(tx.GetHash());
+
+For most of the early blocks there's just the coinbase transaction and
+no other transactions.
+
+        int j = 0;
+        for (int nSize = vtx.size(); nSize > 1; nSize = (nSize + 1) / 2)
+
+That means this for loop never executes! nSize = vtx.size() == 1, and
+the loop terminates when nSize <= 1
+
+        {
+            for (int i = 0; i < nSize; i += 2)
+            {
+                int i2 = std::min(i+1, nSize-1);
+                vMerkleTree.push_back(Hash(BEGIN(vMerkleTree[j+i]),  END(vMerkleTree[j+i]),
+                                           BEGIN(vMerkleTree[j+i2]), END(vMerkleTree[j+i2])));
+            }
+            j += nSize;
+        }
+        return (vMerkleTree.empty() ? 0 : vMerkleTree.back());
+    }
+
+Thus the vMerkleTree still has only the coinbase txid in it, and and
+vMerkleTree.back() returns that txid as the merkle root. There's no
+problem with the merkle root algorithm working that way - to make a long
+story short all this means is that the merkle tree algorithm
+consistently uses the txid as the merkle root whenever there is only one
+transaction. The contents of the block is still being securely committed
+to by the merkleroot, which is the important thing, and there's no way
+to lie about those contents.
+
+There is however a serious flaw in the algorithm, unrelated to the case
+of a single transaction, where the merkle tree is indistinguishable from
+a merkle tree with duplicate txids if there are a non-power-of-two
+number of items in the tree. For bitcoin we fixed this flaw with BIP30
+and BIP34; for any other application you should *never* use the Satoshi
+merkle root calculation code. Get it right on day one and do things
+correctly.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000fbf83c9e14d8711e4b2264ceda0d1d06d169c811387eadd
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140920/956a305a/attachment.sig>
