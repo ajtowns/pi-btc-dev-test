@@ -1,0 +1,75 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 27 Sep 2014 15:39:23 -0400
+Subject: [Bitcoin-development] [ann] Bitcoin Core 0.9.3 has been released
+In-Reply-To: <CAKaEYhLf9Qn6jdwCp0757sr+7NtSXg+=onXpfZZMSUhbyGU0cw@mail.gmail.com>
+References: <CA+s+GJDURMKKYJgcO6q8HhpzX+x0VVX7qk-9U4EZeOWbX0PDyw@mail.gmail.com>
+	<CAKaEYhLf9Qn6jdwCp0757sr+7NtSXg+=onXpfZZMSUhbyGU0cw@mail.gmail.com>
+Message-ID: <20140927193923.GA5551@savin.petertodd.org>
+
+On Sat, Sep 27, 2014 at 09:32:02PM +0200, Melvin Carvalho wrote:
+> > As well as everyone that helped translating on
+> > [Transifex](https://www.transifex.com/projects/p/bitcoin/).
+> >
+> 
+> Great work!
+> 
+> Apologies if this has been covered.  But I was curious about:
+> 
+> - Increase IsStandard() scriptSig length
+> 
+> Is there some place I read more to understand this change?
+
+commit 84fe0ffd685627689bbbcd14cf419938f2a100b2
+Author: Peter Todd <pete at petertodd.org>
+Date:   Mon Mar 10 16:38:44 2014 -0400
+
+    Increase IsStandard() scriptSig length
+
+    Removes the limits on number of pubkeys for P2SH CHECKMULTISIG outputs.
+    Previously with the 500 byte scriptSig limit there were odd restrictions
+    where even a 1-of-12 P2SH could be spent in a standard transaction(1),
+    yet multisig scriptPubKey's requiring more signatures quickly ran out of
+    scriptSig space.
+
+    From a "stuff-data-in-the-blockchain" point of view not much has changed
+    as with the prior commit now only allowing the dummy value to be null
+    the newly allowed scriptSig space can only be used for signatures. In
+    any case, just using more outputs is trivial and doesn't cost much.
+
+    1) See 779b519480d8c5346de6e635119c7ee772e97ec872240c45e558f582a37b4b73
+       Mined by BTC Guild.
+
+diff --git a/src/main.cpp b/src/main.cpp
+index a0b6842..63b87b8 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -513,10 +513,14 @@ bool IsStandardTx(const CTransaction& tx, string& reason)
+
+     BOOST_FOREACH(const CTxIn& txin, tx.vin)
+     {
+-        // Biggest 'standard' txin is a 3-signature 3-of-3 CHECKMULTISIG
+-        // pay-to-script-hash, which is 3 ~80-byte signatures, 3
+-        // ~65-byte public keys, plus a few script ops.
+-        if (txin.scriptSig.size() > 500) {
++        // Biggest 'standard' txin is a 15-of-15 P2SH multisig with compressed
++        // keys. (remember the 520 byte limit on redeemScript size) That works
++        // out to a (15*(33+1))+3=513 byte redeemScript, 513+1+15*(73+1)=1624
++        // bytes of scriptSig, which we round off to 1650 bytes for some minor
++        // future-proofing. That's also enough to spend a 20-of-20
++        // CHECKMULTISIG scriptPubKey, though such a scriptPubKey is not
++        // considered standard)
++        if (txin.scriptSig.size() > 1650) {
+             reason = "scriptsig-size";
+             return false;
+         }
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000000188beaebec22c62bcff1a5d92e5d21432e797ec717cfed3a
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140927/533f0890/attachment.sig>
