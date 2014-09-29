@@ -1,0 +1,78 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 29 Sep 2014 01:35:26 -0400
+Subject: [Bitcoin-development] New opcodes and transaction version
+ numbers (was 'relax the IsStandard rules for P2SH transactions')
+In-Reply-To: <5428E053.7070601@gmail.com>
+References: <CABsx9T2+_tLOPELm+K54D=6SNkHg1ZeO_T1jSM=CQZYJKGODFw@mail.gmail.com>
+	<20140618001503.GA8360@savin>
+	<CABsx9T2O42pER0b1v9oeU14_K=KVWVqHzcfFmWAhSxoYAn12vg@mail.gmail.com>
+	<20140619100909.GA3544@savin>
+	<CABsx9T1uC9sMzbPJa4MGpBNoQ4S255Tfo66+wwCoND_bQtvT7Q@mail.gmail.com>
+	<20140929023553.GA11877@savin.petertodd.org>
+	<5428E053.7070601@gmail.com>
+Message-ID: <20140929053526.GA21446@savin.petertodd.org>
+
+On Mon, Sep 29, 2014 at 12:30:11AM -0400, Alan Reiner wrote:
+> On 09/28/2014 10:35 PM, Peter Todd wrote:
+> > This can be solved by upgrading the address format at
+> > the same time to let senders know they must send the funds in a
+> > transaction with an increased version number, but obviously needing new
+> > addresses for every new opcode defeats the purpose of P2SH.
+> 
+> Can't this be solved with a single update to the address format,
+> allowing a tx version number to be part of the address serialization? 
+> Then the sending software will apply that version to the payment tx.   
+> Of course, I'm not sure if allowing nodes to create transactions with
+> version numbers outside of their programming is safe.  It seems like it
+> should be since we're talking about soft forks anyway, but there's
+> probably some subtleties I'm overlooking.
+
+Keep in mind that when a *wallet* - not a node - creates a transaction
+the scriptPubKeys in the transaction outputs have been specified by the
+receiver(s) and aren't executed until they are spent. Modulo sigops(1)
+there is absolutely no reason why the wallet should care what the
+contents of those scriptPubKeys are at all.
+
+This is particularly apparent when you remember that there may be
+multiple recipients of a transaction. If I'm paying Alice and Bob, who
+have specified that they want the transaction to have version number 2
+and 3 respectively, now what? Do we take the highest of the two and
+constrain ourselves for how scripts are interpreted for all eternity? It
+just doesn't make very much sense.
+
+Meanwhile the man-hours of effort that would be required to implement
+that "one-time" address format change is huge - it took literally years
+for everyone to update their software to just support P2SH addresses.
+I'm working on a CHECKLOCKTIMEVERIFY implementation right now, and know
+of exchanges who would like to use it ASAP. Why make them wait years for
+everyone to upgrade?
+
+On that basis alone I think the question ought to be why should we use
+transaction version numbers to enable new opcodes rather than just
+enabling them globally based on block version numbers.
+
+
+1) Satoshi implemented a per-block sigop limit to prevent blocks from
+causing an unreasonable number of signature checking operations, but
+rather than computing that limit based on the scripts actually executed,
+the limit is computed based on the contents of all scriptSigs and
+scriptPubKeys in the block. This is bizzare given that the contents of
+the latter are *not* executed, and the former misses the prevout
+scriptPubKeys that *are* executed. In short this means you can create a
+block that passes the sigop limit, yet executes millions of expensive
+signature operations by being filled with scriptSigs spending txouts
+with large numbers of sigops in their scriptPubKeys. P2SH improves on
+this situation somewhat by counting the sigops in redeemScripts towards
+the limit, but missed the opportunity to just count all sigops in all
+scriptSigs directly.
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000000092e056ab9c5a3242bfa911ba9a0a8a3836bcd4b5fcab2f8
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140929/8fd41a18/attachment.sig>
