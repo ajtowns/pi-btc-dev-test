@@ -1,0 +1,89 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sun, 28 Sep 2014 22:35:53 -0400
+Subject: [Bitcoin-development] New opcodes and transaction version numbers
+ (was 'relax the IsStandard rules for P2SH transactions')
+In-Reply-To: <CABsx9T1uC9sMzbPJa4MGpBNoQ4S255Tfo66+wwCoND_bQtvT7Q@mail.gmail.com>
+References: <CABsx9T2+_tLOPELm+K54D=6SNkHg1ZeO_T1jSM=CQZYJKGODFw@mail.gmail.com>
+	<20140618001503.GA8360@savin>
+	<CABsx9T2O42pER0b1v9oeU14_K=KVWVqHzcfFmWAhSxoYAn12vg@mail.gmail.com>
+	<20140619100909.GA3544@savin>
+	<CABsx9T1uC9sMzbPJa4MGpBNoQ4S255Tfo66+wwCoND_bQtvT7Q@mail.gmail.com>
+Message-ID: <20140929023553.GA11877@savin.petertodd.org>
+
+On Thu, Jun 19, 2014 at 09:54:31AM -0400, Gavin Andresen wrote:
+> RE: soft-forks bumping version numbers:
+> 
+> Yes, we have consensus that is the way we will do it.  I should probably
+> turn https://gist.github.com/gavinandresen/2355445 into an informational
+> BIP.
+
+That gist is mistaken. To see the problem consider the "re-define
+OP_NOP1 to be OP_Q_CHECKSIGVERIFY" example. It says "Transactions that
+use the new opcode are given a new version number." The problem is in
+the definition of "use"
+
+Lets first suppose that the evaluation of a scriptPubKey was done
+according to the transaction version # of the transaction creating the
+scriptPubKey. This is technically feasible as the UTXO set records the
+version of the transaction creating the txout. However if I create a
+P2SH address whose redeemScript makes use of a new opcode - say the new
+OP_Q_CHECKSIGVERIFY - non-upgraded clients sending funds to that address
+will be creating scriptPubKeys whose contents can be spent by anyone.
+Not exactly ideal! This can be solved by upgrading the address format at
+the same time to let senders know they must send the funds in a
+transaction with an increased version number, but obviously needing new
+addresses for every new opcode defeats the purpose of P2SH.
+
+On the other hand suppose scriptPubKey evaluation is done according to
+the version of the transaction spending the scriptPubKey. This is
+insecure as now transaction outputs using the new opcode can be
+trivially spent by just spending them in a transaction with the previous
+version number; the OP_Q_CHECKSIGVERIFY is evaluated as OP_NOP and
+checks nothing.
+
+If txouts be spent only by transactions with nVersion >= the nVersion of
+the transaction spending them, but again you're forced to upgrade the
+address format for every new opcode. Interestingly this shows that the
+common assertion that "P2SH should have been done by upgrading the tx
+version #" is in fact wrong except for the fact that P2SH required an
+address format upgrade anyway; doing that for future opcode upgrades
+would be a mistake.
+
+With the above in mind the "Relax IsStandard rules for P2SH
+transactions" pull-req(1) is incomplete as it doesn't blacklist usage of
+the upgradable NOPx opcodes. After a future soft-fork redefining a NOPx
+opcodes' behavior non-upgraded nodes will accept and mine transactions
+that may now be invalid, the latter creating invalid blocks and thus
+false confirmations. I've created a pull-req to fix this issue by
+specifically blacklisting the NOPx opcodes if they are executed:
+
+    https://github.com/bitcoin/bitcoin/pull/5000
+
+Secondly the "Blockchain Rule Update Process" gist above should be
+rewritten to say that new opcodes will be enabled for all scripts by the
+block nVersion upgrade mechanism; scripts must never depend on a NOPx
+opcode being executed least they be rendered unspendable by a future
+upgrade.
+
+By comparison BIP62 proposes that the transaction version # be increased
+to indicate that the sender wants anti-malleability rules to be applied.
+This is an appropriate usage of tx version numbers as in this case the
+person creating the transaction wants the anti-malleability rules
+applied; the creator of the scriptPubKey's being spent does not care
+whether or not they are spent in a transaction that is or is not
+malleable. Equally the new owners of the txouts being created don't in
+general care how they were created. (modulo certain special-purpose
+protocols where they would have the transaction anyway)
+
+1) https://github.com/bitcoin/bitcoin/pull/4365
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000005ec432fd4c506119a0123a028911fa3981bcde0568b66ab
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20140928/36647802/attachment.sig>
