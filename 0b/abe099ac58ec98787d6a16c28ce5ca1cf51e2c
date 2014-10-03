@@ -1,0 +1,56 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Fri, 3 Oct 2014 22:58:28 +0200
+Subject: [Bitcoin-development] [BIP draft] CHECKLOCKTIMEVERIFY - Prevent
+ a txout from being spent until an expiration time
+In-Reply-To: <201410031750.27323.luke@dashjr.org>
+References: <20141001130826.GM28710@savin.petertodd.org>
+	<CABbpET8_FMCcnh0dELnHsYmF+YP05Gz=nZ3SPkLZuqXYV3JUpQ@mail.gmail.com>
+	<1987325.zKPNeYyO8K@crushinator>
+	<201410031750.27323.luke@dashjr.org>
+Message-ID: <CANEZrP1eGi-AHgciQiKUuUB7WwqKsMOyTjCQAAO=RWEkPC2Uiw@mail.gmail.com>
+
+Alright. It seems there's no real disagreement about how the opcode
+behaves. Perhaps a time limit would be appropriate to stop people creating
+outputs locked for 100 years .... is bitcoin even likely to exist in 100
+years? The entire history of computing is not even that old, seems hard to
+imagine that it'd be good for anything beyond wasting space in the
+database. But this is a minor point.
+
+So I guess it's time to start the deployment discussion.
+
+Bitcoin is a consensus system. It works best when everyone is following
+exactly the same rules at the same time. A soft fork works against this
+principle by allowing nodes to think they're following the majority
+ruleset, even if they aren't, effectively downgrading them to something a
+bit like SPV security without them realising.
+
+A hard fork has multiple desirable properties. Most importantly, it means a
+node can detect it's no longer in the consensus because it'll find its own
+chain height has diverged significantly from its peers. Core already has
+code that knows how to detect this condition and log errors about it as
+well as running the alertnotify script i.e. emailing the admin. Ideally it
+would also stop serving work so miners shut down or fail over, but this is
+easily added to the CheckForkWarningConditions() function.
+
+In other words, this gives the cleanest failure we can give, such that any
+procedures a node operator has put in place to alert them of divergence
+will be triggered.  Any code which is waiting for confirmations will wait
+forever at this point, thus minimising the risk of loss.
+
+Additionally, forcing old peers to fall behind means SPV clients will pick
+the right chain, and not end up downloading transactions or blocks that are
+about to be doomed at the next re-org. They can easily choose to ignore
+transactions relayed by peers that are too far behind and thus not end up
+accepting transactions that are no longer valid according to the majority
+(a scenario which can cause monetary loss).
+
+I don't think hard forks should be scary. Mechanisms are in place to warn
+people and they can be scheduled with plenty of time in advance. The main
+stated justification for a soft fork is backwards compatibility, but in a
+system like Bitcoin you really don't want to be running behind the
+consensus and it's hard to imagine any node operator deliberately choosing
+to stay on the wrong side of the fork. It's not like other software where
+people can choose to skip an upgrade and things still work just like before.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141003/328db159/attachment.html>
