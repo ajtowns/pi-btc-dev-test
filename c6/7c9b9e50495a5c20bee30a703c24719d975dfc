@@ -1,0 +1,69 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Sat, 11 Oct 2014 16:34:15 -0700
+Subject: [Bitcoin-development] Request for review/testing: headers-first
+	synchronization in Bitcoin Core
+Message-ID: <CAPg+sBjG86ZYKZZXA4VCMiFhz0sdxr_so41Zr+DATOXyRa9_Jw@mail.gmail.com>
+
+Hi all,
+
+I believe that a large change that I've been working on for Bitcoin
+Core is ready for review and testing: headers-first synchronization.
+In short, it changes the way the best chain is discovered, downloaded
+and verified, with several advantages:
+* Parallel block downloading (much faster sync on typical network connections).
+* No more stalled downloads.
+* Much more robust against unresponsive or slow peers.
+* Removes a class of DoS attacks related to peers feeding you
+low-difficulty valid large blocks on a side branch.
+* Reduces the need for checkpoints in the code.
+* No orphan blocks stored in memory anymore (reducing memory usage during sync).
+* A major step step towards an SPV mode using the reference codebase.
+
+Historically, this mode of operation has been known for years (Greg
+Maxwell wrote up a description of a very similar method in
+https://en.bitcoin.it/wiki/User:Gmaxwell/Reverse_header-fetching_sync
+in early 2012, but it was known before that), but it took a long time
+to refactor these code enough to support it.
+
+Technically, it works by replacing the single-peer blocks download by
+a single-peer headers download (which typically takes seconds/minutes)
+and verification, and simultaneously fetching blocks along the best
+known headers chain from all peers that are known to have the relevant
+blocks. Downloading is constrained to a moving window to avoid
+unbounded unordering of blocks on disk (which would interfere with
+pruning later).
+
+At the protocol level, it increases the minimally supported version
+for peers to 31800 (corresponding to bitcoin v3.18, released in
+december 2010), as earlier versions did not support the getheaders P2P
+message.
+
+So, the code is available as a github pull request
+(https://github.com/bitcoin/bitcoin/pull/4468), or packaged on
+http://bitcoin.sipa.be/builds/headersfirst, where you can also find
+binaries to test with.
+
+Known issues:
+* At the very start of the sync, especially before all headers are
+processed, downloading is very slow due to a limited number of blocks
+that are requested per peer simultaneously. The policies around this
+will need some experimentation can certainly be improved.
+* Blocks will be stored on disk out of order (in the order they are
+received, really), which makes it incompatible with some tools or
+other programs. Reindexing using earlier versions will also not work
+anymore as a result of this.
+* The block index database will now hold headers for which no block is
+stored on disk, which earlier versions won't support. If you are fully
+synced, it may still be possible to go back to an earlier version.
+
+Unknown issues:
+* Who knows, maybe it will replace your familiy pictures with Nyan
+Cat? Use at your own risk.
+
+TL;DR: Review/test https://github.com/bitcoin/bitcoin/pull/4468 or
+http://bitcoin.sipa.be/builds/headersfirst.
+
+-- 
+Pieter
+
+
