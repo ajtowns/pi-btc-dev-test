@@ -1,0 +1,125 @@
+From: 21xe14@gmail.com (21E14)
+Date: Mon, 13 Oct 2014 22:43:35 +0000
+Subject: [Bitcoin-development] Request for review/testing: headers-first
+ synchronization in Bitcoin Core
+In-Reply-To: <543AD2C2.3010309@gmail.com>
+References: <CAPg+sBjG86ZYKZZXA4VCMiFhz0sdxr_so41Zr+DATOXyRa9_Jw@mail.gmail.com>
+	<543AD2C2.3010309@gmail.com>
+Message-ID: <CAFZQHkGDjxFW3yCZe4PauicgV-ic7X3_GcKn+uQCkNQgAsw8Xw@mail.gmail.com>
+
+When forgoing bootstrapping due to disk space constraints, you, and the
+network, are likely better off -reindex-ing from current blk000??.dat files.
+
+Which brings up an interesting point: The improvements related to the
+headers first approach are likely to increase, how ever marginally, the
+percentage of block exchange-related traffic, as it is less painful now to
+be catching up.
+
+It'd be interesting to see the statistics, not from a single node
+perspective, but from the viewpoint of an Internet backbone provider, say
+through the cables coming ashore in Cornwall. For the incurred bandwidth
+expense would invariably trickle down to transaction fees in an equilibrium
+model.
+
+There is an opportunity somewhere in this.
+
+
+On Sun, Oct 12, 2014 at 7:13 PM, Jameson Lopp <jameson.lopp at gmail.com>
+wrote:
+
+> Great work, Pieter. I've been spooling up several nodes per week lately
+> and can testify that stalled downloads during initial syncing are a pain. I
+> usually forgo bootstrapping on VPSes because I don't want to have to adjust
+> the disk space allocation.
+>
+> With headers-first I'm saturating my home cable connection with download
+> rates of 4 MB/s until block 295,000 at which point CPU becomes the
+> bottleneck and it settles down in the 1 MB/s range.
+>
+> It took 6 minutes for my node to sync to block height 100,000
+> 22 minutes to reach height 200,000
+> 62 minutes to reach height 250,000
+> 125 minutes to reach height 295,000
+> 144 minutes to reach height 300,000
+> 248 minutes to reach height 325,000
+>
+> - Jameson
+>
+> On 10/11/2014 07:34 PM, Pieter Wuille wrote:
+> > Hi all,
+> >
+> > I believe that a large change that I've been working on for Bitcoin
+> > Core is ready for review and testing: headers-first synchronization.
+> > In short, it changes the way the best chain is discovered, downloaded
+> > and verified, with several advantages:
+> > * Parallel block downloading (much faster sync on typical network
+> connections).
+> > * No more stalled downloads.
+> > * Much more robust against unresponsive or slow peers.
+> > * Removes a class of DoS attacks related to peers feeding you
+> > low-difficulty valid large blocks on a side branch.
+> > * Reduces the need for checkpoints in the code.
+> > * No orphan blocks stored in memory anymore (reducing memory usage
+> during sync).
+> > * A major step step towards an SPV mode using the reference codebase.
+> >
+> > Historically, this mode of operation has been known for years (Greg
+> > Maxwell wrote up a description of a very similar method in
+> > https://en.bitcoin.it/wiki/User:Gmaxwell/Reverse_header-fetching_sync
+> > in early 2012, but it was known before that), but it took a long time
+> > to refactor these code enough to support it.
+> >
+> > Technically, it works by replacing the single-peer blocks download by
+> > a single-peer headers download (which typically takes seconds/minutes)
+> > and verification, and simultaneously fetching blocks along the best
+> > known headers chain from all peers that are known to have the relevant
+> > blocks. Downloading is constrained to a moving window to avoid
+> > unbounded unordering of blocks on disk (which would interfere with
+> > pruning later).
+> >
+> > At the protocol level, it increases the minimally supported version
+> > for peers to 31800 (corresponding to bitcoin v3.18, released in
+> > december 2010), as earlier versions did not support the getheaders P2P
+> > message.
+> >
+> > So, the code is available as a github pull request
+> > (https://github.com/bitcoin/bitcoin/pull/4468), or packaged on
+> > http://bitcoin.sipa.be/builds/headersfirst, where you can also find
+> > binaries to test with.
+> >
+> > Known issues:
+> > * At the very start of the sync, especially before all headers are
+> > processed, downloading is very slow due to a limited number of blocks
+> > that are requested per peer simultaneously. The policies around this
+> > will need some experimentation can certainly be improved.
+> > * Blocks will be stored on disk out of order (in the order they are
+> > received, really), which makes it incompatible with some tools or
+> > other programs. Reindexing using earlier versions will also not work
+> > anymore as a result of this.
+> > * The block index database will now hold headers for which no block is
+> > stored on disk, which earlier versions won't support. If you are fully
+> > synced, it may still be possible to go back to an earlier version.
+> >
+> > Unknown issues:
+> > * Who knows, maybe it will replace your familiy pictures with Nyan
+> > Cat? Use at your own risk.
+> >
+> > TL;DR: Review/test https://github.com/bitcoin/bitcoin/pull/4468 or
+> > http://bitcoin.sipa.be/builds/headersfirst.
+> >
+>
+>
+> ------------------------------------------------------------------------------
+> Meet PCI DSS 3.0 Compliance Requirements with EventLog Analyzer
+> Achieve PCI DSS 3.0 Compliant Status with Out-of-the-box PCI DSS Reports
+> Are you Audit-Ready for PCI DSS 3.0 Compliance? Download White paper
+> Comply to PCI DSS 3.0 Requirement 10 and 11.5 with EventLog Analyzer
+> http://p.sf.net/sfu/Zoho
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141013/7e538cbd/attachment.html>
