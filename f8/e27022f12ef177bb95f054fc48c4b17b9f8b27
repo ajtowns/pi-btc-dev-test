@@ -1,0 +1,67 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 14 Oct 2014 11:54:36 -0700
+Subject: [Bitcoin-development] Malleable booleans
+In-Reply-To: <20141014080905.GA10545@savin.petertodd.org>
+References: <CAPg+sBjbeAaTmEvqrHHU4Mb45VPyRvFxdRzz1S6+-t7ep20ZtQ@mail.gmail.com>
+	<20141014080905.GA10545@savin.petertodd.org>
+Message-ID: <CAPg+sBh4r8CzdOZ_nfJpq_7W07-e0bP7Subnxpsm=29tzKK0OQ@mail.gmail.com>
+
+To be clear: I indeed meant to only allow 0 and 1 as booleans (or,
+more precisely: [] and [0x01]). Evaluating any stack element as a
+boolean that is not any of these would result in script failure.
+
+The only places where this is relevant:
+* Inputs to OP_IF and OP_NOTIF (which are currently allowed to be any
+byte array).
+* Inputs to OP_BOOLAND and OP_BOOLOR (which are currently allowed to
+be any valid number).
+* The resulting final element on the stack for validity.
+
+The code for converting stack elements to booleans is also invoked for
+all OP_*VERIFY operators, but for those it is always the output of a
+previous operator, so it will not have any semantic impact.
+
+On Tue, Oct 14, 2014 at 1:09 AM, Peter Todd <pete at petertodd.org> wrote:
+> I noticed this awhile back myself. More interestingly, I remember
+> noticing some non-std scripts on mainnet that had opcodes that appeared
+> to be attempts to solve this issue with variations of the following:
+>
+>     DUP
+>     IF
+>         1 EQUALVERIFY
+>         <do stuff>
+>     ELSE
+>         0 EQUALVERIFY
+>         <do stuff>
+>     ENDIFo.
+>
+> I'll have to admit, I decided to keep quiet about it because it's a good
+> example of how relying on BIP62 for specialty contract applications that
+> absolutely need to avoid malleability for security reasons is a dubious
+> idea; it's hard to be sure that we've really gotten every relevant case
+> correct.
+
+I think my goal is to have the property that for every possible
+script, there is an equivalent one that is non-malleable. There are
+likely still holes in that idea, but at least for just standard
+scripts I think BIP62 (as is) covers this. And as your example points
+out (Greg and I discussed this, though we didn't come up with such a
+concise one), it is already possible for boolean inputs too.
+
+> I think a decent argument *for* doing this is that if a script author
+> fails to properly 'bool-ize' every boolean-using path that can have
+> non-minimal encodings in normal execution, you can always create a
+> nVersion=1 transaction manually to spend the output, preventing funds
+> from getting lost. Meanwhile in the general case of a compenent script
+> author having the canonical bool testing in every boolean-using opcode
+> saves a lot of bytes.
+
+The real question is whether there are use cases for not having this
+requirement. I can't come up with any, as that would imply a boolean
+that is also interpretable as a hash, a pubkey or a signature - all of
+which seems crpytographically impossible to ever result in false.
+
+-- 
+Pieter
+
+
