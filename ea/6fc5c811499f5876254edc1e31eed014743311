@@ -1,0 +1,66 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 14 Oct 2014 04:09:05 -0400
+Subject: [Bitcoin-development] Malleable booleans
+In-Reply-To: <CAPg+sBjbeAaTmEvqrHHU4Mb45VPyRvFxdRzz1S6+-t7ep20ZtQ@mail.gmail.com>
+References: <CAPg+sBjbeAaTmEvqrHHU4Mb45VPyRvFxdRzz1S6+-t7ep20ZtQ@mail.gmail.com>
+Message-ID: <20141014080905.GA10545@savin.petertodd.org>
+
+On Mon, Oct 13, 2014 at 07:34:16PM -0700, Pieter Wuille wrote:
+> Hi all,
+> 
+> while working on a BIP62 implementation I discovered yet another type
+> of malleability: the interpretation of booleans.
+> 
+> Any byte array with non-zero bytes in it (ignoring the highest bit of
+> the last byte, which is the sign bit when interpreting as a number) is
+> interpreted as true, anything else as false. Other than numbers,
+> they're not even restricted to 4 bytes. Worse, the code for dealing
+> with booleans is not very consistent: OP_BOOLAND and OP_BOOLOR first
+> interpret their arguments as numbers, and then compare them to 0 to
+> turn them into boolean values.
+> 
+> This means that scripts that use booleans as inputs will be inherently
+> malleable. Given that that seems actually useful (passing in booleans
+> to guide some OP_IF's during execution of several alternatives), I
+> would like to change BIP62 to also state that interpreted booleans
+> must be of minimal encoded size (in addition to numbers).
+> 
+> Any opinions for or against?
+
+I noticed this awhile back myself. More interestingly, I remember
+noticing some non-std scripts on mainnet that had opcodes that appeared
+to be attempts to solve this issue with variations of the following:
+
+    DUP
+    IF
+        1 EQUALVERIFY
+        <do stuff>
+    ELSE
+        0 EQUALVERIFY
+        <do stuff>
+    ENDIF
+
+I'll have to admit, I decided to keep quiet about it because it's a good
+example of how relying on BIP62 for specialty contract applications that
+absolutely need to avoid malleability for security reasons is a dubious
+idea; it's hard to be sure that we've really gotten every relevant case
+correct.
+
+I think a decent argument *for* doing this is that if a script author
+fails to properly 'bool-ize' every boolean-using path that can have
+non-minimal encodings in normal execution, you can always create a
+nVersion=1 transaction manually to spend the output, preventing funds
+from getting lost. Meanwhile in the general case of a compenent script
+author having the canonical bool testing in every boolean-using opcode
+saves a lot of bytes.
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000000147fe2005d7d4490938a7ab96901b8256dcd9d4eac78cb8c
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141014/512de704/attachment.sig>
