@@ -1,0 +1,157 @@
+From: info@AndySchroder.com (Andy Schroder)
+Date: Fri, 17 Oct 2014 15:58:48 -0400
+Subject: [Bitcoin-development] Two Proposed BIPs - Bluetooth Communication
+ and bitcoin: URI Scheme Improvements
+Message-ID: <544174F8.1050208@AndySchroder.com>
+
+Hello,
+
+I'd like to introduce two proposed BIPs. They are primarily focused on 
+implementing the payment protocol using bluetooth connections. I've been 
+working on automated point of sale devices and bluetooth communication 
+is critical in my mind due to the potential lack of internet access at 
+many points of sale, either due to lack of cellular internet coverage, 
+lack of payee providing wireless internet, and/or due to financial 
+constraints of the payer prohibiting them from maintaining a cellular 
+internet service plan. These BIPs are largely modeled after the current 
+functionality of Andreas Schildbach's android Bitcoin Wallet's bluetooth 
+capability. I've discussed the communication scheme with him in depth 
+and believe these proposals to clearly and accurately represent the 
+communication scheme.
+
+There is also an additional &h= parameter added to the bitcoin: URI 
+scheme which applies to both bluetooth and http payment protocol 
+requests which allows for a hash of the payment request to be included. 
+This hash was proposed by Andreas as an amendment to BIP72, but others 
+preferred not to amend BIP72 since it has already been put into place. 
+The current version of Schildbach's bitcoin wallet already supports the 
+"h parameter".
+
+I'd appreciate feedback from everyone, particularly wallet developers as 
+widespread bluetooth support among wallets is very important to me. I'm 
+also very new to this mailing list as well as the BIP writing process, 
+so I'd appreciate your understanding if my conventions are not standard. 
+I am currently using the naming conventions "TBIP", so that I can 
+propose /temporary/ BIP numbers, and cross reference between the two. 
+Obviously these will change if the BIPs are formally adopted. You can 
+find a copy of these proposed BIPs at the following links:
+
+  * https://github.com/AndySchroder/bips/blob/master/tbip-0074.mediawiki
+  * https://github.com/AndySchroder/bips/blob/master/tbip-0075.mediawiki
+
+
+If you are interested, you can see a demonstration of many of the 
+proposed features using Schildbach's wallet and my fuel pump in a video 
+I recently created: https://youtu.be/kkVAhA75k1Y . The main thing not 
+implemented is multiple URLs for the payment protocol, so, as a hack, 
+I'm just presenting https vi QR code and bluetooth via NFC on my fuel 
+pump for now.
+
+
+
+There are a few known issues that could be improved to this bluetooth 
+communication scheme as well as the general payment protocol and myself 
+and Andreas would like to receive feedback regarding concerns and 
+potential solutions. Some of the known issues are:
+
+  * There may seem to be some inconsistency in the connection header
+    messages between the payment request connection and the payment
+    connection. This is largely because it is how Andreas originally
+    implemented the communication and is hesitant to change it since
+    there are many instances of is software already deployed that
+    implement this scheme.
+  * The current method uses an unauthenticated bluetooth connection for
+    bluetooth 2.1 and newer devices (subject to man in the middle
+    attacks, but not passive eavesdroppers), and an unsecure and
+    unauthenticated connection for older devices. The known concerns
+    here are that someone within 100 meters of the payer could track the
+    bitcoin addresses used for the transaction and could possibly
+    replace the refund address by submitting a forged payment message to
+    the payee. Requiring bluetooth 2.1 and authenticating the connection
+    out of band unfortunately don't seem to be as straightforward/simple
+    of a task with most bluetooth libraries (although I'd love for
+    someone to prove me wrong). It's possible this communication scheme
+    could be extended to use an https "like" protocol that would not
+    care if the underlying bluetooth connection is authenticated or
+    encrypted. It's actually possible that http over a bluetooth socket
+    (instead of tcp socket) could be implemented, however it is
+    presently uncertain whether this would be too slow, too much
+    overhead (both on the devices software and communication), or if
+    http could easily be run over bluetooth sockets on all platforms.
+  * There is no acknowledgement failure message possible in the payment
+    protocol, only an acknowledgement message or lack of acknowledgement
+    message. This issue seems to be a concern and as a result, the memo
+    field is used to send an "ack" or "nack" in Schildbach's wallet. Can
+    we add a boolean status field to the payment acknowledgement message?
+  * I'd personally like a new optional boolean field added to the
+    "PaymentDetails" portion of the "PaymentRequest" to allow for the
+    payer's wallet to match the "Output" optional "amount" fields as a
+    total amount of all Outputs, rather than requiring the amount for
+    each output to be matched exactly. As it currently is, the payee can
+    specify multiple receiving addresses in order to require a payer
+    split up the payments so that when the payee then goes to spend the
+    funds later, they don't necessarily have to give their payees as
+    much knowledge of their balances and spending and receiving habits
+    and sources. As the payment protocol currently is requiring all
+    output amounts to be matched exactly for each output, there is no
+    flexibility given to the payer in order to reduce a merging or
+    unnecessary diverging of account funds, which can reduce the privacy
+    of both the payer and the payee. If the payee were given the option
+    to allow the payer the option to divide the amounts amount the
+    outputs intelligently, there can be some privacy gained.
+  * Amount of data stored in QR codes may be getting large when a
+    backwards compatible URL is used (for wallets that don't support the
+    payment protocol) and can be difficult to scan with outdoor screens
+    that have an extra weather resistant pane when in direct sunlight.
+  * The number of offline transactions of a wallet is limited to the
+    known unspent outputs when they go offline. Long term, I'd like to
+    see wallet devices that can use systems such as Kryptoradio's DVB-T
+    based broadcast (but this will need yet another radio!). Another
+    project may be to develop a blockchain query protocol of some kind
+    where retailers can provide access to blockchain data so that
+    customer's wallets can update their known unspent outputs via
+    bluetooth. It's possible such a bluetooth system could be used in
+    combination of "Kryptoradio" like broadcasts to provide multiple
+    blockchain references.
+  * The additional payment_url approach is a bit sloppy of a solution in
+    the PaymentDetails portion of the PaymentRequest. It would have been
+    ideal to just change this from an optional field to a repeated
+    field, however, the backwards compatibility in the protocol buffer
+    format will provide the last item in the array for a repeated field
+    (to a code that expects it to be an optional field), rather than the
+    first. Because of this, backwards compatibility with https payment
+    requests wouldn't work if the payment_url field is just changed to a
+    repeated field.
+      o Possible alternatives to what is described in the proposed BIP
+          + Change payment_url to a repeated field and then reverse the
+            order of the parameter numbers in the payment_url, compared
+            to the bitcoin URL "r parameter".
+          + Create an additional, new payment_url_multi repeated field
+            (or some better name), and then leave the original
+            payment_url field in there for backwards compatibility (and
+            then maybe phase it out in the future).
+      o Reference
+          + https://developers.google.com/protocol-buffers/docs/proto#updating
+              # "|optional| is compatible with |repeated|. Given
+                serialized data of a repeated field as input, clients
+                that expect this field to be |optional| will take the
+                last input value if it's a primitive type field or merge
+                all input elements if it's a message type field."
+
+
+
+Your comments and suggestions would be greatly appreciated.
+
+-- 
+Andy Schroder
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141017/b6585627/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 555 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141017/b6585627/attachment.sig>
