@@ -1,0 +1,168 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Mon, 20 Oct 2014 18:29:19 +0200
+Subject: [Bitcoin-development] Two Proposed BIPs - Bluetooth
+ Communication and bitcoin: URI Scheme Improvements
+In-Reply-To: <54452648.8040409@AndySchroder.com>
+References: <544174F8.1050208@AndySchroder.com>
+	<CANEZrP33KH1F8GrTDnTP95G1MyxZ+DXWrC6QKBrj61HXv-eg2w@mail.gmail.com>
+	<54452648.8040409@AndySchroder.com>
+Message-ID: <CANEZrP16jex2AtvU0p-daULKW2yUFJNy+7pHNRRm=ZTCiS0dow@mail.gmail.com>
+
+>
+> I'm not a cryptography expert, but why not just wrap the bluetooth
+> connection with SSL and not reimplement ECDH? Is this
+>
+hard to do with android/java?
+>
+
+Not at all, it should be very easy in Java because of how the SSL API is
+designed. I'd worry more about non-Java platforms.
+
+However, SSL is extremely large, old and complicated. We use it on the web
+because of a mix of its feature set and legacy concerns. When discussing
+encrypted connections in the past, there has been a desire to avoid SSL
+because of these issues and do something much simpler and home grown. Of
+course, part of the reason SSL is so convoluted is because cryptography
+evolves over time, and thus it's not 100% clear to me that a simple
+home-rolled crypto link would avoid falling into the same traps as SSL
+eventually.
+
+But, at least for now, it's probably more secure and more robust to not use
+SSL.
+
+
+> This sounds great, but I thought it is not desired to divulge a bitcoin
+> public key until the time of signing a transaction. Isn't that the whole
+> point of having a public key hash and never reusing addresses?
+>
+
+Eh, no. Satoshi originally introduced key hashing simply to make shorter
+and easier to type destinations. Actually he envisioned most payments being
+routed by IP address, where Bitcoin would just connect to the other node
+and request a public key directly. There's no problem with the sender
+knowing the public key of the address included in the URI.
+
+
+> This could be resolved by the payee immediately sending the payment to
+> another address after receiving it, but that is kind of a waste of a
+> transaction. Also, I would love a less PKI dependent way to authenticate a
+> transaction between the two parties, but I was trying to minimize the
+> discussion of general payment protocol modifications in this announcement.
+>
+
+Alternative PKIs would be a topic for another thread, indeed. But I doubt
+you will get anywhere. There are no usable alternatives to the SSL PKI. I
+wrote an article on the topic here, you may find it useful:
+
+https://medium.com/@octskyward/why-you-think-the-pki-sucks-b64cf5912aa7
+
+It summarises why BIP70 uses the PKI.
+
+
+> We can do something like this, I guess. The issue I mentioned about the
+> message headers being inconsistent will have to be fixed though to to do
+> this. However, is anyone even using the HTTP base failure signal (I don't
+> even know what it is)?
+>
+
+It's "Respond with 500 Internal Server Error" pretty much.
+
+Originally the idea of BIP70 was that clients would not broadcast
+transactions. They would submit them to the merchant for broadcast. If the
+merchant didn't like the payment for some reason (e.g. paying with a non
+standard transaction or with lots of dust), they could just return an error.
+
+Unfortunately Bitcoin Core does broadcast transactions simultaneously.
+Additionally, whilst other wallets  did not, one major payment processor
+had a very unreliable BIP70 payment_url endpoint for a while, whilst
+broadcasting a tx via the p2p network was fully functioning. So to work
+around bugs in this one payment processor some other wallets have started
+broadcasting the payment tx simultaneously as well.
+
+This means a receiver cannot meaningfully reject a payment. Some wallets
+will send it anyway, via the p2p network.
+
+
+> and a h= parameter, and Schildbach's wallet does accept the payment request
+>
+
+I suspect it won't work if you leave out the non-standard h= parameter.
+
+WRT the merge avoidance - there's an article here on how it's meant to work:
+
+https://medium.com/@octskyward/merge-avoidance-7f95a386692f
+
+It's totally OK for you to specify the amounts you want to avoid merges in
+your own wallet. The sending wallet could (but none do today) then pay with
+multiple transactions.
+
+Your case is really weird because you aren't actually requesting a specific
+amout of money. I recall that there's some reason for this, from your
+video, but suddenly it escapes me. Because the user scans the payment
+request before pumping?
+
+
+> I don't trust HTTPS for a number of reasons.
+>
+
+I disagree with all your reasons (e.g. there is nothing wrong with
+outsourcing payment processing and it doesn't have to imply the user sees
+an incorrect name), and I believe you should trust the PKI a lot more than
+you do. If you try and build a better replacement, I think you'll discover
+it's a lot harder than you imagine.
+
+Regardless, I am not against an *optional* tighter binding between URI and
+payment request, mostly because it's useful for the cases where signing
+with a cert isn't possible. But the simple/obvious "embed a hash of it in
+the URI" is inefficient, not compatible with the current specs, can make QR
+codes harder to scan, and forces you to format your payment request up
+front rather than generating it on demand.
+
+
+> The primary reason he does not have this in the master branch is because
+> the payment protocol only supports signing of payment requests via PKI, and
+> it is difficult for a user to install a PKI signed certificate on android,
+> just for a single peer to peer use case.
+>
+
+Unsigned requests work OK for the phone to phone case, assuming you aren't
+actually talking to an imposter.
+
+
+> If you are to provide a full fledged wifi connection to the customer,
+> there would then have to be a very sophisticated proxy server that can
+> allow only access to bitcoin nodes, and how to do that would be difficult
+> since every node doesn't know all of the nodes in the network.
+>
+
+You can just allow port 8333 and rewrite port 80, as most wifi hotspots do
+today already.
+
+But my point about this was that all smartphones get internet access from
+time to time. In my own life, I've definitely been in cases where I wanted
+to *pay* with bitcoins but didn't have good internet access at that exact
+moment, e.g. back of a restaurant. I've also been in the situation more
+rarely where I wanted to receive coins from someone in front of me, without
+good internet access, but Bluetooth already addresses that.
+
+I don't recall ever being in a situation where I had no internet access,
+but somehow knew there was a payment waiting for me on the block chain, and
+I needed it right now because it was necessary for me to receive that money
+in order to pay a bill. That's what the dedicated blockchain radio would
+provide, but it seems like a very rare use case.
+
+
+> All this was already known but was not proposed because it does not allow
+> you to use the h= parameter. What do you propose to do instead of the h=
+> parameter, but still allow for a trust anchor with the payee still be
+> maintained?
+>
+
+I think I said already, but maybe am not explaining well. You use the
+address that's already in all backwards compatible URIs. The payment
+details can be additionally signed with the key corresponding to that
+address. Or, that key can be covered by the PKI signature if there is one.
+But dual signing is always possible.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141020/8c413bd8/attachment.html>
