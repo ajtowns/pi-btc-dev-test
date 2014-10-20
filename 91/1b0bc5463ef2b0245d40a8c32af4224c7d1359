@@ -1,0 +1,321 @@
+From: info@AndySchroder.com (Andy Schroder)
+Date: Mon, 20 Oct 2014 11:12:08 -0400
+Subject: [Bitcoin-development] Two Proposed BIPs - Bluetooth
+ Communication and bitcoin: URI Scheme Improvements
+In-Reply-To: <CANEZrP33KH1F8GrTDnTP95G1MyxZ+DXWrC6QKBrj61HXv-eg2w@mail.gmail.com>
+References: <544174F8.1050208@AndySchroder.com>
+	<CANEZrP33KH1F8GrTDnTP95G1MyxZ+DXWrC6QKBrj61HXv-eg2w@mail.gmail.com>
+Message-ID: <54452648.8040409@AndySchroder.com>
+
+Hello Mike,
+
+Thanks for the feedback. I have indicated some replies below...
+
+Andy Schroder
+
+On 10/20/2014 08:50 AM, Mike Hearn wrote:
+> Hey Andy,
+>
+> Thanks for starting this discussion!
+>
+> One thing this brings up is the never-resolved issue of whether BIPs 
+> should document how we'd /like/ things to work, or how things 
+> /actually do/ work. BIP32 is an example of the former - it was new 
+> technology and the spec was finalised before any wallets actually 
+> implemented it. BIP 44 is an example of the latter, it basically 
+> documents how myTREZOR works and as such there was minimal or no scope 
+> for changes to it. Of course both kinds of document are valuable.
+>
+> Currently these specs document how Andreas' app already works. Whilst 
+> preserving compatibility with existing Android apps is surely useful, 
+> having a well designed protocol is also good. The current protocol has 
+> several problems. I don't know which is more important right now and 
+> don't have a strong opinion on that. My gut feeling is that these 
+> documents should possibly be just wiki pages on Andreas' github. Then 
+> if the protocol is brought to a point where it seems pretty good, 
+> maybe it can be BIPped at that point. Alternatively, if developers of 
+> other wallet apps feel they'd like a BIP right now even in the current 
+> state, that would be a very important data point.
+
+
+Whatever you all want to do here is fine with me. I am new to this 
+process, so I have no preference. The payment_url portion is not 
+actually part of "Bitcoin Wallet" yet though.
+
+
+>
+> Re: the actual specs:
+>
+>       * There may seem to be some inconsistency in the connection
+>         header messages
+>
+> IMHO we could live with that. Although Android apps are updatable, 
+> perfect header format is probably not worth the inevitable hassle and 
+> transition period that would result.
+
+That's kind of what Schildbach and I were thinking so it is why we left 
+the proposed spec defined as his app currently functions.
+
+>       * The current method uses an unauthenticated bluetooth
+>         connection for bluetooth 2.1
+>
+> This on the other hand is not excellent. This is actually my fault - 
+> the first Bluetooth support in Bitcoin Wallet for Android was written 
+> by me in a frantic Berlin hackathon over a weekend. We barely got it 
+> working at all by the end, so doing encryption/auth was out of the 
+> question. Then I went back to more important tasks and what got 
+> shipped was a cleaned up/robustified version of that.
+>
+> Re: hash. I'm not a fan of this approach. For one, in future there 
+> might not even BE a uri involved, e.g. consider the Square style UX 
+> where the merchant is broadcasting an endpoint via BLE and the phone 
+> just automagically connects, sees a trusted merchant and pays. Super 
+> slick, we definitely want it - but no URI. Then of course there's the 
+> usual QR code size limitations.
+
+
+"Bitcoin Wallet" currently does a similar thing by submitting a payment 
+request via NFC and skipping the bitcoin URI. This works just fine in 
+conjunction with bitcoin: URI support. I'm not doing it this way on my 
+fuel pump (still submitting a bitcoin: URI), because I don't think any 
+other wallets (other than "Bitcoin Wallet" derivatives) support such a 
+feature and because I'm not sure if signed payment requests can be 
+transmitted over NFC well because the message may be too large when the 
+certificate chain is included.
+
+My point is, you can have both and if you are going to it doesn't hurt 
+to include the h= parameter for cases when a bitcoin: URI will still be 
+used.
+
+
+>
+> Encrypting/authing the connection at the app layer does not have to be 
+> difficult. What we really need/want, is a simple lightweight library 
+> that does an ECDH key agreement using secp256k1, and then does 
+> AES+HMAC on framed messages. Such a protocol would be useful not only 
+> for this use case, but perhaps for encrypting/authing the p2p protocol 
+> in future as well.
+
+I'm not a cryptography expert, but why not just wrap the bluetooth 
+connection with SSL and not reimplement ECDH? Is this hard to do with 
+android/java?
+
+
+>
+> Once the encrypted connection is set up above the Bluetooth layer, the 
+> payment protocol request can then be signed either with a regular 
+> Bitcoin key that was in the Bitcoin URI as the payment address (when a 
+> URI is available), thus linking the request to the URI without adding 
+> any additional data by doubling up the backwards compatibility 
+> support. Or if there's no URI, then of course, the payment request 
+> must be PKI signed and the signed PaymentDetails structure can contain 
+> a copy of the public key that was used to set up the connection, thus 
+> binding the connection to a PKI identity and ensuring you're not 
+> talking to a MITM.
+
+This sounds great, but I thought it is not desired to divulge a bitcoin 
+public key until the time of signing a transaction. Isn't that the whole 
+point of having a public key hash and never reusing addresses? This 
+could be resolved by the payee immediately sending the payment to 
+another address after receiving it, but that is kind of a waste of a 
+transaction. Also, I would love a less PKI dependent way to authenticate 
+a transaction between the two parties, but I was trying to minimize the 
+discussion of general payment protocol modifications in this announcement.
+
+
+>
+> I suspect that this is not anywhere near as hard to implement as one 
+> might think. ECDH is not a complex protocol. You certainly don't need 
+> full blown HTTPS involved.
+>
+>       * There is no acknowledgement failure message possible in the
+>         payment protocol, only an acknowledgement message or lack of
+>         acknowledgement message. This issue seems to be a concern and
+>         as a result, the memo field is used to send an "ack" or "nack"
+>         in Schildbach's wallet. Can we add a boolean status field to
+>         the payment acknowledgement message?
+>
+> Ugh. I did want a way to indicate failure when we designed BIP70, but 
+> I can't remember why one wasn't included in the final spec. I think we 
+> decided the containing protocol could do this instead (normally HTTP).
+>
+> Abusing the memo field is definitely the wrong thing to do! Rather the 
+> Bluetooth specific encapsulation protocol should have a notion of failure.
+
+We can do something like this, I guess. The issue I mentioned about the 
+message headers being inconsistent will have to be fixed though to to do 
+this. However, is anyone even using the HTTP base failure signal (I 
+don't even know what it is)? What about when new protocols other than 
+bluetooth are created? I'm just wondering if it's better to have more 
+functionality defined at the payment protocol level so that developers 
+have to learn less nuances about each particular protocol they are 
+implementing the payment protocol over. The other thing is what if you 
+want to indicate a failure, and a reason for that failure?
+
+
+>       * I'd personally like a new optional boolean field added to the
+>         "PaymentDetails" portion of the "PaymentRequest" to allow for
+>         the payer's wallet to match the "Output" optional "amount"
+>         fields as a total amount of all Outputs, rather than requiring
+>         the amount for each output to be matched exactly.
+>
+> Extending BIP70 with more negotiable privacy features is a different 
+> effort, let's not discuss that as part of Bluetooth support.
+
+Understood, I was just throwing this thought out there, but do realize 
+it is a separate discussion.
+
+>
+> Besides, no wallet uses even the existing support for merge avoidance 
+> in BIP70. In fact Andreas' wallet is one of the blocking factors here 
+> because it violates the specs by requiring the BIP70 request to have 
+> only a single output that matches the address specified in the URI. 
+> All because he doesn't trust HTTPS :(
+
+To be clear, the way I am currently implementing my fuel pump, I am 
+specifying 4 payment addresses with no amount requirement and a h= 
+parameter, and Schildbach's wallet does accept the payment request, but 
+only chooses to use the first payment address (this may have something 
+to do with the unspent outputs on my phone though). I believe 
+Schildbach's wallet still works if multiple addresses are defined and 
+multiple amounts, however, I'm not currently submitting payment requests 
+this way because of the merge avoidance constraints mentioned below.
+
+I don't trust HTTPS for a number of reasons. First off, it is way to 
+easy to get a signed certificate with no real validation by the 
+certificate signer. Second, the current PKI is a target for manipulation 
+by surveillance organizations because there are too few parties 
+involved. Third, even if you have a signed certificate that is really 
+owned by the person they say it is, it's not easy for a payer to quickly 
+verify the signer is really the correct one because retailers can 
+contract out their payment process to another party, have a central 
+office, subsidiary, or be doing business under a name that is not 
+necessarily their legal company name. Even if we replace the PKI with 
+something more distributed like namecoin, the third option is still 
+going to be an issue, which warrants the need for the h= parameter.
+
+
+
+>
+> I don't think adding even more privacy stuff to BIP70 makes any sense 
+> until we have implementations that actually exploit the existing 
+> support. And to get there, we must fix Andreas' wallet so it doesn't 
+> violate the specs anymore. Sorry Andreas. I know we argue about this 
+> all the time, but it's really a big problem that your app doesn't obey 
+> the specs. It makes everyone reluctant to use new BIP70 features, 
+> because they feel a need to test with every possible wallet app in 
+> case one of them has simply decided to do their own thing and become 
+> deliberately incompatible. And then why bother, there are more 
+> important things to do.
+
+
+I don't totally understand the background of what you are talking about 
+here, but I think the h= parameter may designed to address the issues 
+Schildbach has complying with the spec as you mention.
+
+
+>       * Amount of data stored in QR codes may be getting large when a
+>         backwards compatible URL is used (for wallets that don't
+>         support the payment protocol) and can be difficult to scan
+>         with outdoor screens that have an extra weather resistant pane
+>         when in direct sunlight.
+>
+> MAC addresses could be encoded more efficiently, of course, but it 
+> seems unlikely that address-less URIs can be relied upon any time soon 
+> - and besides if the URI needs to bind to an authenticated channel 
+> because PKI signing is not in use, then it makes sense to use that 
+> part of the URI to do so.
+
+
+PKI is not in use for "Bitcoin Wallet" for providing payment request, 
+but it is in use in my fuel dispenser that was demonstrated in the 
+video. Actually, I should have clarified in my announcement that 
+"Bitcoin Wallet" only allows for bluetooth incoming connections for 
+submitting payment, not providing payment requests. Since the payment 
+request is unsigned and small, it can just be submitted via NFC (as I 
+have mentioned above), and bluetooth isn't really needed. Andreas does 
+have a branch that supports this but it is not included in the master 
+distribution branch. The primary reason he does not have this in the 
+master branch is because the payment protocol only supports signing of 
+payment requests via PKI, and it is difficult for a user to install a 
+PKI signed certificate on android, just for a single peer to peer use 
+case. I think for now he just uses that branch to test his functionality 
+for fetching bluetooth payment requests from devices like mine (although 
+I'm not aware of any other devices that actually exist right now).
+
+
+
+
+
+>       * The number of offline transactions of a wallet is limited to
+>         the known unspent outputs when they go offline. Long term, I'd
+>         like to see wallet devices that can use systems such as
+>         Kryptoradio's DVB-T based broadcast (but this will need yet
+>         another radio!).
+>
+> Given that all interesting mobile devices have sophisticated internet 
+> access radios of various forms, I doubt it's worth putting much effort 
+> in here. Bluetooth for submitting payments makes sense some of the 
+> time, partly for performance and partly because it's more 
+> decentralised than looping in an intermediary HTTPS server to 
+> temporarily host a BIP70 request file. I don't think we should try and 
+> invent an entirely new "block chain internet" though. At any rate, 
+> it's a separate effort.
+
+It is a separate effort, but I was mentioning it because it is related. 
+Your comment "Given that all interesting mobile devices have 
+sophisticated internet access radios of various forms, I doubt it's 
+worth putting much effort in here" makes me believe that you don't 
+understand the need for this. If you are to provide a full fledged wifi 
+connection to the customer, there would then have to be a very 
+sophisticated proxy server that can allow only access to bitcoin nodes, 
+and how to do that would be difficult since every node doesn't know all 
+of the nodes in the network. You'd also have to be able to make the 
+customer's phone automatically connect and disconnect from this service 
+without leaving a saved access point name in their wifi access point 
+list (otherwise you will have a bunch of them accumulate that you don't 
+care about). Having dedicated blockchain access is going to be a 
+necessity: everyone doesn't want a cellular internet plan, they can't 
+always afford it, and it isn't always available, and as I just 
+explained, wifi is currently a cumbersome solution to this problem.
+
+>       * The additional payment_url approach is a bit sloppy of a
+>         solution in the PaymentDetails portion of the PaymentRequest.
+>
+> This is only an issue because of the way you define the hashing 
+> mechanism. If you reuse the backwards compatibility address, then the 
+> payment_url can of course be customised based on whatever transport 
+> mechanism the request was fetched over. There is no longer any need to 
+> have the payment request be created (and presumably stored) the moment 
+> the QR code is generated. Besides, that approach has all kinds of 
+> messy implementation problems. You don't know the QR code will 
+> /ever/ be scanned, but you must have the exact payment request at the 
+> time the QR code is generated. Payment requests expire, so you have to 
+> define some kind of timeout at which point the QR code itself becomes 
+> invalid. Urgh.
+>
+> Much better to have the PaymentRequest formatted and signed on demand, 
+> once the URI is being resolved. But that means you have to abandon the 
+> h= mechanism.
+
+
+All this was already known but was not proposed because it does not 
+allow you to use the h= parameter. What do you propose to do instead of 
+the h= parameter, but still allow for a trust anchor with the payee 
+still be maintained? Another option is to do the hashing to the payment 
+request before the payment_url is added to the payment request, however, 
+this then can allow a hacker to change the payment_url.
+
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141020/f62cff17/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 555 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141020/f62cff17/attachment.sig>
