@@ -1,0 +1,133 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Tue, 28 Oct 2014 09:55:00 +0000
+Subject: [Bitcoin-development] Reworking the policy estimation code (fee
+	estimates)
+In-Reply-To: <CAPWm=eXxs=AfFhaT2EeGFsR+2r96WcaOeWL_Z59-6LixH+=4AQ@mail.gmail.com>
+References: <CAPWm=eXxs=AfFhaT2EeGFsR+2r96WcaOeWL_Z59-6LixH+=4AQ@mail.gmail.com>
+Message-ID: <CANEZrP0tpnES7=SuaVHOfWdf=CDkzhx2V=4mqRGDpW3ELsGkKA@mail.gmail.com>
+
+Could you explain a little further why you think the current approach is
+statistically incorrect? There's no doubt that the existing estimates the
+system produces are garbage, but that's because it assumes players in the
+fee market are rational and they are not.
+
+Fwiw bitcoinj 0.12.1 applies the January fee drop and will attach fee of
+only 1000 satoshis per kB by default. I also have a program that measures
+confirmation time for a given fee level (with fresh coins so there's no
+priority) and it aligns with your findings, most txns confirm within a
+couple of blocks.
+
+Ultimately there isn't any easy method to stop people throwing money away.
+Bitcoinj will probably continue to use hard coded fee values for now to try
+and contribute to market sanity in the hope it makes smartfees smarter.
+On 27 Oct 2014 19:34, "Alex Morcos" <morcos at gmail.com> wrote:
+
+> I've been playing around with the code for estimating fees and found a few
+> issues with the existing code.   I think this will address several
+> observations that the estimates returned by the existing code appear to be
+> too high.  For instance see @cozz in Issue 4866
+> <https://github.com/bitcoin/bitcoin/issues/4866>.
+>
+> Here's what I found:
+>
+> 1) We're trying to answer the question of what fee X you need in order to
+> be confirmed within Y blocks.   The existing code tries to do that by
+> calculating the median fee for each possible Y instead of gathering
+> statistics for each possible X.  That approach is statistically incorrect.
+> In fact since certain X's appear so frequently, they tend to dominate the
+> statistics at all possible Y's (a fee rate of about 40k satoshis)
+>
+> 2) The existing code then sorts all of the data points in all of the
+> buckets together by fee rate and then reassigns buckets before calculating
+> the medians for each confirmation bucket.  The sorting forces a
+> relationship where there might not be one.  Imagine some other variable,
+> such as first 2 bytes of the transaction hash.  If we sorted these and then
+> used them to give estimates, we'd see a clear but false relationship where
+> transactions with low starting bytes in their hashes took longer to confirm.
+>
+> 3) Transactions which don't have all their inputs available (because they
+> depend on other transactions in the mempool) aren't excluded from the
+> calculations.  This skews the results.
+>
+> I rewrote the code to follow a different approach.  I divided all possible
+> fee rates up into fee rate buckets (I spaced these logarithmically).  For
+> each transaction that was confirmed, I updated the appropriate fee rate
+> bucket with how many blocks it took to confirm that transaction.
+>
+> The hardest part of doing this fee estimation is to decide what the
+> question really is that we're trying to answer.  I took the approach that
+> if you are asking what fee rate I need to be confirmed within Y blocks,
+> then what you would like to know is the lowest fee rate such that a
+> relatively high percentage of transactions of that fee rate are confirmed
+> within Y blocks. Since even the highest fee transactions are confirmed
+> within the first block only 90-93% of the time, I decided to use 80% as my
+> cutoff.  So now to answer "estimatefee Y", I scan through all of the fee
+> buckets from the most expensive down until I find the last bucket with >80%
+> of the transactions confirmed within Y blocks.
+>
+> Unfortunately we still have the problem of not having enough data points
+> for non-typical fee rates, and so it requires gathering a lot of data to
+> give reasonable answers. To keep all of these data points in a circular
+> buffer and then sort them for every analysis (or after every new block) is
+> expensive.  So instead I adopted the approach of keeping an exponentially
+> decaying moving average for each bucket.  I used a decay of .998 which
+> represents a half life of 374 blocks or about 2.5 days.  Also if a bucket
+> doesn't have very many transactions, I combine it with the next bucket.
+>
+> Here is a link <https://github.com/morcos/bitcoin/pull/3> to the code.  I
+> can create an actual pull request if there is consensus that it makes sense
+> to do so.
+>
+> I've attached a graph comparing the estimates produced for 1-3
+> confirmations by the new code and the old code.  I did apply the patch to
+> fix issue 3 above to the old code first.  The new code is in green and the
+> fixed code is in purple.  The Y axis is a log scale of feerate in satoshis
+> per KB and the X axis is chain height.  The new code produces the same
+> estimates for 2 and 3 confirmations (the answers are effectively quantized
+> by bucket).
+>
+> I've also completely reworked smartfees.py.  It turns out to require many
+> many more transactions are put through in order to have statistically
+> significant results, so the test is quite slow to run (about 3 mins on my
+> machine).
+>
+> I've also been running a real world test, sending transactions of various
+> fee rates and seeing how long they took to get confirmed.  After almost 200
+> tx's at each fee rate, here are the results so far:
+>
+> Fee rate 1100   Avg blocks to confirm 2.30 NumBlocks:% confirmed 1: 0.528
+> 2: 0.751 3: 0.870
+> Fee rate 2500   Avg blocks to confirm 2.22 NumBlocks:% confirmed 1: 0.528
+> 2: 0.766 3: 0.880
+> Fee rate 5000   Avg blocks to confirm 1.93 NumBlocks:% confirmed 1: 0.528
+> 2: 0.782 3: 0.891
+> Fee rate 10000  Avg blocks to confirm 1.67 NumBlocks:% confirmed 1: 0.569
+> 2: 0.844 3: 0.943
+> Fee rate 20000  Avg blocks to confirm 1.33 NumBlocks:% confirmed 1: 0.715
+> 2: 0.963 3: 0.989
+> Fee rate 30000  Avg blocks to confirm 1.27 NumBlocks:% confirmed 1: 0.751
+> 2: 0.974 3: 1.0
+> Fee rate 40000  Avg blocks to confirm 1.25 NumBlocks:% confirmed 1: 0.792
+> 2: 0.953 3: 0.994
+> Fee rate 60000  Avg blocks to confirm 1.12 NumBlocks:% confirmed 1: 0.875
+> 2: 1.0   3: 1.0
+> Fee rate 100000 Avg blocks to confirm 1.09 NumBlocks:% confirmed 1: 0.901
+> 2: 1.0   3: 1.0
+> Fee rate 300000 Avg blocks to confirm 1.12 NumBlocks:% confirmed 1: 0.886
+> 2: 0.989 3: 1.0
+>
+>
+> Alex
+>
+>
+> ------------------------------------------------------------------------------
+>
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141028/2150a519/attachment.html>
