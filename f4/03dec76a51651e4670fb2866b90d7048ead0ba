@@ -1,0 +1,65 @@
+From: morcos@gmail.com (Alex Morcos)
+Date: Tue, 28 Oct 2014 10:30:14 -0400
+Subject: [Bitcoin-development] Reworking the policy estimation code (fee
+	estimates)
+In-Reply-To: <CABsx9T35NdEkFmdVDX19gOO1p0h1M_ZDK1iXxTFNLHE9dtC3hQ@mail.gmail.com>
+References: <CAPWm=eXxs=AfFhaT2EeGFsR+2r96WcaOeWL_Z59-6LixH+=4AQ@mail.gmail.com>
+	<CABsx9T35NdEkFmdVDX19gOO1p0h1M_ZDK1iXxTFNLHE9dtC3hQ@mail.gmail.com>
+Message-ID: <CAPWm=eX0MMBOPvugETxq+pyDzZ00xc90hZAJe8qgg4Shftm-9w@mail.gmail.com>
+
+Oh in just a couple of blocks, it'll give you a somewhat reasonable
+estimate for asking about every confirmation count other than 1, but it
+could take several hours for it to have enough data points to give you a
+good estimate for getting confirmed in one block (because the prevalent
+feerate is not always confirmed in 1 block >80% of the time)   Essentially
+what it does is just combine buckets until it has enough data points, so
+after the first block it might be treating all of the txs as belonging to
+the same feerate bucket, but since the answer it returns is the "median"*
+fee rate for that bucket, its a reasonable answer right off the get go.
+
+Do you think it would make sense to make that 90% number an argument to rpc
+call?  For instance there could be a default (I would use 80%) but then you
+could specify if you required a different certainty.  It wouldn't require
+any code changes and might make it easier for people to build more
+complicated logic on top of it.
+
+*It can't actually track the median, but it identifies which of the smaller
+actual buckets the median would have fallen into and returns the average
+feerate for that median bucket.
+
+
+
+
+
+On Tue, Oct 28, 2014 at 9:59 AM, Gavin Andresen <gavinandresen at gmail.com>
+wrote:
+
+> I think Alex's approach is better; I don't think we can know how much
+> better until we have a functioning fee market.
+>
+> We don't have a functioning fee market now, because fees are hard-coded.
+> So we get "pay the hard-coded fee and you'll get confirmed in one or two or
+> three blocks, depending on which miners mine the next three blocks and what
+> time of day it is."
+>
+> git HEAD code says you need a fee of 10,0000 satoshis/kb to be pretty sure
+> you'll get confirmed in the next block. That looks about right with Alex's
+> real-world data (if we take "90% chance" as 'pretty sure you'll get
+> confirmed'):
+>
+> Fee rate 100000 Avg blocks to confirm 1.09 NumBlocks:% confirmed 1: 0.901
+> 2: 1.0   3: 1.0
+>
+> My only concern with Alex's code is that it takes much longer to get
+> 'primed' -- Alex, if I started with no data about fees, how long would it
+> take to be able to get enough data for a reasonable estimate of "what is
+> the least I can pay and still be 90% sure I get confirmed in 20 blocks" ?
+> Hours? Days? Weeks?
+>
+> --
+> --
+> Gavin Andresen
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141028/3e672923/attachment.html>
