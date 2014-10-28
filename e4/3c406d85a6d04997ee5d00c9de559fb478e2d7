@@ -1,0 +1,57 @@
+From: tomh@thinlink.com (Tom Harding)
+Date: Tue, 28 Oct 2014 10:38:07 -0700
+Subject: [Bitcoin-development] DS Deprecation Window
+In-Reply-To: <CAAS2fgTW9uWewWbdRj6SCCAKU0D30jFiukDL9YPeG4n8LVwoYg@mail.gmail.com>
+References: <544EA3D7.2050901@thinlink.com>	<544EA85E.8010400@bluematt.me>	<544EFEE8.4000000@thinlink.com>
+	<CAAS2fgTW9uWewWbdRj6SCCAKU0D30jFiukDL9YPeG4n8LVwoYg@mail.gmail.com>
+Message-ID: <544FD47F.6060900@thinlink.com>
+
+On 10/27/2014 7:36 PM, Gregory Maxwell wrote:
+> Consider a malicious miner can concurrently flood all other miners
+> with orthogonal double spends (which he doesn't mine himself). These
+> other miners will all be spending some amount of their time mining on
+> these transactions before realizing others consider them
+> double-spends.
+
+If I understand correctly, the simplest example of this attack is three 
+transactions spending the same coin, distributed to two miners like this:
+
+             Miner A    Miner B
+Mempool       tx1a       tx1b
+Relayed       tx2        tx2
+
+Since relay has to be limited, Miner B doesn't know about tx1a until it 
+is included in Miner A's block, so he delays that block (unless it 
+appears very quickly).
+
+To create this situation, attacker has to transmit all three 
+transactions very quickly, or mempools will be too synchronized. 
+Attacker tries to make it so that everyone else has a tx1a conflict that 
+Miner A does not have.  Ditto for each individual victim, with different 
+transactions (this seems very difficult).
+
+Proposal shows that there is always a tiny risk to including tx1 when a 
+double-spend is known, and I agree that this attack can add something to 
+that risk.  Miner A can neutralize his risk by excluding any tx1 known 
+to be double-spent, but as Thomas Zander wrote, that is an undesirable 
+outcome.
+
+However, Miner A has additional information - he knows how soon he 
+received tx2 after receiving tx1a.
+
+The attack has little chance of working if any of the malicious 
+transactions are sent even, say, 10 seconds apart from each other. 
+Dropping the labels for transmit-order numbering, if the 1->2 transmit 
+gap is large, mempools will agree on 1.  If 1->2 gap is small, but the 
+gap to 3 is large, mempools will agree on the 1-2 pair, but possibly 
+have the order reversed.  Either way, mempools won't disagree on the 
+existence of 1 unless the 1->3 gap is small.
+
+So, I think it will be possible to quantify and target the risk of 
+including tx1a to an arbitrarily low level, based on the local 
+measurement of the time gap to tx2, and an effective threshold won't be 
+very high.  It does highlight yet again, the shorter the time frame, the 
+greater the risk.
+
+
+
