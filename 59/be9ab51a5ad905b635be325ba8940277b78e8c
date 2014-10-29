@@ -1,0 +1,52 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 29 Oct 2014 16:08:48 -0400
+Subject: [Bitcoin-development] Reworking the policy estimation code (fee
+ estimates)
+In-Reply-To: <CAPWm=eXxs=AfFhaT2EeGFsR+2r96WcaOeWL_Z59-6LixH+=4AQ@mail.gmail.com>
+References: <CAPWm=eXxs=AfFhaT2EeGFsR+2r96WcaOeWL_Z59-6LixH+=4AQ@mail.gmail.com>
+Message-ID: <20141029200848.GA3458@savin.petertodd.org>
+
+On Mon, Oct 27, 2014 at 03:33:45PM -0400, Alex Morcos wrote:
+> I've been playing around with the code for estimating fees and found a few
+> issues with the existing code.   I think this will address several
+> observations that the estimates returned by the existing code appear to be
+> too high.  For instance see @cozz in Issue 4866
+> <https://github.com/bitcoin/bitcoin/issues/4866>.
+
+I don't have time to look at the details of your statistical methods
+unfortunately due to some deadlines, but a quick comment:
+
+You should think about the malleability of your estimates to attackers.
+For instance the current fee estimation code has a serious issue where
+it'll happily estimate ludicriously high fees based on very little date.
+There is a 'insane fees' failsafe, but it's IIRC set to allow
+transactions with fees of less than 100mBTC/tx, roughly $50 at current
+exchange rates. It's relatively easy to get a wallet into a condition
+where this happens as the estimations are considered valid even based on
+very little data - a simple sybil attack suffices. (e.g. the recently
+published paper(1) on Tor sybil attacks comes to mind as one example of
+many ways to do this) Obviously this could empty someone's wallet pretty
+quickly; an exchange that makes a few dozen transactions an hour could
+easily lose tens of thousands of dollars due to this exploit. Someone
+correct me if I'm wrong, but last I checked in git HEAD this exploit is
+still unfixed.
+
+A user-configurable failsafe limit is a pretty obvious solution here,
+albeit a crude one; it'd be interesting to see if a plausible security
+argument could be made for something more sophisticated, like taking
+into account coin-age of observed transactions that estimates are based
+on.
+
+1) "Bitcoin over Tor isn't a good idea",
+   http://arxiv.org/abs/1410.6079
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000000098d3c9095b47ff1fd692fef5ac6731340802c7c63d38bb0
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141029/f464cf1b/attachment.sig>
