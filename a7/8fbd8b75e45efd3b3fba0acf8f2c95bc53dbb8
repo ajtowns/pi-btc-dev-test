@@ -1,0 +1,132 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Mon, 3 Nov 2014 15:14:49 +0100
+Subject: [Bitcoin-development] side-chains & 2-way pegging (Re: is there
+ a way to do bitcoin-staging?)
+In-Reply-To: <CAE28kUQS-ykQkLvZhKyR9ULh_=BPbdkm-TbVGOXdujy0e5xPFQ@mail.gmail.com>
+References: <CALqxMTHeipZZrJ_NSXK9vxiO83gSDgM6TA7T7XNBS3LtmuK2KA@mail.gmail.com>
+	<CAE28kUQS-ykQkLvZhKyR9ULh_=BPbdkm-TbVGOXdujy0e5xPFQ@mail.gmail.com>
+Message-ID: <CABm2gDqXkAKoNKwvznPfKKEq+c-F+Co7kudqQa2wHjcCU3iysQ@mail.gmail.com>
+
+On Mon, Nov 3, 2014 at 1:12 PM, Alex Mizrahi <alex.mizrahi at gmail.com> wrote:
+>
+>> For those following this thread, we have now written a paper
+>> describing the side-chains, 2-way pegs and compact SPV proofs.
+>> (With additional authors Andrew Poelstra & Andrew Miller).
+>>
+>> http://blockstream.com/sidechains.pdf
+>
+>
+> Haven't seen any material discussion of this paper in this mailing list, so
+> I'll start.
+> (Otherwise, I've seen Peter Todd's reaction on reddit.)
+>
+> This paper fails to demonstrate that sidechains are anything more than a
+> wishful thinking.
+> It can be distilled down to this:
+> "We want such and such features, hence we'll use DMMS, the same thing
+> Bitcoin uses, thus it will be secure!"
+> Um, no.
+> Alt-coins also use DMMS, but aren't as secure as Bitcoin.
+>
+> So DMMS does not work by itself, it is a mechanism to secure a blockchain
+> using economic incentives.
+> The sidechains paper does not mention this, as far as I can tell.
+>
+> In my opinion, this is not acceptable. If you're making a proposal, you need
+> to describe what conditions are required for it to work.
+
+>From the introduction "[...]Because signers prove computational work,
+rather than proving secret knowledge as
+is typical for digital signatures, we refer to them as miners. To
+achieve stable consensus on the
+blockchain history, economic incentives are provided where miners are
+rewarded with fees and
+subsidies in the form of coins that are valuable only if the miners
+form a shared valid history,
+incentivising them to behave honestly.[...]"
+
+Ignoring altrustic miners, the irreversibility of a DMMS chain
+obviously depends on the rewards received by miners on that chain.
+Nobody is claiming that sidechains will be "as secure bitcoin", any 2
+way pegged assets is always "more secure" (probably too vague of a
+term in this context) in its original chain.
+
+> Authors are clearly aware of the problem and mention it in section 6 "Future
+> directions" 6.1. "Hashpower attack resistance".
+> The problem is they do not make it clear that the proposal just makes no
+> sense until this is solved.
+
+Since all seigniorage from Bitcoin's initial distribution is spent on
+mining subsidies for the main chain, it is not available to subsidize
+sidechains too. Thus sidechains, in principle, reward their miners
+with the same Bitcoin will use in the future: only transaction fees.
+Since some people claim that won't be enough (is not always clear to
+me if they believe that won't be enough for sidechains or also for
+bitcoin when the subsidies are gone), we included this section with
+other ideas we have explored to further. Some of them, like
+"time-shifted fees" could be interesting for Bitcoin itself in the
+future.
+
+> It doesn't help that the paper itself tries to sweep the problem under the
+> rug and has misleading statements.
+> Particularly, I'm talking about section "4.2. Fraudulent transfers":
+>
+> "Reorganisations of arbitrary depth are in principle possible, which could
+> allow an attacker to
+> completely transfer coins between sidechains before causing a reorganisation
+> longer than the contest
+> period on the sending chain to undo its half of the transfer. ... If the
+> attacker is allowed to return the transferred coins to  the original
+> chain, he would increase the number of coins in his possession at the
+> expense of other users of the sidechain.
+> Before discussing how to handle this, we observe that this risk can be made
+> arbitrarily small by
+> simply increasing the contest period for transfers."
+>
+> Wow, really? Is this risk stochastic?
+>
+> The first sentence implies that attacker is able to cause a reorganization
+> of an arbitrary depth, but the rest of the section implies that
+> reorganizations are a naturally occurring phenomenon.
+
+Reorganizations are both a naturally occurring phenomenon and
+something that an attacker may cause to revert history.
+Section "11. Calculations" of the Bitcoin whitepaper gives you this
+formula (in C code):
+
+#include <math.h>
+double AttackerSuccessProbability(double q, int z)
+{
+    double p = 1.0 - q;
+    double lambda = z * (q / p);
+    double sum = 1.0;
+    int i, k;
+    for (k = 0; k <= z; k++)
+    {
+        double poisson = exp(-lambda);
+        for (i = 1; i <= k; i++)
+            poisson *= lambda / i;
+        sum -= poisson * (1 - pow(q / p, z - k));
+    }
+    return sum;
+}
+Also says "Given our assumption that p > q, the probability drops
+exponentially as the number of blocks the
+attacker has to catch up with increases."
+
+In this case, the contest period determines z, the number of blocks
+the attacker has to catch up from the honest chain.
+So the longer the contest period is, the harder it is to succeed with
+a fraudulent transfer.
+For example, if a given sidechain chooses 52560 as the contest period
+(1 year assuming 10 min blocks), it will be very hard for an attacker
+to produce a fake alternative longest-than-the-last-year-of-history
+fork to steal coins.
+A sidechain with such an extreme contest period would probably not be
+very practical though, since honest users would have to wait more than
+a year to complete transfers from the parent chain to the sidechain
+and viceversa.
+
+I hope this clarifies our assumptions.
+
+
