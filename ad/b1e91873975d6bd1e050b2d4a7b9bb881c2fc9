@@ -1,0 +1,74 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 6 Nov 2014 06:04:03 -0500
+Subject: [Bitcoin-development] SCRIPT_VERIFY_STRICTENC and CHECKSIG NOT
+In-Reply-To: <CAPg+sBgBhemhPid0LcB9NAHckSmwPuQRRp-6CBVOe5CcOUH8NA@mail.gmail.com>
+References: <20141106103820.GA17096@savin.petertodd.org>
+	<CAPg+sBgBhemhPid0LcB9NAHckSmwPuQRRp-6CBVOe5CcOUH8NA@mail.gmail.com>
+Message-ID: <20141106110403.GA20461@savin.petertodd.org>
+
+On Thu, Nov 06, 2014 at 02:47:29AM -0800, Pieter Wuille wrote:
+> On Thu, Nov 6, 2014 at 2:38 AM, Peter Todd <pete at petertodd.org> wrote:
+> > However the implementation of the STRICTENC flag simply makes pubkey
+> > formats it doesn't recognize act as through the signature was invalid,
+> > rather than failing the transaction. Similar to the invalid due to too
+> > many sigops DoS attack I found before, this lets you fill up the mempool
+> > with garbage transactions that will never be mined. OTOH I don't see any
+> > way to exploit this in a v0.9.x IsStandard() transaction, so we haven't
+> > shipped code that actually has this vulnerability. (dunno about
+> > alt-implementations)
+> 
+> Yeah, there's even a comment in script/interpreter.h currently about
+> how STRICTENC is not softfork safe.
+
+Indeed.
+
+I actually was thinking about SCRIPT_VERIFY_MINIMALDATA, CScript(), and
+FindAndDelete() Specifically that if you were to change CScript() to
+convert single-character PUSHDATA's to OP_<number> you'd be making a
+consensus-critical change due to how FindAndDelete() is called with a a
+CScript() signature. You didn't make that mistake, and I couldn't find a
+way to exploit it anyway, but it reminded me of this STRICTENC stuff.
+
+> I didn't realize that this would
+> lead to the mempool accepting invalid transactions (I thought there
+> was a second validity check with the actual consensus rules; if not,
+> maybe we need to add that).
+
+It should be enough to just duplicate the CheckInputs() call in
+the AcceptToMemoryPool() function:
+
+    if (!CheckInputs(tx, state, view, true, STANDARD_SCRIPT_VERIFY_FLAGS, true))
+    {
+        return error("AcceptToMemoryPool: : ConnectInputs failed %s", hash.ToString());
+    }
+    if (!CheckInputs(tx, state, view, true, MANDATORY_SCRIPT_VERIFY_FLAGS, true))
+    {
+        return error("AcceptToMemoryPool: : BUG FOUND Standard verify flags passed yet mandatory flags failed. %s", hash.ToString());
+    }
+
+
+> > I suggest we either change STRICTENC to simply fail unrecognized pubkeys
+> > immediately - similar to how non-standard signatures are treated - or
+> > fail the script if the pubkey is non-standard and signature verification
+> > succeeds.
+> 
+> Sounds good to me, I disliked those semantics too.
+
+Ok, then given we have to support hybrid encoding for awhile longer
+anyway - I noticed your secp256k1 library supports it - lets do the
+latter as a "least invasive" measure. I can't think of any case where
+that'd be triggered other than delibrately. Doing that should make
+STRICTENC a soft-fork-safe change, and we can decide at a later date if
+we want to get rid of hybrid-encoded pubkeys in a further tightening of
+the rules.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000019b3c625f667bd0b93011c0a37950545a6a8fccf0b08ae73
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141106/30b6343d/attachment.sig>
