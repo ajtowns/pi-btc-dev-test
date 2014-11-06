@@ -1,0 +1,73 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 6 Nov 2014 18:12:25 -0500
+Subject: [Bitcoin-development] The difficulty of writing consensus
+ critical code: the SIGHASH_SINGLE bug
+In-Reply-To: <545BF0C2.3030201@bluematt.me>
+References: <20141106213215.GA12918@savin.petertodd.org>
+	<A53D2C60-1D6A-4796-9776-3AF396BEC9F1@bitsofproof.com>
+	<545BF0C2.3030201@bluematt.me>
+Message-ID: <20141106231225.GA26859@savin.petertodd.org>
+
+On Thu, Nov 06, 2014 at 10:05:54PM +0000, Matt Corallo wrote:
+> Depends, without BIP62 a /lot/ of the even basic contracts that people
+> want to use today (or wanted to use 18 months ago) are unusable, in
+> fact, without BIP62, the atomic swaps suggested as important for
+> sidechains are not secure. While redoing Bitcoin in a hardfork is nice,
+> its a very long-term thing, so I'm not sure about making people wait for
+> a large hardfork just to use payment channels.
+
+BIP62 is a less-than-ideal way of making contracts secure against
+malleability as it relies on a "whack-a-mole" approach to security that
+is insecure if any flaw is missed. If you only wanted to make contracts
+secure, you'd either implement a new SignatureHash() that could leave
+out the prevout field in favor of hashing the previous input's CTxOut()
+structure, and/or implement the significantly more limited
+CHECKLOCKTIMEVERIFY.
+
+Equally BIP62 fails at making more complex types of contracts secure.
+For instance suppose I had a multi-step protocol that required more than
+two transactions:
+
+    tx1: Alice -> (Alice, Bob)
+    tx1_refund: (Alice, Bob) -> Alice
+
+    tx2: (Alice, Bob) -> Charlie
+    tx2_refund: (Alice, Bob) -> Bob
+
+tx1 can only be modified by Alice, so tx1_refund is secure. However the
+second stage, where the output of tx1 is spent by tx2, with a refund
+transaction giving the funds back to Bob, can't be made secure as BIP62
+can't prevent Alice from changing her signature, getting tx2' mined
+instead, and making tx2_refund invalid.
+
+OTOH a new form of signature hash that was a signature on tx2.vout
+structure rather than it's txid would be secure, as tx2_refund would be
+valid regardless of tx2's actual txid.
+
+Obviously there are good reasons to not use such signature hashes in the
+general case, as they imply you can't reuse scriptPubKeys securely, but
+that's a minor problem for purpose-built contract protocols. It's
+certainly a much more minor problem then the huge number of holes
+possible with BIP62.
+
+BIP62 does make life easier for wallet authors as they don't have to
+deal with malleability - maybe! - but for contracts it's a bad design.
+
+> Also, I echo the difficulty of writing consensus-compatible code and
+> highly suggest anyone with money behind an implementation that is doing
+> script verification in code that isnt Bitcoin Core rethink that decision.
+
+FWIW I've done due-dilligence reviews for investors on projects and
+companies that have re-implemented Bitcoin Core consensus-critical code,
+and every time my review lists doing so as a major red flag.
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000000166801ed3959dde6b7d979735c290e7c4271ae3cf75ced63
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141106/03ace0b4/attachment.sig>
