@@ -1,0 +1,45 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 6 Nov 2014 05:38:20 -0500
+Subject: [Bitcoin-development] SCRIPT_VERIFY_STRICTENC and CHECKSIG NOT
+Message-ID: <20141106103820.GA17096@savin.petertodd.org>
+
+So right now git head will accept the following invalid transaction into
+the mempool:
+
+0100000001140de229e08fda25cbc16ded2618cdacce49fcb18c0b6ccdace00040909adae4000000009000493046022100f7828d81c849c5448ba5ba4ef55df6b4d0ba3ae3f1a59cff3291880c2c8e524f022100d2f5bc9dc2f0674eded31023cb47e61a596e10f8f1ddd44cf92d290c9db577c70144410778d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71a1518063243acd4dfe96b66e3f2ec8013c8e072cd09b3834a19f81f659cc3455ac91ffffffff01102700000000000017a914e661a2229cc824329c9409f49d99cb5ac350c9288700000000
+
+which spends the redeemScript:
+
+0778d430274f8c5ec1321338151e9f27f4c676a008bdf8638d07c0b6be9ab35c71a1518063243acd4dfe96b66e3f2ec8013c8e072cd09b3834a19f81f659cc3455
+CHECKSIG NOT
+
+That pubkey is valid and accepted by OpenSSL as it's obscure "hybrid"
+format. The transaction is invalid because the signature is correct,
+causing CHECKSIG to return 1, which is inverted to 0 by the NOT.
+
+However the implementation of the STRICTENC flag simply makes pubkey
+formats it doesn't recognize act as through the signature was invalid,
+rather than failing the transaction. Similar to the invalid due to too
+many sigops DoS attack I found before, this lets you fill up the mempool
+with garbage transactions that will never be mined. OTOH I don't see any
+way to exploit this in a v0.9.x IsStandard() transaction, so we haven't
+shipped code that actually has this vulnerability. (dunno about
+alt-implementations)
+
+I suggest we either change STRICTENC to simply fail unrecognized pubkeys
+immediately - similar to how non-standard signatures are treated - or
+fail the script if the pubkey is non-standard and signature verification
+succeeds.
+
+Thoughts?
+
+-- 
+'peter'[:-1]@petertodd.org
+0000000000000000152dc55f27338b58325f0432d2dc6edb90c8d449d9959583
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141106/811a0a90/attachment.sig>
