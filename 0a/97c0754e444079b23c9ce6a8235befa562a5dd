@@ -1,0 +1,91 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 7 Nov 2014 06:47:19 -0500
+Subject: [Bitcoin-development] The difficulty of writing consensus
+ critical code: the SIGHASH_SINGLE bug
+In-Reply-To: <CAP63atZv_WJX3Ev6HirVVbZdjn6oayqMfjFDj657TG4VKdL9Nw@mail.gmail.com>
+References: <A53D2C60-1D6A-4796-9776-3AF396BEC9F1@bitsofproof.com>
+	<545BF0C2.3030201@bluematt.me>
+	<CAJHLa0NTj6m4JpHx3+nWtYVV1Zpwf-FaxiyFX9DR821cQYVqsg@mail.gmail.com>
+	<545BFAD6.1000504@riseup.net>
+	<20141106232649.GD26859@savin.petertodd.org>
+	<545C0617.7020300@riseup.net>
+	<20141107000310.GA6532@savin.petertodd.org>
+	<B29D4E11-E69E-49DE-9E4C-741DDA01B352@bitsofproof.com>
+	<20141107084810.GA7878@savin.petertodd.org>
+	<CAP63atZv_WJX3Ev6HirVVbZdjn6oayqMfjFDj657TG4VKdL9Nw@mail.gmail.com>
+Message-ID: <20141107114718.GA20990@savin.petertodd.org>
+
+On Fri, Nov 07, 2014 at 11:30:22AM +0000, Cl?ment Elbaz wrote:
+> Thinking out loud here : would it make sense to separate the consensus code
+> into some kind of "Bitcoin Kernel" (similar to the Linux Kernel) project
+> that could be used by anyone ?
+
+That's a pretty old idea, and we're working on it. First step is a
+stand-alone script verification library:
+
+https://github.com/theuni/bitcoin/blob/da18a0266c4de76c2a461cc2984aa2fa066c42f5/src/script/bitcoinconsensus.h
+
+#ifndef H_BITCOIN_BITCOINCONSENSUS
+#define H_BITCOIN_BITCOINCONSENSUS
+
+#if defined(BUILD_BITCOIN_INTERNAL) && defined(HAVE_CONFIG_H)
+#include "config/bitcoin-config.h"
+  #if defined(_WIN32)
+    #if defined(DLL_EXPORT)
+      #if defined(HAVE_FUNC_ATTRIBUTE_DLLEXPORT)
+        #define EXPORT_SYMBOL __declspec(dllexport)
+      #else
+        #define EXPORT_SYMBOL
+      #endif
+    #endif
+  #elif defined(HAVE_FUNC_ATTRIBUTE_VISIBILITY)
+    #define EXPORT_SYMBOL __attribute__ ((visibility ("default")))
+  #endif
+#elif defined(MSC_VER) && !defined(STATIC_LIBBITCOINCONSENSUS)
+  #define EXPORT_SYMBOL __declspec(dllimport)
+#endif
+
+#ifndef EXPORT_SYMBOL
+  #define EXPORT_SYMBOL
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#else
+#include <stdbool.h>
+#endif
+
+/** Script verification flags */
+enum
+{
+    bitcoinconsensus_SCRIPT_FLAGS_VERIFY_NONE      = 0,
+    bitcoinconsensus_SCRIPT_FLAGS_VERIFY_P2SH      = (1U << 0), // evaluate P2SH (BIP16) subscripts
+};
+
+/// Returns true if the input nIn of the serialized transaction pointed to by
+/// txTo correctly spends the scriptPubKey pointed to by scriptPubKey under
+/// the additional constraints specified by flags.
+EXPORT_SYMBOL bool bitcoinconsensus_verify_script(const unsigned char *scriptPubKey, const unsigned int scriptPubKeyLen,
+                                    const unsigned char *txTo        , const unsigned int txToLen,
+                                    const unsigned int nIn, const unsigned int flags);
+
+EXPORT_SYMBOL unsigned int bitcoinconsensus_version();
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
+
+#undef EXPORT_SYMBOL
+
+#endif // H_BITCOIN_BITCOINCONSENSUS
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000001208038fd7130083ff118147890dbb37913ffa83c1f48cd
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141107/d096ce3e/attachment.sig>
