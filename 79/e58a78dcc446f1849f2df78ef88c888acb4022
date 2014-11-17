@@ -1,0 +1,123 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Mon, 17 Nov 2014 11:20:56 +0000
+Subject: [Bitcoin-development] Increasing the OP_RETURN maximum payload
+	size
+In-Reply-To: <CAPg+sBgM4ja0Y96KekJUN7Qg=o0xa1B0VUiiPuFQTYfrupoERg@mail.gmail.com>
+References: <CABbpET9eTgk1GyxYbcG++O_rqsnfB7w5_Xp4XgE6qwkmGsm1eg@mail.gmail.com>
+	<201411161724.19573.luke@dashjr.org>
+	<CABm2gDpBOtZB01Qj3Dc3dWSpG2zLr+VPYbnwrq8YVh8qfxMW5Q@mail.gmail.com>
+	<CABm2gDoi1593ssoGN69E42c-N3s02yYKAqDEDA2m-e+6LqjpTQ@mail.gmail.com>
+	<5469692F.9030702@gmail.com>
+	<CAPg+sBgM4ja0Y96KekJUN7Qg=o0xa1B0VUiiPuFQTYfrupoERg@mail.gmail.com>
+Message-ID: <CALqxMTH3qBU88xpSu_evuBfRwMmF3cLpM=L5DUExKc--cO_O1Q@mail.gmail.com>
+
+It seems to me that people maybe arriving at the idea that they should
+put transaction data in the blockchain for three related reasons: a)
+its there and its convenient; and b) they are thinking about permanent
+storage and being able to recover from backup using a master seed to a
+bip32 address-set and want that logic to extend to the extra features;
+c) they are thinking out of band, but they think they are forced to
+send the data there in order to achieve atomicity.
+
+I think the data that is sent on the blockchain is design-compressed
+minimal necessary to achieve transaction integrity, and its important
+for scalability that we keep it that way.  About the rationales for
+using that scarce scalability impacting channel:
+
+a) convenience: is not a great reason to my mind. there are lots of
+channels: email, web forms, point2point various transports NFC, TCP,
+HTTP for payment protocol or extensions or new protocols.  I think
+there could be a need for a reliable privacy preserving store and
+forward decentralised infrastructure to act as a channel for such
+purposes.  Until then email could be pretty convenient, if you dont
+get the message due to spam filter etc ask them to resend.  Or a web
+storage locker related to the app.
+
+b) backup: the blockchain is not an efficient reliable generic backup
+mechanism because its broadcast.  there are cheaper and relatively
+simple ways to get end2end secure backup, the main challenge of which
+is having secure keys and not forgetting them.  bitcoin already has
+that covered as its a central requirement of blockchain security.  If
+you want to archive your payment protocol receipts store them on some
+cloud storage service or disk encrypted with related keys.  for
+example tahoe-lafs is optimised for the decentralised long-term
+storage kind of use.
+
+c) atomicity. as an example application requiring atomicity that may
+use op_return stealth addresses where if the stealth auxiliary message
+was sent out of band, then if message is lost, and the sender didnt
+keep it or cant be relied on to care, then the money could be
+permanently lost to both parties.
+
+It occurred to me recently the kind of use requiring atomicity as
+stealth address in c) can be achieved by sending both the extra
+message (the stealth packet) AND the signed bitcoin transaction over
+the reliable store & forward (eg email for now).  Then the recipient
+can do the calculations involving the auxiliary message and payment
+message, and relay the message to the blockchain IFF they receive the
+message (and chose to accept it).  If they dont receive the message
+they can ask for it to be resent.  And if the payment is unclaimed the
+sender still owns it and can double-spend to avoid risk of later
+spending in their replacement message, or double-spend to self if the
+recipient declines the payment.  This has privacy, efficiency and SPV
+advantages over sending to the blockchain.
+
+I think we could make a case that as a design principle auxiliary data
+could do with a bitcoin-related but separate reliable store and
+forward channel, as email has been sufficiently spammed to end up with
+loss of reliability.  So I think a payment message transport would be
+good here: invoices & receipts, and other things necessary for
+applications, transaction disputes, records for normal p2p trades and
+business functions reliable store and forward substrate with
+decentralisation & privacy. For email the existing mechanism with
+closest semantics, add-on privacy features exist: mixmaster,
+nymservers, webmail + encryption, webmail over Tor etc for privacy
+related uses.  Slow transports can offer better security than
+interactive transports.
+
+Adam
+
+On 17 November 2014 10:35, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+> On Mon, Nov 17, 2014 at 4:19 AM, Alan Reiner <etotheipi at gmail.com> wrote:
+>>
+>> On 11/16/2014 02:04 PM, Jorge Tim?n wrote:
+>>> I remember people asking in #bitcoin-dev "Does anyone know any use
+>>> case for greater sizes OP_RETURNs?" and me answering "I do not know of
+>>> any use cases that require bigger sizes".
+>>
+>> For reference, there was a brief time where I was irritated that the
+>> size had been reduced to 40 bytes, because I had an application where I
+>> wanted to put ECDSA in signatures in the OP_RETURN, and you're going to
+>> need at least 64 bytes for that.   Unfortunately I can't remember now
+>> what that application was, so it's difficult for me to argue for it.
+>> But I don't think that's an unreasonable use case:  sending a payment
+>> with a signature, essentially all timestamped in the blockchain.
+>
+> You can still send the signature out of band (for example using the
+> payment protocol), and just have the transaction commit to a hash of
+> that signature (or message in general), either using an OP_RETURN
+> output to store the hash, or using the pay-to-contract scheme that
+> Jorge mentioned above. That has exactly the same timestamping
+> properties.
+>
+> My main concern with OP_RETURN is that it seems to encourage people to
+> use the blockchain as a convenient transport channel, rather than just
+> for data that the world needs to see to validate it. I'd rather
+> encourage solutions that don't require additional data there, which in
+> many cases (but not all) is perfectly possible.
+>
+> --
+> Pieter
+>
+> ------------------------------------------------------------------------------
+> Download BIRT iHub F-Type - The Free Enterprise-Grade BIRT Server
+> from Actuate! Instantly Supercharge Your Business Reports and Dashboards
+> with Interactivity, Sharing, Native Excel Exports, App Integration & more
+> Get technology previously reserved for billion-dollar corporations, FREE
+> http://pubads.g.doubleclick.net/gampad/clk?id=157005751&iu=/4140/ostg.clktrk
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
