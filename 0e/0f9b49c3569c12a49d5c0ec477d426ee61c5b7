@@ -1,0 +1,71 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Thu, 27 Nov 2014 23:46:23 +0000
+Subject: [Bitcoin-development] BIP 65 and OP_CHECKLOCKTIMEVERIFY
+	inquiry...
+In-Reply-To: <63C13C3D-5333-4DEA-A42F-A4685DDE09DA@ricmoo.com>
+References: <63C13C3D-5333-4DEA-A42F-A4685DDE09DA@ricmoo.com>
+Message-ID: <CAAS2fgSr7-s-Bg-6Fjs1=dg0WR4JZfWbx2hnSyU4iXRNKHma4Q@mail.gmail.com>
+
+On Thu, Nov 27, 2014 at 10:56 PM, Richard Moore <me at ricmoo.com> wrote:
+> Heya,
+>
+> I was wondering about BIP 65 regarding the OP_CHECKLOCKTIMEVERIFY, and
+> thought it might make more sense to instead have a OP_CHECKLOCKTIME which
+> would simply push an OP_TRUE or OP_FALSE onto the stack?
+
+Updating the stack is not soft-fork compatible and any use would
+immediately fork the network.
+
+A invertible test is also not soft-fork compatible e.g. someone writes
+a script that does {<new thing>) OP_NOT,  in other words "the test
+must fail", then the network would fork because older nodes would see
+it as passing (which was the required criteria for non-forking the
+network in the non-inverted caes).
+
+You can happily get non-nullable true/false behaviour without these
+risks by having the VERIFY test inside a branch and having the signer
+provide its falseness as an input to the branch. This is explained in
+the BIP.
+
+E.g. OP_IF <limit> OP_CHECKLOCKTIMEVERIFY OP_ELSE <what you'd do if it
+doesn't pass> OP_END
+
+A useful an powerful mental model is that SCRIPT is not running a
+program, but instead the signer is proving to the network that they
+know inputs that make the program return true.
+
+(In practise we verify this by actually doing some execution, though
+this isn't technically necessary it's the simplest thing to implement
+although it is inefficient... but even in this simple model keeping in
+mind that we're VERIFYING not executing in the network opens our eyes
+to transformations like the IF bracketing of a VERIFY opcode.)
+
+> That way someone could include multiple OP_CHECKLOCKTIME conditions in a
+> single script.
+
+They can do this, with the above approach.
+
+> As a second question, would it possibly make more sense to, rather than
+> relying on the nLockTime in a transaction, allow an opcode that would use
+> similar semantics, but against an item in the stack? Then you could
+> essentially include multiple nLockTimes in a single script and make
+> arbitrarily interesting (complicated?) scripts based on block height and/or
+> block timestamp.
+>
+> The OP_CHECKLOCKTIMEVERIFY can still be easily implemented, by using
+>
+> nLockTimeThatWouldBeInTx OP_CHECKLOCKTIME OP_VERIFY
+
+Then the scripts validity isn't a pure function of the the
+transaction, and once valid transactions could become invalid while in
+the mempool. This breaks existing invariants and would make the coins
+potentially less fungible because they wouldn't be reorg safe. That
+locktime validity is basically monotonic is a useful intentional
+property. :)
+
+
+The things you're suggesting were all carefully designed out of the
+proposal, perhaps the BIP text needs some more clarification to make
+this more clear.
+
+
