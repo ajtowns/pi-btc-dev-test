@@ -1,0 +1,365 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 12 Dec 2014 09:05:51 +0000
+Subject: [Bitcoin-development] Setting the record straight on
+	Proof-of-Publication
+Message-ID: <20141212090551.GA8259@muck>
+
+Introduction
+============
+
+While not a new concept proof-of-publication is receiving a significant
+amount of attention right now both as an idea, with regard to the
+embedded consensus systems that make use of it, and in regard to the
+sidechains model proposed by Blockstream that rejects it. Here we give a
+clear definition of proof-of-publication and its weaker predecessor
+timestamping, describe some usecases for it, and finally dispel some of
+the common myths about it.
+
+
+What is timestamping?
+=====================
+
+A cryptographic timestamp proves that message m existed prior to some
+time t.
+
+This is the cryptographic equivalent of mailing yourself a patentable
+idea in a sealed envelope to establish the date at which the idea
+existed on paper.
+
+Traditionally this has been done with one or more trusted third parties
+who attest to the fact that they saw m prior to the time t. More
+recently blockchains have been used for this purpose, particularly the
+Bitcoin blockchain, as block headers include a block time which is
+verified by the consensus algorithm.
+
+
+What is proof-of-publication?
+=============================
+
+Proof-of-publication is what solves the double-spend problem.
+
+Cryptographic proof-of-publication actually refers to a few closely
+related proofs, and practical uses of it will generally make use of more
+than one proof.
+
+
+Proof-of-receipt
+----------------
+
+Prove that every member p in of audience P has received message m. A
+real world analogy is a legal notice being published in a major
+newspaper - we can assume any subscriber received the message and had a
+chance to read it.
+
+
+Proof-of-non-publication
+------------------------
+
+Prove that message m has *not* been published. Extending the above real
+world analogy the court can easily determine that a legal notice was not
+published when it should have been by examining newspaper archives. (or
+equally, *because* the notice had not been published, some action a
+litigant had taken was permissable)
+
+
+Proof-of-membership
+-------------------
+
+A proof-of-non-publication isn't very useful if you can't prove that
+some member q is in the audience P. In particular, if you are to
+evaluate a proof-of-membership, q is yourself, and you want assurance
+you are in that audience. In the case of our newspaper analogy because
+we know what today's date is, and we trust the newspaper never to
+publish two different editions with the same date we can be certain we
+have searched all possible issues where the legal notice may have been
+published.
+
+
+Real-world proof-of-publication: The Torrens Title System
+---------------------------------------------------------
+
+Land titles are a real-world example, dating back centuries, with
+remarkable simularities to the Bitcoin blockchain. Prior to the torrens
+system land was transferred between owners through a chain of valid
+title deeds going back to some "genesis" event establishing rightful
+ownership independently of prior history. As with the blockchain the
+title deed system has two main problems: establishing that each title
+deed in the chain is valid in isolation, and establishing that no other
+valid title deeds exist. While the analogy isn't exact - establishing
+the validity of title deeds isn't as crisp a process as simple checking
+a cryptographic signature - these two basic problems are closely related
+to the actions of checking a transaction's signatures in isolation, and
+ensuring it hasn't been double-spent.
+
+To solve these problems the Torrens title system was developed, first in
+Australia and later Canada, to establish a singular central registry of
+deeds, or property transfers. Simplifying a bit we can say inclusion -
+publication - in the official registery is a necessary pre-condition to
+a given property transfer being valid. Multiple competing transfers are
+made obvious, and the true valid transfer can be determined by whichever
+transfer happened first.
+
+Similarly in places where the Torrens title system has not been adopted,
+almost always a small number of title insurance providers have taken on
+the same role. The title insurance provider maintains a database of all
+known title deeds, and in practice if a given title deed isn't published
+in the database it's not considered valid.
+
+
+Common myths
+============
+
+Proof-of-publication is the same as timestamping
+------------------------------------------------
+
+No. Timestamping is a significantly weaker primitive than
+proof-of-publication. This myth seems to persist because unfortunately
+many members of the Bitcoin development and theory community - and even
+members of the Blockstream project - have frequently used the term
+"timestamping" for applications that need proof-of-publication.
+
+
+Publication means publishing meaningful data to the whole world
+---------------------------------------------------------------
+
+No. The data to be published can often be an otherwise meaningless
+nonce, indistinguishable from any other random value. (e.g. an ECC
+pubkey)
+
+For example colored coins can be implemented by committing the hash of
+the map of colored inputs to outputs inside a transaction. These maps
+can be passed from payee to payor to prove that a given output is
+colored with a set of recursive proofs, as is done in the author's
+Smartcolors library. The commitment itself can be a simple hash, or even
+a pay-to-contract style derived pubkey.
+
+A second example is Zerocash, which depends on global consensus of a set
+of revealed serial numbers. As this set can include "false-positives" -
+false revealed serial numbers that do not actually correspond to a real
+Zerocash transaction - the blockchain itself can be that set. The
+Zerocash transactions themselves - and associated proofs - can then be
+passed around via a p2p network separate from the blockchain itself.
+Each Zerocash Pour proof then simply needs to specify what set of
+priorly evaluated proofs makes up its particular commitment merkle tree
+and the proofs are then evaluated against that proof-specific tree. (in
+practice likely some kind of DAG-like structure) (note that there is a
+sybil attack risk here: a sybil attack reduces your k-anonymity set by
+the number of transactions you were prevented from seeing; a weaker
+proof-of-publication mechanism may be appropriate to prevent that sybil
+attack).
+
+The published data may also not be meaningful because it is encrypted.
+Only a small community may need to come to consensus about it; everyone
+else can ignore it. For instance proof-of-publication for decentralized
+asset exchange is an application where you need publication to be
+timely, however the audience may still be small. That audience can share
+an encryption key.
+
+
+Proof-of-publication is always easy to censor
+---------------------------------------------
+
+No, with some precautions. This myth is closely related to the above
+idea that the data must be globally meaningful to be useful. The colored
+coin and Zerocash examples above are cases where censoring the
+publication is obviously impossible as it can be made prior to giving
+anyone at all sufficient info to determine if the publicaiton has been
+made; the data itself is just nonces.
+
+In the case of encrypted data the encryption key can also often be
+revealed well after the publication has been made. For instance in a
+Certificate Transparency scheme the certificate authority (CA) may use
+proof-of-publication to prove that a certificate was in a set of
+certificates. If that set of certificates is hashed into a merkelized
+binary prefix tree indexed by domain name the correct certificate for a
+given domain name - or lack thereof - is easily proven. Changes to that
+set can be published on the blockchain by publishing successive prefix
+tree commitments.
+
+If these commitments are encrypted, each commitment C_i can also commit
+to the encryption key to be used for C_{i+1}. That key need not be
+revealed until the commitment is published; validitity is assured as
+every client knows that only one C_{i+1} is possible, so any malfeasance
+is guaranteed to be revealed when C_{i+2} is published.
+
+Secondly the published data can be timelock encrypted with timelocks
+that take more than the average block interval to decrypt. This puts
+would-be censoring miners into a position of either delaying all
+transactions, or accepting that they will end up mining publication
+proofs. The only way to circumvent this is highly restrictive
+whitelisting.
+
+
+Proof-of-publication is easier to censor than (merge)-mined sidechains
+----------------------------------------------------------------------
+
+False under all circumstances. Even if the publications use no
+anti-censorship techniques to succesfully censor a proof-of-publication
+system at least 51% of the total hashing power must decide to censor it,
+and they must do so by attacking the other 49% of hashing power -
+specifically rejecting their blocks. This is true no matter how "niche"
+the proof-of-publication system is - whether it is used by two people or
+two million people it has the same security.
+
+On the other hand a (merge)-mined sidechain with x% of the total hashing
+power supporting it can be attacked at by anyone with >x% hashing power.
+In the case of a merge-mined sidechain this cost will often be near zero
+- only by providing miners with a significant and ongoing reward can the
+marginal cost be made high. In the case of sidechains with niche
+audiences this is particularly true - sidechain advocates have often
+advocated that sidechains be initially protected by centralized
+checkpoints until they become popular enough to begin to be secure.
+
+Secondly sidechains can't make use of anti-censorship techniques the way
+proof-of-publication systems can: they inherently must be public for
+miners to be able to mine them in a decentralized fashion. Of course,
+users of them may use anti-censorship techniques, but that leads to a
+simple security-vs-cost tradeoff between using the Bitcoin blockchain
+and a sidechain. (note the simularity to the author's treechains
+proposal!)
+
+
+Proof-of-publication can be made expensive
+------------------------------------------
+
+True, in some cases! By tightly constraining the Bitcoin scripting
+system the available bytes for stenographic embedment can be reduced.
+For instance P2SH^2 requires an brute force exponentially increasing
+amount of hashes-per-byte-per-pushdata. However this is still
+ineffective against publishing hashes, and to fully implement it -
+scriptSigs included - would require highly invasive changes to the
+entire scripting system that would greatly limit its value.
+
+
+Proof-of-publication can be outsourced to untrusted third-parties
+-----------------------------------------------------------------
+
+Timestamping yes, but proof-of-publication no.
+
+We're talking about systems that attempt to publish multiple pieces of
+data from multiple parties with a single hash in the Bitcoin blockchain,
+such as Factom.  Essentially this works by having a "child" blockchain,
+and the hash of that child blockchain is published in the master Bitcoin
+blockchain. To prove publicaiton you prove that your message is in that
+child chain, and the child chain is itself published in the Bitcoin
+blockchain.  Proving membership is possible for yourself by determining
+if you have the contents corresponding to the most recent child-chain
+hash.
+
+The problem is proving non-publication. The set of all *potential*
+child-chain hashes must be possible to obtain by scanning the Bitcoin
+blockchain. As a hash is meaningless by itself, these hashes must be
+signed. That introduces a trusted third-party who can also sign an
+invalid hash that does not correspond to a block and publish it in the
+blockchain. This in turn makes it impossible for anyone using the child
+blockchain to prove non-publication - they can't prove they did not
+publish a message because the content of *all* child blockchains is now
+unknown.
+
+In short, Factom and systems like it rely on trusted third parties who
+can put you in a position where you can't prove you did not commit
+fraud.
+
+
+Proof-of-publication "bloats" the blockchain
+--------------------------------------------
+
+Depends on your perspective.
+
+Systems that do not make use of the UTXO are no different technically
+than any other transaction: they pay fees to publish messages to the
+Bitcoin blockchain with no amortized increase in the UTXO set. Some
+systems do grow the UTXO set - a potential scaling problem as currently
+that all full nodes must have the entire UTXO set - although there are a
+number of existing mechanisms and proposals to mitigate this issue such
+as the (crippled) OP_RETURN scriptPubKey format, the dust rule, the
+authors TXO commitments, UTXO expiry etc.
+
+>From an economic point of view proof-of-publication systems compete with
+other uses of the blockchain as they pay fees; supply of blockchain
+space is fixed so the increased demand must result in a higher
+per-transaction price in fees. On the other hand this is true of *all*
+uses of the blockchain, which collectively share the limited transaction
+capacity. For instance Satoshidice and similar sites have been widely
+condemned for doing conventional transactions on Bitcoin when they could
+have potentially used off-chain transactions.
+
+It's unknown what the effect on the Bitcoin price will actually be. Some
+proof-of-publication uses have nothing to do with money at all - e.g.
+certificate transparency. Others are only indirectly related, such as
+securing financial audit logs such as merkle-sum-trees of total Bitcoins
+held by exchanges. Others in effect add new features to Bitcoin, such as
+how colored coins allows the trade of assets on the blockchain, or how
+Zerocash makes Bitcoin transactions anonymous. The sum total of all
+these effects on the Bitcoin price is difficult to predict.
+
+The authors belief is that even if proof-of-publication is a
+net-negative to Bitcoin as it is significantly more secure than the
+alternatives and can't be effectively censored people will use it
+regardless of effects to discourage them through social pressure. Thus
+Bitcoin must make technical improvements to scalability that negate
+these potentially harmful effects.
+
+
+Proof-of-publication systems are inefficient
+--------------------------------------------
+
+If you're talking about inefficient from the perspective of a full-node
+that does full validation, they are no different than (merge)-mined
+sidechain and altcoin alternatives. If you're talking about efficiency
+from the perspective of a SPV client, then yes, proof-of-publication
+systems will often require more resources than mining-based
+alternatives.
+
+However it must be remembered that the cost of mining is the
+introduction of a trusted third party - miners. Of course, mined
+proof-of-publication has miners already, but trusting those miners to
+determine the meaning of that data places significantly more trust in
+them than mearly trusting them to create consensus on the order in which
+data is published.
+
+Many usecases involve trusted third-parties anyway - the role of
+proof-of-publication is to hold those third-parties to account and keep
+them honest. For these use-cases - certificate transparency, audit logs,
+financial assets - mined alternatives simply add new trusted third
+parties and points of failure rather than remove them.
+
+Of course, global consensus is inefficient - Bitcoin itself is
+inefficient. But this is a fundemental problem to Bitcoin's architecture
+that applies to all uses of it, a problem that should be solved in
+general.
+
+
+Proof-of-publication needs "scamcoins" like Mastercoin and Counterparty
+-----------------------------------------------------------------------
+
+First of all, whether or not a limited-supply token is a "scam" is not a
+technical question. However some types of embedded consensus systems, a
+specific use-case for proof-of-publication, do require limited-supply
+tokens within the system for technical reasons, for instance to support
+bid orders functionality in decentralized marketplaces.
+
+Secondly using a limited-supply token in a proof-of-publicaton system is
+what lets you have secure client side validation rather than the
+alternative of 2-way-pegging that requires users to trust miners not to
+steal the pegged funds. Tokens also do not need to be, economically
+speaking, assets that can appreciate in value relative to Bitcoin;
+one-way-pegs where Bitcoins can always be turned into the token in
+conjunction with decentralized exchange to buy and sell tokens for
+Bitcoins ensure the token value will always closely approximate the
+Bitcoin value as long as the protocol itself is considered valuable.
+
+Finally only a subset of proof-of-publication use-cases involve tokens
+at all - many like colored coins transact directly to and from Bitcoin,
+while other use-cases don't even involve finance at all.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000681f4e5c84bc0bf7e6c5db8673eef225da652fbb785a0de
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141212/444476e8/attachment.sig>
