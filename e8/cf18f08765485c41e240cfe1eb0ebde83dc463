@@ -1,0 +1,102 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 13 Dec 2014 02:34:58 +0000
+Subject: [Bitcoin-development] Near-zero fee transactions with hub-and-spoke
+	micropayments
+Message-ID: <20141213023458.GA961@muck>
+
+>From the So-Obvious-No-one-Has-Bothered-to-Write-It-Down-Department:
+
+tl;dr: Micropayment channels can be extended to arbitrary numbers of
+parties using a nearly completley untrusted hub, greatly decreasing
+transaction fees and greatly increasing the maximum number of financial
+transactions per second that Bitcoin can support.
+
+
+So a micropayment channel enables a payor to incrementally pay a payee
+by first locking a deposit of Bitcoins in a scriptPubKey of the
+following form:
+
+    IF
+        <timeout> CHECKLOCKTIMEVERIFY OP_DROP
+    ELSE
+        <payee> CHECKSIGVERIFY
+    ENDIF
+    <payor> CHECKSIGVERIFY
+
+(obviously many other forms are possible, e.g. multisig)
+
+Once the funds are confirmed, creating txout1, the payor creates
+transactions spending txout1 sending some fraction of the txout value to
+the payee and gives that half-signed transaction to the payee. Each time
+the payor wants to send more money to the payee they sign a new
+half-signed transaction double-spending the previous one.
+
+When the payee is satisfied they can close the channel by signing the
+most recent, highest value, tx with their key, thus making it valid. If
+the payee vanishes the payor can get all the funds back once the timeout
+is reached using just their key.
+
+Since confirmation is controlled by the payee once the initial deposit
+confirms subsequent increases in funds sent happen instantly in that the
+payor can not double-spend the input until the timeout is reached.
+
+(there's another formulation from Jeremy Spilman that can be almost
+implemented right now using a signed refund transaction, however it is
+vulnerable to transaction mutability)
+
+
+Hub-and-Spoke Payments
+======================
+
+Using a nearly completely untrusted hub we can allow any number of
+parties to mutually send and receive Bitcoins instantly with near-zero
+transaction fees. Each participant creates one or two micropayment
+channels with the hub; for Alice to send Bob some funds Alice first
+sends the funds to the hub in some small increment, the hub sends the
+funds to Bob, and finally the hub gives proof of that send to Alice. The
+incremental amount of Bitcoins sent can be set arbitrarily low, limited
+only by bandwidth and CPU time, and Bob does not necessarily need to
+actually be online. The worst that the hub can do is leave user's funds
+locked until the timeout expires.
+
+
+Multiple Hubs
+=============
+
+Of course, hubs can in turn send to each other, again in a trustless
+manner; multiple hops could act as a onion-style privacy scheme. The
+micropayments could also use an additional chaum token layer for
+privacy, although note that the k-anonymity set involves a trade-off
+between privacy and total # of Bitcoins that could be stolen by the hub.
+
+Of course, in general the micropayment hub breaks the linkage between
+payor and payee, with respect to the data available from the blockchain.
+
+
+Capital Requirements
+====================
+
+A business disadvantage with a hub-and-spoke system is that it ties up
+capital, creating a tradeoff between fees saved and Bitcoins tied up.
+How exactly to handle this is a business decision - for instance opening
+the micropayment channel could involve a small initial payment to
+account fo rthe time-value-of-money.
+
+
+Embedded consensus/Colored coins
+================================
+
+Note how many embedded consensus schemes like colored coins are
+compatible with micropayment channels. (though have fun figuring out who
+deserves the dividends!)
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000012367d385ad11358a4a1eee86cf8ebe06a76add36dfb4622
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141213/0bc51275/attachment.sig>
