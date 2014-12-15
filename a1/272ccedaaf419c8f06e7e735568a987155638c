@@ -1,0 +1,115 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Mon, 15 Dec 2014 19:10:08 +0100
+Subject: [Bitcoin-development] Recent EvalScript() changes mean
+ CHECKLOCKTIMEVERIFY can't be merged
+In-Reply-To: <20141215124730.GA8321@savin.petertodd.org>
+References: <20141215124730.GA8321@savin.petertodd.org>
+Message-ID: <CAPg+sBiz9TS0-uEMyRs9grecB-sJLd1vVd2DuTo6p+PSGNUUhg@mail.gmail.com>
+
+On Mon, Dec 15, 2014 at 1:47 PM, Peter Todd <pete at petertodd.org> wrote:
+
+> BtcDrak was working on rebasing my CHECKLOCKTIMEVERIFY? patch to master a few
+> days ago and found a fairly large design change that makes merging it currently
+> impossible. Pull-req #4890?, specifically commit c7829ea7, changed the
+> EvalScript() function to take an abstract SignatureChecker object, removing the
+> txTo and nIn arguments that used to contain the transaction the script was in
+> and the txin # respectively. CHECKLOCKTIMEVERIFY needs txTo to obtain the
+> nLockTime field of the transaction, and it needs nIn to obtain the nSequence of
+> the txin.
+
+I agree, and I was thinking earlier that some rebasing would be needed
+for CLTV when the change was made. I think this is a good thing
+though: #4890 introduced a clear separation between the script
+evaluation code and what it can access out of its environment (the
+transaction being verified). As CLTV changes the amount available out
+of the environment, this indeed requires changing the interface.
+
+> We need to fix this if CHECKLOCKTIMEVERIFY is to be merged.
+
+Done. See https://github.com/sipa/bitcoin/commit/cltv2 for a rebased
+version of the BIP65 code on top of 0.10 and master. I haven't ported
+any tests you may have that are not in the BIP, to avoid doing double
+work. Those should apply cleanly. There is a less clean version (IMHO)
+with smaller code changes wrt to the BIP code in my 'cltv' branch too.
+
+> Secondly, that this change was made, and the manner in which is was made, is I
+> think indicative of a development process that has been taking significant
+> risks with regard to refactoring the consensus critical codebase.
+
+I fully agree that we shouldn't be taking unnecessary risks when
+changing consensus code. For example, I closed #5091 (which I would
+very much have liked as a code improvement) when realizing the risks.
+That said, I don't believe we are at a point where we can just freeze
+anything that touches consensus-related, and sometimes refactorings
+are necessary. In particular, #4890 introduced separation between a
+very fundamental part of consensus logic (script logic) and an
+optional optimization for it (caching). If we ever want to get to a
+separate consensus code tree or repository, possibly with more strict
+reviews, I think changes like this are inevitable.
+
+> I know I
+> personally have had a hard time keeping up with the very large volume of code
+> being moved and changed for the v0.10 release, and I know BtcDrak - who is
+> keeping Viacoin up to date with v0.10 - has also had a hard time giving the
+> changes reasonable review. The #4890 pull-req in question had no ACKs at all,
+> and only two untested utACKS, which I find worrying for something that made
+> significant consensus critical code changes.
+
+I'm sorry to hear that that, and I do understand that many code
+movements make this harder. If this is a concern shared by many
+people, we can always decide to roll back some refactorings in the
+0.10 branch. On the other hand, we don't even have release candidates
+yet (which are a pretty important part of the testing and reviewing
+process), and doing so would delay things further. 0.10 has many very
+significant improvements which are beneficial to the network too,
+which I'm sure you're aware of.
+
+It's perfectly reasonable that not everyone has the same bandwidth
+available to keep up with changes, and perhaps that means slowing
+things down. Again, I don't want to say "this was reviewed before, we
+can't go back to this" - but did you really need 3 months to realize
+this change? I also see that elsewhere you're complaining about #5421
+of yours which hasn't made it in yet - after less than 2 weeks. Yes, I
+like the change, and I will review it. Surely you are not arguing it
+can be merged without decent review?
+
+> While it would be nice to have a library encapsulating the consensus code, this
+> shouldn't come at the cost of safety, especially when the actual users of that
+> library or their needs is still uncertain. This is after all a multi-billion
+> project where a simple fork will cost miners alone tens of thousands of dollars
+> an hour; easily much more if it results in users being defrauded. That's also
+> not taking into account the significant negative PR impact and loss of trust. I
+> personally would recommend *not* upgrading to v0.10 due to these issues.
+
+I have been very much in favor of a libconsensus library, and for
+several reasons. It's a step towards separating out the
+consensus-critical parts from optional pieces of the codebase, and it
+is a step towards avoiding the "reimplementing consensus code is very
+dangerous! ... but we really don't have a way to allow you to reuse
+the existing code either" argument. It does not fully accomplish
+either of those goals, but gradual steps with time to let changes
+mature in between are nice.
+
+> A much safer approach would be to keep the code changes required for a
+> consensus library to only simple movements of code for this release, accept
+> that the interface to that library won't be ideal, and wait until we have
+> feedback from multiple opensource projects with publicly evaluatable code on
+> where to go next with the API.
+
+If at this point the consensus code was nicely separated, I would
+argue to *copy* it (despite all normal engineering practices that
+argue against code duplication), into a frozen separate directory or
+even repository, and have all validation related code use the
+consensus version, while everything else can use a normal tree
+version, which then can evolve at a normal pace, and undergo cleanups,
+API changes and feature improvements along with the rest of the code.
+
+Unfortunately, it is not. The consensus code is mixed all over the
+place, and this forces unnecessary strain on all development of the
+codebase. I hope people agree that getting to a point where this is no
+longer the case is important.
+
+-- 
+Pieter
+
+
