@@ -1,0 +1,127 @@
+From: lists@coryfields.com (Cory Fields)
+Date: Mon, 15 Dec 2014 13:35:11 -0500
+Subject: [Bitcoin-development] Recent EvalScript() changes mean
+ CHECKLOCKTIMEVERIFY can't be merged
+In-Reply-To: <20141215124730.GA8321@savin.petertodd.org>
+References: <20141215124730.GA8321@savin.petertodd.org>
+Message-ID: <CAApLimhQePn6JVDz_zYCom0uNrJqPtevPOYkQ+aj32QFT5WjQQ@mail.gmail.com>
+
+On Mon, Dec 15, 2014 at 7:47 AM, Peter Todd <pete at petertodd.org> wrote:
+> BtcDrak was working on rebasing my CHECKLOCKTIMEVERIFY? patch to master a few
+> days ago and found a fairly large design change that makes merging it currently
+> impossible. Pull-req #4890?, specifically commit c7829ea7, changed the
+> EvalScript() function to take an abstract SignatureChecker object, removing the
+> txTo and nIn arguments that used to contain the transaction the script was in
+> and the txin # respectively. CHECKLOCKTIMEVERIFY needs txTo to obtain the
+> nLockTime field of the transaction, and it needs nIn to obtain the nSequence of
+> the txin.
+>
+> We need to fix this if CHECKLOCKTIMEVERIFY is to be merged.
+>
+> Secondly, that this change was made, and the manner in which is was made, is I
+> think indicative of a development process that has been taking significant
+> risks with regard to refactoring the consensus critical codebase. I know I
+> personally have had a hard time keeping up with the very large volume of code
+> being moved and changed for the v0.10 release, and I know BtcDrak - who is
+> keeping Viacoin up to date with v0.10 - has also had a hard time giving the
+> changes reasonable review. The #4890 pull-req in question had no ACKs at all,
+> and only two untested utACKS, which I find worrying for something that made
+> significant consensus critical code changes.
+>
+> While it would be nice to have a library encapsulating the consensus code, this
+> shouldn't come at the cost of safety, especially when the actual users of that
+> library or their needs is still uncertain. This is after all a multi-billion
+> project where a simple fork will cost miners alone tens of thousands of dollars
+> an hour; easily much more if it results in users being defrauded. That's also
+> not taking into account the significant negative PR impact and loss of trust. I
+> personally would recommend *not* upgrading to v0.10 due to these issues.
+>
+> A much safer approach would be to keep the code changes required for a
+> consensus library to only simple movements of code for this release, accept
+> that the interface to that library won't be ideal, and wait until we have
+> feedback from multiple opensource projects with publicly evaluatable code on
+> where to go next with the API.
+>
+> 1) https://github.com/bitcoin/bips/blob/master/bip-0065.mediawiki
+> 2) https://github.com/bitcoin/bitcoin/pull/4890
+>
+> --
+> 'peter'[:-1]@petertodd.org
+> 00000000000000001b18a596ecadd07c0e49620fb71b16f9e41131df9fc52fa6
+
+It would appear as though you're trying to drum up controversy here,
+but the argument is quite a stretch, and contrary to some other
+arguments you're making in parallel. There seem to be three themes in
+your above complaint, so I'd like to address them individually.
+
+1. Pr #4890 specifically. The argument seems to be that this was not
+properly reviewed/tested, and that it is an unnecessary risk to the
+consensus codebase.
+
+Looking at the PR at github, while I certainly don't agree with those
+conclusions, I suppose I can understand where they're coming from.
+There's plenty of context missing, as well as sidebar discussions on
+IRC and other PRs. To an outside observer, these changes may look
+under-tested and unnecessary.
+
+The context that's missing is the flurry of work that was going on in
+parallel to modularize this (and surrounding code). #4890 was one of
+the first pieces necessary for that, so some of the discussion about
+it was happening in dependent pull requests.
+
+You can point to a lack ACKs in one place for that PR, but that
+doesn't mean that the changes weren't tested/reviewed/necessary. You
+could also argue that ACKs should've been mirrored on the PR in
+question for posterity, which would be a perfectly reasonable argument
+that I would agree with.
+
+
+2. These changes conflict with a rebased version of your
+CHECKLOCKTIMEVERIFY changes. OK? You have a tree that's a few months
+old, and you find that you have conflicts when rebasing to master. It
+happens to all of us. Do as the rest of us do and update your changes
+to fit. If you missed the review of #4890 and think it should be
+reverted, then call for a revert. But please give a concrete reason
+other than "I've picked this commit series for a crusade because it
+gave me merge conflicts".
+
+What is the conspiracy here? There's a signature cache that is
+implementation-specific, and in a parallel universe, you might be
+arguing that we should rip it out because it adds unnecessary
+complexity to the consensus code. The PR provides a path around that
+complexity. For some reason, your reaction is to cry foul months later
+because you missed reviewing it at the time, rather than cheering for
+the reduced complexity.
+
+3. You seem to think that 1. and 2. seem to point to a systemic
+failure of the review process because modularization "shouldn't come
+at the cost of safety". I agree that it shouldn't come at the cost of
+safety, but I see no failure here. There has been a HUGE effort to
+modularize the code with a combination of pure-code-movement and small
+interface reworks. Please take a moment to grep the git logs for
+"MOVEONLY" in the 0.10 branch.
+
+You'll notice that script verification is now 100% free of bitcoind
+state, threading, and third-party libraries (other than openssl for
+now). That constitutes a massive reduction in code complexity, future
+review overhead, etc. I'll point out here that those were my reasons
+for my contributions to the libbitcoinconsensus effort. I have no
+interest in altcoins or sidechains.
+
+Those milestones were thanks to an effort which included #4890. If you
+have issues with these changes and/or how they were made, please call
+out individual failures and proposed solutions _in context_. That they
+conflict with CHECKLOCKTIMEVERIFY may be a valid concern, and it may
+be worth evaluating how separate coding efforts may more effectively
+parallelized.
+
+Without pointers to specific failures or solutions, I'm not sure what
+you were trying to communicate here, other than maybe stirring the
+social networks with: "I
+personally would recommend *not* upgrading to v0.10 due to these
+issues." That's fine I suppose, but it does nothing to solve whatever
+issue you're trying to call out here.
+
+Cory
+
+
