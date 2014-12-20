@@ -1,0 +1,211 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 20 Dec 2014 09:48:01 -0500
+Subject: [Bitcoin-development] The relationship between Proof-of-Publication
+ and Anti-Replay Oracles
+In-Reply-To: <20141212090551.GA8259@muck>
+References: <20141212090551.GA8259@muck>
+Message-ID: <20141220144800.GA26284@savin.petertodd.org>
+
+Gregory Maxwell recently pointed out to me in private conservation that
+there potentially existed a fundemental disagreement between him and I
+on our philosophical approaches to blockchains, in that he prioritised
+the notion of the blockchain as an anti-replay oracle, and I prioritised
+it as a publication layer. Here I'll talk about the differences and
+simularities between those two approaches.
+
+
+What's Anti-Replay?
+===================
+
+We have some action - perhaps spending a txout - and we only want it to
+be possible for that action to happen once; we don't want it to be
+possible for that action to be replayed again. This is inherently not
+possible with cryptography alone as cryptography is just math and any
+mathematical calculation can be repeated with different parameters.
+
+
+What's an Anti-Replay Oracle?
+=============================
+
+We need the following primitives operating on message m, pubkey p, and a
+valid signature sig1 for m, p:
+
+    AntiReplaySign(m, p, sig1) -> sig2
+    VerifyAntiReplaySig(m, p, sig2) -> True or False
+
+Additionally once AntiReplaySign() has been used once for a given pubkey
+it is impossible to re-run the primitive on a different message m'. This
+is of course impossible to implement with math alone, but we can
+implement it with a trusted third party. For instance Carol can perform
+the AntiReplaySign operation and make the promise that she will only
+ever perform it once for any given (m,p) tuple.
+
+Maxwell points out in CoinWitness? that the anti-replay oracle is
+sufficient to implement a digital currency. So long as the trusted
+oracle, or majority of a federation of trusted oracles, is honest coins
+cannot be double-spent and can be securely passed from owner-to-owner
+with an ever-growing transcript? proving each valid spend.
+
+i) The transcript is needed in this model only because the oracles do
+   nothing more than promise to never sign a message twice; it can be
+   removed if the oracles additionally validate transactions in some
+   way.
+
+
+The Blockchain as an Anti-Replay Oracle
+=======================================
+
+In Bitcoin miners act as a trusted anti-replay oracle. If they follow
+the Bitcoin protocol faithfully for any given txout one and only one
+valid scriptSig will ever be accepted into the blockchain. Thus the
+spend of a txout is a valid anti-replay-protected signature, and the
+validity of that signature can be verified by SPV clients with a merkle
+path to the block headers.
+
+
+Using proof-of-publication to prove non-replay
+==============================================
+
+Given a secure proof-of-publication? system we can prove non-replay. We
+define a valid signature as both being published on that system, as well
+as there existing no other valid signature. (proof-of-non-publication)
+An attempt to fraudulently create a second signature will either fail
+the first test - not being published at all - or will fail the second
+test - not being able to prove no other valid signature exists.
+
+Thus we see that proof-of-publication can be used to securely audit the
+honesty of an anti-replay oracle, resulting in secure anti-replay
+protection without the requirement of trust.
+
+However the converse is not possible: anti-replay cannot be used to
+implement proof-of-publication. Knowing that no conflicting message
+exists says nothing about who be in posession of that message, or
+indeed, any message at all. Thus anti-replay is not sufficient to
+implement other uses of proof-of-publication such as decentralized
+exchange?.
+
+
+Anti-replay in place of proof-of-publication to secure audit logs
+=================================================================
+
+The author's proof-of-concept Uniquebits? allows Alice to prove to Bob
+that some set of records R_i that she has given to Bob is the same set
+of records she has given to everyone else - that is no R_i' exists.
+Secondly Alice can update the records producing R_{i+1}, and Bob can
+determine if such an update exists.
+
+Currently Uniquebits uses proof-of-publication via the Bitcoin
+blockchain directly for both guarantees. It could however make use of
+the anti-replay function provided by Bitcoin to satisfy the first
+requirement with the following protocol:
+
+0) Alice publishes record set R_i such that H(T_i + n_i) is committed in
+   R_i, where T_0 is a txout she controls, and n_i is a nonce.
+
+1) Alice creates T_{i+1}, another txout that she controls, and nonce
+   n_{i+1}
+
+2) Alice creates R_{i+1} which commits to H(T_{i+1} + n_i)
+
+3) Finally to publish R_{i+1} she spends T_i in a transaction X_{i+1}
+   that commits to R_{i+1} (e.g. in an OP_RETURN output, or with
+   pay-to-contract?/sign-to-contract)
+
+This process can be repeated again indefinitely, starting at step #1.
+When Alice wants to prove to Bob - who has R_i - she simply gives him a
+SPV proof that transaction X_{i+1} exists in the blockchain along with
+n_i. This proves that T_i was spent, which can only happen once, and
+that it committed to R_{i+1}. As the output can only be spent once it is
+not possible to create a valid-looking R_{i+1}'
+
+However to prove to Bob that R_{i+1} is the most recent set of records
+Alice still needs to use proof-of-publication, by showing him txout
+T_{i+1} is unspent.
+
+
+Case study: Fidelity-bonded Ledgers/Federated Sidechains
+========================================================
+
+The author's Fidelity-Bonded Ledgers? and the more general idea of
+Federated Sidechains? both describe the notion of a trusted third party,
+possibly implemented as a federated majority set, who guarantees the
+correct maintenance of some financial ledger according to some set of
+rules. Coins can be moved to/from the ledger by payment to a specific
+set of scriptPubKey's. Federated sidechains proposes that the
+scriptPubKey simply be a n-of-m multisig; fidelity-bonded ledgers
+proposes new opcodes that allow redemption via proof-of-fraud.
+
+In any case someone relying on a transaction within the ledger itself
+still needs to be able to audit that their view of the ledger is the
+same view everyone else sees; in short that there do not exist
+double-spends on the ledger. The author's fidelity-bonded ledgers paper
+proposed that the ledger be made available over a Tor-accessible website
+to prevent selective censorship. The federated sidechains proposal is
+mute on this issue.
+
+As the state of the ledger is a specific instance of the more general
+set of records problem that Uniquebits solves as can use the same
+principles for fidelity-bonded ledgers/federated sidechains. The third
+party periodically publishes the ledger state to the Bitcoin blockchain
+allowing anyone to detect if their copy of the ledger is incomplete; if
+not there may be double-spends in it. Finally proof of such
+double-spends can trigger the destruction of a fidelity-bond? and/or
+return funds to their rightful owners. (with appropriate opcodes?)
+
+Censorship of the ledger state publications is an issue, however in the
+case of financial ledgers with pegged funds we can use the pegged funds
+themselves in the publication. Censoring those publications by
+preventing the designated txouts from being spent then becomes
+equivalent to blacklisting funds. This requires a majority of hashing
+power supporting the blacklist, and is a highly politically charged
+issue? in the Bitcoin community.
+
+
+References
+==========
+
+1) Really Really ultimate blockchain compression: CoinWitness,
+   Gregory Maxwell, Aug 19th 2013, Accessed 2014-12-20,
+   https://bitcointalk.org/index.php?topic=277389.msg2961736
+
+2) Setting the record straight on Proof-of-Publication,
+   Peter Todd, Dec 12th 2014,
+   http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg06570.html
+
+3) Decentralized digital asset exchange with honest pricing and market depth,
+   Peter Todd, Feb 9th 2014,
+   http://www.mail-archive.com/bitcoin-development%40lists.sourceforge.net/msg03892.html
+
+4) Uniquebits, Peter Todd, Accessed 2014-12-20,
+   https://github.com/petertodd/uniquebits/tree/b9213f6769d80305bdd192925e8bd7bd04239d1b
+
+5) Homomorphic Payment Addresses and the Pay-to-Contract Protocol,
+   Ilja Gerhardt and Timo Hanke, Dec 13th 2012,
+   http://arxiv.org/abs/1212.3257
+
+6) Fidelity-bonded ledgers, Peter Todd, Feb 25th 2013,
+   http://www.mail-archive.com/bitcoin-development%40lists.sourceforge.net/msg01786.html
+
+7) Enabling Blockchain Innovations with Pegged Sidechains,
+   Blockstream, Oct 22nd 2014,
+   SHA256: 680c71aef9ed578720e25c58fd50de5cdbee755c3800e7601dad9a745ca65cf3,
+   http://www.blockstream.com/sidechains.pdf
+
+8) Fidelity-bonded banks: decentralized, auditable, private, off-chain payments,
+   Peter Todd, Feb 23rd 2014,
+   https://bitcointalk.org/index.php?topic=146307.0
+
+9) WARNING: Bitcoin Address Blacklists have been forced into the Gentoo Linux bitcoind distribution by Luke-jr against the will of other core devs. Gentoo maintainers are clueless and not reversing the change.  Boycott Gentoo now.,
+   historian1111, Oct 10th 2014, Accessed 2014-12-20,
+   https://www.reddit.com/r/Bitcoin/comments/2ityg2/warning_bitcoin_address_blacklists_have_been/
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000001eeaba4cdadaf5b8338cb1b2ae0cf969de77437dd83faac
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141220/3895cdee/attachment.sig>
