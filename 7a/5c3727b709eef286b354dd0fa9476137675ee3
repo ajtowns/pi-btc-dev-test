@@ -1,0 +1,135 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Mon, 22 Dec 2014 20:05:40 +0000
+Subject: [Bitcoin-development] The relationship between
+ Proof-of-Publication and Anti-Replay Oracles
+In-Reply-To: <20141220144800.GA26284@savin.petertodd.org>
+References: <20141212090551.GA8259@muck>
+	<20141220144800.GA26284@savin.petertodd.org>
+Message-ID: <CALqxMTEjYsYs6uTfYKKAx_VCi1L8fHRX-MMKpYbMB56FNnHgqQ@mail.gmail.com>
+
+(Again nothing new to say here, just putting my notes in this
+discussion, where I started with an earlier discussion that Peter
+wrote up with a subject of "disentangling" blockchain design).
+
+In the discussion last year that started the analysis of
+"disentangling" blockchain design I had broken out the candidate layer
+properties that one could use as building blocks to construct a
+decentralised PoW-chain assured immutable history based ecash system
+as:
+
+- time-stamping (really just time-ordered as network time is weak)
+
+- namespace (first come first served name value pairs)
+
+I thought it was interesting to look at potential minimum enabling
+functionality in order to explore whether the consensus critical code
+could be simplified for security, and also to understand the tradeoffs
+towards seeing if there were any improvements that could be found.
+(And it seems its pretty hard to find any improvements was my
+conclusion).
+
+
+Time-stamping (or time-ordering) at a requirements level does not have
+to imply that there is a uniqueness guarantee, or even that the nodes
+see what they are time-stamping (it could be committed with a random
+nonce) and indeed hiding the committed data from the service and
+public view is a common property of time-stamping.  Time-ordering just
+creates an immutable (and not strongly deduplicated) stream of data
+items that came from various users and had a time-ordering placed on
+them.
+
+Minimally the person who submitted the data item would need to know
+the merkle path to it, and that might be achieved by publishing the
+merkle tree, where some or all of the leaves are hidden commitments.
+
+For bitcoin composability purposes you might require that there be no
+hidden commitments, and then other miners and full nodes could
+download all the merkle trees for each PoW-interval and ignore
+duplicates.
+
+
+Namespace service adds the uniqueness and first-come first-served
+property up-front (as its more efficient for people catching up to not
+have to download and discard duplicates/double-spends), and this more
+strict rule requires miners to know about (and presumably index) all
+previous information to avoid violating this rule. I assume name
+attributes to hold information like a public key to approve changes in
+ownership, an IP address, an email address etc.  For efficient proof
+reasons there is still a merkle tree per PoW time-interval binding
+names into a hash-chain.
+
+For bitcoin re-described using a namespace the unique coins are the
+names, and values and ownership public key etc are attributes of the
+name; names (coins) are only added (via mining) or after deletion
+(spend/transfer) of previous names.  Transfers are approved via
+digital signature.
+
+The additional property bitcoin requires is that the values add up.
+
+
+I presume the phrase proof of publication means to draw out separately
+that the full-node version of bitcoin requires a rule that miners
+should not build on top of blocks unless they have copies of all data
+committed to.  Otherwise a malicious party can hide ownership
+transfers that can be revealed later, so that no one is assured of
+ownership: any possibility for a gap in the ownership chain calls into
+question ownership.  So from that perspective a miner consensus rule
+that it should not build on top of blocks that it hasnt seen a full
+gap-free history for makes the PoW chain a kind of proof that the
+miner population at one time saw all data hashed into it.
+
+I think you need one more thing which is that the miners (and other
+full nodes who have copies of the data) are willing to share that
+historic data with you.  There is some meta-incentive for bitcoin
+holders to help others catchup and be assured of the history and
+information has to be broadcast as there are many miners and
+full-nodes.
+
+
+I presume anti-relay term is meant at system level, rather than node
+level, though technically bitcoin nodes in the current protocol
+version dont relay double-spent transactions.  Particularly that
+miners wont bless double-spent transactions (and will do PoW only over
+non double-spent transfers).
+
+
+While there does seem to be some confusion from some people perhaps
+not realising that it is essential that there are no gaps in the
+ownership chain, I am not sure there are necessarily any practical
+implication of philosophical differences between proof of publication
+& anti-relay (or namespace for that matter).  It is also important
+that there is no way to attack the insertion logic so that eg someone
+cant get a hash into an internal nor leaf node of the merkle tree
+without the miners first seeing that data.
+
+Presumably as they are all describing ways to think about bitcoin and
+assuming no one is confused about how bitcoin works, the distinction
+just comes down to what features are assumed to be naturally included
+in the layer definition, and what features have to be added.  For
+example I think its relatively normally assumed that people can look
+up names.
+
+
+I suppose it might be possible to put a self-authenticating access
+handle for the data item into the data set which points into a
+redundant immutable data store.  In effect that is what the bitcoin
+nodes do provide (with full redundancy).  But, more efficiently though
+perhaps with less redundancy and assurance, one could put the data
+into tahoe-lafs which implements immutability, append-only and
+self-authenticating urls and such properties.  From that perspective
+it does make sense to say there is a layer that provides assurance of
+availability of history; the PoW-chain and merkle-tree in the header
+assures already immutability.  The remaining thing that has to be
+assured is availability.
+
+Adam
+
+On 20 December 2014 at 14:48, Peter Todd <pete at petertodd.org> wrote:
+> Gregory Maxwell recently pointed out to me in private conservation that
+> there potentially existed a fundemental disagreement between him and I
+> on our philosophical approaches to blockchains, in that he prioritised
+> the notion of the blockchain as an anti-replay oracle, and I prioritised
+> it as a publication layer. Here I'll talk about the differences and
+> simularities between those two approaches.
+
+
