@@ -1,0 +1,96 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Mon, 29 Dec 2014 11:30:42 +0000
+Subject: [Bitcoin-development] Cartographer
+In-Reply-To: <3685166.ROb67lzbMM@coldstorage>
+References: <CANEZrP1tGYOsShk5Z91_JwH7E0pX8WcyT_-ZBkrWBqZAyrcd1A@mail.gmail.com>
+	<3685166.ROb67lzbMM@coldstorage>
+Message-ID: <CANEZrP0GsuiCF4oHGnTnVXwUsc0dNBOTtusr_CFn+29SxYYwHw@mail.gmail.com>
+
+>
+> Can you explain further where limitations and problems were hit?
+>
+
+Well, look at the feature list :)
+
+The biggest need from my POV is querying support. It's awkward to try and
+retrofit flexible key=value pair queries onto DNS, it just wasn't designed
+for that. With HTTP it's easy. This will become more important in future as
+the protocol evolves. For example, some nodes will soon stop serving the
+block chain because they start pruning. Today this is managed with a hack:
+pruning nodes just stop providing *all* services to the p2p network. This
+takes them out of the DNS seeds entirely. But they can actually still
+provide download of the parts of the chain they still have, and they can
+provide transaction filtering and relay support, along with misc other
+things.
+
+With the current DNS protocol you get an all or nothing choice - so
+probably seeds that only support it will elect to only show nodes that have
+the entire block chain, because that's what Bitcoin Core would find most
+useful. SPV wallets have slightly different needs.
+
+In theory you could come up with a pile of hacks to specify what the client
+needs in the DNS query, but then you have a v2 protocol anyway and might as
+well go the whole way.
+
+Additionally, with DNS it's awkward to provide extra data in the responses
+beyond IP address and it's VERY awkward to sign the responses. Signing the
+responses has a couple of benefits. The biggest is, in future it'd be nice
+to have an authenticated and encrypted network, to raise the bar for sybil
+and MITM attacks. DNS seeding can't be upgraded to support that with any
+reasonable level of effort. And DNS is awkward to configure/set up.
+Actually DNS is just awkward, period.
+
+The second benefit of signing is it provides audibility. If you see a seed
+give bad answers, you can now prove it to other people.
+
+There is also the previously discussed issue that DNS seeds sometimes get
+blocked by aggressive networks because they start serving IPs that are
+infected with malware i.e. they look like fast-flux sites.
+
+Using a simple HTTP based protocol fixes all of these problems in one go.
+
+Now, re: privacy.
+
+Firstly, Peter, get help. I'm serious. You are starting to sound like an
+auto-generated parody of yourself. When you can't debate something as
+boring as HTTP vs DNS without trying to raise an angry mob using bizarre
+conspiracy theories, that's not normal.
+
+I don't think the "DNS has caches" issue is worth worrying about for a lot
+of reasons:
+
+   1. Full nodes try as hard as they can to open ports and advertise their
+   IP addresses to everyone. Even if you change the defaults to disable that,
+   you're about to connect to a bunch of random computers with no reputation
+   anyway.
+
+   2. Lists of stale IP addresses are hardly useful to regular people and
+   network operators can identify Bitcoin users by looking for traffic on port
+   8333, so it's unclear what threat model is being addressed here.
+
+   3. The biggest users of the seeds are all SPV wallets. Every single one
+   of these already phones home to check for online updates.
+
+   4. DNS proxying only hides part of the IP address. If you're serious
+   about this you want to be doing lookups via Tor. Whilst it's possible to
+   use the DNS seeds via Tor in a reasonable way with exit diversity (and
+   bitcoinj does), doing it requires low level Tor protocol programming
+   <https://github.com/bitcoinj/bitcoinj/blob/42f9d7c193fcd56fda7691b0ea934bae9d23f2d6/core/src/main/java/org/bitcoinj/net/discovery/TorDiscovery.java#L260>
+   that is out of reach for most implementors. An HTTP lookup is trivial with
+   any HTTP stack that supports SOCKS.
+
+   5. ISPs also deploy transparent HTTP caches. The Cartographer protocol
+   uses HTTP with inline signing so responses can be cached, once the right
+   headers are being set.
+
+tl;dr it's unclear that DNS caching actually solves any real privacy
+problem but regardless, you can get the same distributed caching with HTTP
+as with DNS. So in the end it makes little difference.
+
+I believe that Cartographer is a better protocol all round and there are no
+costs beyond the one-time upgrades, but even if for some reason you
+disagree with the five privacy points above, I think the benefits still
+massively outweigh the costs.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20141229/c1277067/attachment.html>
