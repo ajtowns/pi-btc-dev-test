@@ -1,0 +1,57 @@
+From: jrn@jrn.me.uk (Ross Nicoll)
+Date: Sun, 04 Jan 2015 17:22:11 +0000
+Subject: [Bitcoin-development] Re-enabling simple tx replacement
+In-Reply-To: <CAAS2fgSw=Goibe2LkXsEH5xjyftjQq4FxJh-dhaP_N5ea21ugQ@mail.gmail.com>
+References: <54A95179.2070200@jrn.me.uk>
+	<CAAS2fgSw=Goibe2LkXsEH5xjyftjQq4FxJh-dhaP_N5ea21ugQ@mail.gmail.com>
+Message-ID: <54A976C3.1030805@jrn.me.uk>
+
+On 04/01/15 17:04, Gregory Maxwell wrote:
+> On Sun, Jan 4, 2015 at 2:43 PM, Ross Nicoll <jrn at jrn.me.uk> wrote:
+>> Dear all,
+>>
+>> I've been looking at atomic cross-chain trading (
+>> https://en.bitcoin.it/wiki/Atomic_cross-chain_trading ) between the
+>> Bitcoin and Dogecoin blockchains, and have a mostly functional
+>> prototype. However as it stands if the refund transaction is relayed
+>> before the actual spend transaction, it "blocks" the legitimate spend
+>> transaction from being accepted into the memory pool.
+> 
+> Unless there is a serious bug that I am not aware of this is not the
+> case. The unlocked transaction is not relayable and will not be
+> mempooled (well, until right before it locks).
+
+Grabbing a simple test case:
+https://chain.so/tx/BTCTEST/f903a31f2474df737d324c60abf2407e1cf7e052844da4ccffbfab81cf6ac1f8
+- that won't lock until 0028 UTC on the 5th.
+
+I've tried closing the wallet, moving the wallet.dat file out of the
+way, and then attempting the spend transaction (which can be locked
+immediately), and it either rejects it on acceptance to mempool, or it
+is never included in a block.
+
+Compare with
+https://chain.so/tx/BTCTEST/0b96eb0c9bf8a6ca08bb9d75e44970889db77779c6d3122296c0169959f979cc
+where the refund was not sent first, and the transaction has succeeded.
+
+>> I've drafted a patch for this
+>> https://github.com/rnicoll/bitcoin/commit/e668d36607f008990ccaac7275e463a6efdd9b5a
+>> but have not yet raised a PR, as historically this has lead to a lot of
+>> discussion in Github which is better suited to this mailing list.
+>>
+>> I'm therefore looking for feedback while I continue testing that patch,
+>> and any comments would be welcomed.
+> 
+> This appears to have absolutely no protection against denial of
+> service, it seems to me that a single user can rapidly update their
+> transaction and exhaust the relay bandwidth of the entire network.
+> 
+
+They can only replace a non-final transaction with a final transaction,
+so the replacement can happen at most once (any later replacement would
+be attempting to replace a final transaction, and therefore fails). So,
+while they can expend twice the bandwidth compared to a non-replacement,
+I don't think that's a major issue?
+
+
+
