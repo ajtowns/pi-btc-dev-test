@@ -1,0 +1,61 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 10 Jan 2015 00:40:38 -0500
+Subject: [Bitcoin-development] OpenSSL 1.0.0p / 1.0.1k incompatible,
+ causes blockchain rejection.
+In-Reply-To: <CAAS2fgR2a+3wb+He611pxy_Ypur0gq+o7SRjUHa4-R+xHLLnyA@mail.gmail.com>
+References: <CAAS2fgR2a+3wb+He611pxy_Ypur0gq+o7SRjUHa4-R+xHLLnyA@mail.gmail.com>
+Message-ID: <20150110054038.GA2048@savin.petertodd.org>
+
+On Sat, Jan 10, 2015 at 04:26:23AM +0000, Gregory Maxwell wrote:
+> The incompatibility is due to the OpenSSL update changing the
+> behavior of ECDSA validation to reject any signature which is
+> not encoded in a very rigid manner.  This was a result of
+> OpenSSL's change for CVE-2014-8275 "Certificate fingerprints
+> can be modified".
+> 
+> While for most applications it is generally acceptable to eagerly
+> reject some signatures, Bitcoin is a consensus system where all
+> participants must generally agree on the exact validity or
+> invalidity of the input data.  In a sense, consistency is more
+> important than "correctness".
+
+As an aside, it's interesting to note that this issue is not entirely
+unique to miners.
+
+For example in micropayment channel protocols the receiver must validate
+signatures from the sender to ensure that they will be able to broadcast
+transactions containing those signatures in the near-future. If they
+accept a signature as valid that the majority of hashing power rejects
+as invalid the sender can simply wait until the micropayment channel
+timeout expires to recover 100% of their funds, ripping off the
+receiver. There's many other advanced Bitcoin protocols with similar
+vulnerabilities; I'd be interested to hear if anyone can come up with a
+similar vulnerability in a non-Bitcoin protocol, and wouldn't be that
+surprised if they did.
+
+While I have often cautioned people before to avoid using libsecp256k1
+for verification on the grounds that consensus trumps correctness, the
+above incompatibility does strongly suggest that OpenSSL may not itself
+have very good consensus-critical design. Along with Maxwell and
+Wuille's recent findings? CVE-2014-3570 - strong evidence of the
+excellent testing the library has undergone - I personally am now of the
+opinion that migrating Bitcoin Core to libsecp256k1 in the near future
+is a good idea on the grounds that it provides us with a well-written,
+and well-understood library designed with consensus in mind that'll
+probably give us fewer consensus problems than our existing OpenSSL
+dependency. It'll also help advanced protocol implementations by giving
+them a clear dependency to use when they need consensus-critical
+signature evaluation.
+
+1) https://www.reddit.com/r/Bitcoin/comments/2rrxq7/on_why_010s_release_notes_say_we_have_reason_to/
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000003b82d8644b56c846e7497118b04a6ec68d3e0a23d33323b82e
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150110/ad0d1541/attachment.sig>
