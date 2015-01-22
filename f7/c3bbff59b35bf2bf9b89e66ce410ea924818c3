@@ -1,0 +1,494 @@
+From: david.vorick@gmail.com (David Vorick)
+Date: Wed, 21 Jan 2015 22:12:31 -0500
+Subject: [Bitcoin-development] [softfork proposal] Strict DER signatures
+In-Reply-To: <87egqnwt7g.fsf@rustcorp.com.au>
+References: <CAPg+sBhk7F2OHT64i2LNSjv8DR5tD3RJkLJGzPGZW8OPQTCjQw@mail.gmail.com>
+	<87egqnwt7g.fsf@rustcorp.com.au>
+Message-ID: <CAFVRnyqhU1aLvj_WxFPY2Vu2mEwhm7jiuKrdbnwJWqvCqPVxGQ@mail.gmail.com>
+
+Seems like a good change to me.
+
+On Wed, Jan 21, 2015 at 7:32 PM, Rusty Russell <rusty at rustcorp.com.au>
+wrote:
+
+> Pieter Wuille <pieter.wuille at gmail.com> writes:
+> > Hello everyone,
+> >
+> > We've been aware of the risk of depending on OpenSSL for consensus
+> > rules for a while, and were trying to get rid of this as part of BIP
+> > 62 (malleability protection), which was however postponed due to
+> > unforeseen complexities. The recent evens (see the thread titled
+> > "OpenSSL 1.0.0p / 1.0.1k incompatible, causes blockchain rejection."
+> > on this mailing list) have made it clear that the problem is very
+> > real, however, and I would prefer to have a fundamental solution for
+> > it sooner rather than later.
+>
+> OK, I worked up a clearer (but more verbose) version with fewer
+> magic numbers.  More importantly, feel free to steal the test cases.
+>
+> One weirdness is the restriction on maximum total length, rather than a
+> 32 byte (33 with 0-prepad) limit on signatures themselves.
+>
+> Apologies for my babytalk C++.  Am sure there's a neater way.
+>
+> /* Licensed under Creative Commons zero (public domain). */
+> #include <vector>
+> #include <cstdlib>
+> #include <cassert>
+>
+> #ifdef CLARIFY
+> bool ConsumeByte(const std::vector<unsigned char> &sig, size_t &off,
+>                  unsigned int &val)
+> {
+>     if (off >= sig.size()) return false;
+>
+>     val = sig[off++];
+>     return true;
+> }
+>
+> bool ConsumeTypeByte(const std::vector<unsigned char> &sig, size_t &off,
+>                      unsigned int t)
+> {
+>     unsigned int type;
+>     if (!ConsumeByte(sig, off, type)) return false;
+>
+>     return (type == t);
+> }
+>
+> bool ConsumeNonZeroLength(const std::vector<unsigned char> &sig, size_t
+> &off,
+>                           unsigned int &len)
+> {
+>     if (!ConsumeByte(sig, off, len)) return false;
+>
+>     // Zero-length integers are not allowed.
+>     return (len != 0);
+> }
+>
+> bool ConsumeNumber(const std::vector<unsigned char> &sig, size_t &off,
+>                    unsigned int len)
+> {
+>     // Length of number should be within signature.
+>     if (off + len > sig.size()) return false;
+>
+>     // Negative numbers are not allowed.
+>     if (sig[off] & 0x80) return false;
+>
+>     // Zero bytes at the start are not allowed, unless it would
+>     // otherwise be interpreted as a negative number.
+>     if (len > 1 && (sig[off] == 0x00) && !(sig[off+1] & 0x80)) return
+> false;
+>
+>     // Consume number itself.
+>     off += len;
+>     return true;
+> }
+>
+> // Consume a DER encoded integer, update off if successful.
+> bool ConsumeDERInteger(const std::vector<unsigned char> &sig, size_t &off)
+> {
+>     unsigned int len;
+>
+>     // Type byte must be "integer"
+>     if (!ConsumeTypeByte(sig, off, 0x02)) return false;
+>     if (!ConsumeNonZeroLength(sig, off, len)) return false;
+>     // Now the BE encoded value itself.
+>     if (!ConsumeNumber(sig, off, len)) return false;
+>
+>     return true;
+> }
+>
+> bool IsValidSignatureEncoding(const std::vector<unsigned char> &sig) {
+>     // Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S]
+> [sighash]
+>     // * total-length: 1-byte length descriptor of everything that follows,
+>     //     excluding the sighash byte.
+>     // * R-length: 1-byte length descriptor of the R value that follows.
+>     // * R: arbitrary-length big-endian encoded R value. It cannot start
+> with any
+>     //     null bytes, unless the first byte that follows is 0x80 or
+> higher, in which
+>     //     case a single null byte is required.
+>     // * S-length: 1-byte length descriptor of the S value that follows.
+>     // * S: arbitrary-length big-endian encoded S value. The same rules
+> apply.
+>     // * sighash: 1-byte value indicating what data is hashed.
+>
+>     // Accept empty signature as correctly encoded (but invalid) signature,
+>     // even though it is not strictly DER.
+>     if (sig.size() == 0) return true;
+>
+>     // Maximum size constraint.
+>     if (sig.size() > 73) return false;
+>
+>     size_t off = 0;
+>
+>     // A signature is of type "compound".
+>     if (!ConsumeTypeByte(sig, off, 0x30)) return false;
+>
+>     unsigned int len;
+>     if (!ConsumeNonZeroLength(sig, off, len)) return false;
+>
+>     // Make sure the length covers the rest (except sighash).
+>     if (len + 1 != sig.size() - off) return false;
+>
+>     // Check R value.
+>     if (!ConsumeDERInteger(sig, off)) return false;
+>
+>     // Check S value.
+>     if (!ConsumeDERInteger(sig, off)) return false;
+>
+>     // There should exactly one byte left (the sighash).
+>     return off + 1 == sig.size() ? true : false;
+> }
+> #else
+> bool IsValidSignatureEncoding(const std::vector<unsigned char> &sig) {
+>     // Format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S]
+> [sighash]
+>     // * total-length: 1-byte length descriptor of everything that follows,
+>     //     excluding the sighash byte.
+>     // * R-length: 1-byte length descriptor of the R value that follows.
+>     // * R: arbitrary-length big-endian encoded R value. It must use the
+> shortest
+>     //     possible encoding for a positive integers (which means no null
+> bytes at
+>     //     the start, except a single one when the next byte has its
+> highest bit set).
+>     // * S-length: 1-byte length descriptor of the S value that follows.
+>     // * S: arbitrary-length big-endian encoded S value. The same rules
+> apply.
+>     // * sighash: 1-byte value indicating what data is hashed (not part of
+> the DER
+>     //     signature)
+>
+>     // Accept empty signature as correctly encoded (but invalid) signature,
+>     // even though it is not strictly DER. This avoids needing full DER
+> signatures
+>     // in places where any invalid signature would do. Given that the
+> empty string is
+>     // always invalid as signature, this is safe.
+>     if (sig.size() == 0) return true;
+>
+>     // Minimum and maximum size constraints.
+>     if (sig.size() < 9) return false;
+>     if (sig.size() > 73) return false;
+>
+>     // A signature is of type 0x30 (compound).
+>     if (sig[0] != 0x30) return false;
+>
+>     // Make sure the length covers the entire signature.
+>     if (sig[1] != sig.size() - 3) return false;
+>
+>     // Extract the length of the R element.
+>     unsigned int lenR = sig[3];
+>
+>     // Make sure the length of the S element is still inside the signature.
+>     if (5 + lenR >= sig.size()) return false;
+>
+>     // Extract the length of the S element.
+>     unsigned int lenS = sig[5 + lenR];
+>
+>     // Verify that the length of the signature matches the sum of the
+> length
+>     // of the elements.
+>     if ((size_t)(lenR + lenS + 7) != sig.size()) return false;
+>
+>     // Check whether the R element is an integer.
+>     if (sig[2] != 0x02) return false;
+>
+>     // Zero-length integers are not allowed for R.
+>     if (lenR == 0) return false;
+>
+>     // Negative numbers are not allowed for R.
+>     if (sig[4] & 0x80) return false;
+>
+>     // Null bytes at the start of R are not allowed, unless R would
+>     // otherwise be interpreted as a negative number.
+>     if (lenR > 1 && (sig[4] == 0x00) && !(sig[5] & 0x80)) return false;
+>
+>     // Check whether the S element is an integer.
+>     if (sig[lenR + 4] != 0x02) return false;
+>
+>     // Zero-length integers are not allowed for S.
+>     if (lenS == 0) return false;
+>
+>     // Negative numbers are not allowed for S.
+>     if (sig[lenR + 6] & 0x80) return false;
+>
+>     // Null bytes at the start of S are not allowed, unless S would
+> otherwise be
+>     // interpreted as a negative number.
+>     if (lenS > 1 && (sig[lenR + 6] == 0x00) && !(sig[lenR + 7] & 0x80))
+> return false;
+>
+>     return true;
+> }
+> #endif
+>
+> #define COMPOUND 0x30
+> #define NOT_COMPOUND 0x31
+>
+> // Len gets adjusted by check() to be actual length with this offset.
+> #define LEN_OK 0
+> #define LEN_TOO_BIG 1
+> #define LEN_TOO_SMALL 0xff
+>
+> #define INT 0x02
+> #define NOT_INT 0x03
+>
+> #define MINIMAL_SIGLEN 1
+> #define MINIMAL_SIGVAL 0x0
+>
+> #define NORMAL_SIGLEN 32
+> #define NORMAL_SIGVAL(S) S, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
+>         0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,              \
+>         0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,              \
+>         0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f
+>
+> // 33 bytes is possible, with 0 prepended.
+> #define MAXIMAL_SIGLEN 33
+> #define MAXIMAL_SIGVAL(S) NORMAL_SIGVAL(S), 0x20
+>
+> #define OVERSIZE_SIGLEN 34
+> #define OVERSIZE_SIGVAL(S) MAXIMAL_SIGVAL(S), 0x21
+>
+> #define ZEROPAD_SIGLEN (1 + NORMAL_SIGLEN)
+> #define ZEROPAD_SIGVAL(S) 00, NORMAL_SIGVAL(S)
+>
+> #define SIGHASH 0xf0
+>
+> static bool check(const std::vector<unsigned char> &sig)
+> {
+>     std::vector<unsigned char> fixed = sig;
+>
+>     // Fixup length
+>     if (fixed.size() > 1)
+>         fixed[1] += fixed.size() - 3;
+>     return IsValidSignatureEncoding(fixed);
+> }
+>
+> #define good(arr) assert(check(std::vector<unsigned char>(arr,
+> arr+sizeof(arr))))
+> #define bad(arr) assert(!check(std::vector<unsigned char>(arr,
+> arr+sizeof(arr))))
+>
+> // The OK cases.
+> static unsigned char zerolen[] = { };
+> static unsigned char normal[] = { COMPOUND, LEN_OK,
+>                                   INT, NORMAL_SIGLEN, NORMAL_SIGVAL(0x1),
+>                                   INT, NORMAL_SIGLEN, NORMAL_SIGVAL(0x2),
+>                                   SIGHASH };
+> static unsigned char min_r[] = { COMPOUND, LEN_OK,
+>                                  INT, MINIMAL_SIGLEN, MINIMAL_SIGVAL,
+>                                  INT, NORMAL_SIGLEN, NORMAL_SIGVAL(0x2),
+>                                  SIGHASH };
+> static unsigned char min_s[] = { COMPOUND, LEN_OK,
+>                                  INT, NORMAL_SIGLEN, NORMAL_SIGVAL(0x1),
+>                                  INT, MINIMAL_SIGLEN, MINIMAL_SIGVAL,
+>                                  SIGHASH };
+> static unsigned char max_r[] = { COMPOUND, LEN_OK,
+>                                  INT, MAXIMAL_SIGLEN, MAXIMAL_SIGVAL(0x1),
+>                                  INT, NORMAL_SIGLEN, NORMAL_SIGVAL(0x2),
+>                                  SIGHASH };
+> static unsigned char max_s[] = { COMPOUND, LEN_OK,
+>                                  INT, NORMAL_SIGLEN, NORMAL_SIGVAL(0x1),
+>                                  INT, MAXIMAL_SIGLEN, MAXIMAL_SIGVAL(0x2),
+>                                  SIGHASH };
+> // As long as total size doesn't go over, a single sig is allowed > 33
+> bytes
+> static unsigned char wierd_s_len[] = { COMPOUND, LEN_OK,
+>                                        INT, OVERSIZE_SIGLEN,
+> OVERSIZE_SIGVAL(0x1),
+>                                        INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                        SIGHASH };
+> static unsigned char wierd_r_len[] = { COMPOUND, LEN_OK,
+>                                        INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                        INT, OVERSIZE_SIGLEN,
+> OVERSIZE_SIGVAL(0x2),
+>                                        SIGHASH };
+> static unsigned char zeropad_s[] = { COMPOUND, LEN_OK,
+>                                      INT, ZEROPAD_SIGLEN,
+> ZEROPAD_SIGVAL(0x81),
+>                                      INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                      SIGHASH };
+> static unsigned char zeropad_r[] = { COMPOUND, LEN_OK,
+>                                      INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                      INT, ZEROPAD_SIGLEN,
+> ZEROPAD_SIGVAL(0x82),
+>                                      SIGHASH };
+>
+>
+> // The fail cases.
+> static unsigned char not_compound[] = { NOT_COMPOUND, LEN_OK,
+>                                         INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                         INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                         SIGHASH };
+> static unsigned char short_len[] = { COMPOUND, LEN_TOO_SMALL,
+>                                      INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                      INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                      SIGHASH };
+> static unsigned char long_len[] = { COMPOUND, LEN_TOO_BIG,
+>                                     INT, NORMAL_SIGLEN, NORMAL_SIGVAL(0x1),
+>                                     INT, NORMAL_SIGLEN, NORMAL_SIGVAL(0x2),
+>                                     SIGHASH };
+> static unsigned char r_notint[] = { COMPOUND, LEN_OK,
+>                                     NOT_INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                     INT, NORMAL_SIGLEN, NORMAL_SIGVAL(0x2),
+>                                     SIGHASH };
+> static unsigned char s_notint[] = { COMPOUND, LEN_OK,
+>                                     INT, NORMAL_SIGLEN, NORMAL_SIGVAL(0x1),
+>                                     NOT_INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                     SIGHASH };
+> static unsigned char s_oversig[] = { COMPOUND, LEN_OK,
+>                                      INT, OVERSIZE_SIGLEN,
+> OVERSIZE_SIGVAL(0x1),
+>                                      INT, MAXIMAL_SIGLEN,
+> MAXIMAL_SIGVAL(0x2),
+>                                      SIGHASH };
+> static unsigned char r_oversig[] = { COMPOUND, LEN_OK,
+>                                      INT, MAXIMAL_SIGLEN,
+> MAXIMAL_SIGVAL(0x1),
+>                                      INT, OVERSIZE_SIGLEN,
+> OVERSIZE_SIGVAL(0x2),
+>                                      SIGHASH };
+> static unsigned char s_negative[] = { COMPOUND, LEN_OK,
+>                                       INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x81),
+>                                       INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                       SIGHASH };
+> static unsigned char r_negative[] = { COMPOUND, LEN_OK,
+>                                       INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                       INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x82),
+>                                       SIGHASH };
+> static unsigned char zeropad_bad_s[] = { COMPOUND, LEN_OK,
+>                                          INT, ZEROPAD_SIGLEN,
+> ZEROPAD_SIGVAL(0x1),
+>                                          INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                          SIGHASH };
+> static unsigned char zeropad_bad_r[] = { COMPOUND, LEN_OK,
+>                                          INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                          INT, ZEROPAD_SIGLEN,
+> ZEROPAD_SIGVAL(0x2),
+>                                          SIGHASH };
+> static unsigned char missing_sighash[] = { COMPOUND, LEN_OK,
+>                                            INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                            INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2) };
+> static unsigned char extra_byte[] = { COMPOUND, LEN_OK,
+>                                       INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                       INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                       SIGHASH, 0 };
+>
+> // Bad signature lengths
+> static unsigned char zerolen_r[] = { COMPOUND, LEN_OK,
+>                                      INT, 0,
+>                                      INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                      SIGHASH };
+> static unsigned char zerolen_s[] = { COMPOUND, LEN_OK,
+>                                      INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                      INT, 0,
+>                                      SIGHASH };
+> static unsigned char overlen_r_by_1[] = { COMPOUND, LEN_OK,
+>                                           INT, NORMAL_SIGLEN + 1 + 1 +
+> NORMAL_SIGLEN + 1 + 1, NORMAL_SIGVAL(0x1),
+>                                           INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                           SIGHASH };
+> static unsigned char overlen_s_by_1[] = { COMPOUND, LEN_OK,
+>                                           INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                           INT, NORMAL_SIGLEN+1+1,
+> NORMAL_SIGVAL(0x2),
+>                                           SIGHASH };
+> static unsigned char underlen_r_by_1[] = { COMPOUND, LEN_OK,
+>                                            INT, NORMAL_SIGLEN-1,
+> NORMAL_SIGVAL(0x1),
+>                                            INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x2),
+>                                            SIGHASH };
+> static unsigned char underlen_s_by_1[] = { COMPOUND, LEN_OK,
+>                                            INT, NORMAL_SIGLEN,
+> NORMAL_SIGVAL(0x1),
+>                                            INT, NORMAL_SIGLEN-1,
+> NORMAL_SIGVAL(0x2),
+>                                            SIGHASH };
+>
+> int main()
+> {
+>     good(zerolen);
+>     good(normal);
+>     good(min_r);
+>     good(min_s);
+>     good(max_r);
+>     good(max_s);
+>     good(wierd_s_len);
+>     good(wierd_r_len);
+>     good(zeropad_s);
+>     good(zeropad_r);
+>
+>     // Try different amounts of truncation.
+>     for (size_t i = 1; i < sizeof(normal)-1; i++)
+>         assert(!check(std::vector<unsigned char>(normal, normal+i)));
+>
+>     bad(not_compound);
+>     bad(short_len);
+>     bad(long_len);
+>     bad(r_notint);
+>     bad(s_notint);
+>     bad(s_oversig);
+>     bad(r_oversig);
+>     bad(s_negative);
+>     bad(r_negative);
+>     bad(s_negative);
+>     bad(r_negative);
+>     bad(zeropad_bad_s);
+>     bad(zeropad_bad_r);
+>     bad(zerolen_r);
+>     bad(zerolen_s);
+>     bad(overlen_r_by_1);
+>     bad(overlen_s_by_1);
+>     bad(underlen_r_by_1);
+>     bad(underlen_s_by_1);
+>     bad(missing_sighash);
+>     bad(extra_byte);
+>
+>     return 0;
+> }
+>
+>
+>
+>
+> ------------------------------------------------------------------------------
+> New Year. New Location. New Benefits. New Data Center in Ashburn, VA.
+> GigeNET is offering a free month of service with a new server in Ashburn.
+> Choose from 2 high performing configs, both with 100TB of bandwidth.
+> Higher redundancy.Lower latency.Increased capacity.Completely compliant.
+> http://p.sf.net/sfu/gigenet
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150121/fba1f709/attachment.html>
