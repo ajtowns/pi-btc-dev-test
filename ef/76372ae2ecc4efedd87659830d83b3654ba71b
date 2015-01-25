@@ -1,0 +1,57 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Sun, 25 Jan 2015 10:34:08 -0400
+Subject: [Bitcoin-development] [softfork proposal] Strict DER signatures
+In-Reply-To: <87egqnwt7g.fsf@rustcorp.com.au>
+References: <CAPg+sBhk7F2OHT64i2LNSjv8DR5tD3RJkLJGzPGZW8OPQTCjQw@mail.gmail.com>
+	<87egqnwt7g.fsf@rustcorp.com.au>
+Message-ID: <CAPg+sBjQAi_hCcoV0gecVQAd4PYKzRd5F_nymz8UVt9BFg8O2Q@mail.gmail.com>
+
+On Wed, Jan 21, 2015 at 8:32 PM, Rusty Russell <rusty at rustcorp.com.au> wrote:
+> One weirdness is the restriction on maximum total length, rather than a
+> 32 byte (33 with 0-prepad) limit on signatures themselves.
+
+Glad that you point this out; I believe that's a weakness with more
+impact now that this function is used for consensus. Let me clarify.
+
+This function was originally written for Bitcoin Core v0.8.0, where it
+was only used to enforce non-standardness, not consensus. In that
+setting, there was no need to require a maximum length for the R and S
+arguments, as overly-long R or S values (which, because of a further
+rule, do not have excessive padding) will always result in integers >=
+2^256, which means the encoded signature would never be valid
+according to the ECDSA specification. A restriction on the total
+length is required however, as BER allows multi-byte length
+descriptors, which this function cannot (and shouldn't, as it's not
+DER) parse.
+
+However, in the currently proposed soft fork, non-DER results in
+immediate script failure, which is distinguishable from invalid
+signatures (by negating the result of a CHECKSIG, for example using a
+NOT after it). I must admit that having invalid signatures with
+overly-long R or S but acceptable R+S size be distinguishable from
+invalid signatures where R+S is too large is ugly, and unnecessary.
+
+Adding individual R and S length restrictions (ideally: saying that no
+more than 32 bytes, excluding the padding 0 byte in front, is invalid)
+would be trivial, but it means deviating slightly from the
+standardness rule implementation that has been deployed for a while.
+There should not really be much risk in doing so, as there are still
+no node implementation releases (apart from the v0.10.0 rc's) that
+would mine a CHECKSIG whose result is negated.
+
+So, I think there are two options:
+* Just add this R/S length restriction rule as a standardness
+requirement, but not make it part of the soft fork. A later softfork
+can then add this easily. The same can be done for several other
+changes if they are deemed useful, like only allowing 0 (the empty
+array) as invalid signature (any other causes failure script
+immediately), requiring correct encoding even for non-evaluated
+signatures, ...
+* Add it to the softfork now, and be done with it.
+
+Opinions?
+
+-- 
+Pieter
+
+
