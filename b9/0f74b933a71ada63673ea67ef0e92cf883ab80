@@ -1,0 +1,325 @@
+From: will.madden@novauri.com (Will)
+Date: Tue, 3 Feb 2015 05:04:21 -0700
+Subject: [Bitcoin-development] Subject: Re: Proposal to address Bitcoin
+ malware
+Message-ID: <etPan.54d0b945.46e87ccd.7f23@Williams-MBP>
+
+An idea for the bitcoin malware proposal below, the idea is at the bottom?
+
+Using a desktop website and mobile device for 2/3 multisig in lieu of a hardware device (trezor) and desktop website (mytrezor) works, but the key is that the device used to input the two signatures?cannot be in the same band. ?What you are protecting against are MITM attacks. ?The issue is that if a single?device or network is compromised by malware, or if a party is connecting to a counterparty through a channel with compromised security, inputing 2 signatures through the?same device/band defeats?the purpose of 2/3 multisig. ?This is the same as how MITM defeats 2FA via mobile phone if the token is entered into the same website as the password - the token is simply passed through by the attacker to the secure session with the provider, allowing unfettered access or reuse of tokens for transactions other than those intended by the real user.
+
+Companies have?found clever ways around MITM attacks using SSL sniff and derivatives by embedding code in mobile apps that communicate not with the website authenticating the user, but with 3rd party company that authenticates the token and passes the authentication to the website through a different secure channel, making the MITM attack far much more difficult. ?The trick here is that instead of one channel, we now have two channels that must be compromised. ?Also, the second channel is between a security company and a (hopefully) professionally run?financial?services website. ?There are other approaches to defeat MITM, such as fingerprinting pages to detect spoofs. ?The former (secure 3rd party channel) is very secure but requires a trusted third party. ?The latter (fingerprinting) is a crap shoot with very high?false positive rates. ?
+
+Anyway, the exact same principles apply here to this conversation. ?The second signature must be presented from a separate band to maintain a higher?degree of security. ?If one signature occurs via HTTP(s) from application 1, another should be SMS through a carrier network, etc via application 2.
+
+The trick we need to look at is how to use the bitcoin network as a delivery mechanism to bypass the need for the trusted third party in the example above. ?Instead of the second factor routing through a 3rd party to the intended recipient, we have another option - one that doesn?t require core development either.
+
+1) Sender > signs signature 1 via desktop > bitcoin network 2/3 P2SH
+2) Mobile app also used by sender receives req. from bitcoin network to sign signature - not through the site in 1 (similar to the 2nd channel between the website and security company above)
+3) Sender > signs signature 2 via mobile app (or any separate device?operating on a different network - heck could be radio) > 2/3 signatures,?transaction?authorized
+
+Any wallet service provider can use this model,?all they must do is develop two independent applications?such a secure browser plugin and a website, or a mobile app and a website that use 2/3 multisig to authorize transactions. ?No core development required - just better security design and execution by those developing wallets. ?If the protocol could natively communicate via two?separate?networks, that might be something to consider, but really developers should already?have all the tools they need, assuming they are competent.
+
+If there was a way to perform 2/3 multisig without requiring a second band, performing the function safely by somehow knowing if the service is performed from a compromised device through some sort of on-blockchain anti-malware check by validating the signature of the signing?application by comparing it to a signature recorded when the multisig address was funded, ?that would be a really neat breakthrough. ?Food for thought, but I can?t see how that could be executed in a way where signatures couldn?t be spoofed from a compromised device. ?If someone cracks that problem, it?s a really big advance for information security.
+
+On 02/02/2015 02:54 PM, Eric Voskuil wrote:?
+>?On Feb 2, 2015, at 11:53 AM, Mike Hearn wrote:?
+>>?
+>> In sending the first-signed transaction to another for second?
+>> signature, how does the first signer authenticate to the second?
+>> without compromising the independence of the two factors??
+>>?
+>> Not sure what you mean. The idea is the second factor displays the?
+>> transaction and the user confirms it matches what they input to the?
+>> first factor. Ideally, using BIP70, but I don't know if BA actually?
+>> uses that currently.?
+>>?
+>> It's the same model as the TREZOR, except with a desktop app instead?
+>> of myTREZOR and a phone instead of a dedicated hardware device.?
+>?
+> Sorry for the slow reply, traveling.?
+>?
+> My comments were made in reference to this proposal:?
+>?
+>>>?On Feb 2, 2015, at 10:40 AM, Brian Erdelyi <brian.erdelyi at gmail.com?
+>>> <mailto:brian.erdelyi at gmail.com>> wrote:?
+>>>?
+>>> Another concept...?
+>>>?
+>>> It should be possible to use multisig wallets to protect against?
+>>> malware. For example, a user could generate a wallet with 3 keys and?
+>>> require a transaction that has been signed by 2 of those keys. One?
+>>> key is placed in cold storage and anther sent to a third-party.?
+>>>?
+>>> It is now possible to generate and sign transactions on the users?
+>>> computer and send this signed transaction to the third-party for the?
+>>> second signature. This now permits the use of out of band transaction?
+>>> verification techniques before the third party signs the transaction?
+>>> and sends to the blockchain.?
+>>>?
+>>> If the third-party is malicious or becomes compromised they would not?
+>>> have the ability to complete transactions as they only have one?
+>>> private key. If the third-party disappeared, the user could use the?
+>>> key in cold storage to sign transactions and send funds to a new wallet.?
+>>>?
+>>> Thoughts??
+
+My comments below start out with the presumption of user platform?
+compromise, but the same analysis holds for the case where the user?
+platform is clean but a web wallet is compromised. Obviously the idea is?
+that either or both may be compromised, but integrity is retained as?
+long as both are not compromised and in collusion.?
+
+> In the multisig scenario the presumption is of a user platform?
+> compromised by malware. It envisions a user signing a 2 of 3 output with?
+> a first signature. The precondition that the platform is compromised?
+> implies that this process results in a loss of integrity of the private?
+> key, and as such if it were not for the second signature requirement,?
+> the malware would be able to spend the output. This may be extended to?
+> all of the keys in the wallet.?
+>?
+> The scenario envisions sending the signed transaction to an another?
+> ("third") party. The objective is for the third party to provide the?
+> second signature, thereby spending the output as intended by the user,?
+> who is not necessarily the first signer. The send must be authenticated?
+> to the user. Otherwise the third party would have to sign anything it?
+> received, obviously rendering the second signature pointless. This?
+> implies that the compromised platform must transmit a secret, or proof?
+> of a secret, to the third party.?
+>?
+> The problem is that the two secrets are not independent if the first?
+> platform is compromised. So of course the malware has the ability to?
+> sign, impersonate the user and send to the third party. So the third?
+> party *must* send the transaction to an *independent* platform for?
+> verification by the user, and obtain consent before adding the second?
+> signature. The user, upon receiving the transaction details, must be?
+> able to verify, on the independent platform, that the details match?
+> those of the transaction that user presumably signed. Even for simple?
+> transactions this must include amount, address and fees.?
+>?
+> The central assumptions are that, while the second user platform may be?
+> compromised, the attack against the second platform is not coordinated?
+> with that of the first, nor is the third party in collusion with the?
+> first platform.?
+>?
+> Upon these assumptions rests the actual security benefit (increased?
+> difficulty of the coordinated attack). The strength of these assumptions?
+> is an interesting question, since it is hard to quantify. But without?
+> independence the entire security model is destroyed and there is thus no?
+> protection whatsoever against malware.?
+>?
+> So for example a web-based or other third-party-provisioned?
+> implementation of the first platform breaks the anti-collusion?
+> assumption. Also, weak comsec allows an attack against the second?
+> platform to be carried out against its network. So for example a simple?
+> SMS-based confirmation could be executed by the first platform alone and?
+> thereby also break the the anti-collusion assumption. This is why I?
+> asked how independence is maintained.?
+>?
+> The assumption of a hardware wallet scenario is that the device itself?
+> is not compromised. So the scenario is not the same. If the user signs?
+> with a hardware wallet, nothing can collude with that process, with one?
+> caveat.?
+>?
+> While a hardware wallet is not subject to onboard malware, it is not?
+> inconceivable that its keys could be extracted through probing or other?
+> direct attack against the hardware. It's nevertheless an assumption of?
+> hardware wallets that these attacks require loss of the hardware.?
+> Physical possession constitutes compromise. So the collusion model with?
+> a hardware wallet does exist, it just requires device possession.?
+> Depending on the implementation the extraction may require a non-trivial?
+> amount of time and money.?
+>?
+> In a scenario where the user signs with HW, then sends the transaction?
+> to a third party for a second of three signatures, and finally to a?
+> second platform for user verification, a HW thief needs to collude with?
+> the third party or the second platform before the owner becomes aware of?
+> the theft (notifying the third party). This of course implies that?
+> keeping both the fist and second platforms in close proximity?
+> constitutes collusion from a physical security standpoint. This is?
+> probably sufficient justification for not implementing such a model,?
+> especially given the cost and complexity of stealing and cracking a?
+> well-designed device. A device backup would provide comparable time to?
+> recover with far less complexity (and loss of privacy).?
+>?
+> Incidentally the hardware wallet idea breaks down once any aspect of the?
+> platform or network to which it connects must be trusted, so for these?
+> purposes I do not consider certain hybrid models as hardware wallets at?
+> all. For example one such device trusts that the compromised computer?
+> does not carry out a MITM attack between the signing device and a shared?
+> secret entered in parts over time by the user. This reduces to a single?
+> factor with no protection against a compromised platform.?
+>?
+> Of course these questions address integrity, not privacy. Use of a third?
+> party implies loss of privacy to that party, and with weak comsec to the?
+> network. Similarly, use of hardware signing devices implies loss of?
+> privacy to the compromised platforms with which they exchange transactions.?
+>?
+> e?
+
+-------------- next part --------------?
+A non-text attachment was scrubbed...?
+Name: signature.asc?
+Type: application/pgp-signature?
+Size: 473 bytes?
+Desc: OpenPGP digital signature?
+
+------------------------------?
+
+Message: 3?
+Date:?Mon, 2 Feb 2015?16:44:37 -0800?
+From: Pieter Wuille <pieter.wuille at gmail.com>?
+Subject: Re: [Bitcoin-development] [softfork proposal] Strict DER?
+signatures?
+To: Gregory Maxwell <gmaxwell at gmail.com>?
+Cc: Bitcoin Dev <bitcoin-development at lists.sourceforge.net>?
+Message-ID:?
+<CAPg+sBjjYLf4NZ8ezK7ML_OO-e6C8_V1i12AXejjrgp+wFB-pg at mail.gmail.com>?
+Content-Type: text/plain; charset=ISO-8859-1?
+
+On Sun, Jan 25, 2015 at 6:48 AM, Gregory Maxwell <gmaxwell at gmail.com> wrote:?
+> So I think we should just go ahead with R/S length upper bounds as?
+> both IsStandard and in STRICTDER.?
+
+I would like to fix this at some point in any case.?
+
+If we want to do that, we must at least have signatures with too-long?
+R or S values as non-standard.?
+
+One way to do that is to just - right now - add a patch to 0.10 to?
+make those non-standard. This requires another validation flag, with a?
+bunch of switching logic.?
+
+The much simpler alternative is just adding this to BIP66's DERSIG?
+right now, which is a one-line change that's obviously softforking. Is?
+anyone opposed to doing so at this stage??
+
+--?
+Pieter?
+
+
+
+------------------------------?
+
+Message: 4?
+Date: Tue,?3 Feb 2015 02:21:24 +0000?
+From: Gregory Maxwell <gmaxwell at gmail.com>?
+Subject: Re: [Bitcoin-development] [softfork proposal] Strict DER?
+signatures?
+To: Pieter Wuille <pieter.wuille at gmail.com>?
+Cc: Bitcoin Dev <bitcoin-development at lists.sourceforge.net>?
+Message-ID:?
+<CAAS2fgQKbsaU5f+UPp8z2nEgXOfNhsFJoY=2j76ArXnBRsiV6g at mail.gmail.com>?
+Content-Type: text/plain; charset=UTF-8?
+
+On Tue, Feb 3, 2015 at 12:44 AM, Pieter Wuille <pieter.wuille at gmail.com> wrote:?
+> The much simpler alternative is just adding this to BIP66's DERSIG?
+> right now, which is a one-line change that's obviously softforking. Is?
+> anyone opposed to doing so at this stage??
+
+Thats my preference.?
+
+
+
+------------------------------?
+
+Message: 5?
+Date:?Mon, 02 Feb 2015?23:38:07 -0800?
+From: Eric Voskuil <eric at voskuil.org>?
+Subject: Re: [Bitcoin-development] Proposal to address Bitcoin malware?
+To: Brian Erdelyi <brian.erdelyi at gmail.com>?
+Cc: Bitcoin Dev <bitcoin-development at lists.sourceforge.net>?
+Message-ID: <54D07ADF.8060809 at voskuil.org>?
+Content-Type: text/plain; charset="utf-8"?
+
+On 02/02/2015 11:58 AM, Brian Erdelyi wrote:>?
+>>Confusing or not, the reliance on multiple signatures as offering?
+>>greater security than single relies on the independence of multiple?
+>secrets. If the secrets cannot be shown to retain independence in the?
+>>envisioned threat scenario (e.g. a user's compromised operating?
+>>system) then the benefit reduces to making the exploit more difficult?
+>>to write, which, once written, reduces to no benefit. Yet the user?
+>>still suffers the reduced utility arising from greater complexity,?
+>>while being led to believe in a false promise.?
+>?
+>Just trying to make sure I understand what you?re saying. Are you?
+>eluding to that if two of the three private keys get compromised there?
+>is no gain in security? Although the likelihood of this occurring is?
+>lower, it is possible.?
+
+No, that's not it. Sorry for not being clear. Independence of control is?
+the central issue in the analysis of a multiple factor system. If an?
+attack compromises one factor there must be no way for that attack to?
+reduce the difficulty of obtaining the other factors.?
+
+Some factors (secrets), like a fingerprint, aren't very secret at all.?
+But getting someone's fingerprint doesn't also help the attacker get a?
+PIN. That factor must be attacked independently. But if the PIN is?
+encrypted with the fingerprint in a public store, then the PIN is not?
+independent of the fingerprint and there is really only one secret.?
+
+If multiple factors are coincident (located within the same security?
+perimeter) they are compromized coincidentally. Coincidence has the same?
+effect as dependence. Consider a credit card with a "security code"?
+printed on the back. A successful attack on the leather wallet yields?
+both secrets.?
+
+Individual environments can be compromised with some difficulty (e.g.?
+desktop malware, fingerprint lift, dictionary attack, brute force PIN,?
+etc.). For the sake of simplicity, let that chance of successful?
+independent attack on any factor be 1 in 2 and the resulting probability?
+of successful concurrent attack on any n factors be 1 in 2^n. If m?
+factors are dependent/coincident on others the relation becomes 1 in?
+2^(n-m).?
+
+Any multi-factor web wallet that handles the user's keys in the browser?
+and authenticates the user in the browser to authorize service signing?
+is effectively single factor. One attack may be launched by an insider,?
+or externally, against the web app, executing in the browser, gaining?
+coincident access to two secrets. Browser/desktop malware can accomplish?
+the same. The difficulty is 1 in 2 vs. the expected 1 in 4.?
+
+>As more malware targets bitcoins I think the utility is evident.?
+>Given how final Bitcoin transactions are, I think it?s worth trying to?
+>find methods to help verify those transactions (if a user deems it to?
+>be high-risk enough) before the transaction is completed. The balance?
+>is trying to devise something that users do not find too burdensome.?
+
+I'm not questioning the motive, I agree it's worth trying. But trying is?
+not succeeding. Increasing user (and/or system) complexity without?
+increasing integrity or privacy is a poor trade, and worse if the user?
+is misled.?
+
+e?
+
+-------------- next part --------------?
+A non-text attachment was scrubbed...?
+Name: signature.asc?
+Type: application/pgp-signature?
+Size: 473 bytes?
+Desc: OpenPGP digital signature?
+
+------------------------------?
+
+------------------------------------------------------------------------------?
+Dive into the World of Parallel Programming. The Go Parallel Website,?
+sponsored by Intel and developed in partnership with Slashdot Media, is your?
+hub for all things parallel software development, from weekly thought?
+leadership blogs to news, videos, case studies, tutorials and more. Take a?
+look and join the conversation now.?http://goparallel.sourceforge.net/?
+
+------------------------------?
+
+_______________________________________________?
+Bitcoin-development mailing list?
+Bitcoin-development at lists.sourceforge.net?
+https://lists.sourceforge.net/lists/listinfo/bitcoin-development?
+
+
+End of Bitcoin-development Digest, Vol 45, Issue 11?
+***************************************************?
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150203/9471fbf8/attachment.html>
