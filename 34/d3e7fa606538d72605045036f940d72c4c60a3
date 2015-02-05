@@ -1,0 +1,256 @@
+From: andreas@schildbach.de (Andreas Schildbach)
+Date: Thu, 05 Feb 2015 14:46:44 +0100
+Subject: [Bitcoin-development] Proposal for P2P Wireless (Bluetooth LE)
+ transfer of Payment URI
+In-Reply-To: <CABdy8DLisEM4AMLqYOmDSAKepE3Ec6niT7ecpXDL80yt6hg5jQ@mail.gmail.com>
+References: <CABdy8DLisEM4AMLqYOmDSAKepE3Ec6niT7ecpXDL80yt6hg5jQ@mail.gmail.com>
+Message-ID: <mavs84$hsi$1@ger.gmane.org>
+
+Thanks Paul, for writing up your protocol!
+
+First thoughts:
+
+For a BIP standard, I think we should skip "bitcoin:" URIs entirely and
+publish BIP70 payment requests instead. URIs mainly stick around because
+of QR codes limited capacity. BIP70 would partly address the "copycat"
+problem by signing payment requests.
+
+In your Motivation section, I miss some words about NFC. NFC already
+addresses all of the usability issues mentioned and is supported by
+mobile wallets since 2011. That doesn't mean your method doesn't make
+sense in some situations, but I think it should be explained why to
+prefer broadcasting payment requests over picking them up via near field
+radio.
+
+
+On 02/05/2015 09:01 AM, Paul Puey wrote:
+> Airbitz has developed and implemented a method for communicating a
+> bitcoin URI across Bluetooth (BLE) or any other P2P, mid range,
+> wireless, broadcast medium. The currently documented implementation is
+> available in our iOS and Android mobile wallet (updated Android version
+> with BLE coming in about 1 week). We would like to have the BIP pulled
+> into Github for review and discussion. Here is the current BIP:
+> 
+> 
+> BIP: TBD
+> 
+> Title: P2P Wireless URI transfer
+> 
+> Authors: Thomas Baker <tom?at?airbitz.co <http://airbitz.co>>, Paul Puey
+> <paul?at?airbitz.co <http://airbitz.co>>
+> 
+> Contributors: Joey Krug <joeykrug?at?gmail.com <http://gmail.com>>
+> 
+> Status: proposal
+> 
+> Type: Standards Track
+> 
+> Created: 2015-01-12
+> 
+> 
+>     Table of Contents
+> 
+>   *
+> 
+>     Abstract
+> 
+>   *
+> 
+>     Motivation
+> 
+>   *
+> 
+>     Specification
+> 
+>   *
+> 
+>     Compatibility
+> 
+>   *
+> 
+>     Examples
+> 
+>   *
+> 
+>     References
+> 
+> 
+>     Abstract
+> 
+> This is a protocol for peer-to-peer wireless transfer of a URI request
+> using an open broadcast or advertisement channel such as Bluetooth,
+> Bluetooth Low Energy, or WiFi Direct.
+> 
+> 
+>     Motivation
+> 
+> There are disadvantages for a merchant (requester) and customer (sender)
+> to exchange a URI request using QR codes that can be eliminated by using
+> wireless broadcast or advertisements.
+> 
+> Current QR code scan method to transfer a request URI from merchant
+> (Requester) to customer (Sender) is cumbersome. A usual scenario is a
+> merchant with a POS terminal for order entry and a separate tablet for
+> transacting payments with bitcoin, and a customer with a smartphone.
+> After the order is entered, the merchant enters payment request
+> information into the tablet, generates the QR code representing the URI,
+> and presents this to the customer. The customer prepares to scan the QR
+> code with their smartphone by maneuvering the camera to the tablet. The
+> tablet screen must be relatively clean, point at the customer, and held
+> steady. The smartphone camera lens must be clean, point at the tablet
+> screen, come into range, and held steady to focus and wait for a QR
+> scan. Environmental conditions such as bright outdoor sunlight, indoor
+> spot lights, or significant distance between QR code and camera can
+> create difficult and cumbersome experiences for users.
+> 
+> Using a wireless local broadcast allows the merchant to just enter the
+> payment and wait. The tablet and smartphone are not maneuvered to align
+> in any way. The customer observes broadcast listings, selects the
+> appropriate one from possible simultaneous broadcasts from other POS
+> stations nearby, examines the URI request details such as amount, and
+> decides whether to send funds, initiating a bitcoin network transfer.
+> The merchant and customer then receive the transaction confirmations and
+> are done with the sale. Merchant and customer devices are kept private
+> and secured in their own possession.
+> 
+> The URI and other broadcast identification (Joe?s Grill #1) only contain
+> public information. However, a copycat broadcaster acting as MITM might
+> duplicate the broadcast simultaneously as the merchant, attempting to
+> lure the customer to send funds to the copycat. That attack is mitigated
+> with this broadcast method because of the partial address in the broadcast.
+> 
+> 
+>     Specification
+> 
+> Requester generates a bitcoin URI request of variable length, and a
+> limited descriptive identifier string. Requester then broadcasts the
+> URI?s partial public address (<paddress>) plus identifier (<id>) over a
+> publicly visible wireless channel.
+> 
+> Sender scans for broadcasts on their device, examines and selects the
+> desired request by the identifier and partial address. This connects a
+> data channel to Requester.
+> 
+> Requester sends full URI back over the data channel.
+> 
+> Sender device ensures <paddress> is part of the full URI public address
+> and checks the full address integrity. Checking the broadcast and full
+> URI integrity prevents a copycat device within range from copying the
+> partial address and fooling the customer into sending funds to the
+> copycat instead.
+> 
+> Below is a description of the protocol through Bluetooth Smart (Low Energy).
+> 
+> Requestor      Sender     - Bitcoin transaction roles
+> 
+> Peripheral     Central    - Bluetooth GAP definitions
+> 
+>   Mode           Mode
+> 
+> 1   |------------->|       - Requestor Advertises partial bitcoin: URI +
+> Name
+> 
+>    |     ...      |       
+> 
+> 2   |<-------------|       - Subscribe then send sender's Name,
+> requesting a response
+> 
+> 3   |------------->|       - ACK
+> 
+> 4   |<-------------|       - request Read Characteristic from peripheral
+> 
+> 5   |------------->|       - Sender receives full bitcoin: URI
+> 
+> 
+>  1.
+> 
+>     Peripheral advertises over a service UUID a BLE extended
+>     advertisement with a Scan Response containing the partial address of
+>     a bitcoin URI and a Name, any plain text. The entire response is
+>     limited to 26 characters. The first 10 make up the first 10
+>     characters of the bitcoin URI public address where to send bitcoin,
+>     and must be present. The remaining characters are any plain text
+>     such as ?The Habit 1? or ?Starbucks-Reg 1?, more human readable
+>     information. The partial address serves as a check against a nearby
+>     attacker who may try to lure a Sender into sending payment to a
+>     separate wallet by advertising a similar Scan Response but cannot
+>     replicate a public address with the same leading 10 characters and
+>     different trailing characters.
+> 
+>  2.
+> 
+>     When the Central scans the advertisement, it may display the Scan
+>     Response in a human readable listing using the two pieces of
+>     information. If Central chooses this advertisement to receive the
+>     full request, it then subscribes to the service and writes the
+>     characteristic (a second UUID) with it?s own name, or a blank if not
+>     sending a name, to the Peripheral.
+> 
+>  3.
+> 
+>     Peripheral gets a characteristic write request of the Central?s
+>     name, and acknowledges the receipt by sending a server response.
+> 
+>  4.
+> 
+>     Central receives a characteristic write (from the response) and
+>     immediately requests the entire bitcoin URI by issuing a read
+>     request on that characteristic.
+> 
+>  5.
+> 
+>     Peripheral receives the read request and sends the entire bitcoin
+>     URI over that characteristic up to 512 bytes.
+> 
+> This ends the proposed specification as the bitcoin URI transfer is
+> complete. The Sender would then normally confirm the request and decide
+> whether to initiate the fund transfer.
+> 
+> 
+>     Compatibility
+> 
+> There are no prior BIPs covering this.
+> 
+> 
+>     Examples
+> 
+> Airbitz iOS Bluetooth Low Energy to Bluetooth Low Energy request transfer.
+> 
+> 
+>     References
+> 
+> 
+> 
+> 
+> 
+> logo   
+> 	*Paul Puey* CEO / Co-Founder, Airbitz Inc
+> +1-619-850-8624 | http://airbitz.co <http://airbitz.co/> | San Diego
+> <http://facebook.com/airbitz> <http://twitter.com/airbitz> <https://plus.google.com/118173667510609425617> <https://go.airbitz.co/comments/feed/> <http://linkedin.com/in/paulpuey> <https://angel.co/paul-puey>
+> 
+> *DOWNLOAD THE AIRBITZ WALLET:*
+>  
+> <https://play.google.com/store/apps/details?id=com.airbitz><https://itunes.apple.com/us/app/airbitz/id843536046>
+> 
+> 
+> 
+> 
+> 
+> ------------------------------------------------------------------------------
+> Dive into the World of Parallel Programming. The Go Parallel Website,
+> sponsored by Intel and developed in partnership with Slashdot Media, is your
+> hub for all things parallel software development, from weekly thought
+> leadership blogs to news, videos, case studies, tutorials and more. Take a
+> look and join the conversation now. http://goparallel.sourceforge.net/
+> 
+> 
+> 
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> 
+
+
+
+
