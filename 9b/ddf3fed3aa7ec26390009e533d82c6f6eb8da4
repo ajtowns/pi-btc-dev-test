@@ -1,0 +1,46 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 12 Feb 2015 02:45:09 -0500
+Subject: [Bitcoin-development] replace-by-fee v0.10.0rc4
+In-Reply-To: <7C171F0B-1EF8-4542-8E18-187B2E94DF14@bitsofproof.com>
+References: <20150212064719.GA6563@savin.petertodd.org>
+	<7C171F0B-1EF8-4542-8E18-187B2E94DF14@bitsofproof.com>
+Message-ID: <20150212074509.GC4254@savin.petertodd.org>
+
+On Thu, Feb 12, 2015 at 08:23:29AM +0100, Tamas Blummer wrote:
+> Peter,
+> 
+> An important use of the core is being border router to proprietary software, that is usually indexing the block chain and mempool. That software is also assuming that double spends are not relayed by the core.
+> 
+> To remain useful as border router, the replace-by-fee patched core should only relay double spend if it actually replaces an earlier transaction, as otherwise the replace logic that is according to your commit more than just fee comparison, would have to be replicated in the proprietary stack and mempool might get out of sync with that of the border router. 
+
+Absolutely nothing in the replace-by-fee patch is consensus critical;
+your objection is entirely an artifact of the poor modularity of the
+Bitcoin Core codebase, something that is being actively improved on as
+we speak.
+
+Anyway, the logic of dealing with double-spends and keeping mempools
+synced is pretty trivial:
+
+    for i in range(len(tx.vout)):
+        for double_spent_tx in mempool.mapNextTx[COutPoint(tx.GetHash(), i)]:
+            mempool.remove(double_spent_tx, recursive=True)
+    mempool.add(tx)
+
+IOW, assume every transaction your "border router" gives you is now the
+one and only true transaction, and everything conflicting with it must
+go.
+
+All the complexity of replace-by-fee is in deciding when one transaction
+should replace another(s). Other than that the code is simple and very
+similar to block handling logic.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000948f5c1f1a8c8073cc7d5161b98474e33904f8a1d6b0330
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150212/b1db0155/attachment.sig>
