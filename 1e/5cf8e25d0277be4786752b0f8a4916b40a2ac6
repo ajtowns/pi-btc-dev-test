@@ -1,0 +1,113 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 12 Feb 2015 01:47:19 -0500
+Subject: [Bitcoin-development] replace-by-fee v0.10.0rc4
+Message-ID: <20150212064719.GA6563@savin.petertodd.org>
+
+My replace-by-fee patch is now available for the v0.10.0rc4 release:
+
+    https://github.com/petertodd/bitcoin/tree/replace-by-fee-v0.10.0rc4
+
+Along with demo scripts of the functionality:
+
+    https://github.com/petertodd/replace-by-fee-tools
+
+New to this version is a comprehensive set of unittests under
+qa/replace-by-fee
+
+Additionally the preferential peering support now preferentially peers
+with Bitcoin XT? nodes that support Andresen/Harding's double-spend
+relaying? patch. While Bitcoin XT nodes don't accept double-spends into
+their mempool, they do relay them perfectly well and thus are an asset
+to those doing replace-by-fee mining.?
+
+I've had a number of requests from miners for a version of
+replace-by-fee against Luke-Jr's Eligius patches?; I'll be also
+releasing that shortly once this release has undergone some more
+testing.
+
+
+What's replace-by-fee?
+----------------------
+
+Currently most Bitcoin nodes accept the first transaction they see
+spending an output to the mempool; all later transactions are rejected.
+Replace-by-fee changes this behavior to accept the transaction paying
+the highest fee, both absolutely, and in terms of fee-per-KB. Replaced
+children are also considered - a chain of transactions is only replaced
+if the replacement has a higher fee than the sum of all replaced
+transactions.
+
+Doing this aligns standard node behavior with miner incentives: earn the
+most amount of money per block. It also makes for a more efficient
+transaction fee marketplace, as transactions that are "stuck" due to bad
+fee estimates can be "unstuck" by double-spending them with higher
+paying versions of themselves. With scorched-earth techniques? it gives
+a path to making zeroconf transactions economically secure by relying on
+economic incentives, rather than "honesty" and alturism, in the same way
+Bitcoin mining itself relies on incentives rather than "honesty" and
+alturism.
+
+Finally for miners adopting replace-by-fee avoids the development of an
+ecosystem that relies heavily on large miners punishing smaller ones for
+misbehavior, as seen in Harding's proposal? that miners collectively 51%
+attack miners who include doublespends in their blocks - an unavoidable
+consequence of imperfect p2p networking in a decentralized system - or
+even Hearn's proposal? that a majority of miners be able to vote to
+confiscate the earnings of the minority and redistribute them at will.
+
+
+Installation
+------------
+
+Once you've compiled the replace-by-fee-v0.10.0rc4 branch just run your
+node normally. With -debug logging enabled, you'll see messages like the
+following in your ~/.bitcoin/debug.log indicating your node is replacing
+transactions with higher-fee paying double-spends:
+
+    2015-02-12 05:45:20 replacing tx ca07cc2a5eaf55ab13be7ed7d7526cb9d303086f116127608e455122263f93ea with c23973c08d71cdadf3a47bae45566053d364e77d21747ae7a1b66bf1dffe80ea for 0.00798 BTC additional fees, -1033 delta bytes
+
+Additionally you can tell if you are connected to other replace-by-fee
+nodes, or Bitcoin XT nodes, by examining the service bits advertised by
+your peers:
+
+    $ bitcoin-cli getpeerinfo | grep services | egrep '((0000000000000003)|(0000000004000001))'
+            "services" : "0000000000000003",
+            "services" : "0000000004000001",
+            "services" : "0000000004000001",
+            "services" : "0000000000000003",
+            "services" : "0000000004000001",
+            "services" : "0000000004000001",
+            "services" : "0000000000000003",
+            "services" : "0000000000000003",
+
+Replace-by-fee nodes advertise service bit 26 from the experimental use
+range; Bitcoin XT nodes advertise service bit 1 for their getutxos
+support. The code sets aside a certain number of outgoing and incoming
+slots just for double-spend relaying nodes, so as long as everything is
+working you're node should be connected to like-minded nodes a within 30
+minutes or so of starting up.
+
+If you *don't* want to advertise the fact that you are running a
+replace-by-fee node, just checkout a slightly earlier commit in git; the
+actual mempool changes are separate from the preferential peering
+commits. You can then connect directly to a replace-by-fee node using
+the -addnode command line flag.
+
+1) https://github.com/bitcoinxt/bitcoinxt
+2) https://github.com/bitcoin/bitcoin/pull/3883
+3) https://github.com/bitcoin/bitcoin/pull/3883#issuecomment-45543370
+4) https://github.com/luke-jr/bitcoin/tree/0.10.x-ljrP
+5) http://www.mail-archive.com/bitcoin-development%40lists.sourceforge.net/msg05211.html
+6) http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg06970.html
+7) http://www.mail-archive.com/bitcoin-development%40lists.sourceforge.net/msg04972.html
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000013c290b77d45d2ea7f9220aedfadfd556ad41b6bd39822f3
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150212/a1703e85/attachment.sig>
