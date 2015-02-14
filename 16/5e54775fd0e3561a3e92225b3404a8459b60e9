@@ -1,0 +1,97 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Sat, 14 Feb 2015 21:00:51 +0100
+Subject: [Bitcoin-development] On Rewriting Bitcoin (was Re:
+ [Libbitcoin] Satoshi client: is a fork past 0.10 possible?)
+In-Reply-To: <3D4F2E23-CADE-4FE7-B960-3F79815E868C@bitsofproof.com>
+References: <CABm2gDpReRty6TdfMDssjF27XgC_SYs_U__SFBNdsYW24Mzh8w@mail.gmail.com>
+	<54CC0E1D.7030409@voskuil.org>
+	<CABm2gDqM6q24tPEBKSHbbVQu-mvfV37PNc4hD=VjyRHk2jujZw@mail.gmail.com>
+	<54D0414F.6030806@voskuil.org>
+	<CABm2gDo_sYjNWU6EEsKmOXt5uUu87Lj1oFzqio79MxSx2SYrNg@mail.gmail.com>
+	<54DE7601.4070509@voskuil.org>
+	<CABm2gDpt60B=Sf_2X9xt4fPH7x4fff7K4h36XfosHigV5tP+4Q@mail.gmail.com>
+	<54DF07A5.1060004@voskuil.org>
+	<CABm2gDoS+XOR7Ugt91kNWNdvwsb1_Zb-aO0sma_Xps2Sx-0N5g@mail.gmail.com>
+	<54DF2E80.5060506@voskuil.org>
+	<20150214131320.GA26731@savin.petertodd.org>
+	<3D4F2E23-CADE-4FE7-B960-3F79815E868C@bitsofproof.com>
+Message-ID: <CABm2gDrFYyXX3B0=qj=Wdb8MDBAZEgWqs6zhTTSw6qbWWW9WPw@mail.gmail.com>
+
+On Sat, Feb 14, 2015 at 3:23 PM, Tamas Blummer <tamas at bitsofproof.com> wrote:
+> Peter,
+> We have seen that the consensus critical code practically extends to Berkley
+> DB limits or OpenSSL laxness, therefore
+> it is inconceivable that a consensus library is not the same as Bitcoin
+> Core, less its P2P service rules, wallet and RPC server.
+
+Right now libconsensus' only dependency is openSSL. Most of the
+testing in libsecp256k1 has been in signing rather than verifying
+signatures (please, anyone with more knowledge in the library don't
+hesitate to correct me or clarify things). But eventually openSSL will
+be completely replaced by libsecp256k1.
+It does not store anything, 0.1 is just a dynamic library with a c API
+to a single function: VerifyScript().
+This function saves the hassle of reimplementing signature checking
+(which is a really hard part) and reimplementing an interpreter that
+must function in exactly the same way in many as many other nodes with
+different software and/or hardware.
+Guido van Rossum can say "some behaviours in python the language are
+not specified, so it is ok if cpython and pypy do different things,
+they're still both running python which is more abstract than any of
+its implementation".
+But a consensus system like bitcoin doesn't have the luxury of leaving
+consensus rules unspecified. And the simplest way to fully specify a
+language interpreter is by implementing it.
+But coupling the consensus rules specification with a bigger project
+like bitcoin core can result in implementation details of that bigger
+project accidentally and unexpectedly becoming consensus rules. This
+is what happened with bdb and nobody wants that to happen again,
+that's the whole point.
+Note that many parts of the bitcoin protocol (like the p2p messages)
+are NOT part of the consensus rules.
+You can have a look at
+https://github.com/jtimon/bitcoin/commits/consensus2 and maybe you
+would be surprised about how small they actually are. This branch is
+incomplete and still a mess that needs to be cleaned up. And none of
+that is included in libconsensus yet.
+I was planning on writing a post here asking for feedback on the
+interfaces for these higher level checks. I'm just putting the code
+together in the same module, but obviously class CCoinsViewCache
+cannot be an argument in functions of a c API.
+
+> The Core code base is unfriendly to feature extensions because of its
+> criticality, legacy design and ancient technology. It is also a commodity
+> that the ecosystem takes for granted and free.
+>
+> I honestly admire the core team that works and progresses within these
+> limits and perception.
+>
+> I am not willing to work within the core?s legacy technology limits. Does it
+> mean I am dicking around? I think not.
+> It was my way to go down the rabbit hole by re-digging it and I created
+> successful commercial products on the way.
+
+Nobody is attacking alternative implementations. This tool was created
+mostly with alternative implementations in mind.
+So input from them it's very welcomed on how to continue libconsensus
+(or of course correct any flaws in verifyScript if there's any).
+I just wanted to wait to have some more code to make things easier to
+explain (and have a clearer idea of it myself).
+There's a more limited branch on "next steps for libconsensus" in #5669.
+
+> It is entirely rational for me to focus on innovation that uses the core as
+> a border router for this block chain.
+
+Sure, I think he is complaining that at the moment that's probably the
+only safe way to operate with alternative implementations and still
+have full node guarantees.
+
+> I am rather thankful for the ideas of the side chains, that enable
+> innovation that is no longer measured on unapologetic compatibility with a
+> given code base, but its services to end user.
+
+Sidechains are completely orthogonal to this discussion and, in fact,
+it would be good to have libconsensuses for sidechains too, since
+their nodes also need to come to consensus.
+
+
