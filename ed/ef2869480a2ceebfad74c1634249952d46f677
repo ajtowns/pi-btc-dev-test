@@ -1,0 +1,67 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Fri, 20 Feb 2015 20:03:26 +0100
+Subject: [Bitcoin-development] bloom filtering, privacy
+In-Reply-To: <CAAS2fgSsXDTzxS29_SZvy1_Tie8=EGDhUjGkyGTXbc=47ta20w@mail.gmail.com>
+References: <CALqxMTE2doZjbsUxd-e09+euiG6bt_J=_BwKY_Ni3MNK6BiW1Q@mail.gmail.com>
+	<CANEZrP32M-hSU-a1DA5aTQXsx-6425sTeKW-m-cSUuXCYf+zuQ@mail.gmail.com>
+	<CALqxMTFNdtUup5MB2Dc_AmQ827sM-t5yx7WQubbfOEd_bO_Ong@mail.gmail.com>
+	<CANEZrP0cOY5Wt_mvBSdGGmi4NfZi04SQ7d6GLpnRxmqvXNArGA@mail.gmail.com>
+	<CALqxMTE1OANaMAvqrcOLuKtYd_jmqYp5GcB4CX77S8+fR05=jg@mail.gmail.com>
+	<CAAS2fgSsXDTzxS29_SZvy1_Tie8=EGDhUjGkyGTXbc=47ta20w@mail.gmail.com>
+Message-ID: <CANEZrP2XoVL6sWxA5KpsGsNxXi-hwdVN=BqXJfn17N-W0_SHEg@mail.gmail.com>
+
+>
+> It's a straight forward idea: there is a scriptpubkey bitmap per block
+> which is committed. Users can request the map, and be SPV confident
+> that they received a faithful one. If there are hits, they can request
+> the block and be confident there was no censoring.
+
+
+OK, I see now, thanks Gregory. You're right, the use of UTXO set in that
+context was confusing me.
+
+If I go back to when we first did Bloom filtering and imagine the same
+proposal being made, I guess I would have been wondering about the
+following issues. Perhaps they have solutions:
+
+1. Miners have to upgrade to generate the per-block filters. Any block that
+doesn't have such a filter has to be downloaded in full, still. So it would
+have taken quite a while for the bandwidth savings to materialise.
+
+2. If checking the filter isn't a consensus rule, any miner who builds a
+wrong filter breaks the entire SPV userbase. With per-node filtering, a
+malicious or wrong node breaks an individual sync, but if the wallet user
+notices they don't seem to be properly synchronised they can just press
+"Rescan chain" and most likely get fixed. In practice broken nodes have
+never been reported, but it's worth considering.
+
+3. Downloading full blocks is still a lot of data. If you have a wallet
+that receives tips a couple of times per day, and you open your wallet once
+per week, then with 1mb blocks you would be downloading ~14mb of data each
+time. Pretty pokey even on a desktop. Much sadness if you're on mobile.
+
+4. Header size is constant, but per-block filters wouldn't be. So even the
+null sync would download more data as the network got busier. Of course
+Bloom filtering has the same scaling problem, but only between hard disk ->
+RAM -> CPU rather than across the network.
+
+5. Is it really more private? Imagine we see a hit in block 100, so we
+download the full block and find our transaction. But now we must also
+learn when that transaction is spent, so we can keep the wallet-local UTXO
+set up to date. So we scan forward and see another hit in block 105, so now
+we download block 105. The remote node can now select all transactions in
+block 105 that spend transactions in block 100 and narrow down which txs
+are ours. If we are watching a wallet that does multi-sends then it feels
+like this problem gets much worse.
+
+
+
+I'd really like to find a solution that has O(1) scaling on sync. If we see
+nodes just as sources of UTXO data then shovelling the client (tx, existing
+merkle path) pairs keyed off script prefixes would (with one additional
+index) be O(1) and provide the same security guarantees as Bloom filtering
+today. It creates lots of other problems to solve, but at least it would
+scale into the forseeable future.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150220/b4aa6d94/attachment.html>
