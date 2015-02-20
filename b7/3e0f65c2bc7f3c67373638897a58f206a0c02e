@@ -1,0 +1,71 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Fri, 20 Feb 2015 17:59:03 +0000
+Subject: [Bitcoin-development] bloom filtering, privacy
+In-Reply-To: <CANEZrP0cOY5Wt_mvBSdGGmi4NfZi04SQ7d6GLpnRxmqvXNArGA@mail.gmail.com>
+References: <CALqxMTE2doZjbsUxd-e09+euiG6bt_J=_BwKY_Ni3MNK6BiW1Q@mail.gmail.com>
+	<CANEZrP32M-hSU-a1DA5aTQXsx-6425sTeKW-m-cSUuXCYf+zuQ@mail.gmail.com>
+	<CALqxMTFNdtUup5MB2Dc_AmQ827sM-t5yx7WQubbfOEd_bO_Ong@mail.gmail.com>
+	<CANEZrP0cOY5Wt_mvBSdGGmi4NfZi04SQ7d6GLpnRxmqvXNArGA@mail.gmail.com>
+Message-ID: <CALqxMTE1OANaMAvqrcOLuKtYd_jmqYp5GcB4CX77S8+fR05=jg@mail.gmail.com>
+
+The idea is not mine, some random guy appeared in #bitcoin-wizards one
+day and said something about it, and lots of people reacted, wow why
+didnt we think about that before.
+
+It goes something like each block contains a commitment to a bloom
+filter that has all of the addresses in the block stored in it.
+
+Now the user downloads the headers and bloom data for all blocks.  The
+know the bloom data is correct in an SPV sense because of the
+commitment.  They can scan it offline and locally by searching for
+addresses from their wallet in it.  Not sure off hand what is the most
+efficient strategy, probably its pretty fast locally anyway.
+
+Now they know (modulo false positives) which addresses of theirs maybe
+in the block.
+
+So now they ask a full node for merkle paths + transactions for the
+addresses from the UTXO set from the block(s) that it was found in.
+
+Separately UTXO commitments could optionally be combined to improve
+security in two ways:
+
+- the normal SPV increase that you can also see that the transaction
+is actually in the last blocks UTXO set.
+
+- to avoid withholding by the full node, if the UTXO commitment is a
+trie (sorted) they can expect a merkle path to lexically adjacent
+nodes either side of where the claimed missing address would be as a
+proof that there really are no transactions for that address in the
+block.  (Distinguishing false positive from node withholding)
+
+Adam
+
+On 20 February 2015 at 17:43, Mike Hearn <mike at plan99.net> wrote:
+> Ah, I see, I didn't catch that this scheme relies on UTXO commitments
+> (presumably with Mark's PATRICIA tree system?).
+>
+> If you're doing a binary search over block contents then does that imply
+> multiple protocol round trips per synced block? I'm still having trouble
+> visualising how this works. Perhaps you could write down an example run for
+> me.
+>
+> How does it interact with the need to download chains rather than individual
+> transactions, and do so without round-tripping to the remote node for each
+> block? Bloom filtering currently pulls down blocks in batches without much
+> client/server interaction and that is useful for performance.
+>
+> Like I said, I'd rather just junk the whole notion of chain scanning and get
+> to a point where clients are only syncing headers. If nodes were calculating
+> a script->(outpoint, merkle branch) map in LevelDB and allowing range
+> queries over it, then you could quickly pull down relevant UTXOs along with
+> the paths that indicated they did at one point exist. Nodes can still
+> withhold evidence that those outputs were spent, but the same is true today
+> and in practice this doesn't seem to be an issue.
+>
+> The primary advantage of that approach is it does not require a change to
+> the consensus rules. But there are lots of unanswered questions about how it
+> interacts with HD lookahead and so on.
+>
+
+
