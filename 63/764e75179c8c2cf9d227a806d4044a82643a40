@@ -1,0 +1,134 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Sat, 21 Feb 2015 05:12:54 +0000
+Subject: [Bitcoin-development] bloom filtering, privacy
+In-Reply-To: <CANEZrP2XoVL6sWxA5KpsGsNxXi-hwdVN=BqXJfn17N-W0_SHEg@mail.gmail.com>
+References: <CALqxMTE2doZjbsUxd-e09+euiG6bt_J=_BwKY_Ni3MNK6BiW1Q@mail.gmail.com>
+	<CANEZrP32M-hSU-a1DA5aTQXsx-6425sTeKW-m-cSUuXCYf+zuQ@mail.gmail.com>
+	<CALqxMTFNdtUup5MB2Dc_AmQ827sM-t5yx7WQubbfOEd_bO_Ong@mail.gmail.com>
+	<CANEZrP0cOY5Wt_mvBSdGGmi4NfZi04SQ7d6GLpnRxmqvXNArGA@mail.gmail.com>
+	<CALqxMTE1OANaMAvqrcOLuKtYd_jmqYp5GcB4CX77S8+fR05=jg@mail.gmail.com>
+	<CAAS2fgSsXDTzxS29_SZvy1_Tie8=EGDhUjGkyGTXbc=47ta20w@mail.gmail.com>
+	<CANEZrP2XoVL6sWxA5KpsGsNxXi-hwdVN=BqXJfn17N-W0_SHEg@mail.gmail.com>
+Message-ID: <CALqxMTETmkF3j0YpfMLYhLGwwd7Nw7Qu3kR80D3pjTn_g5+Xxw@mail.gmail.com>
+
+Seems like Greg & I may be saying different things.  Maybe I am
+misunderstanding something at the wire level or in size/scalability
+but what I was trying to say is I think simpler.
+
+By UTXO commitment I mean a merkle tree of unspent addresses is
+committed in each block.  Also a bloom filter containing addresses in
+the block is committed.
+
+Now the user downloads the bloom filter for each block, and searches
+it locally.  They see which addresses of theirs maybe in the block
+(with some false positives).
+
+Then they make fresh random connections to different nodes and request
+download of the respective individual transactions from the full node.
+The node can respond either a) here is the transaction and here is its
+merkle path in the merkle tree (this is the way SPV works today); or
+b) there is no such transaction, this is a false positive, and here is
+a pair of merkle trie paths in the UTXO commitment (a trie) that
+proves the full node is not withholding and its true that no such
+transaction is in the block.
+
+Additionally with UTXO commitments in case a) the user can keep up to
+date with the chain tip and request from the full node a merkle path
+in the UTXO commitment to show that the coin is still unspent.
+(Otherwise you get long range attacks where someone can grind away
+until they belatedly find a PoW on an old low hashrate block with UTXO
+and fool an SPV node they know the address for into accepting a spend
+of something long spent).
+
+About privacy the node can make different random connections to
+different nodes to fetch addresses.  Nothing is leaked by downloading
+the bloom filter.  Scanning happens locally.  The full node cant
+correlate the addresses as belonging to the same person by correlating
+the download requests for them, because they are made via different
+nodes.  Its not a surprise nor privacy revealing that someone would
+want to check receipt of the funds.  The limit is the interactive
+nature of ToR which isnt very secure against pervasive monitoring.
+But for basic full-node passive attack resistant privacy pretty good.
+
+Contrast with increasing the false positive on bloom queries: here the
+full node can test correlation (modulo the false positive ratio) and
+combine that with network flow analysis to narrow down who the user
+might be.  Plus query size and privacy are in conflict.  Plus the
+query size has to be continually retuned to even create a reliable
+false positive rate relative to the current UTXO set.  Is that is even
+happening now (other than parameter sets)?
+
+About the bitmap:
+
+>Greg Maxwell wrote:
+>> there is a scriptpubkey bitmap per block
+>> which is committed. Users can request the map, and be SPV confident
+>> that they received a faithful one. If there are hits, they can request
+>> the block and be confident there was no censoring.
+
+how does the SPV client know what the bits in this map mean to scan?
+I presume these would be one bit per address and one would need to
+know the full UTXO set in order to know whats in there.  I am not sure
+an SPV node would want the hit of keeping up to date with the full
+UTXO set?
+
+s/address/scriptpubkey for accuracy)
+
+Adam
+
+On 20 February 2015 at 19:03, Mike Hearn <mike at plan99.net> wrote:
+>> It's a straight forward idea: there is a scriptpubkey bitmap per block
+>> which is committed. Users can request the map, and be SPV confident
+>> that they received a faithful one. If there are hits, they can request
+>> the block and be confident there was no censoring.
+>
+>
+> OK, I see now, thanks Gregory. You're right, the use of UTXO set in that
+> context was confusing me.
+>
+> If I go back to when we first did Bloom filtering and imagine the same
+> proposal being made, I guess I would have been wondering about the following
+> issues. Perhaps they have solutions:
+>
+> 1. Miners have to upgrade to generate the per-block filters. Any block that
+> doesn't have such a filter has to be downloaded in full, still. So it would
+> have taken quite a while for the bandwidth savings to materialise.
+>
+> 2. If checking the filter isn't a consensus rule, any miner who builds a
+> wrong filter breaks the entire SPV userbase. With per-node filtering, a
+> malicious or wrong node breaks an individual sync, but if the wallet user
+> notices they don't seem to be properly synchronised they can just press
+> "Rescan chain" and most likely get fixed. In practice broken nodes have
+> never been reported, but it's worth considering.
+>
+> 3. Downloading full blocks is still a lot of data. If you have a wallet that
+> receives tips a couple of times per day, and you open your wallet once per
+> week, then with 1mb blocks you would be downloading ~14mb of data each time.
+> Pretty pokey even on a desktop. Much sadness if you're on mobile.
+>
+> 4. Header size is constant, but per-block filters wouldn't be. So even the
+> null sync would download more data as the network got busier. Of course
+> Bloom filtering has the same scaling problem, but only between hard disk ->
+> RAM -> CPU rather than across the network.
+>
+> 5. Is it really more private? Imagine we see a hit in block 100, so we
+> download the full block and find our transaction. But now we must also learn
+> when that transaction is spent, so we can keep the wallet-local UTXO set up
+> to date. So we scan forward and see another hit in block 105, so now we
+> download block 105. The remote node can now select all transactions in block
+> 105 that spend transactions in block 100 and narrow down which txs are ours.
+> If we are watching a wallet that does multi-sends then it feels like this
+> problem gets much worse.
+>
+>
+>
+> I'd really like to find a solution that has O(1) scaling on sync. If we see
+> nodes just as sources of UTXO data then shovelling the client (tx, existing
+> merkle path) pairs keyed off script prefixes would (with one additional
+> index) be O(1) and provide the same security guarantees as Bloom filtering
+> today. It creates lots of other problems to solve, but at least it would
+> scale into the forseeable future.
+>
+>
+
+
