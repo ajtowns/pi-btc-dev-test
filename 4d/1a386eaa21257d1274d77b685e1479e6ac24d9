@@ -1,0 +1,132 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Sat, 21 Feb 2015 14:28:27 +0100
+Subject: [Bitcoin-development] bloom filtering, privacy
+In-Reply-To: <CALqxMTETmkF3j0YpfMLYhLGwwd7Nw7Qu3kR80D3pjTn_g5+Xxw@mail.gmail.com>
+References: <CALqxMTE2doZjbsUxd-e09+euiG6bt_J=_BwKY_Ni3MNK6BiW1Q@mail.gmail.com>
+	<CANEZrP32M-hSU-a1DA5aTQXsx-6425sTeKW-m-cSUuXCYf+zuQ@mail.gmail.com>
+	<CALqxMTFNdtUup5MB2Dc_AmQ827sM-t5yx7WQubbfOEd_bO_Ong@mail.gmail.com>
+	<CANEZrP0cOY5Wt_mvBSdGGmi4NfZi04SQ7d6GLpnRxmqvXNArGA@mail.gmail.com>
+	<CALqxMTE1OANaMAvqrcOLuKtYd_jmqYp5GcB4CX77S8+fR05=jg@mail.gmail.com>
+	<CAAS2fgSsXDTzxS29_SZvy1_Tie8=EGDhUjGkyGTXbc=47ta20w@mail.gmail.com>
+	<CANEZrP2XoVL6sWxA5KpsGsNxXi-hwdVN=BqXJfn17N-W0_SHEg@mail.gmail.com>
+	<CALqxMTETmkF3j0YpfMLYhLGwwd7Nw7Qu3kR80D3pjTn_g5+Xxw@mail.gmail.com>
+Message-ID: <CANEZrP0nAmhe_jPh5GYD1gX1FLop6zsw+MyXsYizHBR=enfT9g@mail.gmail.com>
+
+Let's put the UTXO commitments/anti-fraud proofs to one side for a moment.
+I would like to see them happen one day, but they aren't critical to these
+protocols and are just proving to be a distraction.
+
+
+
+> Then they make fresh random connections to different nodes and request
+> download of the respective individual transactions from the full node.
+>
+
+...
+
+About privacy the node can make different random connections to
+> different nodes to fetch addresses ..... The full node cant
+> correlate the addresses as belonging to the same person by correlating
+> the download requests for them, because they are made via different
+> nodes.
+
+
+Apologies for the wall of text, but I don't think this will work nor solve
+any real problem. And I must justify such a strong statement clearly.
+
+*First: technical issues*
+
+When you download the per-block Bloom filter and test, what you get back is
+a set of script elements (addresses, keys, OP_RETURN tags etc). But then in
+the next step you are saying that you connect to random peers and request
+individual transactions. We don't know that at this point. All we know are
+a set of addresses that possibly matched. So I think what you mean is
+"wallets connect to random peers and request transactions in block N that
+match a given set of addresses".
+
+This is what Bloom filtering already does, of course. Doing the test
+against the per-block filter first doesn't seem to buy us much because with
+thousands of transactions per block, even a very tiny FP rate will still
+trigger a match on every single one.
+
+The second problem I see is that we can't do this in parallel because of
+the following edge case: wallet contains key K and someone sends it money
+using an OP_CHECKSIG output. The input which spends this output does not
+contain any predictable data, thus we do not know what to look for in the
+following blocks to detect a spend of it until we have seen the first
+transaction and know its hash.
+
+In practice this means we must either scan through the chain in sequence
+and update our matching criteria if we see such an output (this is what the
+Bloom filtering protocol already does server-side), or we must constrain
+the user such that output scripts always force repetition of predictable
+data - this is what mostly happens today due to pay-to-address outputs, but
+not always, and correctness is more important than completeness.
+
+If we can't do it in parallel then we must suffer a node round-trip for
+every single block we traverse, because we can't request long runs of
+blocks with a single command. That latency will kill performance dead. It's
+a non starter.
+
+But let's imagine we don't care about OP_CHECKSIG outputs and are willing
+to ignore them. There are cases where they are the best and most efficient
+technical solution, but let's put that to one side.
+
+The primary difference after making the above changes are that no one node
+gets a filter containing *all* our keys and addresses. I don't think a per
+block pre-test filter would gain us much efficiency so from a privacy
+perspective this is what it boils down to - sharding of the scan.
+
+But we can already do this with the current Bloom filtering protocol.
+BitcoinJ doesn't do so because having multiple parallel scans uses up
+network IOPs which are a resource of unknown quantity, and because stepping
+through the chain in parallel with multiple peers complicates the chain
+sync implementation quite a bit.
+
+*Second: this doesn't solve any real problem*
+
+Who cares about collecting Bloom filters off the wire?
+
+Commercial fraudsters? Doubtful. There are much easier ways to steal money.
+
+Spies? Yes! Without a doubt NSA/GCHQ are building or have built databases
+of IP addresses to Bitcoin addresses and are correlating it via XKEYSCORE
+with other identifiable information.
+
+However, just requesting data from different nodes doesn't help with that,
+because they are doing DPI and can still see all the connections, so can
+still combine all the filters or received transactions.
+
+Ah, you say, but we're requesting everything via Tor.
+
+Yes, about that. We've implemented that already. Some wallets even use it
+by default, like Alon & Chris' Bitcoin Authenticator wallet. It's just one
+line of code to activate.
+
+Unfortunately there are severe practical problems to using Tor:
+
+   1. If you don't have a warm consensus then booting it up is very slow.
+   We're already slower than our competitors like blockchain.info and
+   VISA/MasterCard, we can't make this any worse.
+
+   This one is possibly not that big a deal and can be solved with more
+   technical tricks.
+
+   2. Bitcoin Core's DoS strategy means anyone can block all of Tor quite
+   trivially. So we'd need some complicated fallback mechanism to disable Tor
+   remotely, in case someone did this.
+
+   3. Bitcoin wire traffic isn't encrypted or authenticated so it makes it
+   much easier for trolls to tamper with lots of wire traffic at once, whereas
+   without Tor it's much harder.
+
+Let's ignore the fact that the Tor project insists on poking the law
+enforcement bear with rusty nails, and has been receiving tipoffs about
+plans to seize directory authorities. How much Bitcoin wallets should rely
+on Tor sticking around is a debate for some other time.
+
+There's a much simpler way to fix all of this - add opportunistic
+encryption to the wire protocol.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150221/fc8e7cd5/attachment.html>
