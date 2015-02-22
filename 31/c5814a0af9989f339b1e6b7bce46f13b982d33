@@ -1,0 +1,346 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Sun, 22 Feb 2015 15:06:01 -0800
+Subject: [Bitcoin-development] Bitcoin at POS using BIP70,
+ NFC and offline payments - implementer feedback
+In-Reply-To: <54EA5A1C.2020701@AndySchroder.com>
+References: <20150222190839.GA18527@odo.localdomain>
+	<54EA5A1C.2020701@AndySchroder.com>
+Message-ID: <54EA60D9.8000001@voskuil.org>
+
+On 02/22/2015 02:37 PM, Andy Schroder wrote:
+> I'd like to see some discussion too about securing the bluetooth
+> connection. Right now it is possible for an eavesdropper to monitor the
+> data transferred. 
+
+Yes, this should be a prerequisite issue to all others.
+
+> I'd personally like to see if wrapping the current
+> connection with SSL works or if we can run https over a bluetooth
+> socket. 
+
+There is no reason to add this significant complexity. The purpose of
+SSL/TLS is to establish privacy over a *public* channel. But to do so
+requires verification by the user of the merchant's public certificate.
+Once we rely on the channel being *private*, the entire SSL process is
+unnecessary.
+
+Presumably we would not want to require PKI for privacy, since that's a
+bit of a contradiction. But if one wants to do this NFC is not required,
+since the private session can be established over the public (Bluetooth)
+network.
+
+> There was some criticism of this, but I don't think it has been
+> tested to know if it is really a problem or not. If we just run https
+> over bluetooth, then a lot of my concerns about the message header
+> inconsistencies will go away and the connection will also be secure. We
+> don't have to reinvent anything.
+> 
+> 
+> 
+> Andy Schroder
+> 
+> On 02/22/2015 02:08 PM, Jan Vornberger wrote:
+>> Hi everyone,
+>>
+>> I am working on a Bitcoin point of sale terminal based on a Raspberry
+>> Pi, which
+>> displays QR codes, but also provides payment requests via NFC. It can
+>> optionally
+>> receive the sender's transaction via Bluetooth, so if the sender wallet
+>> supports it, the sender can be completely offline. Only the terminal
+>> needs an
+>> internet connection.
+>>
+>> Typical scenario envisioned: Customer taps their smartphone (or maybe
+>> smartwatch
+>> in the future) on the NFC pad, confirms the transaction on their phone
+>> (or smartwatch) and the transaction completes via Bluetooth and/or the
+>> phone's
+>> internet connection.
+>>
+>> You can see a prototype in action here:
+>>
+>>    https://www.youtube.com/watch?v=P7vKHMoapr8
+>>
+>> The above demo uses a release version of Schildbach's Bitcoin Wallet,
+>> so it
+>> works as shown today. However, some parts - especially the Bluetooth
+>> stuff - are
+>> custom extensions of Schildbach's wallet which are not yet standard.
+>>
+>> I'm writing this post to document my experience implementing NFC and
+>> offline
+>> payments and hope to move the discussion forward around standardizing
+>> some of
+>> this stuff. Andy Schroder's work around his Bitcoin Fluid Dispenser [1,2]
+>> follows along the same lines, so his proposed TBIP74 [3] and TBIP75
+>> [4] are
+>> relevant here as well.
+>>
+>>
+>> ## NFC vs Bluetooth vs NFC+Bluetooth ##
+>>
+>> Before I get into the implementation details, a few words for why I
+>> decided to
+>> go with the combination of NFC and Bluetooth:
+>>
+>> Doing everything via NFC is an interesting option to keep things
+>> simple, but the
+>> issue is, that one usually can't maintain the connection while the
+>> user confirms
+>> the transaction (as they take the device back to press a button or
+>> maybe enter a
+>> PIN). So there are three options:
+>>
+>> 1. Do a "double tap": User taps, takes the device back, confirms, then
+>> taps
+>> again to transmit the transaction. (I think Google Wallet does
+>> something like
+>> this.)
+>>
+>> 2. Confirm beforehand: User confirms, then taps and everything can
+>> happen in one
+>> go. The disadvantage is, that you confirm the transaction before you
+>> have seen
+>> the details. (I believe Google Wallet can also work this way.)
+>>
+>> 3. Tap the phone, then establish a Bluetooth connection which allows
+>> you to do
+>> all necessary communication even if the user takes the device back.
+>>
+>> I feel that option 3 is the nicest UX, so that is what I am focusing
+>> on right
+>> now, but there are pros and cons to all options. One disadvantage of
+>> option 3 in
+>> practice is, that many users - in my experience - have Bluetooth
+>> turned off, so
+>> it can result in additional UI dialogs popping up, asking the user to
+>> turn on
+>> Bluetooth.
+>>
+>> Regarding doing everything via Bluetooth or maybe BLE: I have been
+>> following the
+>> work that Airbitz has done around that, but personally I prefer the NFC
+>> interaction of "I touch what I want to pay" rather than "a payment
+>> request comes
+>> to me through the air and I figure out whether it is meant for me/is
+>> legitimate".
+>>
+>>
+>> ## NFC data formats ##
+>>
+>> A bit of background for those who are not that familiar with NFC: Most
+>> Bitcoin
+>> wallets with NFC support make use of NDEF (NFC Data Exchange Format)
+>> as far as I
+>> am aware (with CoinBlesk being an exception, which uses host-based card
+>> emulation, if I understand it correctly). NDEF defines a number of
+>> record types,
+>> among them 'URI' and 'Mime Type'.
+>>
+>> A common way of using NFC with Bitcoin is to create a URI record that
+>> contains a
+>> Bitcoin URI. Beyond that Schildbach's wallet (and maybe others?) also
+>> support
+>> the mime type record, which is then set to
+>> 'application/bitcoin-paymentrequest'
+>> and the rest of the NFC data is a complete BIP70 payment request.
+>>
+>>
+>> ## Implementation ##
+>>
+>> To structure the discussion a little bit, I have listed a number of
+>> scenarios to
+>> consider below. Not every possible combination is listed, but it
+>> should cover a
+>> bit of everything.
+>>
+>> Scenarios:
+>>
+>> 1) Scan QR code, transmit transaction via Bitcoin network
+>>     Example QR code: bitcoin:1asdf...?amount=42
+>>
+>> 2) Touch NFC pad, transmit transaction via Bitcoin network
+>>     Example NFC URI: bitcoin:1asdf...?amount=42
+>>
+>> 3) Scan QR code, fetch BIP70 details via HTTP, post transaction via HTTP
+>>     Example QR code:
+>> bitcoin:1asdf...?amount=42&r=https://example.org/bip70paymentrequest
+>>
+>> 4) Touch NFC pad, fetch BIP70 details via HTTP, post transaction via HTTP
+>>     Example NFC URI:
+>> bitcoin:1asdf...?amount=42&r=https://example.org/bip70paymentrequest
+>>
+>> 5) Touch NFC pad, receive BIP70 details directly, post transaction via
+>> HTTP
+>>     Example NFC MIME record: application/bitcoin-paymentrequest +
+>> BIP70 payment request
+>>
+>> 6) Scan QR code, fetch BIP70 details via Bluetooth, post transaction
+>> via Bluetooth
+>>     Example QR code: bitcoin:1asdf...?amount=42&bt=1234567890AB
+>>     Payment request has 'payment_url' set to 'bt:1234567890AB'
+>>
+>> 7) Touch NFC pad, fetch BIP70 details via Bluetooth, post transaction
+>> via Bluetooth
+>>     Example NFC URI: bitcoin:1asdf...?amount=42&bt=1234567890AB
+>>     Payment request has 'payment_url' set to 'bt:1234567890AB'
+>>
+>> Scenarios 1 and 2 are basically the 'legacy'/pre-BIP70 approach and I
+>> am just
+>> listing them here for comparison. Scenario 3 is what is often in use
+>> now, for
+>> example when using a checkout screen by BitPay or Coinbase.
+>>
+>> I played around with both scenarios 4 and 5, trying to decide whether
+>> I should
+>> use an NFC URI record or already provide the complete BIP70 payment
+>> request via
+>> NFC.
+>>
+>> My experience here has been, that the latter was fairly fragile in my
+>> setup
+>> (Raspberry Pi, NFC dongle from a company called Sensor ID, using
+>> nfcpy). I tried
+>> with signed payment requests that were around 4k to 5k and the
+>> transfer would
+>> often not complete if I didn't hold the phone perfectly in place. So I
+>> quickly
+>> switched to using the NFC URI record instead and have the phone fetch
+>> the BIP70
+>> payment request via Bluetooth afterwards. Using this approach the
+>> amount of data
+>> is small enough that it's usually 'all or nothing' and that seems more
+>> robust to
+>> me.
+>>
+>> That said, I continue to have problems with the NFC stack that I'm
+>> using, so it
+>> might just be my NFC setup that is causing these problems. I will
+>> probably give
+>> the NXP NFC library a try next (which I believe is also the stack that
+>> is used
+>> by Android). Maybe I have more luck with that approach and could then
+>> switch to
+>> scenario 5.
+>>
+>> Scenarios 6 and 7 is what the terminal is doing right now. The 'bt'
+>> parameter is
+>> the non-standard extension of Andreas' wallet that I was mentioning.
+>> TBIP75
+>> proposes to change 'bt' into 'r1' as part of a more generic approach of
+>> numbering different sources for the BIP70 payment request. I think
+>> that is a
+>> good idea and would express my vote for this proposal. So the QR code
+>> or NFC URI
+>> would then look something like this:
+>>
+>>   
+>> bitcoin:1asdf...?amount=42&r=https://example.org/bip70&r1=bt:1234567890AB/resource
+>>
+>>
+>> In addition the payment request would need to list additional
+>> 'payment_url's. My
+>> proposal would be to do something like this:
+>>
+>>      message PaymentDetails {
+>>          ...
+>>          optional string payment_url = 6;
+>>          optional bytes merchant_data = 7;
+>>          repeated string additional_payment_urls = 8;
+>>            // ^-- new; to hold things like 'bt:1234567890AB'
+>>      }
+>>
+>> TBIP75 proposes to just change 'optional string payment_url' into
+>> 'repeated
+>> string payment_url'. If this isn't causing any problems (and hopefully
+>> not too
+>> much confusion?) I guess that would be fine too.
+>>
+>> In my opinion a wallet should then actually attempt all or multiple of
+>> the
+>> provided mechanisms in parallel (e.g. try to fetch the BIP70 payment
+>> request via
+>> both HTTP and Bluetooth) and go with whatever completes first. But
+>> that is of
+>> course up to each wallet to decide how to handle.
+>>
+>> TBIP75 furthermore proposes to include an additional 'h' parameter
+>> which would
+>> be a hash of the BIP70 payment request, preventing a MITM attack on the
+>> Bluetooth channel even if the BIP70 payment request isn't signed. This
+>> would
+>> have also been my suggestion, although I know that Mike Hearn has raised
+>> concerns about this approach. One being, that one needs to finalize
+>> the BIP70
+>> payment request at the time the QR code and NFC URI is generated.
+>>
+>>
+>> ## Questions ##
+>>
+>> My questions to the list:
+>>
+>> 1) Do you prefer changing 'optional string payment_url' into 'repeated
+>> string
+>> payment_url' or would you rather introduce a new field
+>> 'additional_payment_urls'?
+>>
+>> 2) @Andreas: Is the r, r1, r2 mechanism already implemented in Bitcoin
+>> Wallet?
+>>
+>> 3) Are there other comments regarding 'h' parameter as per TBIP75?
+>>
+>> 4) General comments, advice, feedback?
+>>
+>> I appreciate your input! :-)
+>>
+>> Cheers,
+>> Jan
+>>
+>> [1] http://andyschroder.com/BitcoinFluidDispenser/
+>> [2]
+>> https://www.mail-archive.com/bitcoin-development%40lists.sourceforge.net/msg06354.html
+>>
+>> [3] https://github.com/AndySchroder/bips/blob/master/tbip-0074.mediawiki
+>> [4] https://github.com/AndySchroder/bips/blob/master/tbip-0075.mediawiki
+>>
+>> ------------------------------------------------------------------------------
+>>
+>> Download BIRT iHub F-Type - The Free Enterprise-Grade BIRT Server
+>> from Actuate! Instantly Supercharge Your Business Reports and Dashboards
+>> with Interactivity, Sharing, Native Excel Exports, App Integration & more
+>> Get technology previously reserved for billion-dollar corporations, FREE
+>> http://pubads.g.doubleclick.net/gampad/clk?id=190641631&iu=/4140/ostg.clktrk
+>>
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>
+>>
+>>
+> 
+> 
+> 
+> ------------------------------------------------------------------------------
+> Download BIRT iHub F-Type - The Free Enterprise-Grade BIRT Server
+> from Actuate! Instantly Supercharge Your Business Reports and Dashboards
+> with Interactivity, Sharing, Native Excel Exports, App Integration & more
+> Get technology previously reserved for billion-dollar corporations, FREE
+> http://pubads.g.doubleclick.net/gampad/clk?id=190641631&iu=/4140/ostg.clktrk
+> 
+> 
+> 
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> 
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 473 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150222/a3e8cdc2/attachment.sig>
