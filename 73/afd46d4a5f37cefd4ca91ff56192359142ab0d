@@ -1,0 +1,225 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Mon, 23 Feb 2015 01:40:00 -0800
+Subject: [Bitcoin-development] Bitcoin at POS using BIP70,
+ NFC and offline payments - implementer feedback
+In-Reply-To: <54EAD884.8000205@AndySchroder.com>
+References: <20150222190839.GA18527@odo.localdomain>	<54EA5A1C.2020701@AndySchroder.com>	<54EA60D9.8000001@voskuil.org>	<54EA66F5.2000302@AndySchroder.com>
+	<mcdu6b$j11$1@ger.gmane.org> <54EAD884.8000205@AndySchroder.com>
+Message-ID: <54EAF570.2090602@voskuil.org>
+
+On 02/22/2015 11:36 PM, Andy Schroder wrote:
+> I agree that NFC is the best we have as far as a trust anchor that you
+> are paying the right person. The thing I am worried about is the privacy
+> loss that could happen if there is someone passively monitoring the
+> connection. 
+
+We have the same objective. Privacy loss is my primary concern with the
+existing proposal.
+
+> So, in response to some of your comments below and also in
+> response to some of Eric Voskuil's comments in another recent e-mail:
+> 
+> Consider some cases:
+> 
+> If NFC is assumed private, then sending the session key over the NFC
+> connection gives the payer and the payee assumed confidence that that a
+> private bluetooth connection can be created.
+> 
+> If the NFC actually isn't private, then by sending the session key over
+> it means the bluetooth connection is not private. An eavesdropper can
+> listen to all communication and possibly modify the communication, but
+> the payer and payee won't necessarily know if eavesdropping occurs
+> unless communication is also modified (which could be difficult to do
+> for a really low range communication).
+
+I realize you are postulating a situation where an interloper monitors
+but doesn't substitute the NFC communication. But clearly if you can do
+one you have the potential to do the other, so if one is going to rely
+on the assumption that the NFC tap can be monitored one must also accept
+that it can be modified. Once one accepts this premise there is no point
+in using NFC.
+
+> If we send a public key of the payee over the NFC connection (in place
+> of a session key) and the NFC connection is assumed trusted (and is
+> unmodified but actually monitored by an eavesdropper) and use that
+> public key received via NFC to encrypt a session key and send it back
+> via bluetooth, to then initiate an encrypted bluetooth connection using
+> that session key for the remaining communication, then the payee still
+> receives payment as expected and the payer sends the payment they
+> expected, and the eavesdropper doesn't see anything.
+
+You can send a public cert over a public channel but before it can be
+used it must be validated and verified to belong to the party that you
+intend to communicate with privately. Otherwise the interloper can
+substitute a public cert and subvert the payment process.
+
+The reduces to the system requiring PKI just to establish private
+communication. One might argue that BIP-70 already contemplates PKI.
+However the above approach is significantly different in that it would
+*require* all NFC/BT communication to use PKI just to be private.
+
+Furthermore, to establish a private channel between *both* intended
+parities, public certs must be exchanged in both directions. Otherwise,
+if the customer isn't validated by the merchant, a distant interloper
+can trivially use the merchant's public cert to obtain the payment
+request from the Bluetooth terminal. This is the privacy breach that we
+are trying to prevent in the first place.
+
+Any requirement for PKI, in either direction, itself creates privacy
+problems. But a requirement for customer certificates really gets hairy.
+
+The PKI requirement can be dropped by instead exchanging self-generated
+public keys, in the RedPhone model. However that requires out-of-band
+secure communication of a common derived value by the parties. This
+could be as simple as a number on each screen that one or both of the
+parties compares. But this requires no private communication, and
+therefore NFC is entirely unnecessary. This is in fact what I would
+recommend for the BT-only scenario.
+
+The value added by NFC is that proximity can be used to establish trust.
+If that does not meet one's threshold for privacy then the parties need
+to establish this trust through some presumably more private channel
+(such as visual or voice confirmation).
+
+Note that payment integrity can be reasonably ensured by relying on PKI
+as established by BIP-70 (which also offers the seller non-repudiation
+benefit). So this question is strictly about privacy.
+
+> If we send a public key of the payee over the NFC connection (in place
+> of a session key) and the NFC connection is assumed trusted (and is
+> actually modified by an eavesdropper) and use that public key received
+> via NFC to encrypt a session key and send it back via bluetooth, to then
+> initiate an encrypted bluetooth connection using that session key for
+> the remaining communication, then the payee receives no payment and the
+> attack is quickly identified because the customer receives no product
+> for their payment and they notify the payee, and hopefully the problem
+> remedied and no further customers are affected. 
+
+In this case the attacker hijacks the subsequent BT connection, sends a
+payment request and gets paid. The only thing to prevent it would be
+BIP-70/PKI, as mentioned above.
+
+In a more complex attack the interloper can sit in the middle of all
+communications between payer and receiver. Since the payer is not
+validated by the receiver the interloper can impersonate the payer in
+all communication with the receiver. As such he can also impersonate the
+receiver in all communications with the payer. If the NFC communication
+is compromized there is no saving privacy without an alternate private
+channel.
+
+> The privacy loss will be
+> significantly reduced and the motive for such attacks will be reduced.
+
+The motive and privacy loss remain unchanged.
+
+> It's possible a really sophisticated modification could be done where
+> the attacker encrypts and decrypts the communication and then relays to
+> each party (without them knowing or any glitches detected), but I guess
+> I'm not sure how easy that would be on such a close proximity device?
+
+If the NFC tap is sufficiently private, privacy is easy to achieve for
+the subsequent communication. If it is not, privacy can be completely
+compromised. The question is only how much more difficult is the attack.
+
+With the public cert tap, the level of difficulty is much lower for
+capturing selected payment requests. The interloper no longer needs to
+invade the space of the NFC terminal and can instead impersonate the
+payer from a safe distance. Nobody gets paid, but privacy is compromised.
+
+The level of difficulty in the case where the interloper wants to taint
+transactions may appear lower, but it is not:
+
+With the session key tap the interloper must compromise the NFC location
+and then monitor the BT traffic. Monitoring BT traffic without being
+party to the connection is presumably not rocket surgery, but not
+standard BT design either.
+
+With the public cert tap the interloper must also compromise the NFC
+location and communicate over BT. Therefore the hardware and physical
+attack requirements are similar. The only added difficulty is that the
+attack on the NFC terminal attack is active (modifying the MAC address
+directing the payer to the BT service).
+
+However impersonating the payer is just a matter of software - no more
+difficult than the session key attack. In fact it may be much easier to
+implement, as the attack can use supported BT features because the
+attacker has directed the payer to connect to him and is connecting to
+the receiver as if he was a payer.
+
+But it gets worse for the public cert tap, since a more sophisticated
+attacker can set himself up in the same position without subverting the
+NFC terminal at all. By broadcasting a more powerful BT service on the
+same advertised MAC address, the attacker can capture traffic and relay
+it to the intended service.
+
+So in sum, reliance on a public cert makes the communication less
+private under the same physical set of constraints. The difference
+results from the receiver allowing non-proximate payers to impersonate
+proximate payers from a distance by generating their own session keys
+and submitting them over BT.
+
+> Erick Voskuil mentioned this same problem would even occur if you had a
+> hardwired connection to the payment terminal and those wires were
+> compromised. I guess I still think what I am saying would be better in
+> that case. There is also more obvious physical tampering required to
+> mess with wires.
+
+Attacks against wires do not require tampering with (as in damaging)
+wires. The distinction between a wired connection and a wireless
+connection is in many ways imaginary.
+
+> I'm not sure if there is any trust anchor required of the payer by the
+> payee, is there? Eric also mentioned a need for this. Why does the payer
+> care who they are as long as they get a payment received? Just to avoid
+> a sophisticated modification" that I mention above? I can see how this
+> could be the case for a longer range communication (like over the
+> internet), but I'm not convinced it will be easy on really short ranges?
+
+I think I addressed this above but let me know if not.
+
+> It's almost like the attacker would be better off to just replace the
+> entire POS internals than mess with an attack like that, in which case
+> everything we could do locally (other than the payment request signing
+> using PKI), is useless.
+
+Yes, ultimately both endpoints must be secured. My point is that (when
+intended) NFC is practically the equivalent of a wired connection.
+Baseband attacks against buyers' phones or subversion of the entire POS
+terminal may be easier than interloping on a monitored NFC terminal. But
+that's the point, once the attack is easier at the endpoints that is
+where it will go. Further attempts to secure the gap between the devices
+will not help after that point.
+
+> I'm not a cryptography expert so I apologize if there is something
+> rudimentary that I am missing here.
+
+No need for apology, it's a good discussion, and there are precious few
+experts here.
+
+This discussion should make people very wary of any terminal system that
+doesn't use signed payment requests :).
+
+e
+
+> Andy Schroder
+> 
+> On 02/22/2015 08:02 PM, Andreas Schildbach wrote:
+>> On 02/23/2015 12:32 AM, Andy Schroder wrote:
+>>> I guess we need to decide whether we want to consider NFC communication
+>>> private or not. I don't know that I think it can be. An eavesdropper can
+>>> place a tiny snooping device near and read the communication. If it is
+>>> just passive, then the merchant/operator won't realize it's there. So, I
+>>> don't know if I like your idea (mentioned in your other reply) of
+>>> putting the session key in the URL is a good idea?
+>> I think the "trust by proximity" is the best we've got. If we don't
+>> trust the NFC link (or the QR code scan), what other options have we
+>> got? Speaking the session key by voice? Bad UX, and can be eavesdropped
+>> as well of course.
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 473 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150223/e131bcbc/attachment.sig>
