@@ -1,0 +1,115 @@
+From: jan@uos.de (Jan Vornberger)
+Date: Mon, 23 Feb 2015 16:09:37 +0100
+Subject: [Bitcoin-development] Bitcoin at POS using BIP70,
+ NFC and offline payments - implementer feedback
+In-Reply-To: <54EA5A1C.2020701@AndySchroder.com>
+References: <20150222190839.GA18527@odo.localdomain>
+	<54EA5A1C.2020701@AndySchroder.com>
+Message-ID: <20150223150937.GA7987@odo.localdomain>
+
+Hey!
+
+On Sun, Feb 22, 2015 at 05:37:16PM -0500, Andy Schroder wrote:
+> It's maybe not a bad idea for the wallet to try all payment_url
+> mechanisms in parallel. Should we add this as a recommendation to
+> wallets in TBIP75?
+
+It doesn't need to be a recommendation I think, but maybe it would be
+good to mention that a wallet may do that, if it wants.
+
+> I actually also happen to be using nfcpy. I am having some
+> reliability issues as well with it. What exactly are your problems?
+
+Aw, interesting. Sometimes transfers seem to start and then not complete
+in some way and occasionally the NFC dongle is then totally 'stuck' in some
+way afterwards, that even after restarting the Python script or
+reloading the driver nothing works anymore. I have to actually unplug
+the dongle and plug it in again. Obviously not exactly production ready.
+I had the same problems with the command line tools based on libnfc, so
+it might be a problem lower down the stack. I'm not sure I have the
+expertise to troubleshoot that.
+
+> I have seen your video before. I guess I'm wondering how your
+> prototype works with bitpay and bluetooth. Doesn't bitpay sign the
+> payment request for you with an https based payment_url? If so, how
+> do you add the bluetooth payment_url while keeping their signature
+> valid?
+
+Good point, I'm currently simply removing the signature, so that I can
+modify the payment request. I haven't spoken with BitPay yet, but I hope
+that they will extend their API at some point to set additional
+payment_urls or provide a Bluetooth MAC and then I can do it properly
+with signed requests.
+
+> In your video it looks like the phone still has cellular and
+> wifi reception (it is not offline).
+
+You are right, I forgot to actually disable wifi and cellular data when
+recording the video. But as you know it would work the same way offline.
+
+> Regarding the NFC data formats. I would like to clarify that the
+> wallets are having those events dispatched by the android OS. The
+> "URI" and "mime type" events are sent to the application in the same
+> way as from other sources such as a web browser, e-mail, stand alone
+> QR code scanner app, etc.. So, I don't think the wallet actually
+> knows it is receiving the event from NFC. That is one reason why so
+> many existing wallets happen to support BIP21 payment request via
+> NFC. Andreas can correct me if I am wrong on these statements. I'm a
+> little weary sending the "mime type" based format over NFC because
+> of backwards compatibility and because of the long certificate chain
+> that needs to be transferred. You want that tap to be as robust and
+> fast as possible. A bluetooth connection can have a retry without
+> any user interaction.
+
+There is a specific NFC intent that you have to list in your Android
+manifest, but you are right that if you already support BIP21 URIs then
+it is often fairly easy and quick to also support them via NFC.
+
+Whereas the mime type approach means that you necessarily need to be
+able to actually understand BIP70, which a lot of wallet don't yet. But
+personally that wouldn't hold me back using the mime type if I feel it's
+the better experience. Those wallets simply have to fall back on
+scanning the QR code in the meantime and then get up to speed on their
+NFC and BIP70 support.
+
+I'm still concerned that the fact, that Bluetooth is often disabled, is a
+problem for the UX. And it's not just a one-time thing as with NFC,
+which is - in my experience - also often disabled, but then people turn
+it on and leave it on. But with Bluetooth the Android system is geared
+much more towards turning it off after use and people have this general
+idea of 'it uses energy, so I should disable it' and sometimes also
+'Bluetooth is insecure and if I leave it on I will get hacked'. So
+chances are, Bluetooth will be off most of the time, which means
+everytime you pay the dialog 'Turn on Bluetooth?' will pop up, which
+isn't exactly streamlined.
+
+So the advantage of transmitting the whole BIP70 payment request via NFC
+I see is, that you don't need Bluetooth to get the payment request and
+for sending the transaction back the wallet can then make an intelligent
+decision and first try via HTTP and only after that fails, say something
+like: "You are currently offline, turn on and transmit via Bluetooth
+instead?". Much less confusing to the user, in my opinion.
+
+Another idea could be to request the permission BLUETOOTH_ADMIN which,
+as far as I know, allows you to programmatically turn on Bluetooth
+without user interaction. The wallet could then have a setting somewhere
+that says 'automatically turn on Bluetooth during payments' which would
+enable and then disable (if it was off before) Bluetooth during the
+payment process. That should also be a decent compromise, at the cost of
+another permission.
+
+> There is also the "ack" memo that I mentioned in reference [2]. I
+> think we can improve upon this really. Can we make a new status
+> field or different bluetooth message header? I know Andreas didn't
+> want to change it because that is how his app already works, but I
+> don't think the way it is is ideal.
+
+I'm fine with doing changes here - I don't think there is all that much
+stuff out there yet which would break from it. At the moment I'm also
+modifying BitPay's memo field to contain 'ack', as Andreas' wallet
+otherwise reports a failure if I transmit the original via Bluetooth. :-)
+But I was assuming that was temporary anyway (?).
+
+Jan
+
+
