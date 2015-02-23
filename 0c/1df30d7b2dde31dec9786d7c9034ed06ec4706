@@ -1,0 +1,77 @@
+From: mike@plan99.net (Mike Hearn)
+Date: Mon, 23 Feb 2015 11:58:11 +0100
+Subject: [Bitcoin-development] Bitcoin at POS using BIP70,
+ NFC and offline payments - implementer feedback
+In-Reply-To: <54EAFC1C.9080502@voskuil.org>
+References: <20150222190839.GA18527@odo.localdomain>
+	<54EA5A1C.2020701@AndySchroder.com> <54EA60D9.8000001@voskuil.org>
+	<54EA66F5.2000302@AndySchroder.com> <mcdu6b$j11$1@ger.gmane.org>
+	<54EAD884.8000205@AndySchroder.com> <mcet2t$qav$1@ger.gmane.org>
+	<54EAFC1C.9080502@voskuil.org>
+Message-ID: <CANEZrP0XYfnarvN5H_NeOGyO8RLBSGyGxv7M63MSrAd_HXj1OQ@mail.gmail.com>
+
+>
+> DHKE will not improve the situation. Either we use a simple method to
+> transfer a session key or a complex method.
+>
+
+You're right that just sending the session key is simpler. I originally
+suggested doing ECDHE to set up an encrypted channel for the following
+reasons:
+
+   1. URIs are put in QR codes more often than NFC tags. QR codes have
+   limited space. The more stuff you pack into them, the slower and flakier
+   the scanning process becomes.
+
+   For normal wallets, doing ECDH over secp256k1 to derive a session key
+   means we can reuse the address that was put in the URI already for
+   pre-BIP70 wallets, thus we don't have to expand the URI at all except
+   perhaps to flag that crypted Bluetooth connections are supported. Win!
+
+   2. If the wallet is a watching wallet, this won't work and in that case
+   you would need to put a separate key into the URI. However, this key is
+   ephemeral and does not need to be very strong. So we can generate a regular
+   secp256k1 key and then put say 5-8 prefix bytes into the URI as a new
+   parameter. The public key can then be provided in full in the clear over
+   the Bluetooth connection and the session key derived. If we put the session
+   key into the URI in full, then we could not use this trick. Win!
+
+   3. It's quite common in low tech scenarios like little coffee shops to
+   just print a QR code and put it in the menu, or sticky tape it to the back
+   wall of the shop.
+
+   In these cases, it's possible that the device is actually hanging around
+   in the shop somewhere but having the QR code somewhere larger and more
+   accessible than the shop devices screen is highly convenient. However it
+   means the data is entirely static.
+
+   Putting/reusing an identity key from the URI means the session keys are
+   always unique and known only to both devices, even though the bootstrap
+   data is public.
+
+   4. Doing ECDHE to derive the keys means we can derive a MAC key as well
+   as an AES key. Otherwise you have the issue of exchanging both, which again
+   uses up valuable bootstrap space.
+
+So for a small increase in session setup complexity we potentially avoid
+troubling problems down the line where people the same functionality from
+NFC and QR code based bootstrap, but we can't provide it.
+
+These discussions keep coming up. I think the next step is for someone to
+upgrade Andreas' wallet to support encrypted connections and the TBIPs, to
+see what happens.
+
+Re: the h= parameter. I only objected to requiring this when the payment
+request is also signed. It adds complexity, uses space, and the rationale
+was "the PKI can't be trusted" even though it's been used to protect credit
+card payments for 20 years without any issues. In the case of unsigned
+payment requests, sure ... but with a proper implementation of an encrypted
+Bluetooth channel it'd be unnecessary as the channel establishment process
+would guarantee authenticity anyway.
+
+But don't let me hold you guys back! I'd rather see something that works
+than an endless debate about the perfect arrangement of hashes and URI
+parameters :)
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150223/dac2bed5/attachment.html>
