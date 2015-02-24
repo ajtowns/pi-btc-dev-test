@@ -1,0 +1,442 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Tue, 24 Feb 2015 14:14:51 -0800
+Subject: [Bitcoin-development] Bitcoin at POS using BIP70,
+ NFC and offline payments - implementer feedback
+In-Reply-To: <54ECD5BA.7040109@AndySchroder.com>
+References: <20150222190839.GA18527@odo.localdomain>	<54EA5A1C.2020701@AndySchroder.com>	<54EA60D9.8000001@voskuil.org>	<54EA66F5.2000302@AndySchroder.com>
+	<mcdu6b$j11$1@ger.gmane.org> <54EAD884.8000205@AndySchroder.com>
+	<54EAF570.2090602@voskuil.org> <54EBE809.70801@voskuil.org>
+	<54EC11DA.2010000@AndySchroder.com> <54EC605B.8080005@voskuil.org>
+	<54ECD5BA.7040109@AndySchroder.com>
+Message-ID: <54ECF7DB.3060607@voskuil.org>
+
+On 02/24/2015 11:49 AM, Andy Schroder wrote:
+> Hello,
+> 
+> I think were talking about a lot of the same things. There is one key
+> piece of information that I was not thinking about until you made it
+> clear. Why the payee needs to identify the payer. In my fuel pump
+> application, they really don't, so I wasn't thinking closely about these
+> other situations. With my fuel pump, it won't even let you do anything
+> until you sign a transaction and submit it. So, the payment request
+> contains no personal information, it's just a request for payment, and
+> not for anything specific. It doesn't know or care what you are going to
+> buy until you make a prepayment, because there is no use in trying to
+> start doing business without a signed transaction. This approach
+> minimizes risk because once you dispense a fuel, or anything else, it's
+> not like you can easily give it back if you happened to not have any
+> funds. It also makes it a higher chance for a confirmation before the
+> customer leaves. Other transactions have similar post payment
+> traditions, like a restaurant (not fast food), where the seller doesn't
+> know if you actually have enough money until you've already consumed the
+> food, but this work flow seems to be a culturally driven one rather than
+> risk driven.
+> 
+> In the discussion about an https website, there are many websites where
+> no login or authentication by the client required to have a private
+> connection. With a shopping website though, the customer can identify
+> themselves without logging in by saying (in band) what they are
+> intending to buy after the private connection has been established. At a
+> cash register in person the items being purchased have no tie to the
+> customer. The items being purchased were communicated to the seller out
+> of band (in real life) and insecurely to establish that link. You are
+> trying to make a tie between that list of items and the buyer
+> separately, and that is why some unique identifier needs to be
+> transmitted via NFC.
+> 
+> Stepping a bit back: I guess I'm wondering if it would be useful to
+> encourage an opposite work flow where a micro payment channel is setup
+> for most purchases. For example, if I go to the grocery store, it
+> usually takes a minute or so to check out. If I immediately tap and open
+> up a payment channel with the store when I start checkout, rather than
+> finish, there can be more network propagation of that transaction while
+> they are scanning all the items. They'll see the channel is open and
+> start adding all the items I want to buy to that micro payment channel.
+> I'm identified because I made a payment, not because I've transmitted a
+> unique resource or used a unique public key to encrypt communication. A
+> payment terminal would not allow for new payment channels to be open
+> until the currently active one is closed. If I don't have enough funds
+> left in the payment channel, they just stop scanning items. There may be
+> some additional privacy implications of setting up micro payment
+> channels all the time for everyday purchases. It also may not work for
+> every sales case, so we may still need some way to authenticate the
+> payer with a unique identifier. So, maybe we don't want to do this, but
+> it is just a thought to consider.
+
+It's an interesting thought. As you say, it may be more of a cultural
+than technical issue.
+
+> So, unless someone thinks what I am proposing in my previous paragraph
+> has any potential (as a complete solution, not a complement to
+> solutions), the plan is the following:
+> 
+>   * Get rid of the "h=" parameter
+
+Agree.
+
+>   * Add a "s=" parameter that uses a unique public key for each session.
+>     This public key identifies the payee to the payer and payer to the
+>     payee.
+
+This would be the simple model, which just tacks on another parameter to
+the bitcoin URL:
+
+bitcoin:[address]?bt=<mac>&s=<key>
+
+But we should also look at the more flexible "r#" approach from your
+existing TBIPs, which would yield:
+
+bitcoin:[address]?r=bt:<mac>/<key>
+
+and incorporate the "payment_url" list.
+
+>   * Use a base58 encoding to save space and reduce the character set
+>     slightly.
+
+:)
+
+>   * Get rid of the resource? If a terminal is accepting payment from
+>     multiple customers simultaneously, it should be smart enough to
+>     distinguish between customers based on the public key they are
+>     encrypting the data with. Is this approach feasible?
+
+Yes, it is not necessary on the URL. But an id is useful in helping the
+BT terminal identify the session without having to try all of its
+outstanding keys until it finds one that works.
+
+I proposed that the resource name ("session id" may be a better name) be
+deterministically derived from the session key. Given the design change
+to pass an EC public key it would need to be derived from that key (not
+from the session key because the receiver would not have a copy before
+decrypting the first BT message). So any function on the public key that
+reduces it to a smaller length, fixed width should be fine. Hashing it
+first may be better as is prevents disclosure of any bits of the public
+key, which should be treated as a secret during the session.
+
+>   * When you said a new public key for each tap, do you see that as
+>     every single tap, or do you consider multiple taps from the same
+>     customer the same tap?
+
+Yes, since there would be no other way to distinguish between customers
+in some scenarios and this is the safest approach. We certainly won't
+run out of numbers, and unused sessions can be discarded based on any
+number of criteria, including discarding all but the most recent. That
+may may be sufficient for your vending machines given there's little if
+any call for parallelism.
+
+e
+
+> On 02/24/2015 06:28 AM, Eric Voskuil wrote:
+>> On 02/23/2015 09:53 PM, Andy Schroder wrote:
+>>> I was saying provide a public key via NFC (or a public key fingerprint
+>>> and then send the full public key over bluetooth). Instead of providing
+>>> a new public key on each tap, why can't the payee just stop accepting
+>>> connections from new parties on that "resource" after a session key has
+>>> been received from the first person?
+>> Because the presumption was that there was not an additional secret in
+>> the URI. If the public key is reused then anyone can spoof a payer and
+>> obtain payment requests.
+>>
+>> Adding a secret to the URI can resolve this, as long as it is encrypted
+>> with the public key before being transmitted back to BT. Otherwise the
+>> secret can be intercepted and replayed to the terminal, encrypted with
+>> the well-known public key.
+>>
+>> So if you want to treat the "resource" as a secret this would work.
+>> However the resource was designed as a public session identifier,
+>> leading the byte stream. This changes it to private session identifier,
+>> which loses some utility.
+>>
+>> Also, reuse of the public key introduces a forward secrecy problem and
+>> the potential for persistent seller impersonation in the case of
+>> undiscovered key compromise.
+>>
+>> But there's really no benefit to reusing the key. An ephemeral key
+>> resolves these issues and can also seed the public resource name.
+>>
+>>> If the person decides to have there
+>>> friend or family pay for them instead and cancel the payment, they could
+>>> just hit cancel on the POS or something (on my fuel pump I have a switch
+>>> that needs to be turned, the purpose of this is to avoid wasting too
+>>> many addresses)
+>> Don't you have someone stop by the pump once a week and empty out the
+>> addresses? :)
+>>
+>>> and/or do another NFC tap (if you're providing QR codes
+>>> you'd still need a button of some kind though so it knows to refresh
+>>> it), or the POS can just provide a completely new payment request to any
+>>> new connections on that same "resource" which use a different session key.
+>>>
+>>> I feel like the authentication of the payer to the payee in any future
+>>> connections after they receive the session key from them (which was
+>>> encrypted with the payees public key), comes from the fact that they are
+>>> sending responses back that are encrypted using the session key they
+>>> gave to the payee. The way I am seeing it is that the NFC tap or QR code
+>>> scan is acting in addition to the visual name check on the signature
+>>> verification in the wallet.
+>> With a secure channel that identifies the parties by proximity, the
+>> reason for the payment request signature is for the payer to obtain a
+>> non-repudiation guarantee. But it also serves as a defense-in-depth
+>> solution to a compromise of the channel (though does not offer a benefit
+>> in the case of seller terminal/cert compromise).
+>>
+>>> If the certificate used isn't signed by a CA
+>>> (self signed), it may be fine as long as you heard about it via NFC or
+>>> QR code. I don't think it will require PKI and should still work
+>>> wallet-to-wallet.
+>> In that case the cert provides no benefit. A self-signed cert can be
+>> repudiated and if the channel is compromised anyone can sign the payment
+>> request.
+>>
+>>> It sounds like you are saying I'm proposing the customer is going to
+>>> need a certificate signed by CA? If so, why? 
+>> This was not a serious proposal, it was to point out what would become
+>> necessary if the payer could not be identified by proximity.
+>>
+>> In the case where a public key is reused, any payer can contact the BT
+>> terminal and obtain the payment request. If the merchant can't rely on
+>> proximity (i.e. can't trust the integrity of the NFC connection) then he
+>> would have to fall back on some other means of identifying the payer. A
+>> mutual verbal/visual confirmation could work, but the point of of NFC+BT
+>> is elimination of that hassle.
+>>
+>> Yes, it sounds a bit wild, but I have seen on this list a serious
+>> proposal to have people broadcast their photo, having the merchant
+>> select them and push to them the payment request. Of course anyone can
+>> spoof another's image, so at some point your image would need to be
+>> certified, and hence a CA.
+>>
+>> I wouldn't go there, but was just making the point.
+>>
+>>> I don't need this for any https website I visit.
+>> When you go to a web site you first establish a private communication.
+>> The site doesn't know who you are (hopefully). Then you log on with your
+>> secret, or proof of it, establishing who you are. Customer identity
+>> problem solved.
+>>
+>> Or you create an account, providing your relevant identity information
+>> which effectively becomes who you are to the site.
+>>
+>> Or you shop anonymously and when you go to check out they know that if
+>> you pay, you get permission to direct the product shipment. And only you
+>> can see the bill. This because your session binds your shopping to your
+>> bill and payment.
+>>
+>> However when you go to the local adult shop to pick up some love toys,
+>> the person at the counter has no idea who's asking their terminal for a
+>> payment request. You having the shop's public cert doesn't help them
+>> with that problem (nor does some anonymous signal sending them a photo
+>> of you). Protecting your privacy ironically requires that they know who
+>> you are - electronically. That means some sort of crazy consumer cert
+>> (not sure that would fly in the love shop)... or trust in
+>> (electronically anonymous) proximity.
+>>
+>>> It's not like the payee is sending anything to
+>>> the payer that is private. The payment request only becomes private if
+>>> something is actually received to it, otherwise, it is just discarded
+>>> and it doesn't matter.
+>> The payment request is private. It's a (potentially signed) proposal to
+>> contract. It can contain interesting information.
+>>
+>>> Those bitcoin addresses are never used. It's just
+>>> like a shopping cart on a website where someone aborts payment and
+>>> cancels the order.
+>> Very much so, but in that case your neighbors can't read your potential
+>> transactions because your session is secured.
+>>
+>>> At one point I was thinking we could do something similar to Mike
+>>> Hearn's suggestion in another recent e-mail where we re-use some
+>>> existing part of the bitcoin URI to bootstrap some trust in a public key
+>>> that the payee next sends via bluetooth after the NFC connection. Now
+>>> that I'm reviewing my notes though, I can't see how this will work with
+>>> a watching only wallet or if no backwards compatible (to BIP21) bitcoin
+>>> address is presented in the URI (as Mike said).
+>> It can work, but you just end up putting an additional value on the URI
+>> (for watchers), requiring legacy addresses (for non-watchers), adding
+>> P2SH scripts to the BT broadcast of the public key, and adding another
+>> BT round trip to obtain a public key before establishing the session.
+>>
+>> A few bytes on the NFC tap is a non-issue, especially in comparison to
+>> the additional complexity and BT traffic. Those choices are really all
+>> based on providing private offline transaction support originating from
+>> generally not private QR code scanning. But QR+BT is not the same as NFC+BT.
+>>
+>> Honestly I think it would be reasonable to use the technique with QR+BT,
+>> accepting the limitations for the legacy system while not unduly
+>> burdening NFC+BT just for an unachievable cross-consistency goal. Always
+>> passing the key on the URL for NFC but giving a non-NFC wallet the
+>> option to ask a BT terminal for a public key seems not just reasonable
+>> but optimal if we want to support the QR+BT scenario.
+>>
+>> Note also that the BT-only scenario is different as well (see recent
+>> discussion on Airbitz BLE wallet, resulting in the RedPhone-based
+>> proposal). And finally, QR-only and NFC-only are also different. The
+>> URIs can be consistent, but the communication protocol will vary.
+>>
+>>> What I was saying above about how you can stop accepting connections on
+>>> that "resource" after a session key has been received by the first
+>>> person could be problematic though. An evil person could just start
+>>> making connections to every device they can, just to be mean, which
+>>> would not allow the POS operator to receive payments from their real
+>>> customers. If you do the other option I proposed, which is to just keep
+>>> giving out new payment requests, you have other problems (on top of
+>>> wasting addresses), which are that you can still have mean people giving
+>>> you a denial of service attach on your hardware, or you could have an
+>>> unusual situation where two people pay (don't know why they would do
+>>> this though), so that is why I'm suggesting a manual tap or button press
+>>> or switch turn being required.
+>> Yes, but even with a manual button you could have these problems. The
+>> data transfer needs to be proximate as well.
+>>
+>>> I guess as more of a abuse filter, a new "resource" could be given
+>>> instead with each tap, and the POS would just ignore all requests to an
+>>> inactive resource. You may say, why not send a new public key (as you
+>>> suggested) instead of a new "resource" with each tap (or button press if
+>>> using QR codes), and then you can skip the sending of a static public
+>>> key (or public key fingerprint), and ignore any data that is not
+>>> encrypted with that public key. Maybe that is a better idea because it
+>>> will shorten the bitcoin URI. However, I don't think its required from a
+>>> privacy standpoint, it primarily just aids in combining the public key
+>>> fingerprint with the changing "resource" name used to filter abuse. Or,
+>>> am I missing something?
+>> I think this question is covered above.
+>>
+>>> So, after thinking through the abuse scenarios I mentioned above, I
+>>> think I am agreeing with you, but the reason I'm writing all this is to
+>>> hopefully just get some feedback on my logic to learn something from
+>>> this discussion. I do think sending a unique public key over NFC has to
+>>> be better than a unique session key. It adds one more step, but seems to
+>>> help. 
+>> It doesn't actually add another step to the protocol, just some
+>> different but simple code on each end. The only downside is that it
+>> extends the NFC URL about 23 characters.
+>>
+>>> If we do this, can we then safely get rid of the h= parameter?
+>> Absolutely, and I believe Mike ack'd this on a previous post today.
+>>
+>>> That should make Mike Hearn happy, and also may alleviate the base64url
+>>> debate?
+>> Others may not be aware of the encoding squabble (not sure if it
+>> qualifies as debate). In the proposed URL, it affects the mac address
+>> and the key:
+>>
+>> bitcoin:[address]?bt:<mac>/<key>
+>>
+>> base58:
+>> bitcoin:?r=bt:12rAs9mM/234KF8hPkXq5pa6pT1wnJC3hVH7W6yB2Wtw24ztzGtBc4
+>>
+>> base64url:
+>> bitcoin:?r=bt:ABBgss5s/A3xWlhB1GI_t2NMR9Zq9E47hZOzmZ6eZTS8sbq-liugh
+>>
+>> I prefer base58 because it's available to all bitcoin libraries, nearly
+>> as compact as base64 (+1 byte in our example) and better standardized.
+>> Some embedded device people might care about having to incorporate
+>> base64 as well as base58.
+>>
+>> It's also better looking (no - or _ characters) and more consistent in
+>> the proposed URL (all three values would be base58, as opposed to one
+>> base58 and two base64url). There may be some idea that base58 is just
+>> for bitcoin addresses (not true) or designed for humans... that's sort
+>> of the point, but it's also good for URLs.
+>>
+>> e
+>>
+>>> On 02/23/2015 09:55 PM, Eric Voskuil wrote:
+>>>> Andy, adding to my previous post below:
+>>>>
+>>>> On 02/23/2015 01:40 AM, Eric Voskuil wrote:
+>>>>> On 02/22/2015 11:36 PM, Andy Schroder wrote:
+>>>> ...
+>>>>>> It's possible a really sophisticated modification could be done where
+>>>>>> the attacker encrypts and decrypts the communication and then relays to
+>>>>>> each party (without them knowing or any glitches detected), but I guess
+>>>>>> I'm not sure how easy that would be on such a close proximity device?
+>>>>> If the NFC tap is sufficiently private, privacy is easy to achieve for
+>>>>> the subsequent communication. If it is not, privacy can be completely
+>>>>> compromised. The question is only how much more difficult is the attack.
+>>>>>
+>>>>> With the public cert tap, the level of difficulty is much lower for
+>>>>> capturing selected payment requests. The interloper no longer needs to
+>>>>> invade the space of the NFC terminal and can instead impersonate the
+>>>>> payer from a safe distance. Nobody gets paid, but privacy is
+>>>>> compromised.
+>>>> This problem in the preceding paragraph can be resolved by sending a
+>>>> unique public key on each NFC tap. In that case an attacker would need
+>>>> to monitor the NFC communication.
+>>>>
+>>>> The talk of wrapping the connection in SSL led me to believe you were
+>>>> talking about a static public certificate. However that's not a
+>>>> necessary assumption here and may not be what you intended.
+>>>>
+>>>>> The level of difficulty in the case where the interloper wants to taint
+>>>>> transactions may appear lower, but it is not:
+>>>>>
+>>>>> With the session key tap the interloper must compromise the NFC location
+>>>>> and then monitor the BT traffic. Monitoring BT traffic without being
+>>>>> party to the connection is presumably not rocket surgery, but not
+>>>>> standard BT design either.
+>>>>>
+>>>>> With the public cert tap the interloper must also compromise the NFC
+>>>>> location and communicate over BT. Therefore the hardware and physical
+>>>>> attack requirements are similar. The only added difficulty is that the
+>>>>> attack on the NFC terminal attack is active (modifying the MAC address
+>>>>> directing the payer to the BT service).
+>>>> I believe your central claim was that the difference in the two
+>>>> bootstrapping approaches (public key vs. session key) is that by using a
+>>>> unique public key per tap, the attack requires an active vs. passive
+>>>> attack on the NFC terminal. I just wanted to make clear here that I
+>>>> agree with that assessment.
+>>>>
+>>>> The symmetric key approach is based on the idea that these attacks are
+>>>> comparable in difficulty and otherwise identical in privacy loss.
+>>>>
+>>>> However, the difference in implementation amounts to about +23
+>>>> additional encoded characters for the BT/LE URL, assuming use of the
+>>>> secp256k1 curve for DHE. This is really not a material issue in the case
+>>>> of the NFC tap. The entire URI+URL could be as small as:
+>>>>
+>>>> bitcoin:?r=bt:12rAs9mM/79bq48xJaMgqR9YNxnWhqHHM1JB52nxn6VFXBHTP2zrP
+>>>>
+>>>> In comparison to a symmetric key:
+>>>>
+>>>> bitcoin:?r=bt:12rAs9mM/12drXXUifSrRnXLGbXg8E
+>>>>
+>>>> It also does not change the protocol design or complexity at all - it
+>>>> would just swap out an AES key for a secp256k1 public key.
+>>>>
+>>>> bitcoin:[address]?bt:<mac>/<key>
+>>>>
+>>>> If that gets us aligned I'm all for it.
+>>>>
+>>>>> However impersonating the payer is just a matter of software - no more
+>>>>> difficult than the session key attack. In fact it may be much easier to
+>>>>> implement, as the attack can use supported BT features because the
+>>>>> attacker has directed the payer to connect to him and is connecting to
+>>>>> the receiver as if he was a payer.
+>>>>>
+>>>>> But it gets worse for the public cert tap, since a more sophisticated
+>>>>> attacker can set himself up in the same position without subverting the
+>>>>> NFC terminal at all. By broadcasting a more powerful BT service on the
+>>>>> same advertised MAC address, the attacker can capture traffic and relay
+>>>>> it to the intended service.
+>>>> I'm retracting the last paragraph, since the interloper, without
+>>>> invading the NFC connection (by substituting the public cert), could not
+>>>> read the relayed traffic. It was getting late :/
+>>>>
+>>>>> So in sum, reliance on a public cert makes the communication less
+>>>>> private under the same physical set of constraints. The difference
+>>>>> results from the receiver allowing non-proximate payers to impersonate
+>>>>> proximate payers from a distance by generating their own session keys
+>>>>> and submitting them over BT.
+>>>> e
+>>>>
+>>>
+> 
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 473 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150224/fbcba14b/attachment.sig>
