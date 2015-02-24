@@ -1,0 +1,109 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Mon, 23 Feb 2015 18:55:05 -0800
+Subject: [Bitcoin-development] Bitcoin at POS using BIP70,
+ NFC and offline payments - implementer feedback
+In-Reply-To: <54EAF570.2090602@voskuil.org>
+References: <20150222190839.GA18527@odo.localdomain>	<54EA5A1C.2020701@AndySchroder.com>	<54EA60D9.8000001@voskuil.org>	<54EA66F5.2000302@AndySchroder.com>
+	<mcdu6b$j11$1@ger.gmane.org> <54EAD884.8000205@AndySchroder.com>
+	<54EAF570.2090602@voskuil.org>
+Message-ID: <54EBE809.70801@voskuil.org>
+
+Andy, adding to my previous post below:
+
+On 02/23/2015 01:40 AM, Eric Voskuil wrote:
+> On 02/22/2015 11:36 PM, Andy Schroder wrote:
+...
+>> It's possible a really sophisticated modification could be done where
+>> the attacker encrypts and decrypts the communication and then relays to
+>> each party (without them knowing or any glitches detected), but I guess
+>> I'm not sure how easy that would be on such a close proximity device?
+> 
+> If the NFC tap is sufficiently private, privacy is easy to achieve for
+> the subsequent communication. If it is not, privacy can be completely
+> compromised. The question is only how much more difficult is the attack.
+> 
+> With the public cert tap, the level of difficulty is much lower for
+> capturing selected payment requests. The interloper no longer needs to
+> invade the space of the NFC terminal and can instead impersonate the
+> payer from a safe distance. Nobody gets paid, but privacy is compromised.
+
+This problem in the preceding paragraph can be resolved by sending a
+unique public key on each NFC tap. In that case an attacker would need
+to monitor the NFC communication.
+
+The talk of wrapping the connection in SSL led me to believe you were
+talking about a static public certificate. However that's not a
+necessary assumption here and may not be what you intended.
+
+> The level of difficulty in the case where the interloper wants to taint
+> transactions may appear lower, but it is not:
+> 
+> With the session key tap the interloper must compromise the NFC location
+> and then monitor the BT traffic. Monitoring BT traffic without being
+> party to the connection is presumably not rocket surgery, but not
+> standard BT design either.
+> 
+> With the public cert tap the interloper must also compromise the NFC
+> location and communicate over BT. Therefore the hardware and physical
+> attack requirements are similar. The only added difficulty is that the
+> attack on the NFC terminal attack is active (modifying the MAC address
+> directing the payer to the BT service).
+
+I believe your central claim was that the difference in the two
+bootstrapping approaches (public key vs. session key) is that by using a
+unique public key per tap, the attack requires an active vs. passive
+attack on the NFC terminal. I just wanted to make clear here that I
+agree with that assessment.
+
+The symmetric key approach is based on the idea that these attacks are
+comparable in difficulty and otherwise identical in privacy loss.
+
+However, the difference in implementation amounts to about +23
+additional encoded characters for the BT/LE URL, assuming use of the
+secp256k1 curve for DHE. This is really not a material issue in the case
+of the NFC tap. The entire URI+URL could be as small as:
+
+bitcoin:?r=bt:12rAs9mM/79bq48xJaMgqR9YNxnWhqHHM1JB52nxn6VFXBHTP2zrP
+
+In comparison to a symmetric key:
+
+bitcoin:?r=bt:12rAs9mM/12drXXUifSrRnXLGbXg8E
+
+It also does not change the protocol design or complexity at all - it
+would just swap out an AES key for a secp256k1 public key.
+
+bitcoin:[address]?bt:<mac>/<key>
+
+If that gets us aligned I'm all for it.
+
+> However impersonating the payer is just a matter of software - no more
+> difficult than the session key attack. In fact it may be much easier to
+> implement, as the attack can use supported BT features because the
+> attacker has directed the payer to connect to him and is connecting to
+> the receiver as if he was a payer.
+> 
+> But it gets worse for the public cert tap, since a more sophisticated
+> attacker can set himself up in the same position without subverting the
+> NFC terminal at all. By broadcasting a more powerful BT service on the
+> same advertised MAC address, the attacker can capture traffic and relay
+> it to the intended service.
+
+I'm retracting the last paragraph, since the interloper, without
+invading the NFC connection (by substituting the public cert), could not
+read the relayed traffic. It was getting late :/
+
+> So in sum, reliance on a public cert makes the communication less
+> private under the same physical set of constraints. The difference
+> results from the receiver allowing non-proximate payers to impersonate
+> proximate payers from a distance by generating their own session keys
+> and submitting them over BT.
+
+e
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 473 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150223/5ac01515/attachment.sig>
