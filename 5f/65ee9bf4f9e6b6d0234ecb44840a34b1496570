@@ -1,0 +1,210 @@
+From: jameson.lopp@gmail.com (Jameson Lopp)
+Date: Tue, 24 Feb 2015 09:54:17 -0500
+Subject: [Bitcoin-development] Request for comments on hybrid PoW/PoS
+ enhancement for Bitcoin
+In-Reply-To: <CAEG8yzmS61H7uqWQuqx09T1NjiHrpK=3MYT+63AXb=_xkz831g@mail.gmail.com>
+References: <CAEG8yzmS61H7uqWQuqx09T1NjiHrpK=3MYT+63AXb=_xkz831g@mail.gmail.com>
+Message-ID: <CADL_X_cYanZGob_EdYwVmRonK3kHBv5KFxg3epJNasrmnxjutg@mail.gmail.com>
+
+This is an interesting idea from the standpoint of trying to incentivize
+people to run nodes, though from a high level it seems to just be adding
+complexity to the current process by which nodes 'endorse' blocks. When a
+node receives and validates a block it then informs its peers of the new
+inventory, thus offering to send the block that 'endorses' as valid.
+
+"Because there is an incentive to include endorsers, there is an incentive
+to broadcast mined blocks as soon as possible." - I'd say that this is
+already the case due to the incentive for a miner's block to get propagated
+around the network first.
+
+My first question would be whether or not your proposal would include a
+change to how nodes propagate new blocks. At the moment, a node that hears
+about a second valid block at the tip of the chain will ignore it and not
+propagate it to its peers. Wouldn't your proposal necessitate a change to
+this logic so that blocks with 'better' endorsements get propagated even if
+they are received after non-endorsed or lesser-endorsed blocks?
+
+I'd also be interested to know more how endorsements would be limited
+(fairly) to only a subset of nodes.
+
+I'm a bit fuzzy on the endorsement timing. You're saying that a miner will
+add endorsement payouts in their block based upon nodes that endorsed the
+previous block? Which means they're paying nodes to endorse a block that
+they probably didn't even mine? Or would a miner only include payouts to
+endorsers for the last block that they mined that was accepted by the
+network?
+
+- Jameson
+
+On Mon, Feb 23, 2015 at 2:27 PM, Chris Page <pagecr at gmail.com> wrote:
+
+>
+> I'm soliciting feedback on an idea to will improve security, increase the
+> number of full nodes, and provide more avenues for bitcoin distribution.
+> The idea is still in its infancy, but I need constructive feedback before I
+> take this further, or decide to abandon the idea.
+>
+> In particular, my ego is in check and I'm ready to be made a fool, but in
+> turn, I'll be that much better educated, so fair trade!
+>
+> Here is the high-level overview:
+>
+> 1) A new block B0 is mined and broadcast as usual
+>
+> 2) Full nodes verify block B0. A subset of these nodes broadcast a new
+> "endorsement" message endorsing the block as valid, and preferred.
+>
+> 3) Miners, now assembling and beginning mining a new block (B1), add
+> endorsements of B0 to B1's coinbase transaction, sharing the block reward
+> with endorsers of B0.
+>
+> As proposed, the idea of Block Endorsement requires a new message, but
+> fits into current structures.
+>
+> Here some details about each of the steps above, and what it buys us:
+>
+> 1) The mining of block B0: No changes to current process or format.
+> Blocks are mined and broadcast as they are today.
+>
+> 2)  Only a subset of nodes are eligible to endorse a block, and hence,
+> only a subset are eligible for an endorsement reward.  We restrict to avoid
+> a flood of endorsement messages by every node following the announcement of
+> each new block.  An endorsement message needs to identify exactly one block
+> at a specific height that it is endorsing.  It needs to include a payout
+> address that meets certain validation criteria relative to the block it is
+> endorsing.  A valid payout address will include some proof of stake (PoS),
+> whether that be that it has a 1+ bitcoin balance, some age weighted
+> balance, or something else is TBD.  The reason for PoS is that it should
+> not be the case that a subversive miner could easily fabricate a valid
+> endorsement payout address.  The other requirement is that the tail bits of
+> a valid endorsement payout address, when masked (size of mask TBD) need to
+> match the trailing bits of the hash of the block it is validating.   This
+> directly ties endorsements to a specific block, and makes it
+> computationally inexpensive to verify/relay, or drop invalid endorsement
+> messages. The combination of PoS and mask will restrict the number of valid
+> addresses.  There are no restrictions on which endorsements a miner can
+> include, as long as they are valid.  As part of new block validation, full
+> nodes would need to do all that they do now, but they would also need to
+> validate endorsements included in the coinbase transaction.
+>
+> 3) Miners consider whether to include endorsement payouts as part of their
+> coinbase transaction.  They need not do so, but by including endorsements,
+> they significantly increase the likelihood that their block will be
+> selected.
+>
+> CHANGE TO BEST CHAIN SELECTION
+>
+> Block Endorsement requires a change to the best chain selection algorithm
+> to encourage miners to include endorsement payouts.  Because there is an
+> incentive to include endorsers, there is an incentive to broadcast mined
+> blocks as soon as possible.
+>
+> For the purpose of best chain selection, a block should get a significant
+> bonus to its work (10%) for each valid endorsement payout included in a
+> block's valid coinbase transaction.  How many endorsements should be
+> permitted is a design parameter which is in play, but let's assume that up
+> to 10 endorsements are permitted.   For the purpose of block selection, a
+> block's work, with 10 endorsements, is be effectively doubled.
+>
+> EFFECT ON 51% ATTACK
+>
+> With Block Endorsement, because of the extra weight given to a block that
+> has endorsements, a sustained 51% attack becomes more expensive.  Valid
+> blocks with full endorsements would win out over the attack blocks unless
+> the attacker was able to not only control 51% of the compute power, but to
+> also control sufficient endorsements to overcome the rest of the network.
+> To prevent an attacker from just using suitable addresses as endorsers from
+> the blockchain, a full node would have to maintain a list of recently
+> broadcast endorsement messages for TBD (100) blocks to prove the validity
+> of the endorsements.  Quite possibly we might need to provide a way for a
+> booting node to request lists of endorsers.
+>
+> CHANGE TO BLOCK REWARD
+>
+> Miners would share block rewards with endorsers using a defined formula
+> which is TBD.  Endorsement rewards would be as much as 20% (design
+> parameter) of the block reward, and shared evenly between all endorsers
+> included in the coinbase.
+>
+> CHANGE TO MINING STRATEGIES
+>
+> When a new block is broadcast, miners will begin assembling yet another
+> block.  Meanwhile, full nodes would validate the new block, and
+> endorsements would propagate quickly thereafter to all miners.  This should
+> not take long as it is easy to identify whether or not an address is a
+> valid endorser.  I would expect shortly after assembling a block, there
+> would be a number of potential endorsers to include in the coinbase tx, and
+> if 10 were not available, a miner could decide to wait, or begin mining
+> it.  I suspect the time to collect 10 valid endorsers would be low, as
+> endorsers should reply quickly in hopes of being included. Therefore, this
+> additional wait time, if any, would not have a appreciable impact on the
+> level of difficulty required to mine a block.
+>
+> I have thoughts on how to provide additional incentives to miners to
+> include multiple endorsers - for example, reducing the total endorsement
+> fee down to 10% if endorsed by a full complement of endorsers.  We could
+> also start with a lower reward and ramp up to some target over time to not
+> burden the business plans of current mining operations.  But these and
+> other ideas are added complexity that I don't know offers much return.  It
+> is easy to add complexity.  The challenge is to keep it as simple as
+> possible.
+>
+> CONCLUSION
+>
+> By implementing Block Endorsement, we increase security of the blockchain
+> by giving more weight to blocks that have been broadcast and endorsed by
+> multiple full nodes.  By providing a reward to these endorsers, we provide
+> an incentive for more full nodes.  With proof of state mining on top of
+> existing proof of work, we provide a low barrier to entry, while not
+> sacrificing the benefits provided by PoW.  With a lower barrier to entry,
+> we provide a more accessible avenue for mining, and in turn, encourage
+> bitcoin adoption.
+>
+> This is just the beginnings of an idea.  Assuming there isn't a
+> fundamental flaw(s), there are many knobs to tweak, and no doubt, it would
+> benefit greatly by the technical expertise and creativity of others.  I do
+> feel as if there are still some gaps and that it hasn't yet been full
+> explored yet even as a thought experiment.  For instance, what new attack
+> vectors might be introduced?  Would a person controlling many potential
+> endorsement addresses be able to launch an attack by endorsing a set of
+> blocks, essentially launching a 51% attack but by using endorsements as a
+> PoW multiplier?  Or is that not practical?  The answer is probably a
+> function of the endorsement criteria.  There are many different angles that
+> require thought and scrutiny.  I'm sure there are many that I've yet to
+> even consider.
+>
+> And as I read discussions about double-spends and zero-confirmation
+> transactions I can't help but wonder if maybe there is a way for endorsers
+> to play a role in identifying possible double-spends.  Negative
+> endorsements?
+>
+> I'm new to the development process and the code base.  Assuming the
+> feedback isn't derailing, would the next step be to proceed with
+> implementation, or would a new BIP be recommended?
+>
+> Well, I thought this would be only a few paragraphs.  It is easy to carry
+> on when you are excited about something.  That's also the time when a
+> person is most likely to miss some short-comings, so I am anxious for
+> feedback.  Thanks for reading, and I'd be most appreciative of constructive
+> comments and questions.
+>
+> Thanks
+> Chris Page
+>
+>
+> ------------------------------------------------------------------------------
+> Download BIRT iHub F-Type - The Free Enterprise-Grade BIRT Server
+> from Actuate! Instantly Supercharge Your Business Reports and Dashboards
+> with Interactivity, Sharing, Native Excel Exports, App Integration & more
+> Get technology previously reserved for billion-dollar corporations, FREE
+>
+> http://pubads.g.doubleclick.net/gampad/clk?id=190641631&iu=/4140/ostg.clktrk
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150224/3f86c2d2/attachment.html>
