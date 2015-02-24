@@ -1,0 +1,103 @@
+From: info@AndySchroder.com (Andy Schroder)
+Date: Tue, 24 Feb 2015 17:50:46 -0500
+Subject: [Bitcoin-development] Bitcoin at POS using BIP70,
+ NFC and offline payments - implementer feedback
+In-Reply-To: <54ECF7DB.3060607@voskuil.org>
+References: <20150222190839.GA18527@odo.localdomain>	<54EA5A1C.2020701@AndySchroder.com>	<54EA60D9.8000001@voskuil.org>	<54EA66F5.2000302@AndySchroder.com>
+	<mcdu6b$j11$1@ger.gmane.org> <54EAD884.8000205@AndySchroder.com>
+	<54EAF570.2090602@voskuil.org> <54EBE809.70801@voskuil.org>
+	<54EC11DA.2010000@AndySchroder.com> <54EC605B.8080005@voskuil.org>
+	<54ECD5BA.7040109@AndySchroder.com> <54ECF7DB.3060607@voskuil.org>
+Message-ID: <54ED0046.3030906@AndySchroder.com>
+
+We can change "resource" to "Session ID" if you want.
+
+I think the URL scheme should be:
+
+bitcoin:[address]?r=bt:<mac>&s=<PublicKey>
+
+But when connecting to the mac, the client indicates the SessionID in 
+the header, and as you say, SessionID is derived in some way from PublicKey.
+
+This is a slightly different format than both of your suggestions below, 
+but seems to make more sense based on what you said in your entire 
+message. The other thing is it can be used with more protocols without 
+taking up more space in the URL.
+
+However, by loosing the h= parameter, I think we are now loosing some 
+benefit it brought to https based connections if the customer doesn't 
+want to use bluetooth. Right?
+
+Also, you talk about a new public key (and session ID) for each tap. I 
+guess I'm wondering about this though. If the public key is compromised 
+on the first tap, isn't their payment request already compromised?
+
+
+
+
+Since we are securing everything, can we change the message header 
+format from what Schildbach's bitcoin wallet implements to something 
+more consistent? Maybe we can create a new UUID for this secure service 
+so Schildbach's bitcoin wallet can still maintain backwards compatibility.
+
+
+
+
+Andy Schroder
+
+On 02/24/2015 05:14 PM, Eric Voskuil wrote:
+>>    * Add a "s=" parameter that uses a unique public key for each session.
+>>      This public key identifies the payee to the payer and payer to the
+>>      payee.
+> This would be the simple model, which just tacks on another parameter to
+> the bitcoin URL:
+>
+> bitcoin:[address]?bt=<mac>&s=<key>
+>
+> But we should also look at the more flexible "r#" approach from your
+> existing TBIPs, which would yield:
+>
+> bitcoin:[address]?r=bt:<mac>/<key>
+>
+> and incorporate the "payment_url" list.
+>
+>>    * Use a base58 encoding to save space and reduce the character set
+>>      slightly.
+> :)
+>
+>>    * Get rid of the resource? If a terminal is accepting payment from
+>>      multiple customers simultaneously, it should be smart enough to
+>>      distinguish between customers based on the public key they are
+>>      encrypting the data with. Is this approach feasible?
+> Yes, it is not necessary on the URL. But an id is useful in helping the
+> BT terminal identify the session without having to try all of its
+> outstanding keys until it finds one that works.
+>
+> I proposed that the resource name ("session id" may be a better name) be
+> deterministically derived from the session key. Given the design change
+> to pass an EC public key it would need to be derived from that key (not
+> from the session key because the receiver would not have a copy before
+> decrypting the first BT message). So any function on the public key that
+> reduces it to a smaller length, fixed width should be fine. Hashing it
+> first may be better as is prevents disclosure of any bits of the public
+> key, which should be treated as a secret during the session.
+>
+>>    * When you said a new public key for each tap, do you see that as
+>>      every single tap, or do you consider multiple taps from the same
+>>      customer the same tap?
+> Yes, since there would be no other way to distinguish between customers
+> in some scenarios and this is the safest approach. We certainly won't
+> run out of numbers, and unused sessions can be discarded based on any
+> number of criteria, including discarding all but the most recent. That
+> may may be sufficient for your vending machines given there's little if
+> any call for parallelism.
+>
+> e
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 555 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150224/a9fbf987/attachment.sig>
