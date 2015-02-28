@@ -1,0 +1,275 @@
+From: info@AndySchroder.com (Andy Schroder)
+Date: Sat, 28 Feb 2015 04:46:15 -0500
+Subject: [Bitcoin-development] Bitcoin at POS using BIP70,
+ NFC and offline payments - implementer feedback
+In-Reply-To: <54ED2EE6.6020903@voskuil.org>
+References: <20150222190839.GA18527@odo.localdomain>	<54EA5A1C.2020701@AndySchroder.com>	<54EA60D9.8000001@voskuil.org>	<54EA66F5.2000302@AndySchroder.com>	<mcdu6b$j11$1@ger.gmane.org>
+	<54EAD884.8000205@AndySchroder.com>	<54EAF570.2090602@voskuil.org>
+	<54EBE809.70801@voskuil.org>	<54EC11DA.2010000@AndySchroder.com>
+	<54EC605B.8080005@voskuil.org>	<54ECD5BA.7040109@AndySchroder.com>
+	<54ECF7DB.3060607@voskuil.org>	<54ED0046.3030906@AndySchroder.com>
+	<54ED2EE6.6020903@voskuil.org>
+Message-ID: <54F18E67.4020908@AndySchroder.com>
+
+
+
+
+
+
+
+Manually quoting a reply from Andreas that was sent privately while the 
+e-mail list was 2 days delayed delivering messages ....
+
+On 02/25/2015 02:45 AM, Andreas Schildbach wrote:
+> Bear in mind that the "bt:" scheme is already in use by ~700.000
+> installations. If we change the protocol except just wrapping a secure
+> layer, we should change the scheme to for example "bs:" (Bluetooth secure).
+
+This bs: is not a bad idea. Is bts: any better/clearer than bs:?
+
+>
+> That said, I don't like the idea to fold the resource name and the
+> session key into one. Resource names can be shared by multiple
+> protocols, for example a merchant may publish payment requests under
+> bt:<mac>/r1*and*  https://<domain>/r1. If you want to save space and
+> don't need resources, you can always just use bt:<mac> and a default
+> resource (bt:<mac>/) is assumed.
+
+I'm going to agree with Andreas on this. The other thing is we are 
+making the resource name derived from the public key, so we are not even 
+directly sending the resource name.
+
+>
+> Have we decided on the use (or non-use) of a DHKE (or similar) protocol
+> like Mike suggested?
+
+
+We are planning to send a unique public key of the payee via NFC. See 
+other e-mails now that the e-mail list finally forwarded them through 
+the other day.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Now for Eric's e-mail... More below.
+
+
+On 02/24/2015 09:09 PM, Eric Voskuil wrote:
+> On 02/24/2015 02:50 PM, Andy Schroder wrote:
+>> We can change "resource" to "Session ID" if you want.
+>>
+>> I think the URL scheme should be:
+>>
+>> bitcoin:[address]?r=bt:<mac>&s=<PublicKey>
+> This is a question of proper URL semantics, as applied to the "bt" scheme.
+>
+>  From rfc3986 [Uniform Resource Identifier (URI): Generic Syntax]:
+>
+> "The path component contains data, usually organized in hierarchical
+> form, that, along with data in the non-hierarchical query component
+> (Section 3.4), serves to identify a resource within the scope of the
+> URI's scheme and naming authority (if any)."
+>
+> ...
+>
+> "The query component contains non-hierarchical data that, along with
+> data in the path component (Section 3.3), serves to identify a resource
+> within the scope of the URI's scheme and naming authority (if any). The
+> query component is indicated by the first question mark ("?") character
+> and terminated by a number sign ("#") character or by the end of the URI."
+>
+> https://tools.ietf.org/html/rfc3986#section-3.3
+>
+> The question therefore is whether <key> is (1) relative to the path
+> (hierarchical) or (2) independent of the path and instead relative to
+> the scheme and naming authority.
+>
+> The "bt" scheme does not include a naming authority, and as such the
+> question is simply whether <key> is relative to "bt" or relative to the
+> path, which is <mac>. Quite clearly <key> is valid only in the context
+> of <mac>, not relevant to all <mac>s.
+>
+> As such one must conclude that the proper form is:
+>
+> bt:<mac>/<key>
+
+
+See my comments above.
+
+
+>
+>> But when connecting to the mac, the client indicates the SessionID in
+>> the header, and as you say, SessionID is derived in some way from
+>> PublicKey.
+> Yes.
+>
+>> This is a slightly different format than both of your suggestions below,
+>> but seems to make more sense based on what you said in your entire
+>> message. The other thing is it can be used with more protocols without
+>> taking up more space in the URL.
+>>
+>> However, by loosing the h= parameter, I think we are now loosing some
+>> benefit it brought to https based connections if the customer doesn't
+>> want to use bluetooth. Right?
+> I don't believe that the BIP-70 protocol over https has any need for the
+> parameter. It was only useful because the NFC/BT session wasn't secured.
+> So I don't think anything is lost.
+
+This may be true. Andreas, do you agree? I feel like there was something 
+in your app where it did not currently compare the domain name to domain 
+name the digital signature in the payment request used though. Maybe 
+this was only for bluetooth though? However, can we trust DNS though? 
+Seems like it is not too hard to get an alternate signed certificate for 
+a domain name, and if you can serve false DNS and/or change TCP/IP 
+routing, then your secure link can break down?
+
+
+
+>
+>> Also, you talk about a new public key (and session ID) for each tap. I
+>> guess I'm wondering about this though. If the public key is compromised
+>> on the first tap, isn't their payment request already compromised?
+> Yes, but that is not the problem that non-reuse is designed to resolve.
+>
+> Reuse of the public key creates a forward secrecy problem. If 1000
+> sessions are recorded, and later the private key associated with the
+> reused public key is compromized, all of the sessions are retroactively
+> compromised.
+>
+> Another problem is persistent impersonation. If the one associated
+> private key is compromised, and nobody knows it, the attacker can not
+> only monitor all transactions but can selectively steal payments (if
+> they aren't signed and verified). This is BTW also a good reason to not
+> use HD generation of these session keys.
+>
+> Another problem is that any payer can use the well-known public key to
+> obtain payment requests.
+>
+> Another problem is that without a unique public key there is no unique
+> session id, so that would need to be added explicitly on the URI.
+
+
+
+I get what you are saying, but I don't know that 2 taps with the same 
+public key is the same as 1000 uses of the same public key?
+
+
+
+>
+>> Since we are securing everything, can we change the message header
+>> format from what Schildbach's bitcoin wallet implements to something
+>> more consistent?
+> Could you spell this out, I'm not familiar with the implementation, just
+> the proposals.
+
+
+If you'll check the proposed specification, the headers in each message 
+(before the serialized payment request data is sent), are consistent 
+from message to message.
+
+https://github.com/AndySchroder/bips/blob/master/tbip-0074.mediawiki#Specification
+
+
+
+
+>
+>> Maybe we can create a new UUID for this secure service
+>> so Schildbach's bitcoin wallet can still maintain backwards compatibility.
+> That may be necessary depending on the implementation of existing
+> terminals, but I'm not familiar enough to speculate.
+
+I think we probably also want to combine new UUID's with Schildbach's 
+suggestion (above) to use a new "bs:" (which I suggested maybe "bts:") 
+protocol scheme.
+
+
+
+>
+> e
+>
+>> On 02/24/2015 05:14 PM, Eric Voskuil wrote:
+>>>>     * Add a "s=" parameter that uses a unique public key for each
+>>>> session.
+>>>>       This public key identifies the payee to the payer and payer to the
+>>>>       payee.
+>>> This would be the simple model, which just tacks on another parameter to
+>>> the bitcoin URL:
+>>>
+>>> bitcoin:[address]?bt=<mac>&s=<key>
+>>>
+>>> But we should also look at the more flexible "r#" approach from your
+>>> existing TBIPs, which would yield:
+>>>
+>>> bitcoin:[address]?r=bt:<mac>/<key>
+>>>
+>>> and incorporate the "payment_url" list.
+>>>
+>>>>     * Use a base58 encoding to save space and reduce the character set
+>>>>       slightly.
+>>> :)
+>>>
+>>>>     * Get rid of the resource? If a terminal is accepting payment from
+>>>>       multiple customers simultaneously, it should be smart enough to
+>>>>       distinguish between customers based on the public key they are
+>>>>       encrypting the data with. Is this approach feasible?
+>>> Yes, it is not necessary on the URL. But an id is useful in helping the
+>>> BT terminal identify the session without having to try all of its
+>>> outstanding keys until it finds one that works.
+>>>
+>>> I proposed that the resource name ("session id" may be a better name) be
+>>> deterministically derived from the session key. Given the design change
+>>> to pass an EC public key it would need to be derived from that key (not
+>>> from the session key because the receiver would not have a copy before
+>>> decrypting the first BT message). So any function on the public key that
+>>> reduces it to a smaller length, fixed width should be fine. Hashing it
+>>> first may be better as is prevents disclosure of any bits of the public
+>>> key, which should be treated as a secret during the session.
+>>>
+>>>>     * When you said a new public key for each tap, do you see that as
+>>>>       every single tap, or do you consider multiple taps from the same
+>>>>       customer the same tap?
+>>> Yes, since there would be no other way to distinguish between customers
+>>> in some scenarios and this is the safest approach. We certainly won't
+>>> run out of numbers, and unused sessions can be discarded based on any
+>>> number of criteria, including discarding all but the most recent. That
+>>> may may be sufficient for your vending machines given there's little if
+>>> any call for parallelism.
+>>>
+>>> e
+>
+>
+> ------------------------------------------------------------------------------
+> Dive into the World of Parallel Programming The Go Parallel Website, sponsored
+> by Intel and developed in partnership with Slashdot Media, is your hub for all
+> things parallel software development, from weekly thought leadership blogs to
+> news, videos, case studies, tutorials and more. Take a look and join the
+> conversation now. http://goparallel.sourceforge.net/
+>
+>
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150228/fc52cf1e/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 555 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150228/fc52cf1e/attachment.sig>
