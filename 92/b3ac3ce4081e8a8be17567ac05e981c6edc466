@@ -1,0 +1,91 @@
+From: kgreenek@gmail.com (Kevin Greene)
+Date: Wed, 4 Mar 2015 18:13:38 -0800
+Subject: [Bitcoin-development] Useless Address attack?
+In-Reply-To: <1755215207.4498654.1425519657710.JavaMail.yahoo@mail.yahoo.com>
+References: <1755215207.4498654.1425519657710.JavaMail.yahoo@mail.yahoo.com>
+Message-ID: <CAEY8wq701HBWQVmvch=dQF09WJ7cJQX0RZd2XKd-23w_AUTK=w@mail.gmail.com>
+
+Bitcoind protects against this by storing the addresses it has learned
+about in buckets. The bucket an address is stored in is chosen based on the
+IP of the peer that advertised the addr message, and the address in the
+addr message itself. The idea is that the bucketing is done in a randomized
+way so that no attacker should be able to fill your database with his or
+her own nodes.
+
+>From addrman.h
+<https://github.com/bitcoin/bitcoin/blob/master/src/addrman.h>:
+
+/** Stochastic address manager
+ *
+ * Design goals:
+ *  * Keep the address tables in-memory, and asynchronously dump the entire
+to able in peers.dat.
+ *  * Make sure no (localized) attacker can fill the entire table with his
+nodes/addresses.
+ *
+ * To that end:
+ *  * Addresses are organized into buckets.
+ *    * Address that have not yet been tried go into 256 "new" buckets.
+ *      * Based on the address range (/16 for IPv4) of source of the
+information, 32 buckets are selected at random
+ *      * The actual bucket is chosen from one of these, based on the range
+the address itself is located.
+ *      * One single address can occur in up to 4 different buckets, to
+increase selection chances for addresses that
+ *        are seen frequently. The chance for increasing this multiplicity
+decreases exponentially.
+ *      * When adding a new address to a full bucket, a randomly chosen
+entry (with a bias favoring less recently seen
+ *        ones) is removed from it first.
+ *    * Addresses of nodes that are known to be accessible go into 64
+"tried" buckets.
+ *      * Each address range selects at random 4 of these buckets.
+ *      * The actual bucket is chosen from one of these, based on the full
+address.
+ *      * When adding a new good address to a full bucket, a randomly
+chosen entry (with a bias favoring less recently
+ *        tried ones) is evicted from it, back to the "new" buckets.
+ *    * Bucket selection is based on cryptographic hashing, using a
+randomly-generated 256-bit key, which should not
+ *      be observable by adversaries.
+ *    * Several indexes are kept for high performance. Defining
+DEBUG_ADDRMAN will introduce frequent (and expensive)
+ *      consistency checks for the entire data structure.
+ */
+
+On Wed, Mar 4, 2015 at 5:40 PM, Thy Shizzle <thashiznets at yahoo.com.au>
+wrote:
+
+> Hi, so just a thought as my node relays addresses etc. If I wanted to
+> really slow down communication over the P2P network, what's stopping me
+> from popping up a heap of dummy nodes that do nothing more than exchange
+> version and relay addresses, except I send addr messages with all 1000
+> addresses pointing to my useless nodes that never send invs or respond to
+> getdata etc so clients connect to my dumb nodes instead of legit ones. I'm
+> thinking that if I fill up their address pool with enough addresses to dumb
+> nodes and keep them really fresh time wise, it could have a bit of an
+> impact especially if all 8 outbound connections are used up by my dumb
+> nodes right?
+>
+> I don't want to do this obviously, I'm just thinking about it as I'm
+> building my node, what is there to stop this happening?
+>
+>
+> ------------------------------------------------------------------------------
+> Dive into the World of Parallel Programming The Go Parallel Website,
+> sponsored
+> by Intel and developed in partnership with Slashdot Media, is your hub for
+> all
+> things parallel software development, from weekly thought leadership blogs
+> to
+> news, videos, case studies, tutorials and more. Take a look and join the
+> conversation now. http://goparallel.sourceforge.net/
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150304/536a50fe/attachment.html>
