@@ -1,0 +1,228 @@
+From: thyshizzle@outlook.com (Thy Shizzle)
+Date: Thu, 12 Mar 2015 23:59:11 +1100
+Subject: [Bitcoin-development] Electrum 2.0 has been tagged
+In-Reply-To: <20150312115137.GN4541@boiler.chaos.net>
+References: <692694585.4537988.1426134119107.JavaMail.yahoo@mail.yahoo.com>,
+	<20150312115137.GN4541@boiler.chaos.net>
+Message-ID: <COL130-W392A86DB8E091762032107C2060@phx.gbl>
+
+@Neill, Indeed supplying entropy is necessary for testing etc, that's the main reason why I put this in my .NET implementation, the test vectors require us to supply entropy and build the mnemonic from the supplied wordlist and you are correct that changes to the word list will null and void the test vectors. Also it allows us to do fun things like swap between languages so one entropy set can have many seeds based on many languages etc, just novel little things like that. I'm not at all against a standard wordlist. The point I want to get across is that people seem to think that BIP39 is restricted by its word list but not at all. As long as you give a BIP39 implementation 12 words or more (in 3 word increments) it will always derive the same seed bytes, independent of any word list and this is the most important message to realise.
+
+@Thomas V if you must record a version, why don't you just put an integer at the end of your mnemonic or something? I can't understand why you have disregarded BIP39 when designing Electrum 2.0?  12 - 24 words plus a version integer tacked on the end, tell the user to omit the version integer if they want to import to multibit HD or whatever, job done!
+
+I really think you need to rethink the use of BIP39 with Electrum Thomas! If you want to maintain a version field and/or date independent of the BIP39 spec then do so because at least the seed can still be recreated from anyone else utilising BIP39!!!
+
+Thy
+
+> Date: Thu, 12 Mar 2015 06:51:37 -0500
+> From: neillm at thecodefactory.org
+> To: thashiznets at yahoo.com.au
+> CC: Bitcoin-development at lists.sourceforge.net
+> Subject: Re: [Bitcoin-development] Electrum 2.0 has been tagged
+> 
+> 
+> Ok, I see your point here, and I was referring to rebuilding from
+> entropy -- which as you noted is not a real world usage.  It is a
+> useful implementation test though and at the very least the existing
+> test vectors would need to be regenerated with each word list change.
+> 
+> I recently added BIP39 to libbitcoin and our implementation would fail
+> with an arbitrarily new word list because we validate the user
+> provided word list before converting it to a seed (i.e. we check that
+> the encoded entropy/checksum line up and warn the user if that's not
+> the case to distinguish a rubbish word list from a BIP39 mnemonic --
+> as referenced in the BIP).  You're correct that we could use rubbish
+> words, but at the moment it's not allowed there.  By removing that
+> validating 'restriction', I agree with you that word lists have no
+> need to be fixed.  But realistically, we still don't allow completely
+> arbitrary words to be used because I don't see the word lists changing
+> too often, nor implementations storing word lists of all words and
+> languages.
+> 
+> Thanks for clarifying,
+> -Neill.
+> 
+> On Thu, Mar 12, 2015 at 04:21:59AM +0000, Thy Shizzle wrote:
+> > "I agree that it's true that a static wordlist is
+> >  required once people have started using BIP39 for anything real and
+> >  changing the word lists will invalidate any existing mnemonics"
+> > ^ This is incorrect I think Neill, the reason is that the only thing that happens when you change the wordlist is that entropy points to different words. But remember, entropy is disposed. Yes in my code I allow for the keeping of entropy etc, it also lets me "hot swap" between different language wordlists etc but in real world implementation the entropy is forgotten and not stored. So changing the wordlist merely allows new mnemonic phrases to be generated but it has a nil impact on previously generated mnemonics UNLESS you are trying to rebuild from entropy but you wouldn't do that. You would be rebuilding from the Mnemonic in real world scenario. You really can have a word list of total rubbish in BIP39 as long as it is 2048 words long that is all! If you input the mnemonic made out of rubbish words so for e.g "uyuy jkjasd sdsd sdsdd yuuyu sdsds iooioi sdasds uyuyuy sdsdsd tyyty rwetrtr" and no matter what BIP39 implementation you put it in, it will always generate the same seed bytes thus allowing for complete and universal seed derivation without any reliance on word list. The word list is merely to generate a mnemonic, after that it has no role in seed generation so you can change it at anytime and it will never effect future mnemonics.
+> > 
+> > On Thu, Mar 12, 2015 at 02:16:38AM +0000, Thy Shizzle wrote:
+> > > That's disappointing the Electrum 2.0 doesn't use BIP39.
+> > 
+> > Agreed, but I don't know the full background on this.
+> > 
+> > > Changing the wordlist in the future has ZERO effect on derived seed, whatever mnemonic you provide will always generate the same seed, BIP39 is not mapping the words back to numbers etc to derive seed.
+> > 
+> > That's true for generating new mnemonics (i.e. same entropy can
+> > generate any combinations of words), but not for converting a mnemonic
+> > to a seed (i.e. a specific wordlist/passphrase should always generate
+> > the same seed).  I agree that it's true that a static wordlist is
+> > required once people have started using BIP39 for anything real and
+> > changing the word lists will invalidate any existing mnemonics (unless
+> > your 'new' wordlist simply substitutes one word for another and the
+> > index mapping is made public ... which means it's not really an
+> > arbitrary word list).
+> > 
+> > > Version is something that can be dealt with after the fact, hopefully standardised (curious why didn't you work with the BIP39 to insert version instead of do something different to BIP39?)
+> > > So most of what you are suggesting as problems are not.
+> > 
+> > I don't see how this can work given the BIP39 spec as it is today
+> > (there's simply no room for a version in the bits).  I do think
+> > versioning would be nice, but as of now, I'm in the camp that thinks
+> > complete wallet interoperability is a bit of a myth -- so long as you
+> > can fundamentally move into/out of wallets at will.
+> > 
+> > -Neill.
+> > 
+> > > As for the common words between languages, I have discussed this with the provider of the Chinese wordlists as they shared some words between simplified and traditional, but I found it easy to look for a word in the mnemonic that is unique to that language/wordlist and so straight away you can determine the language, remembering you get minimum 12 goes at doing that :)
+> > > Also then I asked myself, do we really care about detecting the language? Probably not because we don't need to use the wordlist ever again after creation, we literally accept the mnemonic, normalise it then hash it into a seed. From what I'm reading, Electrum 2.0 really should have BIP39, it would take almost no effort to put it in and I think you should do that :) I don't have any interest in BIP39 other than it being a standard. I think TREZOR may have an interest in it?
+> > > Thomas V:
+> > > "Thanks Mike, and sorry to answer a bit late; it has been a busy couple
+> > > of weeks.
+> > > 
+> > > You are correct, a BIP39 seed phrase will not work in Electrum, and vice
+> > > versa. It is indeed unfortunate. However, I believe BIP39 should not be
+> > > followed, because it reproduces two mistakes I did when I designed the
+> > > older Electrum seed system. Let me explain.
+> > > 
+> > > The first problem I have with BIP39 is that the seed phrase does not
+> > > include a version number.
+> > > 
+> > > Wallet development is still in an exploratory phase, and we should
+> > > expect even more innovation in this domain. In this context, it is
+> > > unwise to make decisions that prevent future innovation.
+> > > 
+> > > However, when we give a seed phrase to users, we have a moral obligation
+> > > to keep supporting this seed phrase in future versions. We cannot simply
+> > > announce to Electrum users that their old seed phrase is not supported
+> > > anymore, because we created a new version of the software that uses a
+> > > different derivation. This could lead to financial losses for users who
+> > > are unaware of these technicalities. Well, at least, that is how I feel
+> > > about it.
+> > > 
+> > > BIP39 and Electrum v2 have a very different ways of handling future
+> > > innovation. Electrum v2 seed phrases include an explicit version number,
+> > > that indicates how the wallet addresses should be derived. In contrast,
+> > > BIP39 seed phrases do not include a version number at all. BIP39 is
+> > > meant to be combined with BIP43, which stipulates that the wallet
+> > > structure should depend on the BIP32 derivation path used for the wallet
+> > > (although BIP43 is not followed by all BIP39 compatible wallets). Thus,
+> > > innovation in BIP43 is allowed only within the framework of BIP32. In
+> > > addition, having to explore the branches of the BIP32 tree in order to
+> > > determine the type of wallet attached to a seed might be somewhat
+> > > inefficient.
+> > > 
+> > > The second problem I see with BIP39 is that it requires a fixed
+> > > wordlist. Of course, this forbids innovation in the wordlist itself, but
+> > > that's not the main problem. When you write a new standard, it is
+> > > important to keep this standard minimal, given the goal you want to
+> > > achieve. I believe BIP39 could (and should) have been written without
+> > > including the wordlist in the standard.
+> > > 
+> > > There are two ways to derive a master key from a mnemonic phrase:
+> > >  1. A bidirectional mapping between words and numbers, as in old
+> > > Electrum versions. Pros: bidirectional means that you can do Shamir
+> > > secret sharing of your seed. Cons: It requires a fixed wordlist.
+> > >  2. Use a hash of the seed phrase (pbkdf). Pros: a fixed wordlist is not
+> > > required. Cons: the mapping isn't bidirectional.
+> > > 
+> > > Electrum v1 uses (1). Electrum v2 uses (2).
+> > > 
+> > > Early versions of BIP39 used (1), and later they switched to (2).
+> > > However, BIP39 uses (2) only in order to derive the wallet keys, not for
+> > > its checksum. The BIP39 checksum uses (1), and it does requires a fixed
+> > > wordlist. This is just plainly inconsistent. As a result, you have
+> > > neither wordlist flexibility, nor Shamir secret sharing.
+> > > 
+> > > Having a fixed wordlist is very unfortunate. First, it means that BIP39
+> > > will probably never leave the 'draft' stage, until all languages of the
+> > > world have been added. Second, once you add a wordlist for a new
+> > > language, you cannot change it anymore, because it will break existing
+> > > seed phrases; therefore you have to be extremely careful in the way you
+> > > design these wordlists. Third, languages often have words in common.
+> > > When you add a new language to the list, you should not use words
+> > > already used by existing wordlists, in order to ensure that the language
+> > > can be detected. It leads to a first come first served situation, that
+> > > might not be sustainable in the future.
+> > > 
+> > > In order to support the old Electrum v1 seeds, all future versions of
+> > > Electrum will have to include the old wordlist. In addition, when
+> > > generating new seed phrases, Electrum now has to avoid collisions with
+> > > old seed phrases, because the old ones did not have a version number.
+> > > This is painful enough, I will not repeat the same errors twice.
+> > > 
+> > > Electrum v2 derives both its private keys and its checksum/version
+> > > number using a hash of the seed phrase. This means that wordlists can be
+> > > added and modified in the future, without breaking existing seed
+> > > phrases. It also means that it will be very easy for other wallets to
+> > > support Electrum seedphrases: it requires about 20 lines of code, and no
+> > > wordlist is required."
+> > > 
+> > > 
+> > > Thomas
+> > > 
+> > > 
+> > > Le 02/03/2015 16:37, Mike Hearn a ?crit :
+> > > > Congrats Thomas! Glad to see Electrum 2 finally launch.
+> > > > 
+> > > > 
+> > > >> * New seed derivation method (not compatible with BIP39).
+> > > > 
+> > > > 
+> > > > Does this mean a "12 words" wallet created by Electrum won't work if
+> > > > imported into some other wallet that supports BIP39? Vice versa? This seems
+> > > > unfortunate. I guess if seeds are being represented with 12 words
+> > > > consistently, people will expect them to work everywhere.
+> > > > 
+> > > 
+> > > ------------------------------------------------------------------------------
+> > > Dive into the World of Parallel Programming The Go Parallel Website, sponsored
+> > > by Intel and developed in partnership with Slashdot Media, is your hub for all
+> > > things parallel software development, from weekly thought leadership blogs to
+> > > news, videos, case studies, tutorials and more. Take a look and join the 
+> > > conversation now. http://goparallel.sourceforge.net/
+> > > _______________________________________________
+> > > Bitcoin-development mailing list
+> > > Bitcoin-development at lists.sourceforge.net
+> > > Bitcoin-development --
+> > > |   |
+> > > |   |   |   |   |   |
+> > > | Bitcoin-development --To see the collection of prior postings to the list, visit the Bitcoin-development Archives. |
+> > > |  |
+> > > | View on lists.sourceforge.net | Preview by Yahoo |
+> > > |  |
+> > > |   |
+> > > 
+> > >   
+> > > 
+> > >  
+> > >    
+> > 
+> > > ------------------------------------------------------------------------------
+> > > Dive into the World of Parallel Programming The Go Parallel Website, sponsored
+> > > by Intel and developed in partnership with Slashdot Media, is your hub for all
+> > > things parallel software development, from weekly thought leadership blogs to
+> > > news, videos, case studies, tutorials and more. Take a look and join the 
+> > > conversation now. http://goparallel.sourceforge.net/
+> > 
+> > > _______________________________________________
+> > > Bitcoin-development mailing list
+> > > Bitcoin-development at lists.sourceforge.net
+> > > https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> 
+> ------------------------------------------------------------------------------
+> Dive into the World of Parallel Programming The Go Parallel Website, sponsored
+> by Intel and developed in partnership with Slashdot Media, is your hub for all
+> things parallel software development, from weekly thought leadership blogs to
+> news, videos, case studies, tutorials and more. Take a look and join the 
+> conversation now. http://goparallel.sourceforge.net/
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+ 		 	   		  
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150312/d0a28c36/attachment.html>
