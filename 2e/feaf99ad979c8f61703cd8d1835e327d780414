@@ -1,0 +1,215 @@
+From: kalle@rosenbaum.se (Kalle Rosenbaum)
+Date: Sat, 14 Mar 2015 19:16:39 +0100
+Subject: [Bitcoin-development] Proof of Payment
+In-Reply-To: <A2849710-1069-45A1-89C0-9D8E40C4A8D6@newcastle.ac.uk>
+References: <CAPswA9zzVDxW8_WXg5833r2Z4pxZOppYtNLHMQ=Nw-H72cMz7w@mail.gmail.com>
+	<A2849710-1069-45A1-89C0-9D8E40C4A8D6@newcastle.ac.uk>
+Message-ID: <CAPswA9wNS2J=4YhpqWN8SmzJuUF8mek8XLUYTE+twLX9vM4Jhg@mail.gmail.com>
+
+Den 14 mar 2015 00:59 skrev "Patrick Mccorry (PGR)" <
+patrick.mccorry at newcastle.ac.uk>:
+>
+> That all seems more complicated than it needs to be - the service you are
+paying knows that it had received a payment from some public key Q
+(regardless of script type, as all scripts require a public key).
+
+The service knows it had received a payment from Q1, Q2,...,Qn. A tx may
+have multiple inputs and each input may have several public keys.
+
+>
+> So I want to rent a movie, they send me a challenge and I respond with a
+zero knowledge proof to demonstrate that I am the owner of Q, and as they
+know that Q made a payment - then there is a proof of payment - as this is
+provided by the time stamped transaction on the blockchain - in this sense
+you are bootstrapping trust from the blockchain.
+>
+
+Ok. Without knowing much about zero knowledge proof, i guess you'd need a
+challenge/response for each of the keys Q1,..,Qn. If we settle on only a
+single key, what key from what input should we use? One input may be a
+multisig (2 of 3) input. Is it ok to settle on only one of the multisig
+keys? Probably not. I'd say that we need 2 of 3 signatures (just as in a
+bitcoin transaction), and not necessarily the same two that made the
+payment.
+
+> For all of your scenarios, a simple challenge-response scheme would work.
+Adding an op_return makes the payment transaction worse as it is now
+distinguishable on the blockchain - you want use information that is
+already available on that transaction.
+
+I'm not sure I follow. Do you mean that it's a problem that the PoP itself
+reveals what transaction I'm proving? Well, maybe it is a problem under
+some circumstances. The least you can do to protect yourself from revealing
+information to third party is to communicate over secure channels. Could
+you please elaborate on this?
+
+Anyway, if both the client and the server knows what transaction to prove
+(ad-sign example) you are right that the tx info is kind of redundant. But
+if we don't send the tx hints from server to client, the client user must
+manually select the transaction to prove which makes the user experience
+worse.
+
+Thank you very much for your comments,
+
+/Kalle
+
+>
+> Sent from my iPhone
+>
+> On 13 Mar 2015, at 19:58, Kalle Rosenbaum <kalle at rosenbaum.se> wrote:
+>
+>> Hi all,
+>>
+>> I've been thinking about how a person can prove that she has made a
+payment. I came up with an idea I call Proof of Payment (PoP) and I would
+highly appreciate your comments. Has something like this been discussed
+somewhere before?
+>>
+>> Use cases
+>>
+>> There are several scenarios in which it would be useful to prove that
+you have paid for something. For example:
+>> A pre-paid hotel room where your PoP functions as a key to the door.
+>> An online video rental service where you pay for a video and watch it on
+any device.
+>> An ad-sign where you pay in advance for e.g. 2-weeks exclusivity. During
+this period you can upload new content to the sign whenever you like using
+PoP.
+>> A lottery where all participants pay to the same address, and the winner
+of the T-shirt is selected among the transactions to that address. You
+exchange the T-shirt for a PoP for the winning transaction.
+>>
+>> These use cases can be achieved without any personal information (no
+accounts, no e-mails, etc) being involved.
+>>
+>> Desirable properties:
+>> A PoP should be generated on demand.
+>> It should only be usable once to avoid issues due to theft.
+>> It should be able to create a PoP for any payment, regardless of script
+type (P2SH, P2PKH, etc.).
+>> Current methods of proving a payment, as I know of:
+>> BIP0070, The PaymentRequest together with the transactions fulfilling
+the payment makes some sort of proof. However, it does not meet 1 or 2 and
+it obviously only meets 3 if the payment is made through BIP0070. Also,
+there's no standard way to request/provide the proof.
+>> Signing messages, chosen by the entity that the proof is provided to,
+with the private keys used to sign the transaction. This could meet 1 and 2
+but probably not 3. This is not standardized either.
+>> Proof of Payment, the data structure
+>>
+>> A proof of payment for a transaction T, PoP(T), is used to prove that
+one has ownership of the credentials needed to unlock all the inputs of T.
+It has the exact same structure as a bitcoin transaction with the same
+inputs as T and with a single OP_RETURN output:
+>>
+>> OP_RETURN PoP <txid> <nonce>
+>>
+>> | Field     | Size [B] | Description                        |
+>> |-----------|----------|------------------------------------|
+>> | PoP       | 3        | Literal identifying this as a PoP  |
+>> | <txid>    | 32       | The transaction to Prove           |
+>> | <nonce>   | 5        | Unsigned integer                   |
+>>
+>> The PoP is signed using the same signing process that is used for
+bitcoin transactions. The purpose of the nonce is to make it harder to use
+a stolen PoP. Once the PoP has reached the destination, that PoP is useless
+since the destination will generate a new nonce for every PoP.
+>>
+>> Proof of Payment, the process
+>> A proof of payment request is sent from the server to the wallet. The
+request contains:
+>> a random nonce
+>> a destination where to send the PoP, for example a https URL
+>> data hinting the wallet which transaction to create a proof for. For
+example:
+>> txid, if known by the server
+>> PaymentRequest.PaymentDetails.merchant_data (in case of a BIP0070
+payment)
+>> amount
+>> label, message or other information from a BIP0021 URL
+>> The wallet identifies the transaction T, if possible. Otherwise asks the
+user to select among the ones that fit the hints in 1.3.
+>> The wallet checks that T is on the blockchain, meaning all the inputs
+are spent.
+>> The wallet creates an unsigned PoP (UPoP) for T, and asks the user to
+sign it.
+>> The user confirms
+>> The UPoP(T) is signed by the wallet, creating PoP(T).
+>> The PoP is sent to the destination in 1.2.
+>> The server receiving the PoP validates it and responds with ?valid? or
+?invalid?
+>> The wallet displays the response in some way to the user.
+>> Remarks:
+>> The method of transferring the PoP request at step 1 is not very well
+thought through, but I think we can extend BIP0021 to cater for this. For
+example read a URI, representing a PoP request, using QR code or NFC. A
+more advanced approach would be to extend BIP0070.
+>> The nonce must be randomly generated by the server for every new PoP
+request.
+>> Validating a PoP
+>>
+>> The server needs to validate the PoP and reply with ?valid? or
+?invalid?. That process is outlined below:
+>> Check the format of the PoP. It must pass normal transaction checks,
+except for the inputs being already spent.
+>> Check the output script. It must conform to the OP_RETURN output format
+outlined above.
+>> Check that the nonce is the same as the one you requested.
+>> Check that the txid in the output is the transaction you actually want
+proof for. If you don?t know what transaction you want proof for, check
+that the transaction actually pays for the product/service you deliver (in
+the video rental case, find the transaction among all payments for that
+specific video).
+>> Check that the inputs of the PoP are exactly the same as in transaction
+T.
+>> Check the signatures of all the inputs, as would be done on a normal
+transaction.
+>> If the signatures are valid, the PoP is valid.
+>> Security issues
+>> Someone can intercept the PoP-request and change the destination so that
+the user sends the PoP to the bad actor.
+>> Someone can intercept the PoP-request and change for example the txid to
+trick the user to sign a PoP for another transaction than the intended.
+This can of course be avoided by actually looking at the UPoP before
+signing it. The bad actor could also set hints for a transaction that the
+user didn?t make, resulting in a broken service.
+>> Someone can steal a PoP and try to use the service hoping to get a
+matching nonce. Probability per try: 1/(2^40). The server should have
+mechanism for detecting a brute force attack of this kind, or at least slow
+down the process by delaying the PoP request by some 100 ms or so.
+>> Even if a wallet has no funds it might still be valuable as a generator
+for PoPs. This makes it important to keep the security of the wallet after
+it has been emptied.
+>> The first two issues are the same as for traditional bitcoin payments.
+They could be mitigated by using secure connections and possibly also
+extending BIP0070 to support PoPs.
+>>
+>> Further work
+>> Figure out how to make use of, and extend, BIP0070 for the purpose of
+PoPs
+>> Define an extension for BIP0021 to support PoP requests (something along
+the lines of BIP0072)
+>> Implement a proof-of-concept
+>> Possibly propose BIPs for the different parts.
+>> Looking forward to reading your comments
+>> Regards,
+>> Kalle Rosenbaum
+>>
+>>
+------------------------------------------------------------------------------
+>> Dive into the World of Parallel Programming The Go Parallel Website,
+sponsored
+>> by Intel and developed in partnership with Slashdot Media, is your hub
+for all
+>> things parallel software development, from weekly thought leadership
+blogs to
+>> news, videos, case studies, tutorials and more. Take a look and join the
+>> conversation now. http://goparallel.sourceforge.net/
+>>
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150314/d819a395/attachment.html>
