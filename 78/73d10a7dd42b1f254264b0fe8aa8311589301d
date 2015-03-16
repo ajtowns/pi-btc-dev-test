@@ -1,0 +1,101 @@
+From: sergiolerner@certimix.com (Sergio Lerner)
+Date: Mon, 16 Mar 2015 13:29:03 -0300
+Subject: [Bitcoin-development] "network disruption as a service" and proof
+	of local storage
+In-Reply-To: <CABh=4qNwRqb3f+AM-PKB0F+Kaw02tAq2DsqLmeO87XxXZvTd4Q@mail.gmail.com>
+References: <55034205.4030607@localhost.local>
+	<CANEZrP2OM6BrEsgqe5j23qaZp7wypOFJOZf+cNuMMe12WBv8LA@mail.gmail.com>
+	<CABh=4qNwRqb3f+AM-PKB0F+Kaw02tAq2DsqLmeO87XxXZvTd4Q@mail.gmail.com>
+Message-ID: <550704CF.2000808@certimix.com>
+
+The problem of pseudo-nodes will come over and over. The cat and mouse
+chase is just beginning.
+It has been discussed some times that the easiest solution world be to
+request some kind of resource consumption on each peer to be allowed to
+connect to other peers.
+Gmaxwell proposed Proof of Storage here:
+https://bitcointalk.org/index.php?topic=310323.msg3332919#msg3332919
+
+I proposed a (what I think) is better protocol for Proof of Storage that
+I call "Proof of Local storage" here
+https://bitslog.wordpress.com/2014/11/03/proof-of-local-blockchain-storage/
+. It's better because it does not need the storage of additional data,
+but more importantly, it allows you to prove full copy of the blockchain
+is being maintained by the peer.
+This is specially important now that Bitnodes is trying a full-node
+incentive program that may be easily cheated
+(http://qntra.net/2015/02/pseudonode-proxy-fools-bitcoin-full-node-incentive-program/)
+
+Proof of local storage allows a node to prove another peer that he is
+storing a LOCAL copy of a PUBLIC file, such as the blockchain. So the
+peer need not waste more resources (well, just some resources to
+encode/decode the block-chain).
+The main idea is to use what I called asymmetric-time-encoding.
+Basically you encode the block-chain in a way that it takes 100 more
+times to write it than to read it. Since the block-chain is an
+append-only (write-only) file, this fit good for our needs. For instance
+(and as a simplification), choosing a global 1024-bit prime, then
+splitting the block-chain in 1024-bit blocks, and encrypting each block
+using Polihg-Hellman (modexp) with decryption exponent 3.  Then
+encryption is at least 100 times slower than decryption. Before PH
+encryption each node must xor each block with a pseudo-random mask
+derived from the public IP and the block index.  So block encryption
+could be: 
+BlockEncryptIndex(i) = E(IP+i,block(i))^inv(3) (mod p),
+
+where inv(3) is 3^-1 mod (p-1). E() could be a fast tweaked encryption
+routine (tweak = index), but we only need the PRNG properties of E() and
+that E() does share algebraic properties with P.H..
+
+Two protocols can be performed to prove local possession:
+1. (prover and verifier pay a small cost) The verifier sends a seed to
+derive some n random indexes, and the prover must respond with the hash
+of the decrypted blocks within a certain time bound. Suppose that
+decryption of n blocks take 100 msec (+-100 msec of network jitter).
+Then an attacker must have a computer 50 faster to be able to
+consistently cheat. The last 50 blocks should not be part of the list to
+allow nodes to catch-up and encrypt the blocks in background.
+
+2. (prover pay a high cost, verified pays negligible cost). The verifier
+chooses a seed n, and then pre-computes the encrypted blocks derived
+from the seed using the prover's IP. Then the verifier sends the  seed,
+and the prover must respond with the hash of the encrypted blocks within
+a certain time bound. The proved does not require to do any PH
+decryption, just take the encrypted blocks for indexes derived from the
+seed, hash them and send the hash back to the verifier. The verifier
+validates the time bound and the hash.
+
+Both protocols can me made available by the client, under different
+states. For instance, new nodes are only allowed to request protocol 2
+(and so they get an initial assurance their are connecting to
+full-nodes). After a first-time mutual authentication, they are allowed
+to periodically perform protocol 1. Also new nodes may be allowed to
+perform protocol 1 with a small index set, and increase the index set
+over time, to get higher confidence.
+
+The important difference between this protocol and classical remote
+software attestation protocols, is that the time gap between a good peer
+and a malicious peer can be made arbitrarily high, picking a larger p.
+Maybe there is even another crypto primitive which is more asymmetric
+than exponent 3 decryption (the LUC or NTRU cryptosystem?).
+
+In GMaxwell proposal each peer builds a table for each other peer. In my
+proposal, each peer builds a single table (the encrypted blockchain), so
+it could be still possible to establish a thousands of connections to
+the network from a single peer. Nevertheless, the attacker's IP will be
+easily detected (he cannot hide under a thousands different IPs). It's
+also possible to restrict the challenge-response to a portion of the
+block-chain, the portion offset being derived from the hash of both IP
+addresses and one random numbers provided by each peer. Suppose each
+connection has a C-R space equivalent to 1% of the block-chain. Then
+having 100 connections and responding to C-R on each connection means
+storing approximate 1 copy of the block-chain (there may be overlaps,
+which would need to be stored twice) , while having 1K connections would
+require storing 10 copies of the blockchain.
+
+
+Best regards,
+ Sergio
+
+
+
