@@ -1,0 +1,95 @@
+From: jeremy@taplink.co (Jeremy Spilman)
+Date: Mon, 23 Mar 2015 22:14:23 -0700
+Subject: [Bitcoin-development] "network disruption as a service" and
+ proof of local storage
+In-Reply-To: <550704CF.2000808@certimix.com>
+References: <55034205.4030607@localhost.local>
+	<CANEZrP2OM6BrEsgqe5j23qaZp7wypOFJOZf+cNuMMe12WBv8LA@mail.gmail.com>
+	<CABh=4qNwRqb3f+AM-PKB0F+Kaw02tAq2DsqLmeO87XxXZvTd4Q@mail.gmail.com>
+	<550704CF.2000808@certimix.com>
+Message-ID: <op.xvzkt9nryldrnw@laptop-air>
+
+On Mon, 16 Mar 2015 09:29:03 -0700, Sergio Lerner  
+<sergiolerner at certimix.com> wrote:
+> I proposed a (what I think) is better protocol for Proof of Storage that
+> I call "Proof of Local storage" here
+> https://bitslog.wordpress.com/2014/11/03/proof-of-local-blockchain-storage/
+
+Thanks so much for publishing this. It could be useful in any application  
+to try to prove a keyed copy of some data.
+
+If I understand correctly, transforming raw blocks to keyed blocks takes  
+512x longer than transforming keyed blocks back to raw. The key is public,  
+like the IP, or some other value which perhaps changes less frequently.
+
+The verifier keeps blocks in the keyed format, and can decrypt quickly to  
+provide raw data, or use the keyed data for hashing to try to demonstrate  
+they have a pre-keyed copy.
+
+>
+> Two protocols can be performed to prove local possession:
+> 1. (prover and verifier pay a small cost) The verifier sends a seed to
+> derive some n random indexes, and the prover must respond with the hash
+> of the decrypted blocks within a certain time bound. Suppose that
+> decryption of n blocks take 100 msec (+-100 msec of network jitter).
+> Then an attacker must have a computer 50 faster to be able to
+> consistently cheat. The last 50 blocks should not be part of the list to
+> allow nodes to catch-up and encrypt the blocks in background.
+>
+
+Can you clarify, the prover is hashing random blocks of *decrypted*, as-in  
+raw, blockchain data? What does this prove other than, perhaps, fast  
+random IO of the blockchain? (which is useful in its own right, e.g. as a  
+way to ensure only full-node IO-bound mining if baked into the PoW)
+
+How is the verifier validating the response without possession of the full  
+blockchain?
+
+> 2. (prover pay a high cost, verified pays negligible cost). The verifier
+> chooses a seed n, and then pre-computes the encrypted blocks derived
+> from the seed using the prover's IP. Then the verifier sends the  seed,
+> and the prover must respond with the hash of the encrypted blocks within
+> a certain time bound. The proved does not require to do any PH
+> decryption, just take the encrypted blocks for indexes derived from the
+> seed, hash them and send the hash back to the verifier. The verifier
+> validates the time bound and the hash.
+
+The challenger requests a hash-sum of a random sequence of indices of the  
+keyed data, based on a challenge seed. So in a few bytes round-trip we can  
+see how fast the computation is completed. If the data is already keyed,  
+the hash of 1,000 random 1024-bit blocks should come back much faster than  
+if the data needs to be keyed on-the-fly.
+
+To verify the response, the challenger would have to use the peer's  
+identity key and perform the slower transforms on those same 1,000 blocks  
+and see that the result matches, so cost to challenger is higher than  
+prover, assuming they actually do the computation.
+
+Which brings up a good tweak, a full-node challenger could have to do the  
+computation first, then also include something like HMAC(identityKey,  
+expectedResult). The prover could then know if the challenger was honest  
+before returning a result, and blacklist them if not.
+
+>
+> Both protocols can me made available by the client, under different
+> states. For instance, new nodes are only allowed to request protocol 2
+> (and so they get an initial assurance their are connecting to
+> full-nodes). After a first-time mutual authentication, they are allowed
+> to periodically perform protocol 1. Also new nodes may be allowed to
+> perform protocol 1 with a small index set, and increase the index set
+> over time, to get higher confidence.
+
+I guess a new-node could see if different servers all returned the same  
+challenge response, but they would have no way to know if the challenge  
+response was technically correct, or sybil.
+
+I also wonder about the effect of spinning disk versus SSD. Seek time for  
+1,000 random reads is either nearly zero or dominating depending on the  
+two modes. I wonder if a sequential read from a random index is a possible  
+trade-off,; it doesn't prove possession of the whole chain nearly as well,  
+but at least iowait converges significantly. Then again, that presupposes  
+a specific ordering on disk which might not exist. In X years it will all  
+be solid-state, so eventually it's moot.
+
+
+
