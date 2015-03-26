@@ -1,0 +1,85 @@
+From: sergiolerner@certimix.com (Sergio Lerner)
+Date: Thu, 26 Mar 2015 19:09:00 -0300
+Subject: [Bitcoin-development] "network disruption as a service" and
+ proof of local storage
+In-Reply-To: <op.xvzkt9nryldrnw@laptop-air>
+References: <55034205.4030607@localhost.local>
+	<CANEZrP2OM6BrEsgqe5j23qaZp7wypOFJOZf+cNuMMe12WBv8LA@mail.gmail.com>
+	<CABh=4qNwRqb3f+AM-PKB0F+Kaw02tAq2DsqLmeO87XxXZvTd4Q@mail.gmail.com>
+	<550704CF.2000808@certimix.com> <op.xvzkt9nryldrnw@laptop-air>
+Message-ID: <5514837C.4030905@certimix.com>
+
+
+> If I understand correctly, transforming raw blocks to keyed blocks
+> takes 512x longer than transforming keyed blocks back to raw. The key
+> is public, like the IP, or some other value which perhaps changes less
+> frequently.
+>
+Yes. I was thinking that the IP could be part of a first layer of
+encryption done to the blockchain data prior to the asymetric operation.
+That way the asymmetric operation can be the same for all users (no
+different primers for different IPs, and then the verifiers does not
+have to verify that a particular p is actually a pseudo-prime suitable
+for P.H. ) and the public exponent can be just 3.
+
+>
+>> Two protocols can be performed to prove local possession:
+>> 1. (prover and verifier pay a small cost) The verifier sends a seed to
+>> derive some n random indexes, and the prover must respond with the hash
+>> of the decrypted blocks within a certain time bound. Suppose that
+>> decryption of n blocks take 100 msec (+-100 msec of network jitter).
+>> Then an attacker must have a computer 50 faster to be able to
+>> consistently cheat. The last 50 blocks should not be part of the list to
+>> allow nodes to catch-up and encrypt the blocks in background.
+>>
+>
+> Can you clarify, the prover is hashing random blocks of *decrypted*,
+> as-in raw, blockchain data? What does this prove other than, perhaps,
+> fast random IO of the blockchain? (which is useful in its own right,
+> e.g. as a way to ensure only full-node IO-bound mining if baked into
+> the PoW)
+>
+> How is the verifier validating the response without possession of the
+> full blockchain?
+
+You're right, It is incorrect. Not the decrypted blocks must be sent,
+but the encrypted blocks. There correct protocol is this:
+
+1. (prover and verifier pay a small cost) The verifier sends a seed to
+derive some n random indexes, and the prover must respond with the the
+encrypted blocks within a certain time bound. The verifier decrypts
+those blocks to check if they are part of the block-chain.
+
+But then there is this improvement which allows the verifier do detect
+non full-nodes with much less computation:
+
+3. (prover pays a small cost, verifier smaller cost) The verifier asks
+the prover to send a Merkle tree root of hashes of encrypted blocks with
+N indexes selected by a psudo-random function seeded by a challenge
+value, where each encrypted-block is previously prefixed with the seed
+before being hashed (e.g. N=100). The verifier receives the Markle Root
+and performs a statistical test on the received information. From the N
+hashes blocks, it chooses M < N (e.g. M = 20), and asks the proved for
+the blocks at these indexes. The prover sends the blocks, the verifier
+validates the blocks by decrypting them and also verifies that the
+Merkle tree was well constructed for those block nodes. This proves with
+high probability that the Merkle tree was built on-the-fly and
+specifically for this challenge-response protocol.
+
+> I also wonder about the effect of spinning disk versus SSD. Seek time
+> for 1,000 random reads is either nearly zero or dominating depending
+> on the two modes. I wonder if a sequential read from a random index is
+> a possible trade-off,; it doesn't prove possession of the whole chain
+> nearly as well, but at least iowait converges significantly. Then
+> again, that presupposes a specific ordering on disk which might not
+> exist. In X years it will all be solid-state, so eventually it's moot.
+>
+Good idea.
+
+Also we don't need that every node implements the protocol, but only
+nodes that want to prove full-node-ness, such as the ones which want to
+receive bitnodes subsidy.
+
+
+
+
