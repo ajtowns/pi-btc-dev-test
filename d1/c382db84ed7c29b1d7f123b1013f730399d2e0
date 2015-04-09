@@ -1,0 +1,94 @@
+From: stephencalebmorse@gmail.com (Stephen Morse)
+Date: Thu, 9 Apr 2015 10:10:43 -0400
+Subject: [Bitcoin-development] Build your own nHashType
+In-Reply-To: <CANEZrP12kZ8vRAo=feprJ9_oRXUPKJ=iF6kZdxxbai=TxjzM9g@mail.gmail.com>
+References: <CABHVRKTNFoLm9LEO=ctT_UP9zW7QOMQzVXitKC=PAzj=HG9OHg@mail.gmail.com>
+	<CANEZrP12kZ8vRAo=feprJ9_oRXUPKJ=iF6kZdxxbai=TxjzM9g@mail.gmail.com>
+Message-ID: <CABHVRKSET18D13+yi4MTPs6+4xwUD5vuJszCOJG9CaTi0+CAvA@mail.gmail.com>
+
+Hi Mike,
+
+Hi Stephen,
+>
+> It's an interesting idea. I'm not sure that all the combinations make
+> sense. Excluding the connected output script or value but still signing the
+> prev tx hash appears pointless: the script cannot change anyway, and you
+> still need to know what it is to actually calculate the inputs to it, so
+> what is the point of this?
+>
+
+That's a good point, maybe SIGHASH_WITHOUT_PREV_SCRIPTPUBKEY and
+SIGHASH_WITHOUT_PREV_VALUE should be assumed false, since you need the data
+anyway. That gets the total number of flags down to 17. If we eliminate
+SIGHASH_WITHOUT_TX_VERSION (I can't think of any good reason for this one),
+then we're down to a 2-byte nHashType. SIGHASH_SIGN_STACK_ELEMENT could
+also be removed, I'm not convinced of the usefulness of that one either.
+
+
+>
+> I also worry that quite a few of these combinations could be unexpectedly
+> dangerous. If you don't sign the prevout hash or value and combine it with
+> a regular pay-to-address output then you've effectively written a blank
+> cheque that can be used by anyone, to claim any money ever sent to that
+> address ... no? And then any p2p
+>
+node or miner could do so, making the transaction pretty useless.
+>
+> That isn't inherently a problem as long as people understand which
+> combinations have what effects or cannot be used for various reasons. But
+> it would need good documentation and careful thought to explore each
+> possibility people might use.
+>
+
+I don't think it's quite a blank check, but it would enable replay attacks
+in the form of sending the money to the same place it was sent before if an
+address ever receives coins again. Almost like auto-forwarding addresses.
+If, in addition, you signed with just that input and no outputs as well,
+then you're basically forfeiting your rights to any coins sent to that
+address.
+
+It allows for some dangerous combinations, but we already have some
+dangerous nHashTypes. e.g. SIGHASH_NONE | SIGHASH_ANYONECANPAY. Good
+documentation and careful developers shouldn't have any issues if they use
+a standard set of sighash flag combinations for their standard use cases.
+But developers that need special combinations can now use them, so long as
+they are careful and think things through.
+
+
+>
+> I'll leave the soft fork business to one side for now. I think any change
+> in CHECKSIG or new version of it would likely be ready around the same time
+> as the hard fork we need for changing the block size limit anyway, and it's
+> much cleaner to do it that way.
+>
+> The most important change that we need in sighash calculation, IMO, is
+> ensuring that you don't have to hash data over and over again without a
+> good reason. The current sighash definition is unfortunate because it's
+> possible to make small transactions that involve hashing huge amounts of
+> data. It's not clear to me that your proposal fixes that: ideally there
+> would be one exactly one sighash for one transaction no matter how many
+> checksigs are involved in verifying it.
+>
+>
+It's hard, though, because there is different data needs to be signed for
+each input. Although, I suppose if you signed your input with
+SIGHASH_WITHOUT_PREV_SCRIPTPUBKEY, SIGHASH_WITHOUT_PREV_VALUE, and the
+equivalent of SIGHASH_ALL, then the hash that needs to be signed would be
+the same for all of your inputs. Strangely enough, I think we might have
+just found use cases for the flags that we had nearly dismissed.
+
+Another possibility would be to put the previous scriptPubKey and previous
+output value at the END of the serialized transaction, so that you could
+make use of some sort of a signature hash midstate. But that feels a little
+messy. It sort of makes sense to have a base serialization for a
+transaction and then append it with whatever input/output specific
+information you have, but still, messy.
+
+Is hashing transaction data once for each input really a huge bottleneck,
+though? Do mobile devices have an issue with this?
+
+Best,
+Stephen
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150409/8fc6b376/attachment.html>
