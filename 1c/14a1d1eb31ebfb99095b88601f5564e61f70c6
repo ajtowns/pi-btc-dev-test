@@ -1,0 +1,52 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Wed, 15 Apr 2015 03:34:50 +0000
+Subject: [Bitcoin-development] Build your own nHashType
+In-Reply-To: <CABHVRKTNFoLm9LEO=ctT_UP9zW7QOMQzVXitKC=PAzj=HG9OHg@mail.gmail.com>
+References: <CABHVRKTNFoLm9LEO=ctT_UP9zW7QOMQzVXitKC=PAzj=HG9OHg@mail.gmail.com>
+Message-ID: <CAAS2fgTndnSoSx8==EVvP_mMHX=TEMV0whN7s3RBoMYyYDmzJw@mail.gmail.com>
+
+On Wed, Apr 8, 2015 at 7:50 PM, Stephen Morse
+<stephencalebmorse at gmail.com> wrote:
+> Seeking feedback on a proposal that will allow a transaction signer to
+> explicitly specify what is to be serialized for the signature hash. The
+> basic idea is to make the nHashType general enough that we won't need a new
+> sighash flag every time a new use case comes up.
+>
+> If implemented into bitcoin (via a soft fork), this would make malleability
+> almost a non-issue (the TXID referenced by inputs just need to be updated
+> previous TX changes) and would enable hardware wallets to securely sign
+> without needing to download/process each transaction it spends from.
+
+I'm not sure if I'm super fond of that particular non-programmatic but
+many options approach; It sort of has the problem that there are
+relatively few useful options that don't rapidly extend into a choose
+your own adventure with too many options to count; so you take a
+complexity penalty perhaps without a matching functionality payoff.
+
+but thats not why I'm commenting...
+
+I wonder if anyone noticed that any sighash masking that eliminates
+the txin txid enables covenants?
+
+Covenants are payments which constrain their future payments (like
+deed covenants), I've written about them in the past
+https://bitcointalk.org/index.php?topic=278122.0  ... they can
+sometimes be pretty useful but are also potentially a irritating hit
+to fungibility, at least if used stupidly.
+
+the approach here is that you make the scriptpubkey contain "[push:
+0x30, 0x06, 0x02, 0x01, 0x04, 0x02, 0x01, 0x04, flags] [push pubkey
+resulting from pubkey recovery] OP_CHECKSIG"  and set the flags to
+match only the things you want to enforce in the spending transaction
+hash them up and recover the EC public point.   You can think of that
+construct as giving a you a OP_MASKED_TRANSACTION_HASH_EQUALS  ... the
+recovered pubkey is just a kind of message hash, though a weird and
+expensive to compute one.
+
+I don't currently see how to get a perpetual covenant out of it-- e.g.
+a coin that anyone can spend, but only to its same scriptpubkey, (the
+obvious way requires the ability to be able to checksig stuff on the
+stack) though I wouldn't be shocked if it were possible with a
+sufficiently complex sighash flag and nothing else.
+
+
