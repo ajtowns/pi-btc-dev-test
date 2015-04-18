@@ -1,0 +1,98 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 18 Apr 2015 19:33:52 -0400
+Subject: [Bitcoin-development] Build your own nHashType
+In-Reply-To: <CABHVRKQOSHBzkWGoKROcXJd-mKcb3FvLLdSYMgOZJ3gC1zjNnw@mail.gmail.com>
+References: <CABHVRKTNFoLm9LEO=ctT_UP9zW7QOMQzVXitKC=PAzj=HG9OHg@mail.gmail.com>
+	<CANEZrP12kZ8vRAo=feprJ9_oRXUPKJ=iF6kZdxxbai=TxjzM9g@mail.gmail.com>
+	<CABHVRKSET18D13+yi4MTPs6+4xwUD5vuJszCOJG9CaTi0+CAvA@mail.gmail.com>
+	<CAJHLa0NgV=6D=TAy4sm_EAfYiZULK-d9GMcddW1-DZRHCE8Sew@mail.gmail.com>
+	<20150409172808.GB27775@muck>
+	<CABHVRKQOSHBzkWGoKROcXJd-mKcb3FvLLdSYMgOZJ3gC1zjNnw@mail.gmail.com>
+Message-ID: <20150418233352.GA9878@muck>
+
+On Thu, Apr 09, 2015 at 10:56:20PM -0400, Stephen Morse wrote:
+> On Thu, Apr 9, 2015 at 1:28 PM, Peter Todd <pete at petertodd.org> wrote:
+> 
+> > For the OP: Have you looked at how CODESEPARATOR allows the signature to
+> > sign code to run as part of verifying the signature? E.g. my signature
+> > can say "valid if you run these additional opcodes and they return true"
+> > where those additional opcodes take the transaction, hash it in the
+> > defined way, and verify that the ECC signature correctly signs that
+> > hash and the hash of the additional opcodes. For instance in this case
+> > making a signature that's only valid if the tx fee is less than the
+> > defined amount would be a matter of GET_FEE <max fee + 1> LESSTHAN VERIFY
+> >
+> 
+> I've never been able to really see a good use case for OP_CODESEPARATOR,
+> and I'm not sure I completely have my head wrapped around what you're
+> proposing. From this
+> <http://bitcoin.stackexchange.com/questions/34013/what-is-op-codeseparator-used-for>
+>  and this
+> <https://bitcointalk.org/index.php?topic=52949.msg631255#msg631255>,
+> though, it seems like OP_CODESEPARATOR cannot really be made useful unless
+> you already have a way to sign without hashing the TXIDs referenced by your
+> input, in which case you need to modify the nHashType.
+
+I wrote up how to do this on #bitcoin-wizards, Dec 9th 2014:
+
+17:13 < petertodd> hearn: even now you can use OP_CODESEPARATOR to
+implement efficient payword schemes
+17:14 < petertodd> hearn: early on you could have used it to do some
+really useful after-the-fact signing delegation by wrapping a IF ENDIF
+around the CODESEPARATOR introduced into the middle of the
+scriptSig/scriptPubKey pair - shame we got rid of that without thinking
+the design through
+17:15 < petertodd> hearn: e.g. "create a signature that delegates
+signing authority to another pubkey"
+17:15 < petertodd> probably all 100% accidental... but a nice accident
+17:16 < hearn> it's probably for the best. i can imagine such things
+being a surprise for implementations not expecting them. a script 2.0
+effort that incorporates lots of neat features but still lets script 1.0
+work would be nice to have, one day
+17:17 < petertodd> satoshi belived in 1 implementation, and by putting
+CODESEPARATOR into the scriptSig/scriptPubKey concatenation you had to
+opt-in to making that feature possible to use in any particular
+scriptPubKey
+17:17 < petertodd> w/o the mis-matched ENDIF you can't pull off that
+trick because you can't turn CODESEPARATOR off
+17:19 < petertodd> to be explicit: scriptPubKey: ENDIF <pubkey>
+CHECKSIG, then the normal case is scriptSig: <signature> 1 IF
+17:19 < petertodd> they concatenate to  <signature> 1 IF ENDIF <pubkey>
+CHECKSIG, CODESEPARATOR is evaluated, and the signature is evaluated on
+the script ENDIF <pubkey> CHECKSIG
+17:20 < petertodd> to delegate signing authority after the fact sign a
+signature on the script <pubkey2> 0 IF ENDIF <pubkey> CHECKSIG
+17:21 < petertodd> (remember that CODESEPARATORS are removed by
+SignatureHash())
+17:22 < petertodd> oops, I mean: <pubkey2> CHECKSIGVERIFY 0 IF ENDIF
+<pubkey> CHECKSIG
+17:22 < petertodd> anyway, to finally spend it, create another signature
+with pubkey2 signing the script <pubkey2> CHECKSIGVERIFY 0 IF ENDIF
+<pubkey> CHECKSIG again, and finally spend it with the scriptSig:
+<pubkey-sig> <pubkey2-sig> CODESEPARATOR <pubkey2> 0 IF
+17:24 < petertodd> after concatenation the script: <pubkey-sig>
+<pubkey2-sig> CODESEPARATOR <pubkey2> 0 IF CODESEPARATOR ENDIF <pubkey>
+CHECKSIG is evaluated, the inner signature satisfies, and the outer
+signature is satisfied only if the scriptPubKey was essentially changed
+after the fact to also require the inner, second, pubkey2 to be
+satisfied
+17:26 < petertodd> a nice use-case would, forinstance, have been to have
+a signing robot be able to create signatures offline for a given txout
+with SIGHASH_SINGLE such that you had a spending limit enforced, and
+exactly who was then allowed to spend the funds - say a department of a
+company - could be picked after the fact without re-spending the txout
+17:33 < petertodd> gmaxwell: re: script validation state, a good model
+would be to have the tx input to EvalScript() essentially be a
+CMerkleTx, and the prevout scriptPubKey be the prevout CTxOut (*maybe*
+the prevout tx itself... bit dubious there...)
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000e7980aab9c096c46e7f34c43a661c5cb2ea71525ebb8af7
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150418/c061fc49/attachment.sig>
