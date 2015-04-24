@@ -1,0 +1,75 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Fri, 24 Apr 2015 20:58:39 +0000
+Subject: [Bitcoin-development] Reusable payment codes
+In-Reply-To: <CAHabJ+Mn0=vfLvTJ+z3tx8cFAAuLD1pLp4rOe3pM6MtCrCxjwg@mail.gmail.com>
+References: <CAHabJ+Mn0=vfLvTJ+z3tx8cFAAuLD1pLp4rOe3pM6MtCrCxjwg@mail.gmail.com>
+Message-ID: <CAAS2fgRVcwNfYv8fnoS_uRtDoGqRiWAXcPgaK8if8FO_G6LQoQ@mail.gmail.com>
+
+On Fri, Apr 24, 2015 at 8:00 PM, Justus Ranvier
+<justus.ranvier at monetas.net> wrote:
+> https://github.com/justusranvier/rfc/blob/payment_code/bips/bip-pc01.mediawiki
+>
+> This link contains an RFC for a new type of Bitcoin address called a
+> "payment code"
+>
+> Payment codes are SPV-friendly alternatives to DarkWallet-style stealth
+> addresses which provide useful features such as positively identifying
+> senders to recipients and automatically providing for transaction refunds.
+
+So this requires making dust payments to a constantly reused address
+in order to (ab)use the blockchain as a messaging layer.
+
+Indeed, this is more SPV compatible; but it seems likely to me that
+_in practice_ it would almost completely undermine the privacy the
+idea hoped to provide; because you'd have an observable linkage to a
+highly reused address.
+
+It would also more than double the data sent for the application where
+'stealth addresses' are most important: one-time anonymous donations
+(in other contexts; you have two way communication between the
+participants, and so you can just given them a one off address without
+singling in the public network.)
+
+> Alice selects the first exposed public key of the first input of the transaction
+
+So this creates strong "binding" that we would really strongly like to
+avoid in the network; basically what this says is that "You can only
+pay to person X if you use scheme Y for your own Bitcoins"-- who says
+any of your inputs have a ECDH pubkey at all? Of if they do, who says
+its one that you have access to the private key for for use in this
+scheme (e.g. it could be in a HSM that only signs according to a
+policy).   We should avoid creating txout features that restrict what
+kind of scriptPubkey the sender can use, or otherwise we'll never be
+able to deploy new signature features. (We can see how long P2SH took
+to gain adoption because some wallets refused to implement sending to
+it, even though doing so was trivial).
+
+This kind of binding was intentionally designed out of the stealth
+address proposal;  I think this scheme can be made to work without any
+increase in size by reusing the payment code as the ephemeral public
+key (or actually being substantially smaller e.g. use the shared
+secret as the chain code, but I should give it more thought)
+
+Also, SPV wallets do not need to have access to the public keys being
+spent by a particular transaction they learn about; providing that
+access is fundamentally expensive and pushes things back towards
+centralization.
+
+> in uncompressed DER format
+
+This is fundamentally more expensive to compute; please don't specify
+"uncompressed".
+
+This appears incompatible with multisignature; which is unfortunate.
+
+I do very much like the fact that this scheme establishes a shared
+chain once and then doesn't need to reestablish; this was one of the
+improvements I wanted for the stealth address.
+
+I'm disappointed that there isn't any thought given to solving the
+scanning privacy without forcing non-private pure-overhead messaging
+transactions on heavily reused addresses. Are you aware of the IBE
+approach that allows someone to request a third party scan for them
+with block by block control over their delegation of scanning?
+
+
