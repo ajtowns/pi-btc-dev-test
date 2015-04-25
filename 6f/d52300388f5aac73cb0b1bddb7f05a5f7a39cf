@@ -1,0 +1,129 @@
+From: justus.ranvier@monetas.net (Justus Ranvier)
+Date: Sat, 25 Apr 2015 04:34:13 +0200
+Subject: [Bitcoin-development] Fwd: Reusable payment codes
+In-Reply-To: <CAAS2fgSAT2otym64oUACpWD8jWLAB6dBusONn-WUx2DK59SB5w@mail.gmail.com>
+References: <CAHabJ+Mn0=vfLvTJ+z3tx8cFAAuLD1pLp4rOe3pM6MtCrCxjwg@mail.gmail.com>
+	<1AE7B0A2-90EE-42EE-9D30-4DC1B5892E53@newcastle.ac.uk>
+	<CAHabJ+NDqMN-rQ1BN1TfOjGLQHH-3Wd28LdoF95Agn4HdRrThg@mail.gmail.com>
+	<CAHabJ+PMdQ-f7G8RNz0R7mfGUwBMAsnCyO=NmQhxyq0+gB1aPg@mail.gmail.com>
+	<CAAS2fgSAT2otym64oUACpWD8jWLAB6dBusONn-WUx2DK59SB5w@mail.gmail.com>
+Message-ID: <CAHabJ+O7n=_ACXJx6_2DzoFC6h=2dk0aR3u3_LZhHgDut1gNMA@mail.gmail.com>
+
+On Sat, Apr 25, 2015 at 3:30 AM, Gregory Maxwell <gmaxwell at gmail.com> wrote:
+
+> On Sat, Apr 25, 2015 at 12:22 AM, Justus Ranvier
+> <justus.ranvier at monetas.net> wrote:
+> > Taking the hash of the secret would then require an extra step to make
+> sure
+> > the hash is valid for secp256k1.
+>
+> The x value may not be a valid member of the group, effectively the
+> same as with a hash. Its also very unequally distributed, as only
+> about half the possible values are points on the curve.
+
+
+ack
+
+
+> > With 97 byte standard OP_RETURN values the ephemeral public
+> > key could be appended to the chain code, but that's undesirable for
+> other reasons.
+>
+> Can you elaborate?  Storing a ~33 byte (deterministically generated)
+> ephemeral key should be all that is required. Everything else,
+> including the chain code could be derived from it. What reason do you
+> have to include additional data?
+>
+
+The goal of the notification transaction is to send the same payment code
+to every recipient, but obscure the identity of the sender of the
+notification transaction from third party blockchain observers.
+
+The shared secret is used for that purpose, and the sender's public key
+used for ECDH can't be one derived from the payment code since the
+recipient doesn't yet know the payment code.
+
+The notification transaction needs to communicate the 65 byte payment code
+along with one ephemeral public key used for ECDH. If that ephemeral key is
+not located in a signature script, it has to be somewhere else (such as in
+the same OP_RETURN output as the payment code.)
+
+
+> > Taking the SHA512 of something less than 512 bits seemed wrong.
+>
+> Why should it?  Adding the Y does not increase the entropy at all.  As
+> an aside, I think this can be reformulated to only need 256 bits of
+> output, and then the need for yet-another-hash-function could be
+> avoided in some cases.
+>
+
+Already fixed in
+https://github.com/justusranvier/rfc/commit/8c4d3429012eb15847c4ae68f212c8b2dcd1b521
+but it would be good to get confirmation of whether the way I fixed it is
+valid.
+
+> In this proposal I optimized for non-reliance on third party services
+>
+> The requirement for inputs is a guaranteed dependency on third party
+> services; so if thats whats being optimized for here it must go (well,
+> I think it must go for the reason of avoiding blocking users from
+> using other schemes to control their coins too..).
+>
+
+I'm not sure what you mean by "the requirement for inputs is a guaranteed
+dependency on third party
+services"
+
+At the proposal currently stands, an SPV wallet will have no trouble
+sending or receiving notification transactions without access to a third
+party service. The recipient just needs to see the transactions associated
+with its notification address.
+
+The point about restricting the types of scripts used as inputs is valid,
+but I think workarounds are available. If nothing else, the sender can make
+a suitable input using it's own (suitably mixed) coins first.
+
+> I agree. I could not find a straightforward way to express a
+> multisignature payment code in less than 80 bytes.
+>
+> A prior stealth address proposal here handled them fine with only a
+> single ephemeral point in the op_return. It does result in a longer
+> address (is that what you're referring to with '80 bytes'?)
+>
+
+I considered defining an additional path level for deterministic m-of-n
+multisig and adding a few bytes to the payment code to express those
+parameters, but thought it would be too limiting since it would preclude
+multisig with truly independent keys. It is a thing that could be done,
+however.
+
+> Exchanges could restrict bitcoin withdrawals to a single payment code
+> known to be associated with their identified customer.
+> > In some jurisdictions the ability to prove that withdrawals are sent to
+> a positively-identified party, rather than arbitrary third parties, might
+> move some Bitcoin businesses out of money transmitter territory into less
+> onerous regulatory situations.
+>
+> But this mandates horrible key management practices, reliance on a
+> single "hardcoded" private key which you cannot change; even if it
+> might be compromised or lost to the wind. It's less horrible than
+> sticking to a single address because it doesn't wedge privacy, I
+> agree; but care should be taken that a tortured dance for confused
+> regulatory cargo-cult reasons doesn't mandate people not engage in
+> sound practices like periodic key rotation. :)
+>
+
+Cold storage is still available (if admittedly less convenient than in
+traditional wallets).
+
+I would expect exchanges in practice to allow for payment codes to be
+changed, just with non-trivial waiting periods and plenty of human
+overview. It would be an infrequent event compared to the frequency of
+withdrawals.
+
+Various schemes which use public key authentication instead of passwords
+for web site authentication could be used to continually verify that the
+user hasn't lost access to the key.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150425/acb86657/attachment.html>
