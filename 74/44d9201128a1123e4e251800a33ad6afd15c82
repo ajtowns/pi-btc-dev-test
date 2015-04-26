@@ -1,0 +1,74 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Sun, 26 Apr 2015 14:20:04 +0200
+Subject: [Bitcoin-development] Relative CHECKLOCKTIMEVERIFY (was CLTV
+	proposal)
+In-Reply-To: <CABm2gDo22grffq4j+Jy_HBD-VrROh32Dbseoa=g-5HXA9Uud1w@mail.gmail.com>
+References: <20141001130826.GM28710@savin.petertodd.org>
+	<55075795.20904@bluematt.me>
+	<20150421075912.GA25282@savin.petertodd.org>
+	<CABm2gDo22grffq4j+Jy_HBD-VrROh32Dbseoa=g-5HXA9Uud1w@mail.gmail.com>
+Message-ID: <CABm2gDovFzpL_7KFqPXxhu4VohRfcE5S_PLAUgjgo_b84GaYeQ@mail.gmail.com>
+
+On Sun, Apr 26, 2015 at 1:35 PM, Jorge Tim?n <jtimon at jtimon.cc> wrote:
+> There's another possibility that could keep the utxo out of Script verification:
+>
+> class CTxIn
+> {
+> public:
+>     COutPoint prevout;
+>     CScript scriptSig;
+>     uint32_t nSequence;
+> }
+>
+> could turn into:
+>
+> class CTxIn
+> {
+> public:
+>     COutPoint prevout;
+>     CScript scriptSig;
+>     uint32_t nHeight;
+> }
+>
+> And a new softfork rule could enforce that all new CTxIn set nHeight
+> to the correct height in which its corresponding prevout got into the
+> chain.
+> That would remove the need for the TxOutputGetter param in
+> bitcoinconsensus_verify_script, but unfortunately it is not reorg safe
+> (apart from other ugly implementation details).
+
+Wait, wait, this can be made reorg-safe and more backards compatible.
+The new validation rule at the tx validation level (currently in
+main::CheckInputs()) would be
+
+for (unsigned int i = 0; i < tx.vin.size(); i++) {
+// ...
+            if (tx.vin.nHeight + 100 > tx.nLockTime)
+                return state.Invalid(false, REJECT_INVALID,
+"bad-txns-vin-height-reorg-unsafe");
+            if (coins->nHeight > tx.vin.nHeight)
+                return state.Invalid(false, REJECT_INVALID,
+"bad-txns-vin-height-false");
+// ...
+}
+
+Existing transactions that have used the deprecated CTxIn::nSequence
+for something else will be fine if they've used low nSequences.
+The only concern would be breaking some colored coins kernels, but
+there's many others implemented that don't rely on CTxIn::nSequence.
+
+Transactions that want to use OP_MATURITY just have to set the
+corresponding CTxIn::nHeight and CTransaction::nLockTime properly.
+This way op_maturity wouldn't require anything from the utxo and the
+final interface could be:
+
+ int bitcoinconsensus_verify_script(const unsigned char* scriptPubKey,
+unsigned int scriptPubKeyLen,
+                                        const unsigned char* txTo,
+unsigned int txToLen,
+                                        unsigned int nIn, unsigned int nHeight,
+                                        unsigned int flags,
+secp256k1_context_t* ctx,
+                                        bitcoinconsensus_error* err);
+
+
