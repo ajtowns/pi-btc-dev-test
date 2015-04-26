@@ -1,0 +1,140 @@
+From: joseph@lightning.network (Joseph Poon)
+Date: Sat, 25 Apr 2015 23:51:37 -0700
+Subject: [Bitcoin-development] 75%/95% threshold for transaction versions
+In-Reply-To: <553C2AC6.3000109@sky-ip.org>
+References: <552EF785.7000207@sky-ip.org>
+	<CAPg+sBgAhdgPPjmT5i0PMYhQo=Hk6Weo8tpX_Wyn-NJ5Ye9D_A@mail.gmail.com>
+	<552FDF73.6010104@sky-ip.org>
+	<CABjHNoTeMiLWkDBUqdV4HJ=nAhj8wqOjD4cypY9Dv2y9HJWJMg@mail.gmail.com>
+	<CAAS2fgSay0DqeWXfZwX-sN71sLHdRLD51PBmnJfJ5+TC0BQ8zg@mail.gmail.com>
+	<CABHVRKS0EYV0CqKW1MVtUZC3u4KvSxMB=Uks9UrCUBQbozO9xQ@mail.gmail.com>
+	<553C2AC6.3000109@sky-ip.org>
+Message-ID: <20150426065137.GA7911@lightning.network>
+
+On Sun, Apr 26, 2015 at 03:01:10AM +0300, s7r wrote:
+> It's true that malleability is not the end of the world, but it is
+> annoying for contracts and micropayment channels, especially refunds
+> spending the fund tx before it is even in the blockchain, relying
+> solely on its txid.
+
+Agreed, needing the transaction to be signed & broadcastable before the
+refunds can be generated is similar to paying for a contract before the
+terms have been decided.
+
+>  I think we can solve both by using NORMALIZEDTXID - wouldn't this be
+>  simpler and easier to implement? 
+
+The current problem is that SIGHASH_NORMALIZED_TXID as presently
+discussed implies stripping the sigScript, which is not sufficient for
+the Lightning Network.
+
+The currently discussed SIGHASH_NORMALIZED_TXID does not permit chained
+transactions 2 levels deep, which is necessary for Lightning as well.
+The path from the Commitment -> HTLC -> Refund requires up to 3 levels
+deep of transactions. 
+
+Suppose TxA -> TxB -> TxC -> TxD. All outputs are 2-of-2 multisig. TxA
+has already entered into the blockchain, the rest have not yet been
+broadcast. If TxB spends from TxA, it doesn't need new sighash flags, it
+just does a plain SIGHASH_ALL. However, TxC needs
+SIGHASH_NORMALIZED_TXID due to malleability risks.
+SIGHASH_NORMALIZED_TXID works for TxC because the sigScript can change,
+but because TxA's txid has already entered the blockchain, the parent's
+input txids cannot change (with high degrees of certainty).
+
+However, with TxD, the txid of TxB may be different, which will result
+in an invalid transaction if SIGHASH_NORMALIZED_TXID only strips the
+sigScript when obtaining the normalized txid of TxC. The reason for this
+is TxC's input txid of TxB has changed (TxC's input 0 txid of TxB)!
+
+Therefore, a functional SIGHASH_NORMALIZED which permits chained
+transactions requires the parent transaction's sigScript *AND* txid to
+be stripped when determining the parent's normalized txid. Similar to
+OP_CHECKSIG, a part of the normalized TXID includes each input's
+scriptPubKey, e.g. TxC's normalized TXID includes TxB's scriptPubKey
+output which it is spending, so when TxD signs TxC's normalized TXID, it
+includes TxB's output (this is a cheap way of increasing uniqueness but
+is not an absolute necessity if it's too difficult). All this data
+should be immediately available when validating the transaction and
+appending it to the UTXO set.
+
+If the txid and sigScript are removed when building the normalized input
+txid as part of the spend/signature, it should be possible for chained
+transactions to work. However, this isn't absolute security against
+replay attacks. If there are two spends with all inputs having the same
+values *AND* the same scriptPubKeys per input, then it can be replayed.
+The odds of this occurring seems like a sort of uncanny valley of risks;
+it's low enough that it shouldn't ever happen which may result in a lack
+of documentation, so when it does happen it'll be a big surprise. So,
+even if this "safer" method becomes a softfork, perhaps great care
+should be taken before making this a default method of spending when the
+sighash flag is not an absolute necessity (i.e. "don't do it!" I'm all
+in favor of giving this a scary name so developers won't inadvertently
+think "hey, normalization sounds like a good thing to do").
+
+That said, it should cover an overwhelming majority of potential
+replays, it's nearly impossible to create a "duplicate" replayable tx of
+someone *else's* send, since the poteintally "replayable" transaction
+signs the sigScript of the redeemed output.
+
+As a side note, SIGHASH_NORMALIZED does not permit spending from any
+transaction, which is desirable for the Lightning Network (HTLCs may
+persist in new Commitment Transactions). However, this is merely a "nice
+to have" and is not an absolute necessity, there is no significant loss
+of functionality, merely some slight slowdown from significantly more
+signatures. For Lightning in particular, the effect would probably be
+batching Commitment Transactions (e.g. 1 mass update per second per
+channel), with the only major discernable penalty is an order of
+magnitude greater storage of signatures.
+
+Additionally, I think it was Mark Friedenbach who brought up that
+SIGHASH_NORMALIZED creates significant complexities with the need for an
+additional hash with every UTXO (almost doubling the UTXO set size), and
+with nodes which already have UTXO pruning enabled, it'll require
+downloading the entire blockchain. I'm not sure if this problem is
+insurmountable or not, but if a normalized sighash becomes the most
+ideal candidate for a malleability soft-fork, then sooner may be better
+than later as more nodes start using the pruning patch.
+
+
+> Why are we talking about P3SH when we can just upgrade
+> P2SH to support additional OP codes? 
+
+Assuming you mean the current P2SH scriptPubKey format, it's not
+possible to do so while making it a soft fork. If you use OP_EQUAL,
+current nodes will treat "P3SH" transactions as P2SH ones.
+
+I'm in favor of keeping P3SH conservative. It's possible to have your
+cake and eat it too, by enabling script versions within P3SH.
+
+If you create P3SH as:
+
+OP_DUP <20-byte hash> OP_EQUALVERIFY
+
+The redeemScript has the first byte as a version number, and there is
+also an OP_TRUE pushed right before the redeemScript. The scriptSig
+would look something like:
+
+<sigs...> OP_TRUE <3 redeemScript>
+
+When executing the script, the last item on the stack verifies against
+the hash, then the redeemScript is copied/read, the 3 is popped off
+(first byte unsigned int), the OP_TRUE is popped off the stack, and the
+script then executes P3SH "version 3" (again, it is the first byte, NOT
+an opcode). Any non-known version will return everything as true and not
+continue with execution of the script, to permit future soft-forks. The
+OP_TRUE is to ensure there is a OP_TRUE left on the stack just in case
+for older nodes as this is an EQUALVERIFY.
+
+This works because the address, 20-byte hash, has the 3 version number
+as part of the hash, so it is the recipient who determines the version
+number. For future soft-forks, it's incredibly flexible, just make the
+version byte to 4. Prior addresses work the same, and it's not possible
+to accidentally send it using different scripting versions. Perhaps this
+can make things upgradeable enough that a malleability sighash flag can
+go in sooner rather than later.
+
+-- 
+Joseph Poon
+
+
