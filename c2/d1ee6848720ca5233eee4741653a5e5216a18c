@@ -1,0 +1,158 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Sun, 26 Apr 2015 13:35:33 +0200
+Subject: [Bitcoin-development] Relative CHECKLOCKTIMEVERIFY (was CLTV
+	proposal)
+In-Reply-To: <20150421075912.GA25282@savin.petertodd.org>
+References: <20141001130826.GM28710@savin.petertodd.org>
+	<55075795.20904@bluematt.me>
+	<20150421075912.GA25282@savin.petertodd.org>
+Message-ID: <CABm2gDo22grffq4j+Jy_HBD-VrROh32Dbseoa=g-5HXA9Uud1w@mail.gmail.com>
+
+On Tue, Apr 21, 2015 at 9:59 AM, Peter Todd <pete at petertodd.org> wrote:
+> Thus we have a few possibilities:
+>
+> 1) RCLTV against nLockTime
+>
+> Needs a minimum age > COINBASE_MATURITY to be safe.
+>
+>
+> 2) RCLTV against current block height/time
+>
+> Completely reorg safe.
+
+Yes, can we call this one OP_MATURITY to distinguish it from RCLTV?
+
+> 3) GET_TXOUT_HEIGHT/TIME <diff> ADD CLTV
+>
+> To be reorg safe GET_TXOUT_HEIGHT/TIME must fail if minimum age <
+> COINBASE_MATURITY. This can be implemented by comparing against
+> nLockTime.
+
+Mhmm, interesting.
+
+> All three possibilities require us to make information about the
+> prevout's height/time available to VerifyScript(). The only question is
+> if we want VerifyScript() to also take the current block height/time - I
+> see no reason why it can't. As for the mempool, keeping track of what
+> transactions made use of these opcodes so they can be reevaluated if
+> their prevouts are re-organised seems fine to me.
+
+I'm totally fine with changing the interface to:
+
+     int bitcoinconsensus_verify_script(const unsigned char
+*scriptPubKey, unsigned int scriptPubKeyLen,
+                                        const unsigned char *txTo
+  , unsigned int txToLen, unsigned nHeight,
+                                        unsigned int nIn, unsigned int
+flags, bitcoinconsensus_error* err);
+
+I prefer op_maturity over RCLTV and there are also gains for absolute
+CLTV as you explain later.
+When you validate the script inputs of a transaction you already have
+a height, either the real final nHeight in ConnectBlock and the miner,
+or nSpendHeight in AcceptToMemoryPool.
+The costs are meaningless in my opinion, specially when we will
+already have to change the interface to add libsecp256k1's context.
+
+I'm infinitely more worried about the other assumption that the 3
+solutions are already making.
+Changing to
+
+     int bitcoinconsensus_verify_script(const unsigned char
+*scriptPubKey, unsigned int scriptPubKeyLen,
+                                        const unsigned char *txTo
+  , unsigned int txToLen, const CCoinsViewCache& inputs,
+                                        unsigned int nIn, unsigned int
+flags, bitcoinconsensus_error* err);
+
+Is simply not possible because CCoinsViewCache is a C++.
+You could solve it in a similar way in which you could solve that
+dependency for VerifyTransaction.
+For example:
+
+typedef const CTxOut& (*TxOutputGetter)(const uint256& txid, uint32_t n);
+
+      int bitcoinconsensus_verify_script(const unsigned char
+*scriptPubKey, unsigned int scriptPubKeyLen,
+                                        const unsigned char *txTo
+  , unsigned int txToLen, TxOutputGetter utxoGetter,
+                                        unsigned int nIn, unsigned int
+flags, bitcoinconsensus_error* err);
+
+Of course, this is assuming that CTxOut becomes a C struct instead of
+a C++ class and little things like that.
+In terms of code encapsulation, this is still 100 times uglier than
+adding the nHeight so if we're doing it, yes, please, let's do both.
+
+There's another possibility that could keep the utxo out of Script verification:
+
+class CTxIn
+{
+public:
+    COutPoint prevout;
+    CScript scriptSig;
+    uint32_t nSequence;
+}
+
+could turn into:
+
+class CTxIn
+{
+public:
+    COutPoint prevout;
+    CScript scriptSig;
+    uint32_t nHeight;
+}
+
+And a new softfork rule could enforce that all new CTxIn set nHeight
+to the correct height in which its corresponding prevout got into the
+chain.
+That would remove the need for the TxOutputGetter param in
+bitcoinconsensus_verify_script, but unfortunately it is not reorg safe
+(apart from other ugly implementation details).
+
+So, in summary, I think the new interface has to be something along these lines:
+
+      int bitcoinconsensus_verify_script(const unsigned char
+*scriptPubKey, unsigned int scriptPubKeyLen,
+                                        const unsigned char *txTo,
+unsigned int nIn,
+                                        unsigned int txToLen,
+TxOutputGetter utxoGetter, unsigned nHeight, secp256k1_context_t *ctx
+                                        unsigned int flags,
+bitcoinconsensus_error* err);
+
+> Time-based locks
+> ================
+>
+> Do we want to support them at all? May cause incentive issues with
+> mining, see #bitcoin-wizards discussion, Jul 17th 2013:
+>
+> https://download.wpsoftware.net/bitcoin/wizards/2013/07/13-07-17.log
+
+I'm totally fine not supporting time-based locks for the new operators.
+Removing them from the regular nLockTime could be more complicated but
+I wouldn't mind either.
+Every time I think of a contract or protocol that involves time, I do
+it in terms of block heights.
+I would prefer to change all my clocks to work in blocks instead of
+minutes over changing nHeights for timestamps in any of those
+contracts.
+
+> --
+> 'peter'[:-1]@petertodd.org
+> 0000000000000000015e09479548c5b63b99a62d31b019e6479f195bf0cbd935
+>
+> ------------------------------------------------------------------------------
+> BPM Camp - Free Virtual Workshop May 6th at 10am PDT/1PM EDT
+> Develop your own process in accordance with the BPMN 2 standard
+> Learn Process modeling best practices with Bonita BPM through live exercises
+> http://www.bonitasoft.com/be-part-of-it/events/bpm-camp-virtual- event?utm_
+> source=Sourceforge_BPM_Camp_5_6_15&utm_medium=email&utm_campaign=VA_SF
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+
+
