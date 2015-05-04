@@ -1,0 +1,157 @@
+From: bitcoin-list@bluematt.me (Matt Corallo)
+Date: Mon, 04 May 2015 02:15:47 +0000
+Subject: [Bitcoin-development] Relative CHECKLOCKTIMEVERIFY (was CLTV
+ proposal)
+In-Reply-To: <20150421075912.GA25282@savin.petertodd.org>
+References: <20141001130826.GM28710@savin.petertodd.org>
+	<55075795.20904@bluematt.me>
+	<20150421075912.GA25282@savin.petertodd.org>
+Message-ID: <5546D653.4070404@bluematt.me>
+
+
+
+On 04/21/15 07:59, Peter Todd wrote:
+> On Mon, Mar 16, 2015 at 10:22:13PM +0000, Matt Corallo wrote:
+>> In building some CLTV-based contracts, it is often also useful to have a
+>> method of requiring, instead of locktime-is-at-least-N,
+>> locktime-is-at-least-N-plus-the-height-of-my-input. ie you could imagine
+>> an OP_RELATIVECHECKLOCKTIMEVERIFY that reads (does not pop) the top
+>> stack element, adds the height of the output being spent and then has
+>> identical semantics to CLTV.
+> 
+> Depending on what you mean by "identical" this isn't actually reorg
+> safe. For instance consider this implementation:
+> 
+>     nLockTime = stack[-1] + prevout.nHeight
+>     if (nLockTime > txTo.nLockTime):
+>         return False
+> 
+> Used with this scriptPubKey:
+> 
+>     10 RCLTV DROP <pubkey> CHECKSIG
+> 
+> If I create that output in tx1 which is mined at height 42 I can spend
+> it in a tx2 at height > 42+10 by setting tx2's nLockTime to >42+10, for
+> instance 53. However if a reorg happens and tx1 ends up at height 43
+> after the reorg I'm stuck - tx2's nLockTime is set at 42.
+> 
+> Thus RCTLV is only reorg safe if the height is compared against the
+> actual block height of the block containing the spending transaction,
+> not the spending transaction's nLockTime.
+
+Yes, as discussed on IRC months ago when the first email was sent, the
+assumption is that you would require N be at least 100. That way you are
+reorg safe up to the same limit as coinbase transactions, which are also
+only reorg safe in the case of no 100-block reorgs. Its not ideal in
+some contracts, but keeping the no-second-nLockTime-equivalent property
+is worth it IMO, and its still incredibly useful in many contracts.
+
+>> A slightly different API (and different name) was described by maaku at
+>> http://www.reddit.com/r/Bitcoin/comments/2z2l91/time_to_lobby_bitcoins_core_devs_sf_bitcoin_devs/cpgc154
+>> which does a better job of saving softfork-available opcode space.
+>>
+>> There are two major drawbacks to adding such an operation, however.
+>>
+>> 1) More transaction information is exposed inside the script (prior to
+>> CLTV we only had the sigchecking operation exposed, with a CLTV and
+>> RCLTV/OP_CHECK_MATURITY_VERIFY we expose two more functions).
+>>
+>> 2) Bitcoin Core's mempool invariant of "all transactions in the mempool
+>> could be thrown into one overside block and aside from block size, it
+>> would be valid" becomes harder to enforce. Currently, during reorgs,
+>> coinbase spends need checked (specifically, anything spending THE
+>> coinbase 100 blocks ago needs checked) and locktime transactions need
+>> checked. With such a new operation, any script which used this new
+>> opcode during its execution would need to be re-evaluated during reorgs.
+> 
+> Yup, definitely kinda ugly.
+> 
+> If the above style of RCTLV was used, one possibility might be to make
+> the relative locktime difference be required to be at least 100 blocks,
+> same as the coinbase maturity, and just accept that it's probably not
+> going to cause any problems, but could in an extremely big reorg. But
+> re-orgs that big might be big enough that we're screwed anyway...
+> 
+> With the 100 block rule, during a sufficiently large reorg that
+> coinbases become unavailble, simply disconnect entire blocks - all
+> txouts created by them.
+> 
+>> I think both of these requirements are reasonable and not particularly
+>> cumbersome, and the value of such an operation is quite nice for some
+>> protocols (including settings setting up a contest interval in a
+>> sidechain data validation operation).
+> 
+> So to be clear, right now the minimal interface to script execution is
+> simply:
+> 
+>     int bitcoinconsensus_verify_script(const unsigned char *scriptPubKey, unsigned int scriptPubKeyLen,
+>                                        const unsigned char *txTo        , unsigned int txToLen,
+>                                        unsigned int nIn, unsigned int flags, bitcoinconsensus_error* err);
+> 
+> Where scriptPubKey is derived from the unspent coin in the UTXO set and
+> txTo is the transaction containing the script that is being executed.
+> The UTXO set itself currently contains CCoins entries, one for each
+> transaction with unspent outputs, which basically contain:
+> 
+>     nVersion - tx nVersion
+>     nHeight  - Height of the block the transaction is contained in.
+>     vout     - Unspent CTxOut's of the transaction.
+> 
+> The block nTime isn't directly available through the UTXO set, although
+> it can be found in the block headers. This does require nodes to have
+> the block headers, but at 4MB/year growth it's reasonable to assume the
+> UTXO set will grow faster.
+> 
+> Script execution does not have direct access to the current block
+> height/block time, however it does have indirect access via nLockTime.
+> 
+> Thus we have a few possibilities:
+> 
+> 1) RCLTV against nLockTime
+> 
+> Needs a minimum age > COINBASE_MATURITY to be safe.
+> 
+> 
+> 2) RCLTV against current block height/time
+> 
+> Completely reorg safe.
+> 
+> 
+> 3) GET_TXOUT_HEIGHT/TIME <diff> ADD CLTV
+> 
+> To be reorg safe GET_TXOUT_HEIGHT/TIME must fail if minimum age <
+> COINBASE_MATURITY. This can be implemented by comparing against
+> nLockTime.
+> 
+> 
+> All three possibilities require us to make information about the
+> prevout's height/time available to VerifyScript(). The only question is
+> if we want VerifyScript() to also take the current block height/time - I
+> see no reason why it can't. As for the mempool, keeping track of what
+> transactions made use of these opcodes so they can be reevaluated if
+> their prevouts are re-organised seems fine to me.
+> 
+> 
+> Absolute CLTV
+> =============
+> 
+> If we are going to make the block height/time available to
+> VerifyScript() to implement RCLTV, should absolute CLTV should continue
+> to have the proposed behavior of checking against nLockTime? If we go
+> with RCLTV against current block height/time, I'm going to vote no,
+> because doing so needlessly limits it to only being able to compare
+> against a block height or a block time in a single transaction.
+> Similarly it can complicate multi-party signatures in some
+> circumstances, as all parties must agree on a common nLockTime.
+> 
+> 
+> Time-based locks
+> ================
+> 
+> Do we want to support them at all? May cause incentive issues with
+> mining, see #bitcoin-wizards discussion, Jul 17th 2013:
+> 
+> https://download.wpsoftware.net/bitcoin/wizards/2013/07/13-07-17.log
+> 
+
+
