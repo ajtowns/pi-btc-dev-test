@@ -1,0 +1,77 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Tue, 5 May 2015 21:38:44 +0100
+Subject: [Bitcoin-development] Relative CHECKLOCKTIMEVERIFY (was CLTV
+	proposal)
+In-Reply-To: <CABm2gDqcD4ENex3LzKfeGqaotoO-XxLHhLzOEPwk92SaiD8snQ@mail.gmail.com>
+References: <20141001130826.GM28710@savin.petertodd.org>
+	<55075795.20904@bluematt.me>
+	<20150421075912.GA25282@savin.petertodd.org>
+	<5546D653.4070404@bluematt.me>
+	<CABm2gDqcD4ENex3LzKfeGqaotoO-XxLHhLzOEPwk92SaiD8snQ@mail.gmail.com>
+Message-ID: <CAE-z3OVrHqK1gyxCimz3ATBV3ojuyBNO-Jj6bzmcxMgfWe9jkg@mail.gmail.com>
+
+I think that should be greater than in the comparison?  You want it to fail
+if the the height of the UTXO plus the sequence number is greater than the
+spending block's height.
+
+There should be an exception for final inputs.  Otherwise, they will count
+as relative locktime of 0xFFFFFFFF.  Is this check handled elsewhere?
+
+if (!tx.vin[i].IsFinal() && nSpendHeight < coins->nHeight +
+tx.vin[i].nSequence)
+       return state.Invalid(false, REJECT_INVALID,
+"bad-txns-non-final-input");
+
+Is the intention to let the script check the sequence number?
+
+<number> OP_RELATIVELOCKTIMEVERIFY
+
+would check if <number> is less than or equal to the sequence number.
+
+It does make sequence mean something completely different from before.
+Invalidating previously valid transactions has the potential to reduce
+confidence in the currency.
+
+A workaround would be to have a way to enable it in the sigScript by
+extending Peter Todd's suggestion in the other email chain.
+
+<1> OP_NOP2 means OP_CHECKLOCKTIMEVERIFY (absolute)
+<2> OP_NOP2 means OP_RELATIVECHECKLOCKTIMEVERIFY
+
+<3> OP_NOP2 means OP_SEQUENCE_AS_RELATIVE_HEIGHT
+
+OP_SEQUENCE_AS_RELATIVE_HEIGHT would cause the script to fail unless it was
+the first opcode in the script.  It acts as a flag to enable using the
+sequence number as for relative block height.
+
+This can be achieved using a simple pattern match.
+
+bool CScript::IsSequenceAsRelativeHeight() const
+{
+    // Extra-fast test for pay-to-script-hash CScripts:
+    return (this->size() >= 4 &&
+            this->at(0) == OP_PUSHDATA1 &&
+            this->at(1) == 1 &&
+            this->at(2) == 0xFF &&
+            this->at(3) == OP_NOP2);
+}
+
+if (!tx.vin[i].IsFinal() &&
+tx.vin[i].scriptSig.IsSequenceAsRelativeHeight() && nSpendHeight <
+coins->nHeight + tx.vin[i].nSequence)
+       return state.Invalid(false, REJECT_INVALID,
+"bad-txns-non-final-input");
+
+On Mon, May 4, 2015 at 12:24 PM, Jorge Tim?n <jtimon at jtimon.cc> wrote:
+
+> for (unsigned int i = 0; i < tx.vin.size(); i++) {
+> // ...
+>             if (coins->nHeight + tx.vin[i].nSequence < nSpendHeight)
+>                 return state.Invalid(false, REJECT_INVALID,
+> "bad-txns-non-final-input");
+> // ...
+> }
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150505/a857b67b/attachment.html>
