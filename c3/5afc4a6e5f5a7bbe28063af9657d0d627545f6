@@ -1,0 +1,123 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Wed, 6 May 2015 09:37:37 +0200
+Subject: [Bitcoin-development] Relative CHECKLOCKTIMEVERIFY (was CLTV
+	proposal)
+In-Reply-To: <CAE-z3OVrHqK1gyxCimz3ATBV3ojuyBNO-Jj6bzmcxMgfWe9jkg@mail.gmail.com>
+References: <20141001130826.GM28710@savin.petertodd.org>
+	<55075795.20904@bluematt.me>
+	<20150421075912.GA25282@savin.petertodd.org>
+	<5546D653.4070404@bluematt.me>
+	<CABm2gDqcD4ENex3LzKfeGqaotoO-XxLHhLzOEPwk92SaiD8snQ@mail.gmail.com>
+	<CAE-z3OVrHqK1gyxCimz3ATBV3ojuyBNO-Jj6bzmcxMgfWe9jkg@mail.gmail.com>
+Message-ID: <CABm2gDpp-tKPa4NtX29FhB5AN9sKcJJ9CboZoaczt2bU2h=5tQ@mail.gmail.com>
+
+On Tue, May 5, 2015 at 10:38 PM, Tier Nolan <tier.nolan at gmail.com> wrote:
+> I think that should be greater than in the comparison?  You want it to fail
+> if the the height of the UTXO plus the sequence number is greater than the
+> spending block's height.
+
+Yes, sorry, I changed it just before sending from "what needs to be
+satisfied for the validation error to trigger" to "what needs to be
+satisfied for the tx to be valid".
+You're right.
+
+> There should be an exception for final inputs.  Otherwise, they will count
+> as relative locktime of 0xFFFFFFFF.  Is this check handled elsewhere?
+>
+> if (!tx.vin[i].IsFinal() && nSpendHeight < coins->nHeight +
+> tx.vin[i].nSequence)
+>        return state.Invalid(false, REJECT_INVALID,
+> "bad-txns-non-final-input");
+
+Yes, this would be the simplest solution. Another option would be to
+have a new tx version in which IsFinal(CTransaction) doesn't check the
+inputs sequences to be 0xFFFFFFFF for the tx to be final.
+
+> Is the intention to let the script check the sequence number?
+>
+> <number> OP_RELATIVELOCKTIMEVERIFY
+>
+> would check if <number> is less than or equal to the sequence number.
+
+Yes.
+
+> It does make sequence mean something completely different from before.
+> Invalidating previously valid transactions has the potential to reduce
+> confidence in the currency.
+
+Well, the semantics of nSequence don't really change completely. In
+fact, one could argue that this put it closer to its original
+semantics.
+But in any case, yes, already signed transaction should remain valid.
+No transaction would become invalid, just non-final.
+As soon as the height of its inputs plus their respective nSquences
+get higher than current height they will become final again.
+I cannot think of any use case where a tx becomes invalid forever.
+Also, probably most people have usedrelatively low values for
+nSequence given the original semantics, just like the relative lock
+nSquence will likely be used as well.
+
+> A workaround would be to have a way to enable it in the sigScript by
+> extending Peter Todd's suggestion in the other email chain.
+>
+> <1> OP_NOP2 means OP_CHECKLOCKTIMEVERIFY (absolute)
+> <2> OP_NOP2 means OP_RELATIVECHECKLOCKTIMEVERIFY
+>
+> <3> OP_NOP2 means OP_SEQUENCE_AS_RELATIVE_HEIGHT
+
+To be clear, this proposal is supposed to replace RCLTV, so there
+would still be 2 options. But please let's imagine we have infinite
+opcodes in this thread and let the "should we design an uglier
+scripting langues to save opcodes?" question in the other one.
+
+> OP_SEQUENCE_AS_RELATIVE_HEIGHT would cause the script to fail unless it was
+> the first opcode in the script.  It acts as a flag to enable using the
+> sequence number as for relative block height.
+>
+> This can be achieved using a simple pattern match.
+>
+> bool CScript::IsSequenceAsRelativeHeight() const
+> {
+>     // Extra-fast test for pay-to-script-hash CScripts:
+>     return (this->size() >= 4 &&
+>             this->at(0) == OP_PUSHDATA1 &&
+>             this->at(1) == 1 &&
+>             this->at(2) == 0xFF &&
+>             this->at(3) == OP_NOP2);
+> }
+>
+> if (!tx.vin[i].IsFinal() && tx.vin[i].scriptSig.IsSequenceAsRelativeHeight()
+> && nSpendHeight < coins->nHeight + tx.vin[i].nSequence)
+>        return state.Invalid(false, REJECT_INVALID,
+> "bad-txns-non-final-input");
+
+This gives you less flexibility and I don't think it's necessary.
+Please let's try to avoid this if it's possible.
+
+
+> On Mon, May 4, 2015 at 12:24 PM, Jorge Tim?n <jtimon at jtimon.cc> wrote:
+>>
+>> for (unsigned int i = 0; i < tx.vin.size(); i++) {
+>> // ...
+>>             if (coins->nHeight + tx.vin[i].nSequence < nSpendHeight)
+>>                 return state.Invalid(false, REJECT_INVALID,
+>> "bad-txns-non-final-input");
+>> // ...
+>> }
+>
+>
+>
+>
+> ------------------------------------------------------------------------------
+> One dashboard for servers and applications across Physical-Virtual-Cloud
+> Widest out-of-the-box monitoring support with 50+ applications
+> Performance metrics, stats and reports that give you Actionable Insights
+> Deep dive visibility with transaction tracing using APM Insight.
+> http://ad.doubleclick.net/ddm/clk/290420510;117567292;y
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+
+
