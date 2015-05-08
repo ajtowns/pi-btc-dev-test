@@ -1,0 +1,83 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Fri, 8 May 2015 07:52:28 -0700
+Subject: [Bitcoin-development] Removing transaction data from blocks
+In-Reply-To: <554CC19D.2010306@xylon.de>
+References: <554CC19D.2010306@xylon.de>
+Message-ID: <CAPg+sBhR2UcpjCxOEXw0gC9scG6OXMcyPLkfjfw7fP736XbGSw@mail.gmail.com>
+
+So, there are several ideas about how to reduce the size of blocks being
+sent on the network:
+* Matt Corallo's relay network, which internally works by remembering the
+last 5000 (i believe?) transactions sent by the peer, and allowing the peer
+to backreference those rather than retransmit them inside block data. This
+exists and works today.
+* Gavin Andresen's IBLT based set reconciliation for blocks based on what a
+peer expects the new block to contain.
+* Greg Maxwell's network block coding, which is based on erasure coding,
+and also supports sharding (everyone sends some block data to everyone,
+rather fetching from one peer).
+
+However, the primary purpose is not to reduce bandwidth (though that is a
+nice side advantage). The purpose is reducing propagation delay. Larger
+propagation delays across the network (relative to the inter-block period)
+result in higher forking rates. If the forking rate gets very high, the
+network may fail to converge entirely, but even long before that point, the
+higher the forking rate is, the higher the advantage of larger (and better
+connected) pools over smaller ones. This is why, in my opinion,
+guaranteeing fast propagation is one of the most essential responsibility
+of full nodes to avoid centralization pressure.
+
+Also, none of this would let us "get rid of the block size" at all. All
+transactions still have to be transferred and processed, and due to
+inherent latencies of communication across the globe, the higher the
+transaction rate is, the higher the number of transactions in blocks will
+be that peers have not yet heard about. You can institute a policy to not
+include too recent transactions in blocks, but again, this favors larger
+miners over smaller ones.
+
+Also, if the end goal is propagation delay, just minimizing the amount of
+data transferred is not enough. You also need to make sure the
+communication mechanism does not add huge processing overheads or adds
+unnecessary roundtrips. In fact, this is the key difference between the 3
+techniques listed above, and several people are working on refining and
+optimizing these mechanisms to make them practically usable.
+On May 8, 2015 7:23 AM, "Arne Brutschy" <abrutschy at xylon.de> wrote:
+
+> Hello,
+>
+> At DevCore London, Gavin mentioned the idea that we could get rid of
+> sending full blocks. Instead, newly minted blocks would only be
+> distributed as block headers plus all hashes of the transactions
+> included in the block. The assumption would be that nodes have already
+> the majority of these transactions in their mempool.
+>
+> The advantages are clear: it's more efficient, as we would send
+> transactions only once over the network, and it's fast as the resulting
+> blocks would be small. Moreover, we would get rid of the blocksize limit
+> for a long time.
+>
+> Unfortunately, I am too ignorant of bitcoin core's internals to judge
+> the changes required to make this happen. (I guess we'd require a new
+> block format and a way to bulk-request missing transactions.)
+>
+> However, I'm curious to hear what others with a better grasp of bitcoin
+> core's internals have to say about it.
+>
+> Regards,
+> Arne
+>
+>
+> ------------------------------------------------------------------------------
+> One dashboard for servers and applications across Physical-Virtual-Cloud
+> Widest out-of-the-box monitoring support with 50+ applications
+> Performance metrics, stats and reports that give you Actionable Insights
+> Deep dive visibility with transaction tracing using APM Insight.
+> http://ad.doubleclick.net/ddm/clk/290420510;117567292;y
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150508/603dc927/attachment.html>
