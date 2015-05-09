@@ -1,0 +1,100 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Sat, 9 May 2015 03:36:07 +0000
+Subject: [Bitcoin-development] Proposed alternatives to the 20MB step
+	function
+In-Reply-To: <CAOG=w-szbLgc1jLpkE_uMa3bkFTi-RiBEaQ6Y-u5aKLBC2HvUg@mail.gmail.com>
+References: <16096345.A1MpJQQkRW@crushinator>
+	<CAOG=w-szbLgc1jLpkE_uMa3bkFTi-RiBEaQ6Y-u5aKLBC2HvUg@mail.gmail.com>
+Message-ID: <CAAS2fgQRS7w7RRNXVK_+=4CQ7=AWxWQQ7+Tf4tNUPTTZOf7rEQ@mail.gmail.com>
+
+On Fri, May 8, 2015 at 8:33 PM, Mark Friedenbach <mark at friedenbach.org> wrote:
+> These rules create an incentive environment where raising the block size has
+> a real cost associated with it: a more difficult hashcash target for the
+> same subsidy reward. For rational miners that cost must be counter-balanced
+> by additional fees provided in the larger block. This allows block size to
+> increase, but only within the confines of a self-supporting fee economy.
+>
+> When the subsidy goes away or is reduced to an insignificant fraction of the
+> block reward, this incentive structure goes away. Hopefully at that time we
+> would have sufficient information to soft-fork set a hard block size
+> maximum. But in the mean time, the block size limit controller constrains
+> the maximum allowed block size to be within a range supported by fees on the
+> network, providing an emergency relief valve that we can be assured will
+> only be used at significant cost.
+
+Though I'm a fan of this class of techniques(*) and think using something
+in this space is strictly superior to not, and I think it makes larger
+sizes safer long term;  I do not think it adequately obviates the need
+for a hard upper limit for two reasons:
+
+(1) for software engineering and operational reasons it is very
+difficult to develop, test for, or provision for something without
+knowing limits. There would in fact be hard limits on real deployments
+but they'd be opaque to their operators and you could easily imagine
+the network forking by surprise as hosts crossed those limits.
+
+(2)  At best this approach mitigates the collective action problem between
+miners around fees;  it does not correct the incentive alignment between
+miners and everyone else (miners can afford huge node costs because they
+have income; but the full-node-using-users that need to exist in plenty
+to keep miners honest do not), or the centralization pressures (N miners
+can reduce their storage/bandwidth/cpu costs N fold by centralizing).
+
+A dynamic limit can be combined with a hard upper to at least be no
+worse than a hard upper with respect to those two points.
+
+
+Another related point which has been tendered before but seems to have
+been ignored is that changing how the size limit is computed can help
+better align incentives and thus reduce risk.  E.g. a major cost to the
+network is the UTXO impact of transactions, but since the limit is blind
+to UTXO impact a miner would gain less income if substantially factoring
+UTXO impact into its fee calculations; and without fee impact users have
+little reason to optimize their UTXO behavior.   This can be corrected
+by augmenting the "size" used for limit calculations.   An example would
+be tx_size = MAX( real_size >> 1,  real_size + 4*utxo_created_size -
+3*utxo_consumed_size).   The reason for the MAX is so that a block
+which cleaned a bunch of big UTXO could not break software by being
+super large, the utxo_consumed basically lets you credit your fees by
+cleaning the utxo set; but since you get less credit than you cost the
+pressure should be downward but not hugely so. The 1/2, 4, 3 I regard
+as parameters which I don't have very strong opinions on which could be
+set based on observations in the network today (e.g. adjusted so that a
+normal cleaning transaction can hit the minimum size).  One way to think
+about this is that it makes it so that every output you create "prepays"
+the transaction fees needed to spend it by shifting "space" from the
+current block to a future block. The fact that the prepayment is not
+perfectly efficient reduces the incentive for miners to create lots of
+extra outputs when they have room left in their block in order to store
+space to use later [an issue that is potentially less of a concern with a
+dynamic size limit].  With the right parameters there would never be such
+at thing as a dust output (one which costs more to spend than its worth).
+
+(likewise the sigops limit should be counted correctly and turned into
+size augmentation (ones that get run by the txn); which would greatly
+simplify selection rules: maximize income within a single scalar limit)
+
+(*) I believe my currently favored formulation of general dynamic control
+idea is that each miner expresses in their coinbase a preferred size
+between some minimum (e.g. 500k) and the miner's effective-maximum;
+the actual block size can be up to the effective maximum even if the
+preference is lower (you're not forced to make a lower block because you
+stated you wished the limit were lower).  There is a computed maximum
+which is the 33-rd percentile of the last 2016 coinbase preferences
+minus computed_max/52 (rounding up to 1) bytes-- or 500k if thats
+larger. The effective maximum is X bytes more, where X on the range
+[0, computed_maximum] e.g. the miner can double the size of their
+block at most. If X > 0, then the miners must also reach a target
+F(x/computed_maximum) times the bits-difficulty; with F(x) = x^2+1  ---
+so the maximum penalty is 2, with a quadratic shape;  for a given mempool
+there will be some value that maximizes expected income.  (obviously all
+implemented with precise fixed point arithmetic).   The percentile is
+intended to give the preferences of the 33% least preferring miners a
+veto on increases (unless a majority chooses to soft-fork them out). The
+minus-comp_max/52 provides an incentive to slowly shrink the maximum
+if its too large-- x/52 would halve the size in one year if miners
+were doing the lowest difficulty mining. The parameters 500k/33rd,
+-computed_max/52 bytes, and f(x)  I have less strong opinions about;
+and would love to hear reasoned arguments for particular parameters.
+
+
