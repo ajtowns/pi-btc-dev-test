@@ -1,0 +1,106 @@
+From: sergiolerner@certimix.com (Sergio Lerner)
+Date: Sun, 10 May 2015 17:45:32 -0300
+Subject: [Bitcoin-development] A way to create a fee market even without a
+	block size limit (2013)
+Message-ID: <554FC36C.80402@certimix.com>
+
+Two years ago I presented a new way to create a fee market that does not
+depend on the block chain limit.
+
+This proposal has not been formally analyzed in any paper since then,
+but I think it holds a good promise to untangle the current problem
+regarding increasing the tps and creating the fee market. BTW, think the
+maximum tps should be increased, but not by increasing the block size,
+but by increasing the block rate (I'll expose why in my next e-mail).
+
+The original post is here (I was overly optimistic back then):
+https://bitcointalk.org/index.php?topic=147124.msg1561612#msg1561612
+
+I'll summarize it here again, with a little editing and a few more
+questions at the end:
+
+The idea is simple, but requires a hardfork, but is has minimum impact
+in the code and in the economics.
+
+Solution: Require that the set of fees collected in a block has a
+dispersion below a threshold. Use, for example, the Coefficient of
+Variation (http://en.wikipedia.org/wiki/Coefficient_of_variation). If
+the CoVar is higher than a fixed threshold, the block is considered invalid.
+
+The Coefficient of variation is computed as the standard deviation over
+the mean value, so it's very easy to compute. (if the mean is zero, we
+assume CoVar=0). Note that the CoVar function *does not depend on the
+scale*, so is just what a coin with a floating price requires.
+
+This means that if there are many transactions containing high fees in a
+block, then free transactions cannot be included.
+The core devs should tweak the transaction selection algorithm to take
+into account this maximum bound.
+
+*Example*
+
+If the transaction fee set is: 0,0,0,0,5,5,6,7,8,7
+The CoVar is 0.85
+Suppose we limit the CoVar to a maximum of 1.
+
+Suppose the transaction fee set is: 0,0,0,0,0,0,0,0,0,10
+Then the CoVar is 3.0
+
+In this case the miner should have to either drop the "10" from the fee
+set or drop the zeros. Obviously the miner will drop some zeros, and
+choose the set: 0,10, that has a CoVar of 1.
+
+*Why it reduces the Tx spamming Problem?*
+
+Using this little modification, spamming users would require to use
+higher fees, only if the remaining users in the community rises their
+fees. And miners won't be able to include an enormous amounts of
+spamming txs.
+
+*Why it helps solving **the tragedy-of-the-commons fee "problem"?*
+
+As miners are forced to keep the CoVar below the threshold, if people
+rises the fees to confirm faster than spamming txs, automatically
+smamming txs become less likely to appear in blocks, and fee-estimators
+will automatically increase future fees, creating a the desired feedback
+loop.
+
+*Why it helps solving the block size problem?*
+
+Because if we increase the block size, miners that do not care about the
+fee market won't be able to fill the block with spamming txs and destroy
+the market that is being created. This is not a solution against an
+attacker-miner, which can always fill the block with transactions.
+
+*Can the system by gamed? Can it be attacked?*
+
+I don't think so. An attacker would need to spend a high amount in fees
+to prevent transactions with low fees to be included in a block.
+However, a formal analysis would be required. Miller, Gun Sirer, Eyal..
+Want to give it a try?
+*
+Can create a positive feedback to a rise the fees to the top or push
+fess to the bottom?
+
+*Again, I don't think so. This depends on the dynamics between the each
+node's fee estimator and the transaction backlog. MIT guys?
+
+*Doesn't it force miners to run more complex algorithms (such as linear
+programming) to find the optimum tx subset ?
+
+*Yes, but I don't see it as a drawback, but as a positive stimulus for
+researchers to develop better tx selection algorithms. Anyway, the
+greedy algorithm of picking the transactions with highest fees fees
+would be good enough.
+
+*
+PLEASE don't confuse the acronym CoVar I used here with co-variance.*
+
+Best regard,
+  Sergio.
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150510/2fa8f7e2/attachment.html>
