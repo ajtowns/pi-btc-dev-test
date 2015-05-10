@@ -1,0 +1,99 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Sun, 10 May 2015 17:21:06 -0400
+Subject: [Bitcoin-development] Proposed alternatives to the 20MB step
+	function
+In-Reply-To: <CAAS2fgQRS7w7RRNXVK_+=4CQ7=AWxWQQ7+Tf4tNUPTTZOf7rEQ@mail.gmail.com>
+References: <16096345.A1MpJQQkRW@crushinator>
+	<CAOG=w-szbLgc1jLpkE_uMa3bkFTi-RiBEaQ6Y-u5aKLBC2HvUg@mail.gmail.com>
+	<CAAS2fgQRS7w7RRNXVK_+=4CQ7=AWxWQQ7+Tf4tNUPTTZOf7rEQ@mail.gmail.com>
+Message-ID: <CABsx9T2+ThQ+z2wyb_NbDWEK1zJO-WaLMdDU3ewpTELNKhb7YA@mail.gmail.com>
+
+Let me make sure I understand this proposal:
+
+On Fri, May 8, 2015 at 11:36 PM, Gregory Maxwell <gmaxwell at gmail.com> wrote:
+
+> (*) I believe my currently favored formulation of general dynamic control
+> idea is that each miner expresses in their coinbase a preferred size
+> between some minimum (e.g. 500k) and the miner's effective-maximum;
+> the actual block size can be up to the effective maximum even if the
+> preference is lower (you're not forced to make a lower block because you
+> stated you wished the limit were lower).  There is a computed maximum
+> which is the 33-rd percentile of the last 2016 coinbase preferences
+> minus computed_max/52 (rounding up to 1) bytes-- or 500k if thats
+> larger. The effective maximum is X bytes more, where X on the range
+> [0, computed_maximum] e.g. the miner can double the size of their
+> block at most. If X > 0, then the miners must also reach a target
+> F(x/computed_maximum) times the bits-difficulty; with F(x) = x^2+1  ---
+> so the maximum penalty is 2, with a quadratic shape;  for a given mempool
+> there will be some value that maximizes expected income.  (obviously all
+> implemented with precise fixed point arithmetic).   The percentile is
+> intended to give the preferences of the 33% least preferring miners a
+> veto on increases (unless a majority chooses to soft-fork them out). The
+> minus-comp_max/52 provides an incentive to slowly shrink the maximum
+> if its too large-- x/52 would halve the size in one year if miners
+> were doing the lowest difficulty mining. The parameters 500k/33rd,
+> -computed_max/52 bytes, and f(x)  I have less strong opinions about;
+> and would love to hear reasoned arguments for particular parameters.
+>
+
+I'm going to try to figure out how much transaction fee a transaction would
+have to pay to bribe a miner to include it. Greg, please let me know if
+I've misinterpreted the proposed algorithm. And everybody, please let me
+know if I'm making a bone-headed mistake in how I'm computing anything:
+
+Lets say miners are expressing a desire for 600,000 byte blocks in their
+coinbases.
+
+computed_max = 600,000 - 600,000/52 = 588,462 bytes.
+  --> this is about 23 average-size (500-byte) transactions less than
+600,000.
+effective_max = 1,176,923
+
+Lets say I want to maintain status quo at 600,000 bytes; how much penalty
+do I have?
+((600,000-588,462)/588,462)^2 + 1 = 1.00038
+
+How much will that cost me?
+The network is hashing at 310PetaHash/sec right now.
+Takes 600 seconds to find a block, so 186,000PH per block
+186,000 * 0.00038 = 70 extra PH
+
+If it takes 186,000 PH to find a block, and a block is worth 25.13 BTC
+(reward plus fees), that 70 PH costs:
+(25.13 BTC/block / 186,000 PH/block) * 70 PH = 0.00945 BTC
+or at $240 / BTC:  $2.27
+
+... so average transaction fee will have to be about ten cents ($2.27
+spread across 23 average-sized transactions) for miners to decide to stay
+at 600K blocks. If they fill up 588,462 bytes and don't have some
+ten-cent-fee transactions left, they should express a desire to create a
+588,462-byte-block and mine with no penalty.
+
+Is that too much?  Not enough?  Average transaction fees today are about 3
+cents per transaction.
+I created a spreadsheet playing with the parameters:
+
+https://docs.google.com/spreadsheets/d/1zYZfb44Uns8ai0KnoQ-LixDwdhqO5iTI3ZRcihQXlgk/edit?usp=sharing
+
+"We" could tweak the constants or function to get a transaction fee we
+think is reasonable... but we really shouldn't be deciding whether
+transaction fees are too high, too low, or just right, and after thinking
+about this for a while I think any algorithm that ties difficulty to block
+size is just a complicated way of dictating minimum fees.
+
+As for some other dynamic algorithm: OK with me. How do we get consensus on
+what the best algorithm is? I'm ok with any "don't grow too quickly, give
+some reasonable-percentage-minority of miners the ability to block further
+increases."
+
+Also relevant here:
+"The curious task of economics is to demonstrate to men how little they
+really know about what they imagine they can design." - Friedrich August
+von Hayek
+
+-- 
+--
+Gavin Andresen
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150510/481dae92/attachment.html>
