@@ -1,0 +1,101 @@
+From: sergiolerner@certimix.com (Sergio Lerner)
+Date: Mon, 11 May 2015 03:09:58 -0300
+Subject: [Bitcoin-development] A way to create a fee market even without
+ a block size limit (2013)
+In-Reply-To: <CAAS2fgQL6ExHqT+po-F2b9+3Ns4woFx-VqQSdDkXRZwy47+XwA@mail.gmail.com>
+References: <554FC36C.80402@certimix.com>
+	<CAAS2fgQL6ExHqT+po-F2b9+3Ns4woFx-VqQSdDkXRZwy47+XwA@mail.gmail.com>
+Message-ID: <555047B6.8010402@certimix.com>
+
+El 10/05/2015 06:07 p.m., Gregory Maxwell escribi?:
+> On Sun, May 10, 2015 at 8:45 PM, Sergio Lerner
+> <sergiolerner at certimix.com> wrote:
+>> Can the system by gamed?
+> Users can pay fees or a portion of fees out of band to miner(s); this
+> is undetectable to the network.
+Then this is exactly what is needed. Let me explain.
+
+I know of 5 methods for a user to pay fees to a miner. I will explain
+each method and why these methods do not prevent the fee market from
+being created:
+
+1) By transaction fees
+
+This is the standard, which would be limited by the CoVar algorithm, and
+would create the fee market, if it were the only way to pay fees.
+
+2) By creating multiple transactions, each adding an output that pays to
+each miner (to a known miner address) the fees. User does not
+pre-negotiate anything with miners.
+
+This requires a transaction to have an additional output and requires
+sending through the p2p network one different transaction to each miner,
+each having an output with a "known" address of that miner. But the
+network does not propagates double-spends, so those transaction would
+need to be sent directly to the top miners, and to all at the same time.
+The IP addresses of the top miners are not generally publicly available,
+and then may not accept new incoming connections. Also having an
+additional output means the transactions would be larger, so they will
+score lower by any metric the miner uses to choose transactions. Last,
+miners must be programmed to automatically interpret payments to their
+addresses as fees. The resulting protocol is very difficult to do
+reliably, expensive, as any delay would make one miner receive the
+transaction from other miner and reject the double-spend that is being
+send directly to it, increasing the average confirmation time.
+
+3) By adding an anyone-can-spend output for fees, so the miner can spend
+that output in the same block.  User does not pre-negotiate anything
+with miners.
+
+We can hard-fork not to allow spending outputs created in the same
+block. This is a drawback, unless we reduce the block rate, which is my
+proposal. However, spending in the same block also requires an storing
+in the block an additional input, which consumes at least 40 bytes more,
+and the transaction containing the input cannot be relayed to the
+network in advance. Then the block that uses this method to collect fees
+from many transactions will propagate slower, and the miner may end
+loosing money. The any-one-can-spend output would take approximately 10
+bytes. So if transmitting 10+40=50 bytes, cost more than the fees
+earned, then miners do not have an incentive to game the system. It's
+has been studied that "each kilobyte costs an additional 80ms delay
+until a majority knows about the block." (Information propagation in the
+Bitcoin network). So 50 bytes costs 3.9 ms in propagation time, which
+having a a 25 BTC subsidy is roughly equivalent to 0.2 mBTC. Currently
+this is more than what transactions do pay in fees (about 0.1 mBTC), so
+this should not be a problem for at least 5 years. And again, we could
+just prevent spending outputs in the same block they are created.
+
+4) Using a transaction having a single input having exactly the desired
+output amount plus fees and signing the input with SIGHASH_SINGLE |
+SIGHASH_ANYONECANPAY and adding to the transaction a single output with
+the desired amount. The miner will be able to join many of these
+transactions and finally add an output to collect all fees together,
+without using standard transaction fees.
+
+This is unreliable and cannot be systematically repeated without
+creating a pre-transaction just to prepare the single input having the
+amount plus fees exactly. The pre-transaction would need to pay fees, so
+the problem is not avoided, just moved around.
+
+5) By negotiating out of band with the miner previously. Anything could
+be agreed by the user and the miner.
+
+This actually creates a parallel out-of-band market for fees, which is
+exactly what we want. If a user-to-miner pre-negotiation will take
+place, then the miner can establish whatever price policy he wants to
+compete and stay in business, as block data propagation costs money. So
+there will be two fee markets, the "out-of-band" market, and the
+"in-band" market, and both should converge.
+
+My conclusion is that fee markets will be created, and any alternate
+fee-paying methods (without a pre-negotiation) are not reliable nor
+cost-saving options. The full proposal would be to use the CoVar method,
+reduce the block rate to 1 minute, and do not allow spending outputs in
+the same block they are created.
+
+Best regards,
+ Sergio.
+
+
+
+
