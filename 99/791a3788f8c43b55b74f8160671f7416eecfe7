@@ -1,0 +1,72 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Tue, 12 May 2015 19:23:48 +0100
+Subject: [Bitcoin-development] Proposed additional options for pruned
+	nodes
+In-Reply-To: <20150512171640.GA32606@savin.petertodd.org>
+References: <CANJO25J1WRHtfQLVXUB2s_sjj39pTPWmixAcXNJ3t-5os8RPmQ@mail.gmail.com>
+	<CANJO25JTtfmfsOQYOzJeksJn3CoKE3W8iLGsRko-_xd4XhB3ZA@mail.gmail.com>
+	<CAJHLa0O5OxaX5g3u=dnCY6Lz_gK3QZgQEPNcWNVRD4JziwAmvg@mail.gmail.com>
+	<20150512171640.GA32606@savin.petertodd.org>
+Message-ID: <CAE-z3OV3VdSoiTSfASwYHr1CjZSqio303sqGq_1Y9yaYgov2sw@mail.gmail.com>
+
+On Tue, May 12, 2015 at 6:16 PM, Peter Todd <pete at petertodd.org> wrote:
+
+>
+> Lots of people are tossing around ideas for partial archival nodes that
+> would store a subset of blocks, such that collectively the whole
+> blockchain would be available even if no one node had the entire chain.
+>
+
+A compact way to describe which blocks are stored helps to mitigate against
+fingerprint attacks.
+
+It also means that a node could compactly indicate which blocks it stores
+with service bits.
+
+The node could pick two numbers
+
+W = window = a power of 2
+P = position = random value less than W
+
+The node would store all blocks with a height of P mod W.  The block hash
+could be used too.
+
+This has the nice feature that the node can throw away half of its data and
+still represent what is stored.
+
+W_new = W * 2
+P_new = (random_bool()) ? P + W/2 : P;
+
+Half of the stored blocks would match P_new mod W_new and the other half
+could be deleted.  This means that the store would use up between 50% and
+100% of the allocated size.
+
+Another benefit is that it increases the probability that at least someone
+has every block.
+
+If N nodes each store 1% of the blocks, then the odds of a block being
+stored is pow(0.99, N).  For 1000 nodes, that gives odds of 1 in 23,164
+that a block will be missing.  That means that around 13 out of 300,000
+blocks would be missing.  There would likely be more nodes than that, and
+also storage nodes, so it is not a major risk.
+
+If everyone is storing 1% of blocks, then they would set W to 128.  As long
+as all of the 128 buckets is covered by some nodes, then all blocks are
+stored.  With 1000 nodes, that gives odds of 0.6% that at least one bucket
+will be missed.  That is better than around 13 blocks being missing.
+
+Nodes could inform peers of their W and P parameters on connection.  The
+version message could be amended or a "getparams" message of some kind
+could be added.
+
+W could be encoded with 4 bits and P could be encoded with 16 bits, for 20
+in total.  W = 1 << bits[19:16] and P = bits[14:0].  That gives a maximum W
+of 32768, which is likely to many bits for P.
+
+Initial download would be harder, since new nodes would have to connect to
+at least 100 different nodes.  They could download from random nodes, and
+just download the ones they are missing from storage nodes.  Even storage
+nodes could have a range of W values.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150512/52cee4d6/attachment.html>
