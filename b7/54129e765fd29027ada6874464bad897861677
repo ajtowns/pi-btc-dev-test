@@ -1,0 +1,95 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Tue, 12 May 2015 23:00:33 +0100
+Subject: [Bitcoin-development] Proposed additional options for pruned
+	nodes
+In-Reply-To: <CAAS2fgRzGkcJbWbJmFN2-NSJGUcLdPKp0q7FjM0x7WDvHoRq=g@mail.gmail.com>
+References: <CANJO25J1WRHtfQLVXUB2s_sjj39pTPWmixAcXNJ3t-5os8RPmQ@mail.gmail.com>
+	<CANJO25JTtfmfsOQYOzJeksJn3CoKE3W8iLGsRko-_xd4XhB3ZA@mail.gmail.com>
+	<CAJHLa0O5OxaX5g3u=dnCY6Lz_gK3QZgQEPNcWNVRD4JziwAmvg@mail.gmail.com>
+	<20150512171640.GA32606@savin.petertodd.org>
+	<CAE-z3OV3VdSoiTSfASwYHr1CjZSqio303sqGq_1Y9yaYgov2sw@mail.gmail.com>
+	<CAAS2fgRzGkcJbWbJmFN2-NSJGUcLdPKp0q7FjM0x7WDvHoRq=g@mail.gmail.com>
+Message-ID: <CAE-z3OWR72Og78RLuXEPjzRR8gCEjAuFk2nq-JzDtt_2pKSmHQ@mail.gmail.com>
+
+On Tue, May 12, 2015 at 8:03 PM, Gregory Maxwell <gmaxwell at gmail.com> wrote:
+
+>
+> (0) Block coverage should have locality; historical blocks are
+> (almost) always needed in contiguous ranges.   Having random peers
+> with totally random blocks would be horrific for performance; as you'd
+> have to hunt down a working peer and make a connection for each block
+> with high probability.
+>
+> (1) Block storage on nodes with a fraction of the history should not
+> depend on believing random peers; because listening to peers can
+> easily create attacks (e.g. someone could break the network; by
+> convincing nodes to become unbalanced) and not useful-- it's not like
+> the blockchain is substantially different for anyone; if you're to the
+> point of needing to know coverage to fill then something is wrong.
+> Gaps would be handled by archive nodes, so there is no reason to
+> increase vulnerability by doing anything but behaving uniformly.
+>
+> (2) The decision to contact a node should need O(1) communications,
+> not just because of the delay of chasing around just to find who has
+> someone; but because that chasing process usually makes the process
+> _highly_ sybil vulnerable.
+>
+> (3) The expression of what blocks a node has should be compact (e.g.
+> not a dense list of blocks) so it can be rumored efficiently.
+>
+> (4) Figuring out what block (ranges) a peer has given should be
+> computationally efficient.
+>
+> (5) The communication about what blocks a node has should be compact.
+>
+> (6) The coverage created by the network should be uniform, and should
+> remain uniform as the blockchain grows; ideally it you shouldn't need
+> to update your state to know what blocks a peer will store in the
+> future, assuming that it doesn't change the amount of data its
+> planning to use. (What Tier Nolan proposes sounds like it fails this
+> point)
+>
+> (7) Growth of the blockchain shouldn't cause much (or any) need to
+> refetch old blocks.
+>
+
+M = 1,000,000
+N = number of "starts"
+
+S(0) = hash(seed) mod M
+...
+S(n) = hash(S(n-1)) mod M
+
+This generates a sequence of start points.  If the start point is less than
+the block height, then it counts as a hit.
+
+The node stores the 50MB of data starting at the block at height S(n).
+
+As the blockchain increases in size, new starts will be less than the block
+height.  This means some other runs would be deleted.
+
+A weakness is that it is random with regards to block heights.  Tiny blocks
+have the same priority as larger blocks.
+
+0) Blocks are local, in 50MB runs
+1) Agreed, nodes should download headers-first (or some other compact way
+of finding the highest POW chain)
+2) M could be fixed, N and the seed are all that is required.  The seed
+doesn't have to be that large.  If 1% of the blockchain is stored, then 16
+bits should be sufficient so that every block is covered by seeds.
+3) N is likely to be less than 2 bytes and the seed can be 2 bytes
+4) A 1% cover of 50GB of blockchain would have 10 starts @ 50MB per run.
+That is 10 hashes.  They don't even necessarily need to be crypt hashes
+5) Isn't this the same as 3?
+6) Every block has the same odds of being included.  There inherently needs
+to be an update when a node deletes some info due to exceeding its cap.  N
+can be dropped one run at a time.
+7) When new starts drop below the tip height, N can be decremented and that
+one run is deleted.
+
+There would need to be a special rule to ensure the low height blocks are
+covered.  Nodes should keep the first 50MB of blocks with some probability
+(10%?)
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150512/27f2d685/attachment.html>
