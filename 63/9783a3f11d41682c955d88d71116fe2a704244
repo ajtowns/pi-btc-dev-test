@@ -1,0 +1,141 @@
+From: d@domob.eu (Daniel Kraft)
+Date: Wed, 13 May 2015 07:19:54 +0200
+Subject: [Bitcoin-development] Proposed additional options for pruned
+ nodes
+In-Reply-To: <CAAS2fgRzGkcJbWbJmFN2-NSJGUcLdPKp0q7FjM0x7WDvHoRq=g@mail.gmail.com>
+References: <CANJO25J1WRHtfQLVXUB2s_sjj39pTPWmixAcXNJ3t-5os8RPmQ@mail.gmail.com>	<CANJO25JTtfmfsOQYOzJeksJn3CoKE3W8iLGsRko-_xd4XhB3ZA@mail.gmail.com>	<CAJHLa0O5OxaX5g3u=dnCY6Lz_gK3QZgQEPNcWNVRD4JziwAmvg@mail.gmail.com>	<20150512171640.GA32606@savin.petertodd.org>	<CAE-z3OV3VdSoiTSfASwYHr1CjZSqio303sqGq_1Y9yaYgov2sw@mail.gmail.com>
+	<CAAS2fgRzGkcJbWbJmFN2-NSJGUcLdPKp0q7FjM0x7WDvHoRq=g@mail.gmail.com>
+Message-ID: <5552DEFA.4080508@domob.eu>
+
+Hi all!
+
+On 2015-05-12 21:03, Gregory Maxwell wrote:
+> Summarizing from memory:
+
+In the context of this discussion, let me also restate an idea I've
+proposed in Bitcointalk for this.  It is probably not perfect and could
+surely be adapted (I'm interested in that), but I think it meets
+most/all of the criteria stated below.  It is similar to the idea with
+"start points", but gives O(log height) instead of O(height) for
+determining which blocks a node has.
+
+Let me for simplicity assume that the node wants to store 50% of all
+blocks.  It is straight-forward to extend the scheme so that this is
+configurable:
+
+1) Create some kind of "seed" that can be compact and will be sent to
+other peers to define which blocks the node has.  Use it to initialise a
+PRNG of some sort.
+
+2) Divide the range of all blocks into intervals with exponentially
+growing size.  I. e., something like this:
+
+1, 1, 2, 2, 4, 4, 8, 8, 16, 16, ...
+
+With this, only O(log height) intervals are necessary to cover height
+blocks.
+
+3) Using the PRNG, *one* of the two intervals of each length is
+selected.  The node stores these blocks and discards the others.
+(Possibly keeping the last 200 or 2,016 or whatever blocks additionally.)
+
+> (0) Block coverage should have locality; historical blocks are
+> (almost) always needed in contiguous ranges.   Having random peers
+> with totally random blocks would be horrific for performance; as you'd
+> have to hunt down a working peer and make a connection for each block
+> with high probability.
+
+You get contiguous block ranges (with at most O(log height) "breaks").
+Also ranges of newer blocks are longer, which may be an advantage if
+those blocks are needed more often.
+
+> (1) Block storage on nodes with a fraction of the history should not
+> depend on believing random peers; because listening to peers can
+> easily create attacks (e.g. someone could break the network; by
+> convincing nodes to become unbalanced) and not useful-- it's not like
+> the blockchain is substantially different for anyone; if you're to the
+> point of needing to know coverage to fill then something is wrong.
+> Gaps would be handled by archive nodes, so there is no reason to
+> increase vulnerability by doing anything but behaving uniformly.
+
+With my proposal, each node determines randomly and on its own which
+blocks to store.  No believing anyone.
+
+> (2) The decision to contact a node should need O(1) communications,
+> not just because of the delay of chasing around just to find who has
+> someone; but because that chasing process usually makes the process
+> _highly_ sybil vulnerable.
+
+Not exactly sure what you mean by that, but I think that's fulfilled.
+You can (locally) compute in O(log height) from a node's seed whether or
+not it has the blocks you need.  This needs only communication about the
+node's seed.
+
+> (3) The expression of what blocks a node has should be compact (e.g.
+> not a dense list of blocks) so it can be rumored efficiently.
+
+See above.
+
+> (4) Figuring out what block (ranges) a peer has given should be
+> computationally efficient.
+
+O(log height).  Not O(1), but that's probably not a big issue.
+
+> (5) The communication about what blocks a node has should be compact.
+
+See above.
+
+> (6) The coverage created by the network should be uniform, and should
+> remain uniform as the blockchain grows; ideally it you shouldn't need
+> to update your state to know what blocks a peer will store in the
+> future, assuming that it doesn't change the amount of data its
+> planning to use. (What Tier Nolan proposes sounds like it fails this
+> point)
+
+Coverage will be uniform if the seed is created randomly and the PRNG
+has good properties.  No need to update the seed if the other node's
+fraction is unchanged.  (Not sure if you suggest for nodes to define a
+"fraction" or rather an "absolute size".)
+
+> (7) Growth of the blockchain shouldn't cause much (or any) need to
+> refetch old blocks.
+
+No need to do that with the scheme.
+
+What do you think about this idea?  Some random thoughts from myself:
+
+*) I need to formulate it in a more general way so that the fraction can
+be arbitrary and not just 50%.  This should be easy to do, and I can do
+it if there's interest.
+
+*) It is O(log height) and not O(1), but that should not be too
+different for the heights that are relevant.
+
+*) Maybe it would be better / easier to not use the PRNG at all; just
+decide to *always* use the first or the second interval with a given
+size.  Not sure about that.
+
+*) With the proposed scheme, the node's actual fraction of stored blocks
+will vary between 1/2 and 2/3 (if I got the mathematics right, it is
+still early) as the blocks come in.  Not sure if that's a problem.  I
+can do a precise analysis of this property for an extended scheme if you
+are interested in it.
+
+Yours,
+Daniel
+
+-- 
+http://www.domob.eu/
+OpenPGP: 1142 850E 6DFF 65BA 63D6  88A8 B249 2AC4 A733 0737
+Namecoin: id/domob -> https://nameid.org/?name=domob
+--
+Done:  Arc-Bar-Cav-Hea-Kni-Ran-Rog-Sam-Tou-Val-Wiz
+To go: Mon-Pri
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 836 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150513/0da57426/attachment.sig>
