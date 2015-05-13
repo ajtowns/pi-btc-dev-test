@@ -1,0 +1,168 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Wed, 13 May 2015 15:24:34 +0000
+Subject: [Bitcoin-development] [BIP] Normalized Transaction IDs
+In-Reply-To: <CABsx9T1tPP_qrdyKPneZciwtWh2gho_d=qTCjnipo3463dJbpA@mail.gmail.com>
+References: <CALxbBHUnt7ToVK9reH6W6uT4HV=7NbxGHyNWWa-OEHg+Z1+qOg@mail.gmail.com>
+	<CAE-z3OWUGPqruBkuXggzdNkOn+L-SSg84Qd1_JZYBunmY+j=HQ@mail.gmail.com>
+	<CABsx9T1tPP_qrdyKPneZciwtWh2gho_d=qTCjnipo3463dJbpA@mail.gmail.com>
+Message-ID: <CALxbBHXjhgWrOdEa=_QLcvryZhP=tmdaCGnRwE9qNXJnVBmtjA@mail.gmail.com>
+
+Glad you like it, I was afraid that I missed something obvious :-)
+
+The points the two of you raised are valid and I will address them as soon
+as possible. I certainly will implement this proposal so that it becomes
+more concrete, but my C++ is a bit rusty and it'll take some time, so I
+wanted to gauge interest first.
+
+> This has the effect of doubling the size of the UTXO database.  At
+minimum, there needs to be a legacy txid to normalized txid map in the
+database.
+>
+> An addition to the BIP would eliminate the need for the 2nd index.  You
+could require a SPV proof of the spending transaction to be included with
+legacy transactions.  This would allow clients to verify that the
+normalized txid matched the legacy id.
+>
+>The OutPoint would be {LegacyId | SPV Proof to spending tx  | spending tx
+| index}.  This allows a legacy transaction to be upgraded.  OutPoints
+which use a normalized txid don't need the SPV proof.
+
+It does and I should have mentioned it in the draft, according to my
+calculations a mapping legacy ID -> normalized ID is about 256 MB in size,
+or at least it was at height 330'000, things might have changed a bit and
+I'll recompute that. I omitted the deprecation of legacy IDs on purpose
+since we don't know whether we will migrate completely or leave keep both
+options viable.
+
+> I think this needs more details before it gets a BIP number; for example,
+which opcodes does this affect, and how, exactly, does it affect them? Is
+the merkle root in the block header computed using normalized transaction
+ids or normalized ids?
+
+I think both IDs can be used in the merkle tree, since we lookup an ID in
+both indices we can use both to address them and we will find them either
+way.
+
+As for the opcodes I'll have to check, but I currently don't see how they
+could be affected. The OP_*SIG* codes calculate their own (more
+complicated) stripped transaction before hashing and checking the
+signature. The input of the stripped transaction simply contains whatever
+hash was used to reference the output, so we do not replace IDs during the
+operation. The stripped format used by OP_*SIG* operations does not have to
+adhere to the hashes used to reference a transaction in the input.
+
+> I think there might actually be two or three or four BIPs here:
+>
+>  + Overall "what is trying to be accomplished"
+>  + Changes to the OP_*SIG* opcodes
+>  + Changes to the bloom-filtering SPV support
+>  + ...eventually, hard fork rollout plan
+>
+> I also think that it is a good idea to have actually implemented a
+proposal before getting a BIP number. At least, I find that actually
+writing the code often turns up issues I hadn't considered when thinking
+about the problem at a high level. And I STRONGLY believe BIPs should be
+descriptive ("here is how this thing works") not proscriptive ("here's how
+I think we should all do it").
+
+We can certainly split the proposal should it get too large, for now it
+seems manageable, since opcodes are not affected. Bloom-filtering is
+resolved by adding the normalized transaction IDs and checking for both IDs
+in the filter. Since you mention bundling the change with other changes
+that require a hard-fork it might be a good idea to build a separate
+proposal for a generic hard-fork rollout mechanism.
+
+If there are no obvious roadblocks and the change seems generally a good
+thing I will implement it in Bitcoin Core :-)
+
+Regards,
+Chris
+
+On Wed, May 13, 2015 at 3:44 PM Gavin Andresen <gavinandresen at gmail.com>
+wrote:
+
+> I think this needs more details before it gets a BIP number; for example,
+> which opcodes does this affect, and how, exactly, does it affect them? Is
+> the merkle root in the block header computed using normalized transaction
+> ids or normalized ids?
+>
+> I think there might actually be two or three or four BIPs here:
+>
+>  + Overall "what is trying to be accomplished"
+>  + Changes to the OP_*SIG* opcodes
+>  + Changes to the bloom-filtering SPV support
+>  + ...eventually, hard fork rollout plan
+>
+> I also think that it is a good idea to have actually implemented a
+> proposal before getting a BIP number. At least, I find that actually
+> writing the code often turns up issues I hadn't considered when thinking
+> about the problem at a high level. And I STRONGLY believe BIPs should be
+> descriptive ("here is how this thing works") not proscriptive ("here's how
+> I think we should all do it").
+>
+> Finally: I like the idea of moving to a normalized txid. But it might make
+> sense to bundle that change with a bigger change to OP_CHECKSIG; see Greg
+> Maxwell's excellent talk about his current thoughts on that topic:
+>   https://www.youtube.com/watch?v=Gs9lJTRZCDc
+>
+>
+> On Wed, May 13, 2015 at 9:12 AM, Tier Nolan <tier.nolan at gmail.com> wrote:
+>
+>> I think this is a good way to handle things, but as you say, it is a hard
+>> fork.
+>>
+>> CHECKLOCKTIMEVERIFY covers many of the use cases, but it would be nice to
+>> fix malleability once and for all.
+>>
+>> This has the effect of doubling the size of the UTXO database.  At
+>> minimum, there needs to be a legacy txid to normalized txid map in the
+>> database.
+>>
+>> An addition to the BIP would eliminate the need for the 2nd index.  You
+>> could require a SPV proof of the spending transaction to be included with
+>> legacy transactions.  This would allow clients to verify that the
+>> normalized txid matched the legacy id.
+>>
+>> The OutPoint would be {LegacyId | SPV Proof to spending tx  | spending tx
+>> | index}.  This allows a legacy transaction to be upgraded.  OutPoints
+>> which use a normalized txid don't need the SPV proof.
+>>
+>> The hard fork would be followed by a transitional period, in which both
+>> txids could be used.  Afterwards, legacy transactions have to have the SPV
+>> proof added.  This means that old transactions with locktimes years in the
+>> future can be upgraded for spending, without nodes needing to maintain two
+>> indexes.
+>>
+>>
+>> ------------------------------------------------------------------------------
+>> One dashboard for servers and applications across Physical-Virtual-Cloud
+>> Widest out-of-the-box monitoring support with 50+ applications
+>> Performance metrics, stats and reports that give you Actionable Insights
+>> Deep dive visibility with transaction tracing using APM Insight.
+>> http://ad.doubleclick.net/ddm/clk/290420510;117567292;y
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>
+>>
+>
+>
+> --
+> --
+> Gavin Andresen
+>
+> ------------------------------------------------------------------------------
+> One dashboard for servers and applications across Physical-Virtual-Cloud
+> Widest out-of-the-box monitoring support with 50+ applications
+> Performance metrics, stats and reports that give you Actionable Insights
+> Deep dive visibility with transaction tracing using APM Insight.
+> http://ad.doubleclick.net/ddm/clk/290420510;117567292;y
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150513/4ba21be6/attachment.html>
