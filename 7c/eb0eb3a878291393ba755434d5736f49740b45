@@ -1,0 +1,88 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Wed, 13 May 2015 10:34:03 +0100
+Subject: [Bitcoin-development] Proposed additional options for pruned
+	nodes
+In-Reply-To: <5552DEFA.4080508@domob.eu>
+References: <CANJO25J1WRHtfQLVXUB2s_sjj39pTPWmixAcXNJ3t-5os8RPmQ@mail.gmail.com>
+	<CANJO25JTtfmfsOQYOzJeksJn3CoKE3W8iLGsRko-_xd4XhB3ZA@mail.gmail.com>
+	<CAJHLa0O5OxaX5g3u=dnCY6Lz_gK3QZgQEPNcWNVRD4JziwAmvg@mail.gmail.com>
+	<20150512171640.GA32606@savin.petertodd.org>
+	<CAE-z3OV3VdSoiTSfASwYHr1CjZSqio303sqGq_1Y9yaYgov2sw@mail.gmail.com>
+	<CAAS2fgRzGkcJbWbJmFN2-NSJGUcLdPKp0q7FjM0x7WDvHoRq=g@mail.gmail.com>
+	<5552DEFA.4080508@domob.eu>
+Message-ID: <CAE-z3OWiurTt=QqjeL+KN-7AdKKgW2tJc_Yu-eMzoM-GUZ=fAg@mail.gmail.com>
+
+On Wed, May 13, 2015 at 6:19 AM, Daniel Kraft <d at domob.eu> wrote:
+
+> 2) Divide the range of all blocks into intervals with exponentially
+> growing size.  I. e., something like this:
+>
+> 1, 1, 2, 2, 4, 4, 8, 8, 16, 16, ...
+>
+
+Interesting.  This can be combined with the system I suggested.
+
+A node broadcasts 3 pieces of information
+
+Seed (16 bits): This is the seed
+M_bits_lsb (1 bit):  Used to indicate M during a transition
+N (7 bits):  This is the count of the last range held (or partially held)
+
+M = 1 << M_bits
+
+M should be set to the lowest power of 2 greater than double the block
+chain height
+
+That gives M = 1 million at the moment.  During changing M, some nodes will
+be using the higher M and others will use the lower M.
+
+The M_bits_lsb field allows those to be distinguished.
+
+As the block height approaches 512k, nodes can begin to upgrade.  For a
+period around block 512k, some nodes could use M = 1 million and others
+could use M = 2 million.
+
+Assuming M is around 3 times higher than the block height, then the odds of
+a start being less than the block height is around 35%.  If they runs by
+25% each step, then that is approx a double for each hit.
+
+Size(n) = ((4 + (n & 0x3)) << (n >> 2)) * 2.5MB
+
+This gives an exponential increase, but groups of 4 are linearly
+interpolated.
+
+
+*Size(0) = 10 MB*
+Size(1) = 12.5MB
+Size(2) = 15 MB
+Size(3) = 17.5MB
+Size(4) = 20MB
+
+*Size(5) = 25MB*
+Size(6) = 30MB
+Size(7) = 35MB
+
+*Size(8) = 40MB*
+
+Start(n) = Hash(seed + n) mod M
+
+A node should store as much of its last start as possible.  Assuming start
+0, 5, and 8 were "hits" but the node had a max size of 60MB.  It can store
+0 and 5 and have 25MB left.  That isn't enough to store all of run 8, but
+it should store 25MB of the blocks in run 8 anyway.
+
+Size(255) = pow(2, 31) * 17.5MB = 35,840 TB
+
+Decreasing N only causes previously accepted runs to be invalidated.
+
+When a node approaches a transition point for N, it would select a block
+height within 25,000 of the transition point.  Once it reaches that block,
+it will begin downloading the new runs that it needs.  When updating, it
+can set N to zero.  This spreads out the upgrade (over around a year), with
+only a small number of nodes upgrading at any time.
+
+New nodes should use the higher M, if near a transition point (say within
+100,000).
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150513/94dd908e/attachment.html>
