@@ -1,0 +1,88 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Wed, 13 May 2015 11:40:34 -0700
+Subject: [Bitcoin-development] [BIP] Normalized Transaction IDs
+In-Reply-To: <CALxbBHU-0huAs_y3cZCfmKKAAq3LHut8DwdSGm+1Rym3pb9j2A@mail.gmail.com>
+References: <CALxbBHUnt7ToVK9reH6W6uT4HV=7NbxGHyNWWa-OEHg+Z1+qOg@mail.gmail.com>
+	<CAPg+sBggj382me1ATDx4SS9KHVfvX5KH7ZhLHN6B+2_a+Emw1Q@mail.gmail.com>
+	<CALxbBHU-0huAs_y3cZCfmKKAAq3LHut8DwdSGm+1Rym3pb9j2A@mail.gmail.com>
+Message-ID: <CAPg+sBjX=u4Osbzr+25w-5QzzhWGKryzW2K-0Xu3gS0eJXUUDw@mail.gmail.com>
+
+On Wed, May 13, 2015 at 11:04 AM, Christian Decker <
+decker.christian at gmail.com> wrote:
+
+> If the inputs to my transaction have been long confirmed I can be
+> reasonably safe in assuming that the transaction hash does not change
+> anymore. It's true that I have to be careful not to build on top of
+> transactions that use legacy references to transactions that are
+> unconfirmed or have few confirmations, however that does not invalidate the
+> utility of the normalized transaction IDs.
+>
+
+Sufficient confirmations help of course, but make systems like this less
+useful for more complex interactions where you have multiple unconfirmed
+transactions waiting on each other. I think being able to rely on this
+problem being solved unconditionally is what makes the proposal attractive.
+For the simple cases, see BIP62.
+
+I remember reading about the SIGHASH proposal somewhere. It feels really
+> hackish to me: It is a substantial change to the way signatures are
+> verified, I cannot really see how this is a softfork if clients that did
+> not update are unable to verify transactions using that SIGHASH Flag and it
+> is adding more data (the normalized hash) to the script, which has to be
+> stored as part of the transaction. It may be true that a node observing
+> changes in the input transactions of a transaction using this flag could
+> fix the problem, however it requires the node's intervention.
+>
+
+I think you misunderstand the idea. This is related, but orthogonal to the
+ideas about extended the sighash flags that have been discussed here before.
+
+All it's doing is adding a new CHECKSIG operator to script, which, in its
+internally used signature hash, 1) removes the scriptSigs from transactions
+before hashing 2) replaces the txids in txins by their ntxid. It does not
+add any data to transactions, and it is a softfork, because it only impacts
+scripts which actually use the new CHECKSIG operator. Wallets that don't
+support signing with this new operator would not give out addresses that
+use it.
+
+>
+> Compare that to the simple and clean solution in the proposal, which does
+> not add extra data to be stored, keeps the OP_*SIG* semantics as they are
+> and where once you sign a transaction it does not have to be monitored or
+> changed in order to be valid.
+>
+
+OP_*SIG* semantics don't change here either, we're just adding a superior
+opcode (which in most ways behaves the same as the existing operators). I
+agree with the advantage of not needing to monitor transactions afterwards
+for malleated inputs, but I think you underestimate the deployment costs.
+If you want to upgrade the world (eventually, after the old index is
+dropped, which is IMHO the only point where this proposal becomes superior
+to the alternatives) to this, you're changing *every single piece of
+Bitcoin software on the planet*. This is not just changing some validation
+rules that are opt-in to use, you're fundamentally changing how
+transactions refer to each other.
+
+Also, what do blocks commit to? Do you keep using the old transaction ids
+for this? Because if you don't, any relayer on the network can invalidate a
+block (and have the receiver mark it as invalid) by changing the txids. You
+need to somehow commit to the scriptSig data in blocks still so the POW of
+a block is invalidated by changing a scriptSig.
+
+There certainly are merits using the SIGHASH approach in the short term (it
+> does not require a hard fork), however I think the normalized transaction
+> ID is a cleaner and simpler long-term solution, even though it requires a
+> hard-fork.
+>
+
+It requires a hard fork, but more importantly, it requires the whole world
+to change their software (not just validation code) to effectively use it.
+That, plus large up-front deployment costs (doubling the cache size for
+every full node for the same propagation speed is not a small thing) which
+may not end up being effective.
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150513/dfcb3945/attachment.html>
