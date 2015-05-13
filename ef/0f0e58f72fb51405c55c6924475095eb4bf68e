@@ -1,0 +1,100 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Wed, 13 May 2015 21:27:14 +0100
+Subject: [Bitcoin-development] [BIP] Normalized Transaction IDs
+In-Reply-To: <CAE-z3OV1WEDEV+X7gNVx+qBMt4jpSHFKXm3dxUrUyBEJrCNDSQ@mail.gmail.com>
+References: <CALxbBHUnt7ToVK9reH6W6uT4HV=7NbxGHyNWWa-OEHg+Z1+qOg@mail.gmail.com>
+	<CAPg+sBggj382me1ATDx4SS9KHVfvX5KH7ZhLHN6B+2_a+Emw1Q@mail.gmail.com>
+	<CAE-z3OV1WEDEV+X7gNVx+qBMt4jpSHFKXm3dxUrUyBEJrCNDSQ@mail.gmail.com>
+Message-ID: <CAE-z3OU-fdTrKRkni4xmmY5uBVWS0KJ_2NVh6k1tcMSGTPp+4Q@mail.gmail.com>
+
+After more thought, I think I came up with a clearer description of the
+recursive version.
+
+The simple definition is that the hash for the new signature opcode should
+simply assume that the normalized txid system was used since the
+beginning.  All txids in the entire blockchain should be replaced with the
+"correct" values.
+
+This requires a full re-index of the blockchain.  You can't work out what
+the TXID-N of a transaction is without knowning the TXID-N of its parents,
+in order to do the replacement.
+
+The non-recursive version can only handle refunds one level deep.
+
+A:
+from: IN
+sigA: based on hash(...)
+
+B:
+from A
+sig: based on hash(from: TXID-N(A) | "")  // sig removed
+
+C:
+from B
+sig: based on hash(from: TXID-N(B) | "")  // sig removed
+
+If A is mutated before being added into the chain, then B can be modified
+to a valid transaction (B-new).
+
+A-mutated:
+from: IN
+sig_mutated: based on hash(...) with some mutation
+
+B has to be modified to B-new to make it valid.
+
+B-new:
+from A-mutated
+sig: based on hash(from: TXID-N(A-mutated), "")
+
+Since TXID-N(A-mutated) is equal to TXID-N(A), the signature from B is
+still valid.
+
+Howver, C-new cannot be created.
+
+C-new:
+from B-new
+sig: based on hash(from: TXID-N(B-new), "")
+
+TXID-N(B-new) is not the same as TXID-N(B).  Since the from field is not
+removed by the TXID-N operation, differences in that field mean that the
+TXIDs are difference.
+
+This means that the signature for C is not valid for C-new.
+
+The recursive version repairs this problem.
+
+Rather than simply delete the scriptSig from the transaction.  All txids
+must also be replaced with their TXID-N versions.
+
+Again, A is mutated before being added into the chain and B-new is produced.
+
+A-mutated:
+from: IN
+sig_mutated: based on hash(...) with some mutation
+TXID-N: TXID-N(A)
+
+B has to be modified to B-new to make it valid.
+
+B-new:
+from A-mutated
+sig: based on hash(from: TXID-N(A-mutated), "")
+TXID-N: TXID-N(B)
+
+Since TXID-N(A-mutated) is equal to TXID-N(A), the signature from B is
+still valid.
+
+Likewise the TXID-N(B-new) is equal to TXID-N(B).
+
+The from field is replaced by the TXID-N from A-mutated which is equal to
+TXID-N(A) and the sig is the same.
+
+C-new:
+from B-new
+sig: based on hash(from: TXID-N(B-new), "")
+
+The signature is still valid, since TXID-N(B-new) is the same as TXID-N(B).
+
+This means that multi-level refunds are possible.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150513/39c05fa9/attachment.html>
