@@ -1,0 +1,181 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Wed, 13 May 2015 12:40:54 -0700
+Subject: [Bitcoin-development] [BIP] Normalized Transaction IDs
+In-Reply-To: <CALxbBHWyhTTbRAdWbeGp+fdKRif=ghh7W6eP-vak7jHdot6uJA@mail.gmail.com>
+References: <CALxbBHUnt7ToVK9reH6W6uT4HV=7NbxGHyNWWa-OEHg+Z1+qOg@mail.gmail.com>
+	<CAPg+sBggj382me1ATDx4SS9KHVfvX5KH7ZhLHN6B+2_a+Emw1Q@mail.gmail.com>
+	<CALxbBHU-0huAs_y3cZCfmKKAAq3LHut8DwdSGm+1Rym3pb9j2A@mail.gmail.com>
+	<CAPg+sBjX=u4Osbzr+25w-5QzzhWGKryzW2K-0Xu3gS0eJXUUDw@mail.gmail.com>
+	<CALxbBHWyhTTbRAdWbeGp+fdKRif=ghh7W6eP-vak7jHdot6uJA@mail.gmail.com>
+Message-ID: <CAPg+sBh=KGLMyRmLfPujNuPnfmwpcsC2F8McypyTkCAcj=EaXw@mail.gmail.com>
+
+On Wed, May 13, 2015 at 12:14 PM, Christian Decker <
+decker.christian at gmail.com> wrote:
+
+>
+> On Wed, May 13, 2015 at 8:40 PM Pieter Wuille <pieter.wuille at gmail.com>
+> wrote:
+>
+>> On Wed, May 13, 2015 at 11:04 AM, Christian Decker <
+>> decker.christian at gmail.com> wrote:
+>>
+>>> If the inputs to my transaction have been long confirmed I can be
+>>> reasonably safe in assuming that the transaction hash does not change
+>>> anymore. It's true that I have to be careful not to build on top of
+>>> transactions that use legacy references to transactions that are
+>>> unconfirmed or have few confirmations, however that does not invalidate the
+>>> utility of the normalized transaction IDs.
+>>>
+>>
+>> Sufficient confirmations help of course, but make systems like this less
+>> useful for more complex interactions where you have multiple unconfirmed
+>> transactions waiting on each other. I think being able to rely on this
+>> problem being solved unconditionally is what makes the proposal attractive.
+>> For the simple cases, see BIP62.
+>>
+>
+> If we are building a long running contract using a complex chain of
+> transactions, or multiple transactions that depend on each other, there is
+> no point in ever using any malleable legacy transaction IDs and I would
+> simply stop cooperating if you tried. I don't think your argument applies.
+> If we build our contract using only normalized transaction IDs there is no
+> way of suffering any losses due to malleability.
+>
+
+That's correct as long as you stay within your contract, but you likely
+want compatibility with other software, without waiting an age before and
+after your contract settles on the chain. It's a weaker argument, though, I
+agree.
+
+I remember reading about the SIGHASH proposal somewhere. It feels really
+>>> hackish to me: It is a substantial change to the way signatures are
+>>> verified, I cannot really see how this is a softfork if clients that did
+>>> not update are unable to verify transactions using that SIGHASH Flag and it
+>>> is adding more data (the normalized hash) to the script, which has to be
+>>> stored as part of the transaction. It may be true that a node observing
+>>> changes in the input transactions of a transaction using this flag could
+>>> fix the problem, however it requires the node's intervention.
+>>>
+>>
+>> I think you misunderstand the idea. This is related, but orthogonal to
+>> the ideas about extended the sighash flags that have been discussed here
+>> before.
+>>
+>> All it's doing is adding a new CHECKSIG operator to script, which, in its
+>> internally used signature hash, 1) removes the scriptSigs from transactions
+>> before hashing 2) replaces the txids in txins by their ntxid. It does not
+>> add any data to transactions, and it is a softfork, because it only impacts
+>> scripts which actually use the new CHECKSIG operator. Wallets that don't
+>> support signing with this new operator would not give out addresses that
+>> use it.
+>>
+>
+> In that case I don't think I heard this proposal before, and I might be
+> missing out :-)
+> So if transaction B spends an output from A, then the input from B
+> contains the CHECKSIG operator telling the validating client to do what
+> exactly? It appears that it wants us to go and fetch A, normalize it, put
+> the normalized hash in the txIn of B and then continue the validation?
+> Wouldn't that also need a mapping from the normalized transaction ID to the
+> legacy transaction ID that was confirmed?
+>
+
+There would just be an OP_CHECKAWESOMESIG, which can do anything. It can
+identical to how OP_CHECKSIG works now, but has a changed algorithm for its
+signature hash algorithm. Optionally (and likely in practice, I think), it
+can do various other proposed improvements, like using Schnorr signatures,
+having a smaller signature encoding, supporting batch validation, have
+extended sighash flags, ...
+
+It wouldn't fetch A and normalize it; that's impossible as you would need
+to go fetch all of A's dependencies too and recurse until you hit the
+coinbases that produced them. Instead, your UTXO set contains the
+normalized txid for every normal txid (which adds around 26% to the UTXO
+set size now), but lookups in it remain only by txid.
+
+You don't need a ntxid->txid mapping, as transactions and blocks keep
+referring to transactions by txid. Only the OP_CHECKAWESOMESIG operator
+would do the conversion, and at most once.
+
+A client that did not update still would have no clue on how to handle
+> these transactions, since it simply does not understand the CHECKSIG
+> operator. If such a transaction ends up in a block I cannot even catch up
+> with the network since the transaction does not validate for me.
+>
+
+As for every softfork, it works by redefining an OP_NOP operator, so old
+nodes simply consider these checksigs unconditionally valid. That does mean
+you don't want to use them before the consensus rule is forked in
+(=enforced by a majority of the hashrate), and that you suffer from the
+temporary security reduction that an old full node is unknowingly reduced
+to SPV security for these opcodes. However, as full node wallet, this
+problem does not affect you, as your wallet would simply not give out
+addresses using the new opcode (and thus, wouldn't receive coins using it),
+unless it was upgraded to support it.
+
+Could you provide an example of how this works?
+>
+>
+>>
+>>> Compare that to the simple and clean solution in the proposal, which
+>>> does not add extra data to be stored, keeps the OP_*SIG* semantics as they
+>>> are and where once you sign a transaction it does not have to be monitored
+>>> or changed in order to be valid.
+>>>
+>>
+>> OP_*SIG* semantics don't change here either, we're just adding a superior
+>> opcode (which in most ways behaves the same as the existing operators). I
+>> agree with the advantage of not needing to monitor transactions afterwards
+>> for malleated inputs, but I think you underestimate the deployment costs.
+>> If you want to upgrade the world (eventually, after the old index is
+>> dropped, which is IMHO the only point where this proposal becomes superior
+>> to the alternatives) to this, you're changing *every single piece of
+>> Bitcoin software on the planet*. This is not just changing some validation
+>> rules that are opt-in to use, you're fundamentally changing how
+>> transactions refer to each other.
+>>
+>
+> As I mentioned before, this is a really long term strategy, hoping to get
+> the cleanest and easiest solution, so that we do not further complicate the
+> inner workings of Bitcoin. I don't think that it is completely out of
+> question to eventually upgrade to use normalized transactions, after all
+> the average lifespan of hardware is a few years tops.
+>
+
+Fair enough, I definitely agree the end result is superior in this case.
+
+Also, what do blocks commit to? Do you keep using the old transaction ids
+>> for this? Because if you don't, any relayer on the network can invalidate a
+>> block (and have the receiver mark it as invalid) by changing the txids. You
+>> need to somehow commit to the scriptSig data in blocks still so the POW of
+>> a block is invalidated by changing a scriptSig.
+>>
+>
+> How could I change the transaction IDs if I am a relayer? The miner
+> decides which flavor of IDs it is adding into its merkle tree, the block
+> hash locks in the choice. If we saw a transaction having a valid sigScript,
+> it does not matter how we reference it in the block.
+>
+
+If the merkle tree of a block only commits to a transaction's normalized
+hash, that means that the block hash does not change when the scriptSig is
+altered. So, anyone on the network can take a random valid block, and
+modify its scriptSig, and the block will become invalid _without_
+invalidating the block header. This means that nodes on the network will
+now classify that block header as having invalid transactions, and reject
+it. Not having the ability anymore to mark blocks as invalid opens
+significant DoS risks.
+
+So yes, seeing a block with valid scriptSigs is indeed a proof the
+transaction was legitimately authored. But the oppose is no longer true,
+and we need that. The correct solution is to either keep using the old full
+transaction ids in blocks, but ntxids everywhere else, or having some
+alternative means to commit to the scriptSigs inside the block (for example
+in the coinbase or using one of the more efficient block commitment
+proposals), and have that enforced as consensus rule.
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150513/1f2ceb1f/attachment.html>
