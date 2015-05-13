@@ -1,0 +1,128 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Wed, 13 May 2015 19:11:30 +0100
+Subject: [Bitcoin-development] [BIP] Normalized Transaction IDs
+In-Reply-To: <CAPg+sBggj382me1ATDx4SS9KHVfvX5KH7ZhLHN6B+2_a+Emw1Q@mail.gmail.com>
+References: <CALxbBHUnt7ToVK9reH6W6uT4HV=7NbxGHyNWWa-OEHg+Z1+qOg@mail.gmail.com>
+	<CAPg+sBggj382me1ATDx4SS9KHVfvX5KH7ZhLHN6B+2_a+Emw1Q@mail.gmail.com>
+Message-ID: <CAE-z3OV1WEDEV+X7gNVx+qBMt4jpSHFKXm3dxUrUyBEJrCNDSQ@mail.gmail.com>
+
+On Wed, May 13, 2015 at 6:14 PM, Pieter Wuille <pieter.wuille at gmail.com>
+wrote:
+
+> Normalized transaction ids are only effectively non-malleable when all
+> inputs they refer to are also non-malleable (or you can have malleability
+> in 2nd level dependencies), so I do not believe it makes sense to allow
+> mixed usage of the txids at all.
+>
+
+The txid or txid-norm is signed, so can't be changed after signing.
+
+The hard fork is to allow transactions to refer to their inputs by txid or
+txid-norm.  You pick one before signing.
+
+> They do not provide the actual benefit of guaranteed non-malleability
+> before it becomes disallowed to use the old mechanism.
+>
+A signed transaction cannot have its txid changed.  It is true that users
+of the system would have to use txid-norm.
+
+The basic refund transaction is as follows.
+
+ A creates TX1: "Pay w BTC to <B's public key> if signed by A & B"
+
+ A creates TX2: "Pay w BTC from TX1-norm to <A's public key>, locked 48
+hours in the future, signed by A"
+
+ A sends TX2 to B
+
+ B signs TX2 and returns to A
+
+A broadcasts TX1.  It is mutated before entering the chain to become
+TX1-mutated.
+
+A can still submit TX2 to the blockchain, since TX1 and TX1-mutated have
+the same txid-norm.
+
+>
+> That, together with the +- resource doubling needed for the UTXO set (as
+> earlier mentioned) and the fact that an alternative which is only a
+> softfork are available, makes this a bad idea IMHO.
+>
+> Unsure to what extent this has been presented on the mailinglist, but the
+> softfork idea is this:
+> * Transactions get 2 txids, one used to reference them (computed as
+> before), and one used in an (extended) sighash.
+> * The txins keep using the normal txid, so not structural changes to
+> Bitcoin.
+> * The ntxid is computed by replacing the scriptSigs in inputs by the empty
+> string, and by replacing the txids in txins by their corresponding ntxids.
+> * A new checksig operator is softforked in, which uses the ntxids in its
+> sighashes rather than the full txid.
+> * To support efficiently computing ntxids, every tx in the utxo set
+> (currently around 6M) stores the ntxid, but only supports lookup bu txid
+> still.
+>
+> This does result in a system where a changed dependency indeed invalidates
+> the spending transaction, but the fix is trivial and can be done without
+> access to the private key.
+>
+The problem with this is that 2 level malleability is not protected against.
+
+C spends B which spends A.
+
+A is mutated before it hits the chain.  The only change in A is in the
+scriptSig.
+
+B can be converted to B-new without breaking the signature.  This is
+because the only change to A was in the sciptSig, which is dropped when
+computing the txid-norm.
+
+B-new spends A-mutated.  B-new is different from B in a different place.
+The txid it uses to refer to the previous output is changed.
+
+The signed transaction C cannot be converted to a valid C-new.  The txid of
+the input points to B.  It is updated to point at B-new.  B-new and B don't
+have the same txid-norm, since the change is outside the scriptSig.  This
+means that the signature for C is invalid.
+
+The txid replacements should be done recursively.  All input txids should
+be replaced by txid-norms when computing the txid-norm for the
+transaction.  I think this repairs the problem with only allowing one level?
+
+Computing txid-norm:
+
+- replace all txids in inputs with txid-norms of those transactions
+- replace all input scriptSigs with empty scripts
+- transaction hash is txid-norm for that transaction
+
+The same situation as above is not fatal now.
+
+C spends B which spends A.
+
+A is mutated before it hits the chain.  The only change in A is in the
+scriptSig.
+
+B can be converted to B-new without breaking the signature.  This is
+because the only change to A was in the sciptSig, which is dropped when
+computing the txid-norm (as before).
+
+B-new spends A mutated.  B-new is different from B in for the previous
+inputs.
+
+The input for B-new points to A-mutated.  When computing the txid-norm,
+that would be replaced with the txid-norm for A.
+
+Similarly, the input for B points to A and that would have been replaced
+with the txid-norm for A.
+
+This means that B and B-new have the same txid-norm.
+
+The signed transaction C can be converted to a valid C-new.  The txid of
+the input points to B.  It is updated to point at B-new.  B-new and B now
+have have the same txid-norm and so C is valid.
+
+I think this reasoning is valid, but probably needs writing out actual
+serializations.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150513/b02d5c75/attachment.html>
