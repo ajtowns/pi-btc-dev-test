@@ -1,0 +1,135 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Wed, 13 May 2015 17:18:24 +0100
+Subject: [Bitcoin-development] [BIP] Normalized Transaction IDs
+In-Reply-To: <CALxbBHXjhgWrOdEa=_QLcvryZhP=tmdaCGnRwE9qNXJnVBmtjA@mail.gmail.com>
+References: <CALxbBHUnt7ToVK9reH6W6uT4HV=7NbxGHyNWWa-OEHg+Z1+qOg@mail.gmail.com>
+	<CAE-z3OWUGPqruBkuXggzdNkOn+L-SSg84Qd1_JZYBunmY+j=HQ@mail.gmail.com>
+	<CABsx9T1tPP_qrdyKPneZciwtWh2gho_d=qTCjnipo3463dJbpA@mail.gmail.com>
+	<CALxbBHXjhgWrOdEa=_QLcvryZhP=tmdaCGnRwE9qNXJnVBmtjA@mail.gmail.com>
+Message-ID: <CAE-z3OXumLSS9phiw6x6MEv+p6My+HtgT9WaKQheKLASBytAJQ@mail.gmail.com>
+
+On Wed, May 13, 2015 at 4:24 PM, Christian Decker <
+decker.christian at gmail.com> wrote
+
+> It does and I should have mentioned it in the draft, according to my
+> calculations a mapping legacy ID -> normalized ID is about 256 MB in size,
+> or at least it was at height 330'000, things might have changed a bit and
+> I'll recompute that. I omitted the deprecation of legacy IDs on purpose
+> since we don't know whether we will migrate completely or leave keep both
+> options viable.
+>
+
+There are around 20 million UTXOs.  At 2*32 bytes per entry, that is more
+than 1GB.  There are more UTXOs than transactions, but 256MB seems a little
+low.
+
+I think both IDs can be used in the merkle tree, since we lookup an ID in
+> both indices we can use both to address them and we will find them either
+> way.
+>
+
+The id that is used to sign should be used in the merkle tree.  The hard
+fork should simply be to allow transactions that use the normalized
+transaction hash.
+
+
+> As for the opcodes I'll have to check, but I currently don't see how they
+> could be affected.
+>
+
+Agreed, the transaction is simply changed and all the standard rules apply.
+
+
+> We can certainly split the proposal should it get too large, for now it
+> seems manageable, since opcodes are not affected.
+>
+
+Right it is just a database update.  The undo info also needs to be changed
+so that both txids are included.
+
+
+> Bloom-filtering is resolved by adding the normalized transaction IDs and
+> checking for both IDs in the filter.
+>
+
+Yeah, if a transaction spends with a legacy txid, it should still match if
+the normalized txid is included in the filter.
+
+> Since you mention bundling the change with other changes that require a
+hard-fork it might be a good idea to build a separate proposal for a
+generic hard-fork rollout mechanism.
+
+That would be useful.  On the other hand, we don't want to make them to
+easy.
+
+I think this is a good choice for a hard fork test, since it is
+uncontroversial.  With a time machine, it would have been done this way at
+the start.
+
+What about the following:
+
+The reference client is updated so that it uses version 2 transactions by
+default (but it can be changed by user).  A pop-up could appear for the GUI.
+
+There is no other change.
+
+All transactions in blocks 375000 to 385000 are considered votes and
+weighted by bitcoin days destroyed (max 60 days).
+
+If > 75% of the transactions by weight are version 2, then the community
+are considered to support the hard fork.
+
+There would need to be a way to protect against miners censoring
+transactions/votes.
+
+Users could submit their transactions directly to a p2p tallying system.
+The coin would be aged based on the age in block 375000 unless included in
+the blockchain.  These votes don't need to be ordered and multiple votes
+for the same coin would only count once.
+
+In fact, votes could just be based on holding in block X.
+
+This is an opinion poll rather than a referendum though.
+
+Assuming support of the community, the hard fork can then proceed in a
+similar way to the way a soft fork does.
+
+Devs update the reference client to produce version 4 blocks and version 3
+transactions.  Miners could watch version 3 transactions to gauge user
+interest and use that to help decide if they should update.
+
+If 750 of the last 1000 blocks are version 4 or higher, reject blocks with
+transactions of less than version 3 in version 4 blocks
+
+    This means that legacy clients will be slow to confirm their
+transactions, since their transactions cannot go into version 4 blocks.
+This is encouragement to upgrade.
+
+If 950 of the last 1000 blocks are version 4 or higher, reject blocks with
+transactions of less than version 3 in all blocks
+
+    This means that legacy nodes can no longer send transactions but can
+still receive.  Transactions received from other legacy nodes would remain
+unconfirmed.
+
+If 990 of the last 1000 blocks are version 4 or higher, reject version 3 or
+lower blocks
+
+    This is the point of no return.  Rejecting version 3 blocks means that
+the next rule is guaranteed to activate within the next 2016 blocks.
+Legacy nodes remain on the main chain, but cannot send.  Miners mining with
+legacy clients are (soft) forked off the chain.
+
+If 1000 of the last 1000 blocks are version 4 or higher and the difficulty
+retarget has just happened, activate hard fork rule
+
+    This hard forks legacy nodes off the chain.  99% of miners support this
+change and users have been encouraged to update.  The block rate for the
+non-forked chain is ast most 1% of normal.  Blocks happen every 16 hours.
+By timing activation after a difficulty retarget, it makes it harder for
+the other fork to adapt to the reduced hash rate.
+
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150513/11fbf72e/attachment.html>
