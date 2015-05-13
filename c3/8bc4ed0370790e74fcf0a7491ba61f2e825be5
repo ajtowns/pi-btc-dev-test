@@ -1,0 +1,95 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Wed, 13 May 2015 10:14:07 -0700
+Subject: [Bitcoin-development] [BIP] Normalized Transaction IDs
+In-Reply-To: <CALxbBHUnt7ToVK9reH6W6uT4HV=7NbxGHyNWWa-OEHg+Z1+qOg@mail.gmail.com>
+References: <CALxbBHUnt7ToVK9reH6W6uT4HV=7NbxGHyNWWa-OEHg+Z1+qOg@mail.gmail.com>
+Message-ID: <CAPg+sBggj382me1ATDx4SS9KHVfvX5KH7ZhLHN6B+2_a+Emw1Q@mail.gmail.com>
+
+Normalized transaction ids are only effectively non-malleable when all
+inputs they refer to are also non-malleable (or you can have malleability
+in 2nd level dependencies), so I do not believe it makes sense to allow
+mixed usage of the txids at all. They do not provide the actual benefit of
+guaranteed non-malleability before it becomes disallowed to use the old
+mechanism. That, together with the +- resource doubling needed for the UTXO
+set (as earlier mentioned) and the fact that an alternative which is only a
+softfork are available, makes this a bad idea IMHO.
+
+Unsure to what extent this has been presented on the mailinglist, but the
+softfork idea is this:
+* Transactions get 2 txids, one used to reference them (computed as
+before), and one used in an (extended) sighash.
+* The txins keep using the normal txid, so not structural changes to
+Bitcoin.
+* The ntxid is computed by replacing the scriptSigs in inputs by the empty
+string, and by replacing the txids in txins by their corresponding ntxids.
+* A new checksig operator is softforked in, which uses the ntxids in its
+sighashes rather than the full txid.
+* To support efficiently computing ntxids, every tx in the utxo set
+(currently around 6M) stores the ntxid, but only supports lookup bu txid
+still.
+
+This does result in a system where a changed dependency indeed invalidates
+the spending transaction, but the fix is trivial and can be done without
+access to the private key.
+On May 13, 2015 5:50 AM, "Christian Decker" <decker.christian at gmail.com>
+wrote:
+
+> Hi All,
+>
+> I'd like to propose a BIP to normalize transaction IDs in order to address
+> transaction malleability and facilitate higher level protocols.
+>
+> The normalized transaction ID is an alias used in parallel to the current
+> (legacy) transaction IDs to address outputs in transactions. It is
+> calculated by removing (zeroing) the scriptSig before computing the hash,
+> which ensures that only data whose integrity is also guaranteed by the
+> signatures influences the hash. Thus if anything causes the normalized ID
+> to change it automatically invalidates the signature. When validating a
+> client supporting this BIP would use both the normalized tx ID as well as
+> the legacy tx ID when validating transactions.
+>
+> The detailed writeup can be found here:
+> https://github.com/cdecker/bips/blob/normalized-txid/bip-00nn.mediawiki.
+>
+> @gmaxwell: I'd like to request a BIP number, unless there is something
+> really wrong with the proposal.
+>
+> In addition to being a simple alternative that solves transaction
+> malleability it also hugely simplifies higher level protocols. We can now
+> use template transactions upon which sequences of transactions can be built
+> before signing them.
+>
+> I hesitated quite a while to propose it since it does require a hardfork
+> (old clients would not find the prevTx identified by the normalized
+> transaction ID and deem the spending transaction invalid), but it seems
+> that hardforks are no longer the dreaded boogeyman nobody talks about.
+> I left out the details of how the hardfork is to be done, as it does not
+> really matter and we may have a good mechanism to apply a bunch of
+> hardforks concurrently in the future.
+>
+> I'm sure it'll take time to implement and upgrade, but I think it would be
+> a nice addition to the functionality and would solve a long standing
+> problem :-)
+>
+> Please let me know what you think, the proposal is definitely not set in
+> stone at this point and I'm sure we can improve it further.
+>
+> Regards,
+> Christian
+>
+>
+> ------------------------------------------------------------------------------
+> One dashboard for servers and applications across Physical-Virtual-Cloud
+> Widest out-of-the-box monitoring support with 50+ applications
+> Performance metrics, stats and reports that give you Actionable Insights
+> Deep dive visibility with transaction tracing using APM Insight.
+> http://ad.doubleclick.net/ddm/clk/290420510;117567292;y
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150513/bb0fcadf/attachment.html>
