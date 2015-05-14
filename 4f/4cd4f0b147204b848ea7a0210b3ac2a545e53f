@@ -1,0 +1,160 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Thu, 14 May 2015 11:26:44 +0000
+Subject: [Bitcoin-development] [BIP] Normalized Transaction IDs
+In-Reply-To: <CALxbBHV_2NHAvS5GXCsqBR0gO9zZe55kz52geMhG+8=EkKN2KA@mail.gmail.com>
+References: <CALxbBHUnt7ToVK9reH6W6uT4HV=7NbxGHyNWWa-OEHg+Z1+qOg@mail.gmail.com>
+	<CAPg+sBggj382me1ATDx4SS9KHVfvX5KH7ZhLHN6B+2_a+Emw1Q@mail.gmail.com>
+	<CAE-z3OV1WEDEV+X7gNVx+qBMt4jpSHFKXm3dxUrUyBEJrCNDSQ@mail.gmail.com>
+	<CAE-z3OU-fdTrKRkni4xmmY5uBVWS0KJ_2NVh6k1tcMSGTPp+4Q@mail.gmail.com>
+	<CAPg+sBixpKQfsazHyhiF60HYTk9_U0aBAqU=4P+R+HDMA2jWKg@mail.gmail.com>
+	<CAE-z3OU7nCJSGk-Mx_2gmpUjQ1gXeSNDiWfhPe-5rj5bG5ArWQ@mail.gmail.com>
+	<CAPg+sBjiaqsLEMz8Qskz1iWOf3VBgAnX2749uHzeyFf_seLEHQ@mail.gmail.com>
+	<CALxbBHV_2NHAvS5GXCsqBR0gO9zZe55kz52geMhG+8=EkKN2KA@mail.gmail.com>
+Message-ID: <CALxbBHX-Kkfp0wffH4VKCAp6Zp=JkV99m7Yo8yk9AvSS5bUp+g@mail.gmail.com>
+
+Sorry about that, sometimes I hate keyboard shortcuts :-)
+
+
+Ok, I think I got the OP_CHECKAWESOMESIG proposal, transactions keep
+referencing using hashes of complete transactions (including signatures),
+while the OP_CHECKAWESOMESIG looks up the previous transaction (which we
+already need to do anyway in order to insert the prevOut pubkeyScript),
+normalizes the prevout and calculates its normalized transaction ID. It
+then inserts the normalized transaction IDs in the OutPoint before
+calculating its own hash which is then signed. Is that correct so far?
+
+Let me try to summarize the discussion so far:
+
+I think we have consensus that transaction malleability needs to be
+addressed, and normalized transaction IDs seem to be the way to go forward.
+
+The discussion now is how to use normalized transaction IDs and we have two
+approaches to implement them:
+
+
+   - OP_CHECKAWESOMESIG which continues to use the current hashes to
+   reference a specific signed instance of a class of semantically identical
+   transactions. Internally only the semantic class is enforced. Transactions
+   can be fixed to reference the correct signed instance if the transaction
+   has been changed along the way.
+   - The second proposal advocates using the normalized transaction IDs
+   directly in the transactions, requiring no further intervention to fix an
+   eventually malleated transaction.
+
+Both approaches have their own advantages and problems:
+
+OP_CHECKAWESOMESIG is a soft-fork which makes it somewhat less problematic
+to roll-out and does not break existing software. The normalized
+transaction ID can be computed on the fly (possibly increasing lookup
+times) or stored alongside the UTXO (increasing storage needs). If the
+normalized transaction IDs really need to be recomputed down to the
+coinbase then the increased storage is the only option, and would add 32
+byte to every transaction metadata in the UTXO.
+
+My proposal is harder to migrate to, as it requires a hardfork, and will
+require more storage (64 byte raw data for a normalized to legacy
+transaction ID) for every transaction in the UTXO set. At 6 million
+distinct transactions which unspent outputs this boils down to 384 MB
+(though this may change in future by introducing an aggregation strategy or
+fragment further). Some of that space may be reclaimed. There is absolutely
+no interaction required to fix up transactions if a dependency has been
+malleated, since we address a semantic class, not the specific instance. We
+limit the use of normalized transaction IDs to the OutPoint in
+transactions, since there we want to reference the semantic class not the
+actual signed instance. At protocol message level (inv, getdata) and blocks
+we continue to use the legacy ID. This is not as nice as having one ID for
+every transaction that is used everywhere.
+
+Both solutions solve malleability, just with different tradeoffs.
+
+I don't see them as mutually exclusive, if we adopt the OP_CHECKAWESOMESIG
+as short term fix, that can be rolled out and applied, then my proposal can
+be seen as long-term goal that is semantically cleaner and easier to
+implement.
+
+Personally I think hard-forks shouldn't be the dreaded boogeyman everybody
+makes them out to be, we have never really tested rolling out a hardfork
+and they might just turn out to be possible. I don't thing we loose
+anything by attempting this, except maybe reduce the urgency to apply some
+perfect future thing.
+
+Regards,
+Christian
+
+On Thu, May 14, 2015 at 1:01 PM, Christian Decker <
+decker.christian at gmail.com> wrote:
+
+> Ok, I think I got the OP_CHECKAWESOMESIG proposal, transactions keep
+> referencing using hashes of complete transactions (including signatures),
+> while the OP_CHECKAWESOMESIG looks up the previous transaction (which we
+> already need to do anyway in order to insert the prevOut pubkeyScript),
+> normalizes the prevout and calculates its normalized transaction ID. It
+> then inserts the normalized transaction IDs in the OutPoint before
+> calculating its own hash which is then signed. Is that correct so far?
+>
+> Let me try to summarize the discussion so far:
+>
+> I think we have consensus that transaction malleability needs to be
+> addressed, and normalized transaction IDs seem to be the way to go forward.
+>
+> The discussion now is how to use normalized transaction IDs and we have
+> two approaches to implement them:
+>
+>    - OP_CHECKAWESOMESIG which continues to use the current hashes to
+>    reference a specific signed instance of a class of semantically identical
+>    transactions. Internally only the semantic class is enforced. Transactions
+>    can be fixed to reference the correct signed instance if the transaction
+>    has been changed along the way.is a softfork using the "if I don't
+>    know this opcode the TX is automatically valid" trick
+>
+>
+> On Thu, May 14, 2015 at 2:40 AM Pieter Wuille <pieter.wuille at gmail.com>
+> wrote:
+>
+>> On Wed, May 13, 2015 at 1:32 PM, Tier Nolan <tier.nolan at gmail.com> wrote:
+>>
+>>>
+>>> On Wed, May 13, 2015 at 9:31 PM, Pieter Wuille <pieter.wuille at gmail.com>
+>>> wrote:
+>>>
+>>>>
+>>>> This was what I was suggesting all along, sorry if I wasn't clear.
+>>>>
+>>>> That's great.  So, basically the multi-level refund problem is solved
+>>> by this?
+>>>
+>>
+>> Yes. So to be clear, I think there are 2 desirable end-goal proposals
+>> (ignoring difficulty of changing things for a minute):
+>>
+>> * Transactions and blocks keep referring to other transactions by full
+>> txid, but signature hashes are computed off normalized txids (which are
+>> recursively defined to use normalized txids all the way back to coinbases).
+>> Is this what you are suggesting now as well?
+>>
+>> * Blocks commit to full transaction data, but transactions and signature
+>> hashes use normalized txids.
+>>
+>> The benefit of the latter solution is that it doesn't need "fixing up"
+>> transactions whose inputs have been malleated, but comes at the cost of
+>> doing a very invasive hard fork.
+>>
+>> --
+>> Pieter
+>>
+>>
+>> ------------------------------------------------------------------------------
+>> One dashboard for servers and applications across Physical-Virtual-Cloud
+>> Widest out-of-the-box monitoring support with 50+ applications
+>> Performance metrics, stats and reports that give you Actionable Insights
+>> Deep dive visibility with transaction tracing using APM Insight.
+>> http://ad.doubleclick.net/ddm/clk/290420510;117567292;y
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150514/acae1f4f/attachment.html>
