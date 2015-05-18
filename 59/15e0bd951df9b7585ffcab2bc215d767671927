@@ -1,0 +1,86 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Mon, 18 May 2015 11:12:11 +0930
+Subject: [Bitcoin-development] Proposed alternatives to the 20MB step
+	function
+In-Reply-To: <CAE-z3OXue5E0TzRhx6y8eTOTy=EARsrGwJ1qv8Kv1nbCsjVE_g@mail.gmail.com>
+References: <16096345.A1MpJQQkRW@crushinator>
+	<CAOG=w-szbLgc1jLpkE_uMa3bkFTi-RiBEaQ6Y-u5aKLBC2HvUg@mail.gmail.com>
+	<CAAS2fgQRS7w7RRNXVK_+=4CQ7=AWxWQQ7+Tf4tNUPTTZOf7rEQ@mail.gmail.com>
+	<CAE-z3OUzYZDvsOYEDT229vnvNBa9ntW+86O3uA-K5-KaneMF_g@mail.gmail.com>
+	<87a8x5l6bt.fsf@rustcorp.com.au>
+	<CAE-z3OXue5E0TzRhx6y8eTOTy=EARsrGwJ1qv8Kv1nbCsjVE_g@mail.gmail.com>
+Message-ID: <878ucmslu4.fsf@rustcorp.com.au>
+
+Tier Nolan <tier.nolan at gmail.com> writes:
+> On Sat, May 16, 2015 at 1:22 AM, Rusty Russell <rusty at rustcorp.com.au>
+> wrote:
+>> 3) ... or maybe not, if any consumed UTXO was generated before the soft
+>>    fork (reducing Tier's perverse incentive).
+>
+> The incentive problem can be fixed by excluding UTXOs from blocks before a
+> certain count.
+>
+> UTXOs in blocks before 375000 don't count.
+
+OK.  Be nice if these were cleaned up, but I guess it's a sunk cost.
+
+>> 4) How do we measure UTXO size?  There are some constant-ish things in
+>>    there (eg. txid as key, height, outnum, amount).  Maybe just add 32
+>>    to scriptlen?
+>>
+>
+> They can be stored as a fixed digest.  That can be any size, depending on
+> security requirements.
+>
+> Gmaxwell's cost proposal is 3-4 bytes per UTXO change.  It isn't
+> 4*UXTO.size - 3*UTXO.size
+
+He said "utxo_created_size" not "utxo_created" so I assumed scriptlen?
+
+> It is only a small nudge.  With only 10% of the block space to play with it
+> can't be massive.
+
+But you made that number up?  The soft cap and hard byte limit are
+different beasts, so there's no need for soft cost cap < hard byte
+limit.
+
+> This requires that transactions include scriptPubKey information when
+> broadcasting them.
+
+Brilliant!  I completely missed that possibility...
+
+>> 5) Add a CHECKSIG cost.  Naively, since we allow 20,000 CHECKSIGs and
+>>    1MB blocks, that implies a cost of 50 bytes per CHECKSIG (but counted
+>>    correctly, unlike now).
+>>
+>> This last one implies that the initial cost limit would be 2M, but in
+>> practice probably somewhere in the middle.
+>>
+>>   tx_cost = 50*num-CHECKSIG
+>>                 + tx_bytes
+>>                 + 4*utxo_created_size
+>>                 - 3*utxo_consumed_size
+>>
+>> > A 250 byte transaction with 2 inputs and 2 outputs would have an adjusted
+>> > size of 252 bytes.
+>>
+>> Now cost == 352.
+>
+> That is to large a cost for a 10% block change.  It could be included in
+> the block size hard fork though.
+
+I don't think so.  Again, you're mixing units.
+
+> I think have one combined "cost" for
+> transactions is good.  It means much fewer spread out transaction checks.
+> The code for the cost formula would be in one place.
+
+Agreed!  Unfortunately there'll always be 2, because we really do want a
+hard byte limit: it's total tx bytes which brings most concerns about
+centralization.  But ideally it'll be so rarely hit that it can be ~
+ignored (and certainly not optimized for).
+
+Cheers,
+Rusty.
+
+
