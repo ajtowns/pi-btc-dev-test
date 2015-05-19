@@ -1,0 +1,77 @@
+From: stephencalebmorse@gmail.com (Stephen Morse)
+Date: Tue, 19 May 2015 08:48:20 -0400
+Subject: [Bitcoin-development] [BIP] Normalized Transaction IDs
+In-Reply-To: <CALxbBHUvtoc25Eyh1KF=bmG8SbZd_UpO1QeUVLbicNqJQPHBLQ@mail.gmail.com>
+References: <CALxbBHUnt7ToVK9reH6W6uT4HV=7NbxGHyNWWa-OEHg+Z1+qOg@mail.gmail.com>
+	<5555C26F.7080706@sky-ip.org>
+	<AC0B3BAC-0934-46A3-B29A-F74238616F72@gmail.com>
+	<CALxbBHXC=jc+7Vj-3-VT7kj-+V6ORdeJPr_G9ymOcJyFZ3hy=A@mail.gmail.com>
+	<CAE-z3OXC-uCYQmhGJd2ZVfLrEbAZVhEz0ejkbwmcRgK3kbjSrg@mail.gmail.com>
+	<CALxbBHUvtoc25Eyh1KF=bmG8SbZd_UpO1QeUVLbicNqJQPHBLQ@mail.gmail.com>
+Message-ID: <CABHVRKSSCX8VS=T-bim_rw6VMJP-hnUi8AzLHyDM57KQi2zn+w@mail.gmail.com>
+
+>
+> An option would be that the height is included in the scriptSig for all
+>> transactions, but for non-coinbase transctions, the height used is zero.
+>>
+> No need to add an extra field to the transaction just to include the
+> height. We can just add a rule that the height specified in the scriptSig
+> in coinbase transactions (and only coinbase transactions) is copied into
+> the locktime of the transaction before computing the normalized transaction
+> ID and leave the locktime untouched for all normal transactions
+>
+
+No need to replace lock times (or any other part of the transaction) at
+all. If you have to, just serialize the height right before serializing the
+transaction (into the same buffer). And you could pre-serialize 0 instead
+of the height for all non-coinbase transactions. I don't really see what
+that gets you, though, because the 0 is not really doing anything.
+
+But, I don't see any reason you have to mess with the serialization this
+much at all. Just do:
+
+uint256 normalized_txid(CTransaction tx)
+{
+  // Coinbase transactions are already normalized
+  if (!tx.IsCoinbase())
+  {
+    foreach(CTxIn in : tx.vin)
+    {
+      if (!ReplacePrevoutHashWithNormalizedHash(in.prevout))
+        throw NormalizationError("Could not lookup prevout");
+      in.scriptSig.clear();
+    }
+  }
+
+  // Serialize
+  CHashWriter ss(SER_GETHASH, 0);
+  ss << tx;
+  return ss.GetHash();
+}
+
+An alternative could be (although I like the above option better):
+
+uint256 normalized_txid(CTransaction tx, int nHeight)
+{
+  foreach(CTxIn in : tx.vin)
+  {
+    if (!in.prevout.IsNull() &&
+!ReplacePrevoutHashWithNormalizedHash(in.prevout))
+      throw NormalizationError("Could not lookup prevout");
+    in.scriptSig.clear();
+  }
+
+  // Serialize
+  CHashWriter ss(SER_GETHASH, 0);
+
+if (tx.IsCoinbase())
+ss << nHeight;
+// or:
+// ss << (tx.IsCoinbase() ? nHeight : 0);
+
+  ss << tx;
+  return ss.GetHash();
+}
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150519/308eb60e/attachment.html>
