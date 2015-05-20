@@ -1,0 +1,154 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 20 May 2015 02:26:11 -0400
+Subject: [Bitcoin-development] ChainDB Whitepaper
+In-Reply-To: <555B613D.8030208@bitpay.com>
+References: <555B613D.8030208@bitpay.com>
+Message-ID: <20150520062611.GA11204@muck>
+
+On Tue, May 19, 2015 at 09:13:49AM -0700, Eric Martindale wrote:
+> 
+> Hello all,
+> 
+> BitPay has just released our first whitepaper on ChainDB, a new
+> peer-to-peer database system backed by the Bitcoin blockchain.  This
+> paper outlines our intended consensus mechanism, proof of fee.
+> 
+> Please take a look at the paper here: https://bitpay.com/chaindb.pdf
+> 
+> We are seeking comments and feedback on this mechanism.  I am happy to
+> answer any questions about the paper itself.
+
+I'm quite disappointed to see that you still haven't fixed the problem
+that transaction fees prove nothing at all. Among other things, you risk
+creating a system where miners can much more cheaply sell the service of
+including the requisite "high-fee" transactions in blocks they mine for
+the much lower cost of the risk of the blocks being orphaned and other
+miners getting those fees. In particular, the more hash power you have,
+the lower that cost is - exactly the opposite kind of incentive than we
+want. As described this is an extremely dangerous project, both to its
+users, and Bitcoin as a whole; in general the idea of anything that
+tries to use transaction fees as "proof" is highly dangerous.
+
+You should implement this with direct provably unspendable OP_RETURN
+sacrifices for now, and perhaps in the future, sacrifice to
+any-one-can-spend-in-the-future scriptPubKeys once CLTV is deployed.  If
+you do this the interval needs to be long enough to robustly get past
+business cycles - e.g. 1 year - to avoid the well-known problem that
+large miners can sell these proofs cheaply.
+
+
+Other comments:
+
+* Bitcoin does not securely store data; Bitcoin proves the publication of
+data.(1) This can be seen by the recently added(2) pruning functionality
+which allows full nodes to discard all blockchain data other than the
+UTXO set and some number of recent blocks. (to handle reorganizations
+efficiently) Additionally even the UTXO set can be discarded in
+principle if my TXO commitments proposal is implemented.  Between both
+proposals there's no guarantee that data published to the Bitcoin
+blockchain will be stored by anyone at all, let alone be readily made
+available.
+
+* The paper lacks a clear statement about what exactly the ChainDB
+proposal is attempting to accomplish, and what ChainDB attempts to
+prevent from happening. Are we trying to prove that data existed before
+a certain time? (timestamping) Are we trying to prove that data reached
+a certain audience? (proof-of-publication) Are we trying to come to
+consensus on some type of mapping? (key:value consensus) What are we
+assuming from miners? Might miners attempt to censor ChainDB
+transactions? For instance you say "In the second rule, applying an
+unpredictable order for selecting the best chain mitigates certain
+attacks by Bitcoin miners" but you don't say what those attacks are.  A
+key question related to that is whether or not the ChainDB chains are or
+are not private, both recent and historical history.
+
+* "A comprehensive ordering of all transactions also makes it possible
+to select a block even when some blocks are being withheld." Keep in
+mind that what has been "withheld" depends on what blocks you have
+access too; from the point of view of one ChainDB user the withheld
+blocks may be the blocks another ChainDB user has access too and
+vice-versa. Again, the Bitcoin consensus is a way to prove publication
+of data with strong sybil attack detection - the cost to sybil attack
+ChainDB will be quite low in many situations as miners have the
+priviledged position of having very low costs to include a transaction.
+
+* "To minimize the risk that a builder loses bitcoin in the bidding
+process, builders coordinate to select a common UTXO that all bid
+transactions use as an input. In so doing, bid transactions are created
+such that they deliberately conflict." This is a clever idea; I believe
+Jeff Garzik deserves credit for this. (his auction proposal) Note too
+that with SIGHASH_ANYONECANPAY the consensus scheme could be arranged
+such that anyone can also add additional funds to a proposed consensus
+that they agree with. Better yet, with SIGHASH_SINGLE by "stacking"
+additional inputs to the transaction you would ensure all bids end up in
+the same transaction, simplifying the consensus logic. (otherwise the
+total bid is the sum of potentially multiple transactions sacrificing
+funds in support of the same consensus)
+
+* Speaking of, proof-of-sacrifice or proof-of-burn is the common term
+used for a cryptographically provable expenditure. (e.g. for a fidelity
+bond(3)) Although in this case, it's not a true sacrifice as fee-paying
+transactions by themselves can be trivially collected by miners.
+
+* "And Factom [8] has advanced the concept of using the Bitcoin block
+chain directly for timestamping data" Factom goes well beyond simply
+timestamping data. (something my much earlier OpenTimestamps project did
+among many others) Rather Factom acts as a proof-of-publication layer
+that allows the proving of the negative.(4)
+
+
+Zookeyv
+-------
+
+ChainDB has a lot of similarities with my Zookeyv(5) proposal, as well
+as some key differences. To recap the idea was to come to consensus on a
+key:value mapping, such that there was a well-defined cost to change any
+particular k:v pair, and such that 'uncontroversial' key:value pairs
+would become more expensive to change over time as latter k:v pairs
+would add to the cost to change of previous ones.
+
+My original proposal was create a DAG of sacrifices, each committing a
+key:value pair, and one or more previous nodes. (the case where n=1
+being a linear chain) Nodes that set a key:value already assigned would
+be considered invalid. For any tip you'd be able to determine a sum
+sacrifice, and equally, a sum sacrificed on top of any key:value pair.
+In hindsight, the rule set could be extended to all kinds of situations
+akin to a blockchain. (as you propose)
+
+A key question I came up with was whether or not the minimal data
+required to prove the shape of the graph be published directly in the
+blockchain. e.g. if a node consists of {H(key), H(value),
+prev_node_hash[]} do you require those values to be themselves published
+in the blockchain, or are they hidden behind a hash? The latter is more
+efficient and censorship resistant, while the former makes it possible
+to detect possible 51% attacks and outspend them. (Note how this notion
+of "reactive security" can be efficiently used to fend off attackers by
+outspending them after the fact, while keeping sacrifices low in the
+general case; the sacrifice could even be crowdfunded with
+SIGHASH_ANYONECANPAY transactions)
+
+
+1) "[Bitcoin-development] Disentangling Crypto-Coin Mining: Timestamping, Proof-of-Publication, and Validation"
+   Peter Todd, Nov 19th, 2013,
+   http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg03307.html
+
+2) https://github.com/bitcoin/bitcoin/pull/5863
+
+3) https://en.bitcoin.it/wiki/Fidelity_bonds
+
+4) "Factom - Business Processes Secured by Immutable Audit Trails on the Blockchain"
+   Paul Snow et. al, Nov 17th 2014,
+   https://github.com/FactomProject/FactomDocs/blob/master/Factom_Whitepaper.pdf
+
+5) #bitcoin-wizards discussion, May 31st 2013
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000e7980aab9c096c46e7f34c43a661c5cb2ea71525ebb8af7
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150520/e3843511/attachment.sig>
