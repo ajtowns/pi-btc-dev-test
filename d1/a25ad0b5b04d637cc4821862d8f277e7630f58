@@ -1,0 +1,127 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Wed, 27 May 2015 12:26:33 +0100
+Subject: [Bitcoin-development] Version bits proposal
+In-Reply-To: <20150527101516.GB25814@savin.petertodd.org>
+References: <CAPg+sBg5TqQ=zjyZ7dp-d1oBGp31Krnix3zyt9suP4-AGbxW=Q@mail.gmail.com>
+	<201505270346.17014.luke@dashjr.org>
+	<CABm2gDoriDaQ1AjRDFxCT9zCNPQakJd9xRxfWkOJBf4v22hndQ@mail.gmail.com>
+	<CAE-z3OVAKyppLVEWR=qNX-_p5yVAj_0Y7Kw76o4qaywf2DKtVw@mail.gmail.com>
+	<20150527101516.GB25814@savin.petertodd.org>
+Message-ID: <CAE-z3OVskd1JAE5g-WW2eDiPcxysYhbv-NsOYu7yKZvzu88VSg@mail.gmail.com>
+
+On Wed, May 27, 2015 at 11:15 AM, Peter Todd <pete at petertodd.org> wrote:
+
+> The median time mechanism is basically a way for hashing power to show
+> what time they think it is. Equally, the nVersion soft-fork mechanism is
+> a way for hashing power to show what features they want to support.
+>
+>
+Fair enough.  It means slightly more processing, but the median time could
+be cached in the header index, so no big deal.
+
+Block counts are inconvenient for planning, as there's no guarantee
+> they'll actually happen in any particular time frame, forward and back.
+>
+
+I don't think the deadline needs to be set that accurately.  A roughly 6
+month deadline should be fine, but as you say a majority of miners is
+needed to abuse the median time and it is already a miner poll.
+
+Perhaps the number of blocks used in the median could be increased to
+reduce "noise".
+
+The median time could be median of the last 144 blocks plus 12 hours.
+
+
+> If you assume no large reorganizations, your table of known BIPs can
+> just as easily be a list of block heights even if the median time
+> mechanism is used.
+>
+
+I think it makes it easier to write the code.  It reduced the state that
+needs to be stored per BIP.  You don't need to check if the previous bips
+were all accepted.
+
+Each bit is assigned to a particular BIP for a particular range of times
+(or blocks).
+
+If block numbers were used for the deadline, you just need to check the
+block index for the deadline block.
+
+enum {
+    BIP_INACTIVE = 0,
+    BIP_ACTIVE,
+    BIP_LOCKED
+    BIP_INVALID_BLOCK,
+}
+
+int GetBIPState(block, bip)
+{
+    if (block.height == bip.deadline)  // Bit must be set to match
+locked/unlocked at deadline
+    {
+        int bipState = check_supermajority(...);
+        if (bipState == BIP_LOCKED && (block.nVersion & bip.bit)
+            return BIP_LOCKED;
+
+        if (bipState != BIP_LOCKED && (block.nVersion & (~bip.bit)))
+            return BIP_INACTIVE;
+
+        return BIP_INVALID_BLOCK;
+    }
+
+    if (block.height > deadline) // Look at the deadline block to determine
+if the BIP is locked
+        return (block_index[deadline].nVersion & bip_bit) != 0 ? BIP_LOCKED
+: BIP_INACTIVE;
+
+    if (block.height < startline + I) // BIP cannot activate/lock until
+startline + implicit window size
+        return INACTIVE;
+
+    return check_supermajority(....) // Check supermajority of bit
+}
+
+The block at height deadline would indicate if the BIP was locked in.
+
+Block time could still be used as long as the block height was set after
+that.  The deadline_time could be in six months.  The startline height
+could be the current block height and the deadline_height could be
+startline + 35000.
+
+The gives roughly
+
+start time = now
+deadline time = now + six months
+deadline height = now + eight months
+
+The deadline height is the block height when the bit is returned to the
+pool but the deadline time is when the BIP has to be accepted.
+
+It also helps with the warning system.  For each block height, there is a
+set of known BIP bits that are allowed.  Once the final deadline is passed,
+the expected mask is zeros.
+
+On Wed, May 27, 2015 at 11:15 AM, Jorge Tim?n <jtimon at jtimon.cc> wrote:
+
+> On May 27, 2015 11:35 AM, "Tier Nolan" <tier.nolan at gmail.com> wrote:
+>
+> > Was the intention to change the 95% rule.  You need 750 of the last 1000
+> to activate and then must wait at least 1000 for implication?
+>
+> You need 75% to start applying it, 95% to start rejecting blocks that
+> don't apply it.
+>
+
+I think the phrasing is ambiguous.  I was just asking for clarification.
+
+"Whenever I out of any W *subsequent* blocks (regardless of the block
+itself) have bit B set,"
+
+That suggests that the I of W blocks for the 95% rule must happen after
+activation.  This makes the rule checking harder.  Easier to use the
+current system, where blocks that were part of the 750 rule also count
+towards the 95% rule.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150527/90a022e8/attachment.html>
