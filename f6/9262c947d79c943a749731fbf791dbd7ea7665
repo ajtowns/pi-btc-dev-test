@@ -1,0 +1,73 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 27 May 2015 06:58:05 -0400
+Subject: [Bitcoin-development] Consensus-enforced transaction
+ replacement via sequence numbers
+In-Reply-To: <CAAS2fgSjT-dtS8cNoRjvEhtBeG9SUi4OsKAAGkAf_WkxEyg=9g@mail.gmail.com>
+References: <CAOG=w-sfiUQQGUh=RR55NU-TkAi1+2g3_Z+YP3dGDjp8zXYBGQ@mail.gmail.com>
+	<20150527074713.GB22286@savin.petertodd.org>
+	<CAAS2fgSjT-dtS8cNoRjvEhtBeG9SUi4OsKAAGkAf_WkxEyg=9g@mail.gmail.com>
+Message-ID: <20150527105805.GC25814@savin.petertodd.org>
+
+On Wed, May 27, 2015 at 08:18:52AM +0000, Gregory Maxwell wrote:
+> On Wed, May 27, 2015 at 7:47 AM, Peter Todd <pete at petertodd.org> wrote:
+> > Equally this proposal is no more "consensus enforcement" than simply
+> > increasing the fee (and possibly decreasing the absolute nLockTime) for
+> 
+> You've misunderstood it, I think-- Functionally nlocktime but relative
+> to each txin's height.
+> 
+> But the construction gives the sequence numbers a rational meaning,
+> they count down the earliest position a transaction can be included.
+> (e.g. the highest possible sequence number can be included any time
+> the inputs are included) the next lower sequence number can only be
+> included one block later than the input its assigned to is included,
+> the next lower one block beyond that. All consensus enforced.   A
+> miner could opt to not include the higher sequence number (which is
+> the only one of the set which it _can_ include) it the hopes of
+> collecting more fees later on the next block, similar to how someone
+> could ignore an eligible locked transaction in the hopes that a future
+> double spend will be more profitable (and that it'll enjoy that
+> profit) but in both cases it must take nothing at all this block, and
+> risk being cut off by someone else (and, of course, nothing requires
+> users use sequence numbers only one apart...).
+
+I understand that part.
+
+I'm just saying it's not clear to me what's the functional difference in
+practice between it and having both parties sign a decreasing absolute
+nLockTime. For instance, you and I could setup a payment channel using
+the following transaction t0:
+
+    1.0 BTC: PT -> 1.0 BTC: PT && (GM || <expiry> CLTV)
+    1.0 BTC: GM -> 1.0 BTC: GM && (PT || <expiry> CLTV)
+
+After <expiry> both of us are guaranteed to get our funds back
+regardless. I can then give you funds by signing my part of t1a:
+
+    t0.vout[0] <PT sig> <blank> -> 0.5 BTC: PT
+    t0.vout[1] <blank> <PT sig> -> 1.5 BTC: GM
+    nLockTime = <expiry - 1>
+
+You can then give me funds with t1b:
+
+    t0.vout[0] <blank> <GM sig> -> 1.5 BTC: PT
+    t0.vout[1] <GM sig> <blank> -> 0.5 BTC: GM
+    nLockTime = <expiry - 2>
+
+etc. etc. We can close the channel by signing a non-nLockTime'd tx at
+any time. If you don't co-operate, I have to wait, and hope I get my tx
+mined before you get yours.
+
+What I'm not seeing is how the relative nLockTime that nSequence
+provides fundamentally changes any of this.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000001643f7706f3dcbc3a386e4c1bfba852ff628d8024f875b6
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150527/a3370384/attachment.sig>
