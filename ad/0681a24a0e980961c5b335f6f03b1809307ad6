@@ -1,0 +1,86 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 27 May 2015 03:30:32 -0400
+Subject: [Bitcoin-development] First-Seen-Safe Replace-by-Fee
+In-Reply-To: <20150526051305.GA23502@savin.petertodd.org>
+References: <20150526051305.GA23502@savin.petertodd.org>
+Message-ID: <20150527073032.GA22286@savin.petertodd.org>
+
+On Tue, May 26, 2015 at 01:13:05AM -0400, Peter Todd wrote:
+> Case 1: Increasing the fee on a single tx
+> -----------------------------------------
+> 
+> We start with a 1-in-2-out P2PKH using transaction t1, 226 bytes in size
+> with the minimal relay fee, 2.26uBTC. Increasing the fee while
+> respecting FSS-RBF rules requires the addition of one more txin, with
+> the change output value increased appropriately, resulting in
+> transaction t2, size 374 bytes. If the change txout is sufficient for
+> the fee increase, increasing the fee via CPFP requires a second
+> 1-in-1-out transaction, 192 bytes, for a total of 418 bytes; if another
+> input is required, CPFP requires a 2-in-1-out tx, 340 bytes, for a total
+> of 566 bytes.
+> 
+> Benefits: 11% to 34%+ cost savings, and RBF can increase fees even in
+>           cases where the original transaction didn't have a change
+>           output.
+
+To clarify a point raised(1) on the pull-req itself:
+
+The replacement transaction is allowed to not only add new txin's, but
+also replace txins. Suppose t1 is a 2-in-2-out P2PKH using transaction,
+374 bytes in size. With CPFP accomplished by a 1-in-1-out tx, 192 bytes,
+you have 566 bytes total. With FSS RBF if you have an unspent output
+greater in value than one of the outputs spent by t1, you can replace
+that output in t1's vin txin set and rebroadcast the transaction, still
+374 bytes in size. This gives you a 34% cost savings vs. CPFP.
+
+> Case 2: Paying multiple recipients in succession
+> ------------------------------------------------
+> 
+> We have a 1-in-2-out P2PKH transaction t1, 226 bytes, that pays Alice.
+> We now need to pay Bob. With plain RBF we'd just add a new outptu and
+> reduce the value of the change address, a 90% savings. However with FSS
+> RBF, decreasing the value is not allowed, so we have to add an input.
+> 
+> If the change of t1 is sufficient to pay Bob, a second 1-in-2-out tx can
+> be created, 2*226=452 bytes in total. With FSS RBF we can replace t1
+> with a 2-in-3-out tx paying both, increasing the value of the change
+> output appropriately, resulting in 408 bytes transaction saving 10%
+> 
+> Similar to the above example in the case where the change address of t1
+> is insufficient to pay Bob the end result is one less transaction output
+> in the wallet, defragmenting it. Spending these outputs later on would
+> require two 148 byte inputs compared to one with RBF, resulting in an
+> overall savings of 25%
+
+Similarly in the multiple recipients case, if sufficiently large
+outputs are available the additional funds can be obtained by swapping
+one input for another.
+
+For instance if Alice has three outputs, 1.0, 0.5, and 0.2 BTC, and
+needs to pay Bob 1.1 BTC, she can create t1:
+
+    1.0 -> Bob   1.1
+    0.2 -> Alice 0.1
+
+If she then needs to pay Charlie 0.2 BTC she can doublespend that with:
+
+    1.0 -> Bob     1.1
+    0.5 -> Charlie 0.2
+        -> Alice   0.2
+
+Note that care does need to be taken to ensure that multiple rounds of
+this always leave at least one input unchanged.
+
+
+1) https://github.com/bitcoin/bitcoin/pull/6176#issuecomment-105630255
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000ec0c3a90baa52289171046469fe4a21dc5a0dac4cb758a9
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150527/c079858a/attachment.sig>
