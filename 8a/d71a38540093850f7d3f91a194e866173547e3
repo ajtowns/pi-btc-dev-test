@@ -1,0 +1,52 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Tue, 26 May 2015 18:50:29 -0700
+Subject: [Bitcoin-development] Consensus-enforced transaction replacement
+	via sequence numbers
+Message-ID: <CAOG=w-sfiUQQGUh=RR55NU-TkAi1+2g3_Z+YP3dGDjp8zXYBGQ@mail.gmail.com>
+
+Sequence numbers appear to have been originally intended as a mechanism for
+transaction replacement within the context of multi-party transaction
+construction, e.g. a micropayment channel. The idea is that a participant
+can sign successive versions of a transaction, each time incrementing the
+sequence field by some amount. Relay nodes perform transaction replacement
+according to some policy rule making use of the sequence numbers, e.g.
+requiring sequence numbers in a replacement to be monotonically increasing.
+
+As it happens, this cannot be made safe in the bitcoin protocol as deployed
+today, as there is no enforcement of the rule that miners include the most
+recent transaction in their blocks. As such, any protocol relying on a
+transaction replacement policy can be defeated by miners choosing not to
+follow that policy, which they may even be incentivised to do so (if older
+transactions provide higher fee per byte, for example). Transaction
+replacement is presently disabled in Bitcoin Core.
+
+These shortcomings can be fixed in an elegant way by giving sequence
+numbers new consensus-enforced semantics as a relative lock-time: if a
+sequence number is non-final (MAX_INT), its bitwise inverse is interpreted
+as either a relative height or time delta which is added to the height or
+median time of the block containing the output being spent to form a
+per-input lock-time. The lock-time of each input constructed in this manor,
+plus the nLockTime of the transaction itself if any input is non-final must
+be satisfied for a transaction to be valid.
+
+For example, a transaction with an txin.nSequence set to 0xffffff9b [==
+~(uint32_t)100] is prevented by consensus rule from being selected for
+inclusion in a block until the 100th block following the one including the
+parent transaction referenced by that input.
+
+In this way one may construct, for example, a bidirectional micropayment
+channel where each change of direction increments sequence numbers to make
+the transaction become valid prior to any of the previously exchanged
+transactions.
+
+This also enables the discussed relative-form of CHECKLOCKTIMEVERIFY to be
+implemented in the same way: by checking transaction data only and not
+requiring contextual information like the block height or timestamp.
+
+An example implementation of this concept, as a policy change to the
+mempool processing of Bitcoin Core is available on github:
+
+https://github.com/maaku/bitcoin/tree/sequencenumbers
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150526/74091cca/attachment.html>
