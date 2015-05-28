@@ -1,0 +1,111 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Thu, 28 May 2015 11:53:41 -0400
+Subject: [Bitcoin-development] Proposed alternatives to the 20MB step
+	function
+In-Reply-To: <16096345.A1MpJQQkRW@crushinator>
+References: <16096345.A1MpJQQkRW@crushinator>
+Message-ID: <CABsx9T3-zxCAagAS0megd06xvG5n-3tUL9NUK9TT3vt7XNL9Tg@mail.gmail.com>
+
+On Fri, May 8, 2015 at 3:20 AM, Matt Whitlock <bip at mattwhitlock.name> wrote:
+
+> Between all the flames on this list, several ideas were raised that did
+> not get much attention. I hereby resubmit these ideas for consideration and
+> discussion.
+>
+> - Perhaps the hard block size limit should be a function of the actual
+> block sizes over some trailing sampling period. For example, take the
+> median block size among the most recent 2016 blocks and multiply it by 1.5.
+> This allows Bitcoin to scale up gradually and organically, rather than
+> having human beings guessing at what is an appropriate limit.
+>
+
+A lot of people like this idea, or something like it. It is nice and
+simple, which is really important for consensus-critical code.
+
+With this rule in place, I believe there would be more "fee pressure"
+(miners would be creating smaller blocks) today. I created a couple of
+histograms of block sizes to infer what policy miners are ACTUALLY
+following today with respect to block size:
+
+Last 1,000 blocks:
+  http://bitcoincore.org/~gavin/sizes_last1000.html
+
+Notice a big spike at 750K -- the default size for Bitcoin Core.
+This graph might be misleading, because transaction volume or fees might
+not be high enough over the last few days to fill blocks to whatever limit
+miners are willing to mine.
+
+So I graphed a time when (according to statoshi.info) there WERE a lot of
+transactions waiting to be confirmed:
+   http://bitcoincore.org/~gavin/sizes_357511.html
+
+That might also be misleading, because it is possible there were a lot of
+transactions waiting to be confirmed because miners who choose to create
+small blocks got lucky and found more blocks than normal.  In fact, it
+looks like that is what happened: more smaller-than-normal blocks were
+found, and the memory pool backed up.
+
+So: what if we had a dynamic maximum size limit based on recent history?
+
+The average block size is about 400K, so a 1.5x rule would make the max
+block size 600K; miners would definitely be squeezing out transactions /
+putting pressure to increase transaction fees. Even a 2x rule (implying
+800K max blocks) would, today, be squeezing out transactions / putting
+pressure to increase fees.
+
+Using a median size instead of an average means the size can increase or
+decrease more quickly. For example, imagine the rule is "median of last
+2016 blocks" and 49% of miners are producing 0-size blocks and 51% are
+producing max-size blocks. The median is max-size, so the 51% have total
+control over making blocks bigger.  Swap the roles, and the median is
+min-size.
+
+Because of that, I think using an average is better-- it means the max size
+will change (up or down) more slowly.
+
+I also think 2016 blocks is too long, because transaction volumes change
+quicker than that. An average over 144 blocks (last 24 hours) would be
+better able to handle increased transaction volume around major holidays,
+and would also be able to react more quickly if an economically irrational
+attacker attempted to flood the network with fee-paying transactions.
+
+So my straw-man proposal would be:  max size 2x average size over last 144
+blocks, calculated at every block.
+
+There are a couple of other changes I'd pair with that consensus change:
+
++ Make the default mining policy for Bitcoin Core neutral-- have its target
+block size be the average size, so miners that don't care will "go along
+with the people who do care."
+
++ Use something like Greg's formula for size instead of bytes-on-the-wire,
+to discourage bloating the UTXO set.
+
+
+---------
+
+When I've proposed (privately, to the other core committers) some dynamic
+algorithm the objection has been "but that gives miners complete control
+over the max block size."
+
+I think that worry is unjustified right now-- certainly, until we have
+size-independent new block propagation there is an incentive for miners to
+keep their blocks small, and we see miners creating small blocks even when
+there are fee-paying transactions waiting to be confirmed.
+
+I don't even think it will be a problem if/when we do have size-independent
+new block propagation, because I think the combination of the random timing
+of block-finding plus a dynamic limit as described above will create a
+healthy system.
+
+If I'm wrong, then it seems to me the miners will have a very strong
+incentive to, collectively, impose whatever rules are necessary (maybe a
+soft-fork to put a hard cap on block size) to make the system healthy again.
+
+
+-- 
+--
+Gavin Andresen
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150528/5681756b/attachment.html>
