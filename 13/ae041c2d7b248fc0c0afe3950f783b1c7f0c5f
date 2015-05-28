@@ -1,0 +1,120 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Thu, 28 May 2015 18:21:34 +0100
+Subject: [Bitcoin-development] Consensus-enforced transaction
+ replacement via sequence numbers
+In-Reply-To: <556740D6.5040004@sky-ip.org>
+References: <CAOG=w-sfiUQQGUh=RR55NU-TkAi1+2g3_Z+YP3dGDjp8zXYBGQ@mail.gmail.com>
+	<CANEZrP0QMHp9PwBr=ekkujtA+=LXbgiL4xkXRSmcOGqaLJEp0g@mail.gmail.com>
+	<CAOG=w-s7JkB6SyEE0=KwmrasyH22aB2Zf3jBdKcXvrGoNhN_Nw@mail.gmail.com>
+	<CANEZrP0zKe7hK0KjiXN9M6CHnJxKZfW9myez3G+GWpr3fugBCg@mail.gmail.com>
+	<CAOG=w-vusO30sBZfsuP94wbkUUfHupmhQtScGsJ2463sO=EpzA@mail.gmail.com>
+	<CAE-z3OUG5p_hAOFvaE10kTT7sa=2GrzvZpis5FzATSEcNwZpyw@mail.gmail.com>
+	<20150528120434.GA31349@savin.petertodd.org>
+	<CAE-z3OX6pn8HpCXhsN1r_7rX9Wno_e-8dgnrzq0egQNk7N=r3w@mail.gmail.com>
+	<556740D6.5040004@sky-ip.org>
+Message-ID: <CAE-z3OX+eNfjyXw3MKOktLz4vDdep7qCG8dkJEUDRp5RyGq9MQ@mail.gmail.com>
+
+On Thu, May 28, 2015 at 5:22 PM, s7r <s7r at sky-ip.org> wrote:
+
+> In this scenario, if channel is closed, Alice is the only one who can
+> take the coins back after a relative locktime of 150 blocks. Bob is not
+> able to do this.
+>
+
+Yes, Alice is assumed to be the one who funded the channel.  It is a single
+direction channel (Alice to Bob).
+
+
+> How is Bob protected in this scenario?
+
+
+Assuming the deposit is 1 BTC.
+
+When the channel is created, Alice can broadcast the refund transaction
+immediately and the get her money back 150 blocks later.
+
+The full scriptPubKey for the refund transaction would be
+
+OP_IF
+    <150> OP_RELATIVE_CHECKLOCKTIME_VERIFY OP_DROP <Alice's public key 2>
+OP_CHECKSIGVERIFY
+OP_ELSE
+    OP_2 <Alice's public key 3> <Bob's public key 2> OP_2
+OP_CHECKMULTISIGVERIFY
+OP_ENDIF
+
+This means that Alice can spend the output after 150 blocks but with both
+signatures Bob and Alice can spend the output without the delay.
+
+She can send money to Bob by spending the non-locked output of the refund
+transaction (0.01BTC for Bob and 0.99BTC for Alice).
+
+Bob has a transaction that pays him 0.01BTC and pays Alice 0.99BTC from the
+refund transaction and is signed by Alice, but still requires his
+signature.  Only Bob can make the transaction valid.
+
+It can be spent as soon as the refund transaction is broadcast.
+
+He has the refund transaction, so he can start the process whenever he
+wishes.
+
+Assume the channel runs for a while, and Alice sends 0.3BTC total.
+
+Bob has a transaction which pays him 0.3BTC and Alice 0.7BTC.  He also has
+some that pay him less than 0.3, but there is no point in him using those
+ones.
+
+Alice decides she wants to close the channel, so asks bob to sign his final
+transaction and broadcast it and the refund transaction.
+
+If Bob refuses to do that, then Alice can just broadcast the refund
+transaction.
+
+If Bob still refuses to broadcast his final transaction, then Alice gets
+1BTC and he gets nothing, after 150 blocks.
+
+This means he will send his final transaction before the 150 blocks have
+passed.  This gets him 0.3 and Alice 0.7.
+
+Bob can close the channel immediately and Alice can force it to be closed
+within 150 blocks (~1 day).
+
+
+> If Alice sings a transaction
+> which spends the output of the refund transaction and gives it to Bob,
+> Bob can just add its signature and claim his slice of the output,
+> without necessarily shipping the goods or delivering the services to Alice.
+>
+
+Protection against that type of fraud isn't covered by channels.  They are
+just to make sure money is handed over.
+
+
+>  Can you be more explicit here? It doesn't make sense for me.
+>
+
+Does the explanation above help?
+
+With some risks.
+>
+
+As long as Bob is online and sees the refund transaction being broadcast by
+Alice, then there is no risk to him.
+
+Alice can close the transaction whenever she wants, so there is no holdup
+risk for her.
+
+
+> How do you apply a locktime path to a tx in the current network consensus?
+>
+
+I mean with OP_CHECKLOCKTIMEVERIFY.
+
+She could say that TXA pays to her in 6 months.
+
+If TXA ends up mutated after being broadcast, then she would have to wait
+the 6 months.  It's better than nothing and maybe Bob would sign the
+mutated transaction.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150528/00a2a35f/attachment.html>
