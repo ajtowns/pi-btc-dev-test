@@ -1,0 +1,209 @@
+From: jim@ergophobia.org (Jim Phillips)
+Date: Mon, 1 Jun 2015 15:02:31 -0500
+Subject: [Bitcoin-development] Why do we need a MAX_BLOCK_SIZE at all?
+In-Reply-To: <CABHVRKSm08T7ik4Ozd-WgMTrkT2c0waKDwg6Ma+ZMTWWeevfAw@mail.gmail.com>
+References: <CANe1mWz_wDAFL2piyLeOxEnMxHCQaTnGLQA6f9jZvLEmbMj6Zw@mail.gmail.com>
+	<CABHVRKSm08T7ik4Ozd-WgMTrkT2c0waKDwg6Ma+ZMTWWeevfAw@mail.gmail.com>
+Message-ID: <CANe1mWzqo0EdEpuQB6FgaOVTrYGvB6bQT-oz+bm_hoi=3WT4xw@mail.gmail.com>
+
+>
+> 1. To Maintaining Consensus
+>
+
+
+There has to be clearly defined rules about which blocks are valid and
+> which are not for the network to agree. Obviously no node will accept a
+> block that is 10 million terabytes, it would be near impossible to download
+> even if it were valid. So where do you set the limit? And what if one nodes
+> sets their limit differently than other nodes on the network? If this were
+> to happen, the network would no longer be in consensus about which blocks
+> were valid when a block was broadcasted that met some nodes' size limits
+> and did not meet others.
+> Setting a network limit on the maximum block size ensures that everyone is
+> in agreement about which blocks are valid and which are not, so that
+> consensus is achieved.
+
+
+It is as impossible to upload a 10 million terabyte block as it is to
+download it. But even on a more realistic scale, of say a 2GB block, there
+are other factors that prevent a rogue miner from being able to flood the
+network using large blocks -- such as the ability to get that block
+propagated before it can be orphaned. A simple solution to these large
+blocks is for relays to set configurable limits on the size of blocks that
+they will relay. If the rogue miner can't get his megablock propagated
+before it is orphaned, his attack will not succeed. It doesn't make the
+block invalid, just useless as a DoS tool. And over time, relays can raise
+the limits they set on block sizes they will propagate according to what
+they can handle. As more and more relays accept larger and larger blocks,
+the true maximum block size can grow naturally and not require a hard fork.
+
+2. To Avoid (further) Centralization of Pools
+
+
+
+Suppose we remove the 1 MB cap entirely. A large pool says to itself, "I
+> wish I had a larger percentage of the network hashrate so I could make more
+> profit."
+>
+
+
+Then they realize that since there's no block size limit, they can make a
+> block that is 4 GB large by filling it with nonsense. They and a few other
+> pools have bandwidth large enough to download a block of this size in a
+> reasonable time, but a smaller pool does not. The tiny pool is then stuck
+> trying to download a block that is too large, and continuing to mine on
+> their previous block until they finish downloading the new block. This
+> means the small pool is now wasting their time mining blocks that are
+> likely never to be accepted even if they were solved, since they wouldn't
+> be in the 'longest' chain. Since their hash power is wasted, the original
+> pool operator now has effectively forced smaller pools out of the network,
+> and simultaneously increased their percentage of the network hashrate.
+
+
+
+Yet another issue that can be addressed by allowing relays to restrict
+propagation. Relays are just as impacted by large blocks filled with
+nonsense as small miners. If a relay downloads a block and sees that it's
+full of junk or comes from a miner notorious for producing bad blocks, he
+can refuse to relay it. If a bad block doesn't propagate, it can't hurt
+anyone. Large miners also typically have to use static IPs. Anonymizing
+networks like TOR aren't geared towards handling that type of traffic. They
+can't afford to have the reputation of the IPs they release blocks with
+tarnished, so why would they risk getting blacklisted by relays?
+
+> 3. To Make Full Nodes Feasible
+>
+
+
+Essentially, larger blocks means fewer people that can download and verify
+> the chain, which results fewer people willing to run full nodes and store
+> all of the blockchain data.
+>
+
+
+If there were no block size limit, malicious persons could artificially
+> bloat the block with nonsense and increase the server costs for everyone
+> running a full node, in addition to making it infeasible for people with
+> just home computers to even keep up with the network.
+> The goal is to find a block size limit with the right tradeoff between
+> resource restrictions (so that someone on their home computer can still run
+> a full node), and functional requirements (being able to process X number
+> of transactions per second). Eventually, transactions will likely be done
+> off-chain using micropayment channels, but no such solution currently
+> exists.
+
+
+This same attack could be achieved simply by sending lots of spam
+transactions and bloating the UTXO database or the mempool. In fact, given
+that block storage is substantially cheaper than UTXO/mempool storage, I'd
+be far more concerned with that type of attack. And this particular attack
+vector has already been largely mitigated by pruning and could be further
+mitigated by allowing relays to decide which blocks they propagate.
+
+
+--
+*James G. Phillips IV*
+<https://plus.google.com/u/0/113107039501292625391/posts>
+<http://www.linkedin.com/in/ergophobe>
+
+*"Don't bunt. Aim out of the ball park. Aim for the company of immortals."
+-- David Ogilvy*
+
+ *This message was created with 100% recycled electrons. Please think twice
+before printing.*
+
+On Mon, Jun 1, 2015 at 2:02 PM, Stephen Morse <stephencalebmorse at gmail.com>
+wrote:
+
+> This exact question came up on the Bitcoin Stack Exchange once. I gave an
+> answer here:
+> http://bitcoin.stackexchange.com/questions/37292/whats-the-purpose-of-a-maximum-block-size/37303#37303
+>
+> On Mon, Jun 1, 2015 at 2:32 PM, Jim Phillips <jim at ergophobia.org> wrote:
+>
+>> Ok, I understand at least some of the reason that blocks have to be kept
+>> to a certain size. I get that blocks which are too big will be hard to
+>> propagate by relays. Miners will have more trouble uploading the large
+>> blocks to the network once they've found a hash. We need block size
+>> constraints to create a fee economy for the miners.
+>>
+>> But these all sound to me like issues that affect some, but not others.
+>> So it seems to me like it ought to be a configurable setting. We've already
+>> witnessed with last week's stress test that most miners aren't even
+>> creating 1MB blocks but are still using the software defaults of 730k. If
+>> there are configurable limits, why does there have to be a hard limit?
+>> Can't miners just use the configurable limit to decide what size blocks
+>> they can afford to and are thus willing to create? They could just as
+>> easily use that to create a fee economy. If the miners with the most
+>> hashpower are not willing to mine blocks larger than 1 or 2 megs, then they
+>> are able to slow down confirmations of transactions. It may take several
+>> blocks before a miner willing to include a particular transaction finds a
+>> block. This would actually force miners to compete with each other and find
+>> a block size naturally instead of having it forced on them by the protocol.
+>> Relays would be able to participate in that process by restricting the
+>> miners ability to propagate large blocks. You know, like what happens in a
+>> FREE MARKET economy, without burdensome regulation which can be manipulated
+>> through politics? Isn't that what's really happening right now? Different
+>> political factions with different agendas are fighting over how best to
+>> regulate the Bitcoin protocol.
+>>
+>> I know the limit was originally put in place to prevent spamming. But
+>> that was when we were mining with CPUs and just beginning to see the
+>> occasional GPU which could take control over the network and maliciously
+>> spam large blocks. But with ASIC mining now catching up to Moore's Law,
+>> that's not really an issue anymore. No one malicious entity can really just
+>> take over the network now without spending more money than it's worth --
+>> and that's just going to get truer with time as hashpower continues to
+>> grow. And it's not like the hard limit really does anything anymore to
+>> prevent spamming. If a spammer wants to create thousands or millions of
+>> transactions, a hard limit on the block size isn't going to stop him..
+>> He'll just fill up the mempool or UTXO database instead of someone's block
+>> database.. And block storage media is generally the cheapest storage.. I
+>> mean they could be written to tape and be just as valid as if they're
+>> stored in DRAM. Combine that with pruning, and block storage costs are
+>> almost a non-issue for anyone who isn't running an archival node.
+>>
+>> And can't relay nodes just configure a limit on the size of blocks they
+>> will relay? Sure they'd still need to download a big block occasionally,
+>> but that's not really that big a deal, and they're under no obligation to
+>> propagate it.. Even if it's a 2GB block, it'll get downloaded eventually.
+>> It's only if it gets to the point where the average home connection is too
+>> slow to keep up with the transaction & block flow that there's any real
+>> issue there, and that would happen regardless of how big the blocks are. I
+>> personally would much prefer to see hardware limits act as the bottleneck
+>> than to introduce an artificial bottleneck into the protocol that has to be
+>> adjusted regularly. The software and protocol are TECHNICALLY capable of
+>> scaling to handle the world's entire transaction set. The real issue with
+>> scaling to this size is limitations on hardware, which are regulated by
+>> Moore's Law. Why do we need arbitrary soft limits? Why can't we allow
+>> Bitcoin to grow naturally within the ever increasing limits of our
+>> hardware? Is it because nobody will ever need more than 640k of RAM?
+>>
+>> Am I missing something here? Is there some big reason that I'm
+>> overlooking why there has to be some hard-coded limit on the block size
+>> that affects the entire network and creates ongoing issues in the future?
+>>
+>> --
+>>
+>> *James G. Phillips IV*
+>> <https://plus.google.com/u/0/113107039501292625391/posts>
+>>
+>> *"Don't bunt. Aim out of the ball park. Aim for the company of
+>> immortals." -- David Ogilvy*
+>>
+>>  *This message was created with 100% recycled electrons. Please think
+>> twice before printing.*
+>>
+>>
+>> ------------------------------------------------------------------------------
+>>
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+>>
+>>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150601/b87b3b04/attachment.html>
