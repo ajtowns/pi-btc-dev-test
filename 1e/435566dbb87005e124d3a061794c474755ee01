@@ -1,0 +1,195 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Tue, 2 Jun 2015 08:44:53 -0700
+Subject: [Bitcoin-development] [BIP draft] Consensus-enforced
+ transaction replacement signalled via sequence numbers
+In-Reply-To: <CALqxMTFkWOfWXOnVAnZESkVWHtbZLc=T_sQDoTofr66mcb6_gQ@mail.gmail.com>
+References: <CAOG=w-uufDPkQSEi1K_L82j4OXObGmESnfYyxi1z99fcBCotcg@mail.gmail.com>
+	<CABHVRKQD4YPt0NA8VnXW4VYx0fmCgSHUYq-73F2esHZqX-FUxw@mail.gmail.com>
+	<CAOG=w-tDdJTkkqGaEEpDZ6pX0kXT7f2wvoN_cEpd6+MVnu1CdQ@mail.gmail.com>
+	<E67A3D18-EFB0-4156-98B7-082793D2D871@gmail.com>
+	<CALqxMTFkWOfWXOnVAnZESkVWHtbZLc=T_sQDoTofr66mcb6_gQ@mail.gmail.com>
+Message-ID: <CAOG=w-v-twsRcfT=nOQA0y5MYQ7bN+W_NVXYkuWSb0kyh4rnvg@mail.gmail.com>
+
+Oh it is far worse than that. There is nothing preventing those coins from
+being spent somewhere else, so actually an expiry would enable coin theft
+in a reorg -- you make your spends expire right after they hit the chain
+the first time, and then if there is a reorg the spend and subsequent
+transactions are invalidated. This is an exploitable means of theft.
+
+For this reason it is very important to male sure that once a transaction
+makes it on the chain, it cannot be invalidated by means of a reorg.
+On Jun 2, 2015 6:11 AM, "Adam Back" <adam at cypherspace.org> wrote:
+
+> That would also introduce the anomaly of a script that was once valid
+> becoming later invalid, when nothing varies other than time.  That is
+> not super compatible with the current model of reprocessing
+> transactions in later blocks if the block they were first in gets
+> reorged.
+>
+> (Not a huge flexibility loss as you can implement "not after" by
+> making it the previous holders responsibility to spend a "not before"
+> back to themselves.)
+>
+> Adam
+>
+> On 2 June 2015 at 13:52, Stephen <stephencalebmorse at gmail.com> wrote:
+> > Do you think it would be useful to have an inverted version of both CSV
+> and
+> > CLTV? To verify if an output is spent before a specific time. CLTV and
+> CSV
+> > could be implemented by taking two stack arguments, an integer for the
+> > comparison and TRUE/FALSE.
+> >
+> > Now that I think about this more, the problem is that, for example, just
+> > having a lock time of less than some value doesn't actually mean it has
+> to
+> > be spent before that script value, so this might not work. Likely any
+> > implementations of such a feature would have to provide the script
+> execution
+> > environment with access to information that it doesn't have now, which is
+> > what we are trying to avoid.
+> >
+> > Best,
+> > Stephen
+> >
+> >
+> >
+> > On Jun 2, 2015, at 12:16 AM, Mark Friedenbach <mark at friedenbach.org>
+> wrote:
+> >
+> > You are correct! I am maintaining a 'checksequenceverify' branch in my
+> git
+> > repository as well, an OP_RCLTV using sequence numbers:
+> >
+> > https://github.com/maaku/bitcoin/tree/checksequenceverify
+> >
+> > Most of the interesting use cases for relative lock-time require an RCLTV
+> > opcode. What is interesting about this architecture is that it possible
+> to
+> > cleanly separate the relative lock-time (sequence numbers) from the RCLTV
+> > opcode (OP_CHECKSEQUENCEVERIFY) both in concept and in implementation.
+> Like
+> > CLTV, the CSV opcode only checks transaction data and requires no
+> contextual
+> > knowledge about block headers, a weakness of the other RCLTV proposals
+> that
+> > violate the clean separation between libscript and libconsensus. In a
+> > similar way, this BIP proposal only touches the transaction validation
+> logic
+> > without any impact to script.
+> >
+> > I would like to propose an additional BIP covering the
+> CHECKSEQUENCEVERIFY
+> > opcode and its enabling applications. But, well, one thing at a time.
+> >
+> > On Mon, Jun 1, 2015 at 8:45 PM, Stephen Morse <
+> stephencalebmorse at gmail.com>
+> > wrote:
+> >>
+> >> Hi Mark,
+> >>
+> >> Overall, I like this idea in every way except for one: unless I am
+> missing
+> >> something, we may still need an OP_RCLTV even with this being
+> implemented.
+> >>
+> >> In use cases such as micropayment channels where the funds are locked up
+> >> by multiple parties, the enforcement of the relative locktime can be
+> done by
+> >> the first-signing party. So, while your solution would probably work in
+> >> cases like this, where multiple signing parties are involved, there may
+> be
+> >> other, seen or unforeseen, use cases that require putting the relative
+> >> locktime right into the spending contract (the scriptPubKey itself).
+> When
+> >> there is only one signer, there's nothing that enforces using an
+> nSequence
+> >> and nVersion=2 that would prevent spending the output until a certain
+> time.
+> >>
+> >> I hope this is received as constructive criticism, I do think this is an
+> >> innovative idea. In my view, though, it seems to be less fully-featured
+> than
+> >> just repurposing an OP_NOP to create OP_RCLTV. The benefits are
+> obviously
+> >> that it saves transaction space by repurposing unused space, and would
+> >> likely work for most cases where an OP_RCLTV would be needed.
+> >>
+> >> Best,
+> >> Stephen
+> >>
+> >> On Mon, Jun 1, 2015 at 9:49 PM, Mark Friedenbach <mark at friedenbach.org>
+> >> wrote:
+> >>>
+> >>> I have written a reference implementation and BIP draft for a soft-fork
+> >>> change to the consensus-enforced behaviour of sequence numbers for the
+> >>> purpose of supporting transaction replacement via per-input relative
+> >>> lock-times. This proposal was previously discussed on the mailing list
+> in
+> >>> the following thread:
+> >>>
+> >>> http://sourceforge.net/p/bitcoin/mailman/message/34146752/
+> >>>
+> >>> In short summary, this proposal seeks to enable safe transaction
+> >>> replacement by re-purposing the nSequence field of a transaction input
+> to be
+> >>> a consensus-enforced relative lock-time.
+> >>>
+> >>> The advantages of this approach is that it makes use of the full range
+> of
+> >>> the 32-bit sequence number which until now has rarely been used for
+> anything
+> >>> other than a boolean control over absolute nLockTime, and it does so
+> in a
+> >>> way that is semantically compatible with the originally envisioned use
+> of
+> >>> sequence numbers for fast mempool transaction replacement.
+> >>>
+> >>> The disadvantages are that external constraints often prevent the full
+> >>> range of sequence numbers from being used when interpreted as a
+> relative
+> >>> lock-time, and re-purposing nSequence as a relative lock-time
+> precludes its
+> >>> use in other contexts. The latter point has been partially addressed by
+> >>> having the relative lock-time semantics be enforced only if the
+> >>> most-significant bit of nSequence is set. This preserves 31 bits for
+> >>> alternative use when relative lock-times are not required.
+> >>>
+> >>> The BIP draft can be found at the following gist:
+> >>>
+> >>> https://gist.github.com/maaku/be15629fe64618b14f5a
+> >>>
+> >>> The reference implementation is available at the following git
+> >>> repository:
+> >>>
+> >>> https://github.com/maaku/bitcoin/tree/sequencenumbers
+> >>>
+> >>> I request that the BIP editor please assign a BIP number for this work.
+> >>>
+> >>> Sincerely,
+> >>> Mark Friedenbach
+> >>>
+> >>>
+> >>>
+> ------------------------------------------------------------------------------
+> >>>
+> >>> _______________________________________________
+> >>> Bitcoin-development mailing list
+> >>> Bitcoin-development at lists.sourceforge.net
+> >>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> >>>
+> >>
+> >
+> >
+> >
+> ------------------------------------------------------------------------------
+> >
+> > _______________________________________________
+> > Bitcoin-development mailing list
+> > Bitcoin-development at lists.sourceforge.net
+> > https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> >
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150602/989508d0/attachment.html>
