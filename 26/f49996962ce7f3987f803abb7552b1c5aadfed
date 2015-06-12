@@ -1,0 +1,73 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Fri, 12 Jun 2015 18:51:02 +0200
+Subject: [Bitcoin-development] Mining centralization pressure from
+	non-uniform propagation speed
+Message-ID: <CAPg+sBi5fYHGLv4wtWbWE7jov8CX=q9UX=vhxDVepG6JfX30+g@mail.gmail.com>
+
+Hello all,
+
+I've created a simulator for Bitcoin mining which goes a bit further than
+the one Gavin used for his blog post a while ago. The main difference is
+support for links with different latency and bandwidth, because of the
+clustered configuration described below. In addition, it supports different
+block sizes, takes fees into account, does difficulty adjustments, and
+takes processing and mining delays into account. It also simulates longer
+periods of time, and averages the result of many simulations running in
+parallel until the variance on the result is low enough.
+
+The code is here: https://github.com/sipa/bitcoin-net-simul
+
+The configuration used in the code right now simulates two groups of miners
+(one 80%=25%+25%+30%, one 20%=5%+5%+5%+5%), which are well-connected
+internally, but are only connected to each other through a slow 2 Mbit/s
+link.
+
+Here are some results.
+
+This shows how the group of smaller miners loses around 8% of their
+relative income (if they create larger blocks, their loss percentage goes
+up slightly further):
+
+Configuration:
+  * Miner group 0: 80.000000% hashrate, blocksize 20000000.000000
+  * Miner group 1: 20.000000% hashrate, blocksize 1000000.000000
+  * Expected average block size: 16200000.000000
+  * Average fee per block: 0.250000
+  * Fee per byte: 0.0000000154
+Result:
+  * Miner group 0: 81.648985% income (factor 1.020612 with hashrate)
+  * Miner group 1: 18.351015% income (factor 0.917551 with hashrate)
+
+When fees become more important however, and half of a block's income is
+due to fees, the effect becomes even stronger (a 15% loss), and the optimal
+way to compete for small miners is to create larger blocks as well (smaller
+blocks for them result in even less income):
+
+Configuration:
+  * Miner group 0: 80.000000% hashrate, blocksize 20000000.000000
+  * Miner group 1: 20.000000% hashrate, blocksize 20000000.000000
+  * Expected average block size: 20000000.000000
+  * Average fee per block: 25.000000
+  * Fee per byte: 0.0000012500
+Result:
+  * Miner group 0: 83.063545% income (factor 1.038294 with hashrate)
+  * Miner group 1: 16.936455% income (factor 0.846823 with hashrate)
+
+The simulator is not perfect. It doesn't take into account that multiple
+blocks/relays can compete for the same bandwidth, or that nodes cannot
+process multiple blocks at once.
+
+The numbers used may be unrealistic, and I don't mean this as a prediction
+for real-world events. However, it does very clearly show the effects of
+larger blocks on centralization pressure of the system. Note that this also
+does not make any assumption of destructive behavior on the network - just
+simple profit maximalization.
+
+Lastly, the code may be buggy; I only did some small sanity tests with
+simple networks.
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150612/e8c2f530/attachment.html>
