@@ -1,0 +1,144 @@
+From: kristovatlas.lists@gmail.com (Kristov Atlas)
+Date: Fri, 12 Jun 2015 17:36:56 -0400
+Subject: [Bitcoin-development] Lexicographical Indexing of Transaction
+ Inputs and Outputs
+In-Reply-To: <20150609201436.GD28093@muck>
+References: <CAGH37SK0k1YUvadetyHcBGjzW+OHNFRmRwqsUDeHBGejUacigQ@mail.gmail.com>
+	<44BE16F9-AB24-4A8E-BC7F-03A6C590FCE7@gmail.com>
+	<CAGH37SL3TA7BXd3Y+4F1Fd5N3ZW+LRLvkfppPsPn61ZVbZJOnQ@mail.gmail.com>
+	<CAGH37SLCc-aEG0t0H7fsUZOv_h+Fiw4xoonmfwNaFWBin_7HcQ@mail.gmail.com>
+	<20150607023523.GB1570@savin.petertodd.org>
+	<CAGH37SLyG-g54-gGU5ZrmQsiogOqWNW1iiayHii1nWiWh+Nk=w@mail.gmail.com>
+	<20150609201436.GD28093@muck>
+Message-ID: <CAGH37SL06R+=pfqY1aHE1XpE7k6jtJSv+CsNiJ3hec6TZvsGAA@mail.gmail.com>
+
+Since everyone's busy, I went ahead and made a pull request to add this as
+an informational BIP 79 to the bips directory.
+
+https://github.com/bitcoin/bips/pull/157
+
+Regards,
+Kristov
+
+On Tue, Jun 9, 2015 at 4:14 PM, Peter Todd <pete at petertodd.org> wrote:
+
+> On Mon, Jun 08, 2015 at 06:53:54PM -0400, Kristov Atlas wrote:
+>
+> Two other things:
+>
+>
+>
+> > On Sat, Jun 6, 2015 at 10:35 PM, Peter Todd <pete at petertodd.org> wrote:
+> >
+> > > Why mention SIGHASH_SINGLE at all? Its use-case is highly specialized
+> > > protocols; you haven't taken into account the needs of those protocols.
+> > > For BIP's it's better to stick to the use-cases where the need is clear
+> > > and there exists running code that to speculate too much on future
+> uses.
+> > > With signature hashing in particular it's not yet clear at all what
+> > > future OP_CHECKSIG's will look like, let alone the various ways people
+> > > will use sighash for smart contract type stuff.
+> > >
+> > > You'd be better off presenting the BIP in terms of a generic statement
+> > > that "except when otherwise prevented by advanced signature hashing
+> > > requirements, wallet software must emit transactions sorted according
+> to
+> > > the following" You can then specify the two common cases in detail:
+> > >
+> > > 1) SIGHASH_ALL: input and output order signed, so sort appropriately
+> > >
+> > > 2) SIGHASH_ANYONECANPAY: input order not signed, so software should
+> emit
+> > >    transactions sorted, recognising that the actual mined order may be
+> > >    changed.
+> > >
+> >
+> > That makes sense. I updated the language as follows -- your thoughts?
+> Keep
+> > in mind this BIP is informational, and so people are free to ignore it.
+> >
+> > "Applicability: This BIP applies to all transactions of signature hash
+> type
+> > SIGHASH_ALL. Additionally,  software compliant with this BIP that allows
+> > later parties to update the transaction (e.g. using signature hash types
+> > SIGHASH_NONE or a variant of SIGHASH_ANYONECANPAY) should emit
+> > lexicographically sorted inputs and outputs, although they may later be
+> > modified. Transactions that have index dependencies between transactions
+> or
+> > within the same transaction are covered under the section of this BIP
+> > entitled ?Handling Input/Output Dependencies.?"
+>
+> I'd keep it even simpler than that, and just say for now that such
+> use-cases are out of the scope of this BIP, however those standards
+> should come up with some kind of deterministic standard that meets the
+> needs of the protocol. Again, there's a bunch of possible use-cases here
+> and we just can't predict them; focus on the fact that the *spirit* of
+> what this BIP is about is applicable and future standards should be
+> developed.
+>
+> So I'd change the "Applicability" section to:
+>
+> This BIP applies to all transactions where the order of inputs and
+> outputs does not matter. This is true for the vast majority of
+> transactions as they simply move funds from one place to another.
+>
+> Currently this generally refers to transactions where SIGHASH_ALL is
+> used, in which case the signatures commit to the exact order of input
+> and outputs. In the case where SIGHASH_ANYONECANPAY and/or SIGHASH_NONE
+> has been used (e.g. crowdfunds) the order of inputs and/or outputs may
+> not be signed, however compliant software should still emit transactions
+> with sorted inputs and outputs, even though they may later be modified
+> by others.
+>
+> In the event that future protocol upgrades introduce new signature hash
+> types, compliant software should apply the lexographic ordering
+> principle analogously.
+>
+> While out of scope of this BIP, protocols that do require a specified
+> order of inputs/outputs (e.g. due to use of SIGHASH_SINGLE) should
+> consider the goals of this BIP and how best to adapt them to the
+> specifics needs of those protocols.
+>
+>
+> Then remove the "handling input/output deps" section.
+>
+> > > Do you have a patch implementing deterministic tx ordering for Bitcoin
+> > > Core yet?
+> > >
+> >
+> > I'm not a frequent C programmer, so I'd prefer to let someone else take
+> > care of it, as a frequent committer of code would do a faster and more
+> > stylistically consistent job of it. If no one else will, however, I will.
+>
+>
+>
+> re: the actual ordering algorithm, having txids be sorted by with the
+> hex-based algorithm is odd. I'd simply say they're sorted as
+> little-endian byte arrays, or in other words, with the bytearr_cmp()
+> function, but with the order of bytes reversed. You also should say that
+> we're doing that to make the user see them in visually sorted order to
+> match expectations because txids are displayed as little-endian.
+>
+> For outputs, don't say "locking script", say "scriptPubKey". Secondly,
+> scriptPubKeys are not in little-endian representation - they have no
+> endianness to them. With output amount, there's no need to say that
+> they're unsigned or little-endian satoshies, just say they're sorted
+> largest/smallest amount first.
+>
+> "For the sake of efficiency, amounts will be considered first for
+> sorting, since they contain fewer bytes of information (7 bytes)
+> compared to a standard P2PKH locking script (800 bytes)." <- where the
+> heck did you get these numbers from? Amounts are 8 bytes, and P2PKH
+> scriptPubKeys are 25 bytes.
+>
+>
+> "Backwards Compatibility" <- I'd just remove this whole section; we're
+> unlikely to make this an IsStandard() rule anytime soon.
+>
+> --
+> 'peter'[:-1]@petertodd.org
+> 0000000000000000127ab1d576dc851f374424f1269c4700ccaba2c42d97e778
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150612/6cbf4c0f/attachment.html>
