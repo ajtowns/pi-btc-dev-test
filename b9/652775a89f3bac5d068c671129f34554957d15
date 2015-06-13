@@ -1,0 +1,133 @@
+From: matthew@roberts.pm (Matthew Roberts)
+Date: Sat, 13 Jun 2015 17:16:52 +1000
+Subject: [Bitcoin-development] The timechain: an idea to solve TX
+ malleability in smart contract protocols with minimal involvement and
+ without requiring a fork.
+Message-ID: <CAAEDBiEZ9CrgFwg10BL_f+sv2mi_sZD_e5NLZ75nCg3gXf57Bg@mail.gmail.com>
+
+I've been tossing around an idea in my head that involves time-locked
+encryption [0] and I wondered what the devs here think about it. In a
+nutshell: the timechain is a serial chain of time-lock encrypted GPG keys
+at N minute intervals (meaning that it requires N minutes to decrypt a
+single link / key in the chain and each link must be fully decrypted before
+decryption can start on the next link.) For those not aware of how
+time-lock encryption works it goes something like this:
+
+1. Choose some random, unique text - this is the initialisation vector or
+IV.
+
+2. Hash that text -> output.
+
+3. Hash the output -> output.
+
+4. Hash the output -> output.
+
+5. ...
+
+6. Process is repeated for N minutes.
+
+7. Result is then used to generate encryption keys and the public key can
+be used to time-lock encrypt an arbitrary number of plaintexts.
+
+8. All intermediary results are discarded -- only the pub key is kept and
+giving out the IV forces an individual to have to repeat the same amount of
+work used to generate the encryption key.
+
+What's interesting about this is that the keys can be generated in parallel
+and then "stitched" together to form a single serial chain of keys. So
+potentially, if a person had access to a GPU cluster then they could
+generate a years worth of keys in only 5 minutes. Now imagine if one were
+to stitch these keys together into a chain of keys at five minute intervals
+(a structure I refer to as the "timechain"): you could use this structure
+to encrypt ECDSA keys which could then be used in multi-signature contract
+schemes as a 100% decentralized, trustless way to execute refunds in
+contract protocols.
+
+Unexpected benefit: time-lock encryption can be used to build unbreakable
+DACs.
+
+Peter Todd has already done work on using Bitcoin to incentivize the
+decryption process of time-lock encryption [1] but what he may not be aware
+of is how important this process is for the construction of DACs.
+
+Imagine a true peer-to-peer cryptocurrency exchange [2] that time-lock
+encrypts a chain of ECDSA keys using the timechain and then sets up
+contracts to pay a small portion of their fees "into" the ECDSA keys.
+Essentially the exchange has created a DAC that pays its participants to
+decrypt itself. This is the incentive for the decryption. The reason for
+the incentive is that another chain of keys can be generate at 5 minute
+intervals which can be used in contract protocols in place of nTimeLocked
+refund transactions (which are vulnerable to transaction malleability.)
+
+Sample contract using the timechain:
+
+3 of 4 multi-sig: Owner, Owner, Recipient, Timelock
+
+Pay N coins to recipient sequentially (micropayment channel) before [time /
+date], otherwise fall back on timelock decrypted refund key to give full
+leverage back to owner. This is how smart contracts would work using the
+timechain for refunds (instead of nTimeLock TXs.)
+
+Using the DAC, it might also be possible to force participants to reveal
+their solutions to the decryption of the timechain (otherwise the first
+person who starts on the chain would receive all the fees which isn't very
+fair.) One way to do this would be to use the public key for the fee ECDSA
+key as the IV used to generate the next key on the chain. To spend the fees
+would therefore require revealing the public key if the fees were paid to a
+pay-to-pub-key-hash transaction.
+
+A further precaution would be to generate the pay to fee transaction in
+such a way that the amount needed to be redeemed before a certain
+time-frame otherwise another transaction would burn the coins. (I haven't
+worked out the full details for this yet but similar schemes have been used
+successfully, for example in BitHalo [3] and the Lightning Network [4]
+offers another potential solution.) Perhaps a custom blockchain or
+sidechain could be used to award coins for successful (and timely
+solutions) but this is a subject for future work.
+
+In conclusion: I have described a simple way to solve the TX malleability
+problem in smart contract protocols without requiring a fork or relying on
+a third-party escrow services to hold keys. My solution doesn't require any
+trust beyond the initial need for the timechain to be generated in a secure
+environment and the solution remains secure so long as participants stick
+to using future keys in the chain regardless of how far along the
+decryption is.
+
+Critique / flaws
+
+Obviously the biggest flaw here is that the integrity of a timechain can't
+be known before-hand but if a timechain were to be generated securely by a
+reputable party, the biggest benefit of using it is that it basically runs
+itself: it does not require any third-party to manage its functionality and
+the entity which originally generated it can completely disappear without
+interrupting service. This could, for instance - allow companies to create
+entirely secure and reliable systems that couldn't be hacked as the
+behaviour of a timechain is deterministic. I think this is a huge
+improvement over existing systems which require third-parties to be
+perpetually trusted with managing key-pairs on their web servers.
+
+You could even use collateral as a way to incentivize the reliable
+construction of the timechain by collecting collateral into a multi-sig
+controlled by a number of neutral parties and only releasing the coins back
+to the entity if the chain behaves as expected. I imagine some kind of
+signed copy of a GPU cluster bill + proof of code executed would be
+additional proof.
+
+Anyway, that's the basic idea. Let me know what you think.
+
+
+Sources:
+
+[0] http://www.gwern.net/Self-decrypting%20files
+
+[1]
+https://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg05547.html
+
+[2] http://www.uptrenda.com/uptrenda.pdf
+
+[3] https://bithalo.org/wp-content/uploads/2014/06/whitepaper_twosided.pdf
+
+[4] https://lightning.network/lightning-network-paper-DRAFT-0.5.pdf
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150613/ddc1964c/attachment.html>
