@@ -1,0 +1,129 @@
+From: onelineproof@gmail.com (Andrew)
+Date: Sat, 13 Jun 2015 17:55:39 +0000
+Subject: [Bitcoin-development] Scaling Bitcoin with Subchains
+In-Reply-To: <CAPg+sBjqQ66f1Rmhi9HOBYP5BDjBHvTNPpUN-y3o-KX8dXBMhg@mail.gmail.com>
+References: <CAL8tG==LG=xC_DzOaghbGGKab4=UVpGLQV7781pU4wg+WnFdMg@mail.gmail.com>
+	<CAPg+sBjqQ66f1Rmhi9HOBYP5BDjBHvTNPpUN-y3o-KX8dXBMhg@mail.gmail.com>
+Message-ID: <CAL8tG=kNt0aVkae-z40OTO8wA+dC=X21dHaMYMg1ptAAu2YVow@mail.gmail.com>
+
+First of all, I added more info to bitcointalk.org:
+https://bitcointalk.org/index.php?topic=1083345.0
+
+On Sat, Jun 13, 2015 at 2:39 PM, Pieter Wuille <pieter.wuille at gmail.com>
+wrote:
+
+>
+> In your proposal, transactions go to a chain based the addresses involved.
+> We can reasonably assume that different people's wallet will tend to be
+> distributed uniformly over several sidechains to hold their transactions
+> (if they're not, there is no scaling benefit anyway...). That means that
+> for an average transaction, you will need a cross-chain transfer in order
+> to get the money to the recipient (as their wallet will usually be
+> associated to a chain that is different from your own). Either you use an
+> atomic swap (which actually means you end up briefly with coins in the
+> destination chain, and require multiple transactions and a medium delay),
+> or you use the 2way peg transfer mechanism (which is very slow, and reduces
+> the security the recipient has to SPV).
+>
+> Whatever you do, the result will be that most transactions are:
+> * Slower (a bit, or a lot, depending on what mechanism you use).
+> * More complex, with more failure modes.
+> * Require more and larger transactions (causing a total net extra load on
+> all verifiers together).
+>
+> And either:
+> * Less secure (because you rely on a third party to do an atomic swap
+> with, or because of the 2 way peg transfer mechanism which has SPV security)
+> * Doesn't offer any scaling benefit (because the recipient needs to fully
+> validate both his own and the receiver chain).
+>
+> In short, you have not added any scaling at all, or reduced the security
+> of the system significantly, as well as made it significantly less
+> convenient to use.
+>
+> So no, sidechains are not a direct means for solving any of the scaling
+> problems Bitcoin has. What they offer is a mechanism for easier
+> experimentation, so that new technology can be built and tested without
+> needing to introduce a new currency first (with the related speculative and
+> network effect problems). That experimentation could eventually lead us to
+> discover mechanisms for better scaling, or for more scalability/security
+> tradeoffs (see for example the Witness Segregation that Elements Alpha has).
+>
+
+Thanks Pieter for your reply. The chain the transaction goes to does not
+have to be based on the address (there can be a way for the protocol to
+choose), but ya, the address scheme can be a good default. As I said, there
+will be an incentive for empty chains to fill up since they will require
+less fees (so the scaling benefit isn't dependent on a uniform distribution
+of addresses).
+
+The rule I mentioned is that at most 2 different chains can be involved in
+one transaction. From a chain to itself is easy. From a parent or
+grandparent chain to its child or grandchild chain, is also easy since the
+child/grandchild always trusts its parent/grandparent. From a
+child/grandchild to parent/grandparent, is also easy (no delay) since the
+parent/grandparent will commit to its children (which recursively commit to
+their children). As mentioned I am just doing a form of block extensions as
+Adam Back described; the chains are not independent. From one chain to
+another chain at the same level (sibling chains), the transaction is
+recorded on both sibling chains (yes there is some duplication but this is
+limited by requiring at most 2 sibling chains participating in a
+transaction). They both have to be consistent and this will be ensured by
+the miners of their parent chain (those miners will commit to their blocks).
+
+So no, I don't see how it's slower, except that there needs to be some
+delay for communication between children/grandchildren and
+parents/grandparents, of time O(log n) where n is the number of levels.
+Even a small number of levels corresponds to a large transaction volume: n
+= 5 corresponds to the equivalent of 625 MB blocks.
+
+Security-wise, it is true that the top level chain will likely have higher
+security (more hash power), but at least you can fine tune the fees you pay
+according to what level of security is acceptable to you, and as Bitcoin
+grows, level 2,3,4 chains can be regarded as almost as secure as the level
+1 chain, since there will still be a lot of hash power on them. And anyone
+can run a full node on their chains of interest, so there is no SPV level
+security here, it is full level security.
+
+Transactions are not significantly different. Miners just have to deal with
+child chains, but if there is a scaling benefit, we should not be scared of
+complexity. It is probably the simplest way I can think of scaling.
+
+The recipient will validate their own chain fully and will just need the
+headers of the relevant parent chains to see whether an output from the
+other chain involved in a transaction is really valid. They can also get
+the headers of the sibling chain involved in the transaction if they want
+to validate the work of the miners on these parent chains. They don't need
+the full blocks of the parent and sibling chains involved since not all the
+transactions in those blocks may be of interest to them, they just need
+proof that any output used in their blocks of interest are valid, so that's
+why the header-only SPV proof is sufficient. But yeah, typically a user
+will have the full blocks of the parent and grandparent chains of the
+chains they are interested in tracking, but it is not always necessary.
+
+Also, in the bitcointalk forum I explain in more detail the mining
+procedure and how to limit the extra traffic that may be caused on the
+network in case this does get added as a soft fork and then later a new
+better scaling method is invented that supercedes this.
+
+But basically, for the mining, I think it should be merge-mined between
+parent and direct children only. If all the chains are merge mining the
+same root chain, then it would be bad for decentralization, right? But with
+only direct parent and children merge mining, you can have smaller miners
+on the lower (grand children) level chains and since they will need to
+solve another hash problem than their grand parent chains, the grandparents
+cannot solve blocks in the grand children chains (only the direct children).
+
+So I still didn't hear a good argument against my proposal. I know Adam
+Back's form of extension blocks is problematic because it still has the big
+blocks, just at another level of chain, but just by partitioning his one 10
+MB chain into 10 pieces, you get my idea, which I think solves the
+scalability problem as well.
+
+Cheers
+
+-- 
+PGP: B6AC 822C 451D 6304 6A28  49E9 7DB7 011C D53B 5647
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150613/b305a405/attachment.html>
