@@ -1,0 +1,106 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Sun, 14 Jun 2015 23:02:51 +0000
+Subject: [Bitcoin-development] [RFC] Canonical input and output ordering
+ in transactions
+In-Reply-To: <87k2vhfnx9.fsf@rustcorp.com.au>
+References: <87k2vhfnx9.fsf@rustcorp.com.au>
+Message-ID: <CAAS2fgRgWZX_O_2O1bgdFd_04xVp5Lnpw4hf=v6RSTXmsbdzPQ@mail.gmail.com>
+
+On Sat, Jun 6, 2015 at 4:42 AM, Rusty Russell <rusty at rustcorp.com.au> wrote:
+> Title: Canonical Input and Output Ordering
+> Author: Rusty Russell <rusty at rustcorp.com.au>
+> Discussions-To: "Bitcoin Dev" <bitcoin-development at lists.sourceforge.net>
+> Status: Draft
+> Type: Standards Track
+> Created: 2015-06-06
+>
+> Abstract
+>
+> This BIP provides a canonical ordering of inputs and outputs when
+> creating transactions.
+>
+> Motivation
+>
+> Most bitcoin wallet implementations randomize the outputs of
+> transactions they create to avoid trivial linkage analysis (especially
+> change outputs), however implementations have made mistakes in this area
+> in the past.
+>
+> Using a canonical ordering has the same effect, but is simpler, more
+> obvious if incorrect, and can eventually be enforced by IsStandard() and
+> even a soft-fork to enforce it.
+>
+> Specification
+>
+> Inputs should be ordered like so:
+>         index (lower value first)
+>         txid (little endian order, lower byte first)
+>
+> Outputs should be ordered like so:
+>         amount (lower value first)
+>         script (starting from first byte, lower byte first, shorter wins)
+>
+> Rationale
+>
+> Any single wallet is already free to implement this, but if other
+> wallets do not it would reduce privacy by making those transactions
+> stand out.  Thus a BIP is appropriate, especially if this were to
+> become an IsStandard() rule once widely adopted.
+>
+> Because integers are fast to compare, they're sorted first, before the
+> lexographical ordering.
+>
+> The other input fields do not influence the sort order, as any valid
+> transactions cannot have two inputs with the same index and txid.
+>
+> Reference Implementation
+>
+> https://github.com/rustyrussell/bitcoin/tree/bip-in-out-ordering
+
+
+Sorry I wasn't a part of the IRC conversation where this was first
+discussed, though I'm very happy to see a concrete implementation
+along with the proposal.
+
+I'm not a great fan of this proposal for two reasons: The first is
+that the strict ordering requirements is incompatible with future
+soft-forks that may expose additional ordering constraints. Today we
+have _SINGLE, which as noted this interacts with poorly, but there
+have been other constraints proposed that this would also interact
+with poorly.
+
+The second is that even absent consensus rules there may be invisible
+constraints in systems-- e.g. hardware wallets that sign top down, or
+future transaction covenants that have constraints about ordering,  or
+proof systems that use (yuck) midstate compression for efficiency.
+Right now, with random ordering these applications are fairly
+indistinguishable from other random uses (since their imposed order
+could come about by chance) but if everyone else was ordered, even if
+wasn't enforced.. these would be highly distinguishable. Which would
+be unfortunate.  Worse, if most transactions are ordered the few that
+aren't could be mishandled (which is, I assume, part of why you
+propose requiring the ordering-- but I think the soft fork constraints
+there hurt it more).
+
+[Sorry for the delay in stating my views here; I wanted to talk them
+over with a few other people to see if I was just being stupid and
+misunderstanding the proposal]
+
+I think perhaps the motivations here are understated. We have not seen
+any massive deployments of accidentally broken ordering that I'm aware
+of-- and an implementation that got this wrong in a harmful way would
+likely make far more fatal mistakes (e.g. non random private keys).
+As an alternative to this proposal the ordering can be privately
+derandomized in the same way DSA is, to avoid the need for an actual
+number source.  If getting the randomness right were really the only
+motivation, I'd suggest we propose a simple derandomized randomization
+algorithm--- e.g. take the order from (H(input ids||client secret)).
+
+I think there is actually an unstated motivation also driving this
+(and the other) proposal related to collaborative transaction systems
+like coinjoins or micropayment channels; where multiple clients need
+to agree on the same ordering. Is this the case? If so we should
+probably talk through some of the requirements there and see if there
+isn't a better way to address it.
+
+
