@@ -1,0 +1,67 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Mon, 15 Jun 2015 11:59:11 +0930
+Subject: [Bitcoin-development] [RFC] Canonical input and output ordering
+	in transactions
+In-Reply-To: <CAAS2fgRgWZX_O_2O1bgdFd_04xVp5Lnpw4hf=v6RSTXmsbdzPQ@mail.gmail.com>
+References: <87k2vhfnx9.fsf@rustcorp.com.au>
+	<CAAS2fgRgWZX_O_2O1bgdFd_04xVp5Lnpw4hf=v6RSTXmsbdzPQ@mail.gmail.com>
+Message-ID: <87r3pdembs.fsf@rustcorp.com.au>
+
+Gregory Maxwell <gmaxwell at gmail.com> writes:
+> I'm not a great fan of this proposal for two reasons: The first is
+> that the strict ordering requirements is incompatible with future
+> soft-forks that may expose additional ordering constraints. Today we
+> have _SINGLE, which as noted this interacts with poorly, but there
+> have been other constraints proposed that this would also interact
+> with poorly.
+
+Yes, I hit this when I implemented an IsStandard change; upon input
+evaluation the scriptsigs which used _SINGLE get disregarded from
+ordering.  
+
+> The second is that even absent consensus rules there may be invisible
+> constraints in systems-- e.g. hardware wallets that sign top down,
+
+I think that one's pretty easy to fix (and they should fix it anyway, to
+avoid leaking information due to ordering): they can receive an
+unordered tx and sign it as if it were ordered canonically.
+
+> or
+> future transaction covenants that have constraints about ordering,  or
+> proof systems that use (yuck) midstate compression for efficiency.
+
+The softfork argument I find the most compelling, though it's tempting
+to argue that every ordering use (including SIGHASH_SINGLE) is likely
+a mistake.
+
+> I think perhaps the motivations here are understated. We have not seen
+> any massive deployments of accidentally broken ordering that I'm aware
+> of-- and an implementation that got this wrong in a harmful way would
+> likely make far more fatal mistakes (e.g. non random private keys).
+
+I was prompted to propose something by this:
+
+https://blog.blocktrail.com/2015/05/getting-your-change-in-order/
+
+If that's the only one though, it's less compelling.
+
+> As an alternative to this proposal the ordering can be privately
+> derandomized in the same way DSA is, to avoid the need for an actual
+> number source.  If getting the randomness right were really the only
+> motivation, I'd suggest we propose a simple derandomized randomization
+> algorithm--- e.g. take the order from (H(input ids||client secret)).
+>
+> I think there is actually an unstated motivation also driving this
+> (and the other) proposal related to collaborative transaction systems
+> like coinjoins or micropayment channels; where multiple clients need
+> to agree on the same ordering. Is this the case? If so we should
+> probably talk through some of the requirements there and see if there
+> isn't a better way to address it.
+
+Indeed.  I was implementing deterministic permutations for lightning
+(signature exchange requires both sides agree on ordering).
+
+Cheers,
+Rusty.
+
+
