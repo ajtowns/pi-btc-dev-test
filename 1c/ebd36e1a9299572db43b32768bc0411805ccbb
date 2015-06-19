@@ -1,0 +1,158 @@
+From: jp@eeqj.com (Jeffrey Paul)
+Date: Fri, 19 Jun 2015 21:49:23 +0200
+Subject: [Bitcoin-development] F2Pool has enabled full replace-by-fee
+In-Reply-To: <CAFzgq-zbcARe4ePj_3wA9mEzKE3PsGQ3Kb0-ALyTk054uzrrTA@mail.gmail.com>
+References: <20150619103959.GA32315@savin.petertodd.org>
+	<CABHVRKR7bXfDX0_frAv_Ph4Saz3SXwXeZae1DEokorvekPeinw@mail.gmail.com>
+	<20150619134408.GB27280@savin.petertodd.org>
+	<CAFzgq-zbcARe4ePj_3wA9mEzKE3PsGQ3Kb0-ALyTk054uzrrTA@mail.gmail.com>
+Message-ID: <104A5F27-D4CE-47F1-B569-37A22CA2D05C@eeqj.com>
+
+It seems to me that FSS RBF must enforce identical OP_RETURN data on the output scripts as the first seen transaction, as well, to safely continue support for various other applications built atop the blockchain.
+
+Is there a canonical implementation of FSS RBF around somewhere I can review?
+
+Best,
+-jp
+
+-- 
+Jeffrey Paul   +1 (312) 361-0355
+5539 AD00 DE4C 42F3 AFE1 1575 0524 43F4 DF2A 55C2
+
+> On 19.06.2015, at 15:52, Chun Wang <1240902 at gmail.com> wrote:
+> 
+> Before F2Pool's launch, I performed probably the only successful
+> bitcoin double spend in the March 2013 fork without any mining power.
+> [ https://bitcointalk.org/index.php?topic=152348.0 ] I know how bad
+> the full RBF is. We are going to switch to FSS RBF in a few hours.
+> Sorry.
+> 
+>> On Fri, Jun 19, 2015 at 9:44 PM, Peter Todd <pete at petertodd.org> wrote:
+>>> On Fri, Jun 19, 2015 at 09:33:05AM -0400, Stephen Morse wrote:
+>>> It is disappointing that F2Pool would enable full RBF when the safe
+>>> alternative, first-seen-safe RBF, is also available, especially since the
+>>> fees they would gain by supporting full RBF over FSS RBF would likely be
+>>> negligible. Did they consider using FSS RBF instead?
+>> 
+>> Specifically the following is what I told them:
+>> 
+>>> We are
+>>> interested in the replace-by-fee patch, but I am not following the
+>>> development closely, more background info is needed, like what the
+>>> difference between standard and zeroconf versions? Thanks.
+>> 
+>> Great!
+>> 
+>> Basically both let you replace one transaction with another that pays a
+>> higher fee. First-seen-safe replace-by-fee adds the additional criteria
+>> that all outputs of the old transaction still need to be paid by the new
+>> transaction, with >= as many Bitcoins. Basically, it makes sure that if
+>> someone was paid by tx1, then tx2 will still pay them.
+>> 
+>> I've written about how wallets can use RBF and FSS-RBF to more
+>> efficiently use the blockchain on the bitcoin-development mailing list:
+>> 
+>> http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg07813.html
+>> http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg07829.html
+>> 
+>> Basically, for the purpose of increasing fees, RBF is something like %50
+>> cheaper than CPFP, and FSS-RBF is something like %25 cheaper.
+>> 
+>> In addition, for ease of implementation, my new FSS-RBF has a number of
+>> other restrictions. For instance, you can't replace multiple
+>> transactions with one, you can't replace a transaction whose outputs
+>> have already been spent, you can't replace a transaction with one that
+>> spends additional unconfirmed inputs, etc. These restrictions aren't
+>> "set in stone", but they do make the code simpler and less likely to
+>> have bugs.
+>> 
+>> In comparison my previous standard RBF patch can replace multiple
+>> transactions with one, can replace long chains of transactions, etc.
+>> It's willing to do more computation before deciding if a transaction
+>> should be replaced, with more complex logic; it probably has a higher
+>> chance of having a bug or DoS attack.
+>> 
+>> You've probably seen the huge controversy around zeroconf with regard to
+>> standard replace-by-fee. While FSS RBF doesn't make zeroconf any safer,
+>> it also doesn't make it any more dangerous, so politically with regard
+>> to zeroconf it makes no difference. You *can* still use it doublespend
+>> by taking advantage of how different transactions are accepted
+>> differently, but that's true of *every* change we've ever made to
+>> Bitcoin Core - by upgrading to v0.10 from v0.9 you've also "broken"
+>> zeroconf in the same way.
+>> 
+>> 
+>> Having said that... honestly, zeroconf is pretty broken already. Only
+>> with pretty heroic measures like connecting to a significant fraction of
+>> the Bitcoin network at once, as well as connecting to getblocktemplate
+>> supporting miners to figure out what transactions are being mined, are
+>> services having any hope of avoiding getting ripped off. For the average
+>> user their wallets do a terrible job of showing whether or not an
+>> unconfirmed transaction will go through. For example, Schildbach's
+>> Bitcoin wallet for Android has no code at all to detect double-spends
+>> until they get mined, and I've been able to trick it into showing
+>> completely invalid transactions. In fact, currently Bitcoin XT will
+>> relay invalid transactions that are doublepsends, and Schildbach's
+>> wallet displays them as valid, unconfirmed, payments. It's really no
+>> surprise to me that nearly no-one in the Bitcoin ecosystem accepts
+>> unconfirmed transactions without some kind of protection that doesn't
+>> rely on first-seen-safe mempool behavior. For instance, many ATM's these
+>> days know who their customers are due to AML requirements, so while you
+>> can deposit Bitcoins and get your funds instantly, the protection for
+>> the ATM operator is that they can go to the police if you rip them off;
+>> I've spoken to ATM operators who didn't do this who've lost hundreds or
+>> even thousands of dollars before giving up on zeroconf.
+>> 
+>> My big worry with zeroconf is a service like Coinbase or Shapeshift
+>> coming to rely on it, and then attempting to secure it by gaining
+>> control of a majority of hashing power. For instance, if Coinbase had
+>> contracts with 80% of the Bitcoin hashing power to guarantee their
+>> transactions would get mined, but 20% of the hashing power didn't sign
+>> up, then the only way to guarantee their transactions could be for the
+>> 80% to not build on blocks containing doublespends by the 20%. There's
+>> no way in a decentralized network to come to consensus about what
+>> transactions are or are not valid without mining itself, so you could
+>> end up in a situation where unless you're part of one of the big pools
+>> you can't reliably mine at all because your blocks may get rejected for
+>> containing doublespends.
+>> 
+>> One of my goal with standard replace-by-fee is to prevent this scenario
+>> by forcing merchants and others to implement ways of accepting zeroconf
+>> transactions safely that work in a decentralized environment regardless
+>> of what miners do; we have a stronger and safer Bitcoin ecosystem if
+>> we're relying on math rather than trust to secure our zeroconf
+>> transactions. We're also being more honest to users, who right now often
+>> have the very wrong impression that unconfirmed transactions are safe to
+>> accept - this does get people ripped off all too often!
+>> 
+>> 
+>> Anyway, sorry for the rant! FWIW I updated my FSS-RBF patch and am
+>> waiting to get some feedback:
+>> 
+>>    https://github.com/bitcoin/bitcoin/pull/6176
+>> 
+>> Suhas Daftuar did find a pretty serious bug in it, now fixed. I'm
+>> working on porting it to v0.10.2, and once that's done I'm going to put
+>> up a bounty for anyone who can find a DoS attack in the patch. If no-one
+>> claims the bounty after a week or two I think I'll start feeling
+>> confident about using it in production.
+>> 
+>> 
+>> --
+>> 'peter'[:-1]@petertodd.org
+>> 000000000000000003188926be14e5fbe2f8f9c63c9fb8e2ba4b14ab04f1c9ab
+>> 
+>> ------------------------------------------------------------------------------
+>> 
+>> _______________________________________________
+>> Bitcoin-development mailing list
+>> Bitcoin-development at lists.sourceforge.net
+>> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> 
+> ------------------------------------------------------------------------------
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+
+
