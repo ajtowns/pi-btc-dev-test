@@ -1,0 +1,324 @@
+From: odinn.cyberguerrilla@riseup.net (odinn)
+Date: Sat, 20 Jun 2015 13:04:48 -0700
+Subject: [Bitcoin-development] F2Pool has enabled full replace-by-fee
+In-Reply-To: <20150619103959.GA32315@savin.petertodd.org>
+References: <20150619103959.GA32315@savin.petertodd.org>
+Message-ID: <5585C760.5010304@riseup.net>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+Peter,
+
+Recently there was a brouhaha over Coinbase censoring the ability of
+firearms businesses to accept bitcoins via Coinbase
+https://www.reddit.com/r/Bitcoin/comments/3agbs7/coinbase_shuts_down_bit
+coin_biz_for_firearms/
+
+The question and relevance here to this is that for people who are
+going for the alternate route (e.g., bailing on Coinbase / Bitpay /
+similar web wallets, in favor of setting up with something like
+Electrum and using Gear https://gear.mycelium.com/ as payment
+processor or Straight
+https://github.com/snitko/straight-server,
+what would be the answer to "What does this mean for me?" for this topic
+?
+
+On 06/19/2015 03:39 AM, Peter Todd wrote:
+> Yesterday F2Pool, currently the largest pool with 21% of the
+> hashing power, enabled full replace-by-fee (RBF) support after
+> discussions with me. This means that transactions that F2Pool has
+> will be replaced if a conflicting transaction pays a higher fee.
+> There are no requirements for the replacement transaction to pay
+> addresses that were paid by the previous transaction.
+> 
+> 
+> I'm a user. What does this mean for me? 
+> ---------------------------------------
+> 
+> In the short term, very little. Wallet software aimed at average
+> users has no ability to reliably detect conditions where an
+> unconfirmed transaction may be double-spent by the sender. For
+> example, Schildbach's Bitcoin Wallet for Android doesn't even
+> detect double-spends of unconfirmed transactions when connected to
+> a RBF or Bitcoin XT nodes that propagate them. The least
+> sophisticated double-spend attack possibly - simply broadcasting
+> two conflicting transactions at the same time - has about 50%
+> probability of success against these wallets.
+> 
+> Additionally, SPV wallets based on bitcoinj can't even detect
+> invalid transactions reliably, instead trusting the full node(s) it
+> is connected too over the unauthenticated, unencrypted, P2P
+> protocol to do validation for them. For instance due to a unfixed
+> bug? Bitcoin XT nodes will relay double-spends that spend the
+> output of the conflicting transaction. I've personally tested this
+> with Schildbach's Bitcoin Wallet for Android, which shows such
+> invalid transactions as standard, unconfirmed, transactions.
+> 
+> Users should continue to assume that unconfirmed transactions could
+> be trivially reversed by the sender until the first confirmation.
+> In general, only the sender can reverse a transaction, so if you do
+> trust the sender feel free to assume an unconfirmed transaction
+> will eventually confirm. However, if you do not trust the sender
+> and/or have no other recourse if they double-spend you, wait until
+> at least the first confirmation before assuming the transaction
+> will go through.
+> 
+> In the long term, miner support of full RBF has a number of
+> advantages to users, allowing you to more efficiently make
+> transactions, paying lower fees. However you'll need a wallet
+> supporting these features; none exist yet.
+> 
+> 
+> I'm a business. What does this mean for me? 
+> -------------------------------------------
+> 
+> If you use your own node to verify transactions, you probably are
+> in a similar situation as average users, so again, this means very
+> little to you.
+> 
+> If you use a payment processor/transaction API such as BitPay,
+> Coinbase, BlockCypher, etc. you may or may not be accepting
+> unconfirmed transactions, and they may or may not be "guaranteed"
+> by your payment processor even if double-spent. If like most
+> merchants you're using the API such that confirmations are required
+> prior to accepting orders (e.g. taking a meaningful loss such as
+> shipping a product if the tx is reversed) nothing changes for you.
+> If not I recommend you contact your payment processor.
+> 
+> 
+> I'm a miner. Why should I support replace-by-fee? 
+> -------------------------------------------------
+> 
+> Whether full or first-seen-safe? RBF support (along with 
+> child-pays-for-parent) is an important step towards a fully
+> functioning transaction fee market that doesn't lead to users'
+> transactions getting mysteriously "stuck", particularly during
+> network flooding events/attacks. A better functioning fee market
+> will help reduce pressure to increase the blocksize, particularly
+> from the users creating the most valuable transactions.
+> 
+> Full RBF also helps make use of the limited blockchain space more 
+> efficiently, with up to 90%+ transaction size savings possible in
+> some transaction patterns. (e.g. long payment chains?) More users
+> in less blockchain space will lead to higher overall fees per
+> block.
+> 
+> Finally as we'll discuss below full RBF prevents a number of
+> serious threats to the existing level playing field that miners
+> operate in.
+> 
+> 
+> Why can't we make accepting unconfirmed txs from untrusted people
+> safe? 
+> ----------------------------------------------------------------------
+- -
+>
+>  For a decentralized wallet, the situation is pretty bleak. These
+> wallets only have a handful of connections to the network, with no
+> way of knowing if those connections give an accurate view of what
+> transactions miners actually know about.
+> 
+> The only serious attempt to fix this problem for decentralized
+> wallets that has been actually deployed is Andresen/Harding's
+> double-spend relaying, implemented in Bitcoin XT. It relays up to
+> one double-spend transaction per double-spent txout, with the
+> intended effect to warn recipients. In practice however this
+> functionality makes it easier to double-spend rather than harder,
+> by giving an efficient and easy way to get double-spends to miners
+> after the fact. Notably my RBF implementation even connects to
+> Bitcoin XT nodes, reserving a % of all incoming and outgoing
+> connection slots for them.
+> 
+> Additionally Bitcoin XT's double-spend relaying is subject to
+> attacks include bandwidth exhaustion, sybil attacks, and Gervais's
+> non-sybil interactive attacks? among many others.
+> 
+> 
+> What about centralised wallets? -------------------------------
+> 
+> Here the solutions being deployed, planned, and proposed are
+> harmful, and even represent serious threats to Bitcoin's
+> decentralization.
+> 
+> 
+> Confidence factors ------------------
+> 
+> Many services such as BlockCypher? have attempted to predict the 
+> probability that unconfirmed transactions will be mined, often 
+> guaranteeing merchants payment? even in the event of a
+> double-spend. The key component of these predictions is to sybil
+> attack the P2P network as a whole, connecting to as many nodes as
+> possible to measure transaction propagation. Additionally these
+> services connect to pools directly via the getblocktemplate
+> protocol, repeatedly downloading via GBT the lists of transactions
+> in the to-be-mined blocks to determine what transactions miners are
+> attempting to mine.
+> 
+> None of these measures scale, wasting significant network and
+> miner resources; in one instance a sybil attack by Chainalysis even
+> completely blocked the users of the SPV wallet Breadwallet? from
+> accessing the network. These measures also don't work very well,
+> giving double-spend attackers incentives to sybil attack miners
+> themselves.
+> 
+> 
+> Transaction processing contracts with miners 
+> --------------------------------------------
+> 
+> The next step after measuring propagation fails is to contract
+> with miners directly, signing contracts with as much of the hashing
+> power as possible to get the transactions they want mined and
+> double-spends rejected. The miners/pools would then provide an
+> authenticated API endpoint for exclusive use of this service that
+> would allow the service to add and remove specific transactions to
+> the mempool on demand.
+> 
+> There's a number of serious problems with this:
+> 
+> 1) Mining contracts can be used to double-spend
+> 
+> ...even when they're being used "honestly".
+> 
+> Suppose Alice is a merchant using CoinPayCypher, who has contracts
+> with 75% of the hashing power. Bob, another merchant, meanwhile
+> uses a decentralized Bitcoin Core backend for payments to his
+> website.
+> 
+> Mallory wants to double-spend Bob's to buy his expensive products.
+> He can do this by creating a transaction, tx1, that pays Alice,
+> followed by a second transaction, tx2, that pays Bob. In any
+> circumstance when Mallory can convince Bob to accept tx2, but
+> prevent Bob from seeing tx1, the chance of Malory's double-spend
+> succeeding becomes ~75% because CoinPayCypher's contracts with
+> mining ensure the transaction paying Alice will get mined.
+> 
+> Of course, dishonest use and/or compromise makes double-spending 
+> trivial: Malory can use the API credentials to ask miners to
+> reject Bob's payment at any time.
+> 
+> 
+> 2) They still don't work, without 51% attacking other miners
+> 
+> Even if CoinPayCypher has 75% of the hashing power on contract,
+> that's still a potentially 75% chance of being double-spent. The
+> 25% of miners who haven't signed contracts have no _decentralized_
+> way of ensuring they don't create blocks with double-spends, let
+> alone at low cost. If those miners won't or can't sign contracts
+> with CoinPayCypher the only next step available is to reject their
+> blocks entirely.
+> 
+> 
+> 3) Legal contracts give the advantage to non-anonymous miners in 
+> Western jurisdictions
+> 
+> Suppose CoinPayCypher is a US company, and you're a miner with 1% 
+> hashing power located in northern China. The barriers to you
+> succesfully negotiating a contract with CoinPayCypher are
+> significant. You don't speak the same langauge, you're in a
+> completely different jurisdiction so enforcing the legal contract
+> is difficult, and being just 1%, CoinPayCypher sees you as
+> insignificant.
+> 
+> Who's going to get the profitable hashing power contracts first, if
+> at all? Your English speaking competitors in the west. This is
+> inherently a pressure towards centralization of mining.
+> 
+> 
+> Why isn't this being announced on the bitcoin-security list first? 
+> ------------------------------------------------------------------
+> 
+> I've had repeated discussions with services vulnerable to
+> double-spends; they have been made well aware of the risk they're
+> taking. If they've followed my own and others' advice they'll at
+> minimum have constant monitoring of the rate of double-spends both
+> on their own services and on the P2P network in general.
+> 
+> If you choose to take a risk you should accept the consequences.
+> 
+> 
+> How do I actually use full RBF? -------------------------------
+> 
+> First get the full-RBF patch to v0.10.2:
+> 
+> https://github.com/petertodd/bitcoin/tree/replace-by-fee-v0.10.2
+> 
+> The above implementation of RBF includes additional code to find
+> and preferentially connect to other RBF nodes, as well as Bitcoin
+> XT nodes. Secondly, try out my replace-by-fee-tools at:
+> 
+> https://github.com/petertodd/replace-by-fee-tools
+> 
+> You can watch double-spends on the network here:
+> 
+> http://respends.thinlink.com/
+> 
+> 
+> References ----------
+> 
+> 1) "Replace-by-fee v0.10.2 - Serious DoS attack fixed! - Also
+> novel variants of existing attacks w/ Bitcoin XT and Android
+> Bitcoin Wallet", Peter Todd, May 23rd 2015, Bitcoin-development
+> mailing list, 
+> http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/
+msg07795.html
+>
+>  2) "From Zero to Hero: Bitcoin Transactions in 8 Seconds", June
+> 2nd, 2014, Erik Voorhees, 
+> https://medium.com/blockcypher-blog/from-zero-to-hero-bitcoin-transact
+ions-in-8-seconds-7c9edcb3b734
+>
+>  3) Coinbase Merchant API, Accessed Jun 19th 2015, 
+> https://developers.coinbase.com/docs/merchants/callbacks#confirmations
+>
+>  4) "Chainalysis CEO Denies 'Sybil Attack' on Bitcoin's Network", 
+> March 14th 2015, Grace Caffyn, Coindesk, 
+> http://www.coindesk.com/chainalysis-ceo-denies-launching-sybil-attack-
+on-bitcoin-network/
+>
+>  5) "First-Seen-Safe Replace-by-Fee", May 25th 2015, Peter Todd,
+> Bitcoin-development mailing list, 
+> http://www.mail-archive.com/bitcoin-development%40lists.sourceforge.ne
+t/msg07829.html
+>
+>  6) "Cost savings by using replace-by-fee, 30-90%", May 25th 2015,
+> Peter Todd, Bitcoin-development mailing list, 
+> http://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/
+msg07813.html
+>
+>  7) "Tampering with the Delivery of Blocks and Transactions in
+> Bitcoin", Arthur Gervais and Hubert Ritzdorf and Ghassan O. Karame
+> and Srdjan Capkun, Cryptology ePrint Archive: Report 2015/578, Jun
+> 10th 2015, http://eprint.iacr.org/2015/578
+> 
+> 
+> 
+> ----------------------------------------------------------------------
+- --------
+>
+> 
+> 
+> 
+> _______________________________________________ Bitcoin-development
+> mailing list Bitcoin-development at lists.sourceforge.net 
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> 
+
+- -- 
+http://abis.io ~
+"a protocol concept to enable decentralization
+and expansion of a giving economy, and a new social good"
+https://keybase.io/odinn
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1
+
+iQEcBAEBAgAGBQJVhcdfAAoJEGxwq/inSG8CVxUH/1E7P/fuAaDaVMGexaW8MVRT
+wEPx/sI1IU7S7UC5wXdcm9EufSK4smPLyPuW97LAPRIGnSvTF8BEYW+EW1hLtt0V
+p9Vbj7+Ii5CJtarLebjeYKjiNSXF8h2p8oH+eeCjUygnzHt5Hsbc8R0aMRyPDJkT
+lNQmzWGxN1rBTjTQZ+FDA2E2AA1Dkv7UXL15MwudxLOCUONTMh3uwUKC5dz9HE+5
+dz3iZWx879VLuaQscDz65FBf5axSKFjL+RGkIuPLF8B1ybsSl0ZYEctmPIv5Ld4V
+w0bw+oABCFvCKbINdUY+VOdXogDXJDVmCaY/Bbu6sPoZcr0FmHrvHd9KfngjkR4=
+=7W68
+-----END PGP SIGNATURE-----
+
+
