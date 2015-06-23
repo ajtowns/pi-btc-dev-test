@@ -1,0 +1,58 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Tue, 23 Jun 2015 15:23:27 +0930
+Subject: [bitcoin-dev] [RFC] IBLT block testing implementation
+Message-ID: <871th3t1go.fsf@rustcorp.com.au>
+
+Hi all,
+
+        I've come up with a model for using IBLT to communicate blocks
+between peers.  The gory details can be found on github: it's a
+standalone C++ app for testing not integrated with bitcoin.
+
+        https://github.com/rustyrussell/bitcoin-iblt
+
+Assumptions and details:
+
+1. The base idea comes from Gavin's Block Propagation gist:
+        https://gist.github.com/gavinandresen/e20c3b5a1d4b97f79ac2
+
+2. It relies on similarity in mempools, with some selection hints.  This
+   is designed to be as flexible as possible to make fewest assumptions
+   on tx selection policy.
+
+3. The selection hints are: minimum fee-per-byte (fixed point) and
+   bitmaps of included-despite-that and rejected-despite-that.  The
+   former covers things like child-pays-for-parent and the priority
+   area.  The latter covers other cases like Eligius censoring "spam",
+   bitcoin version differences, etc.
+
+4. Cost to represent these exceptional added or excluded transactions is
+   (on average) log2(transactions in mempool) bits.
+
+5. At Peiter Wuille's suggestion, it is designed to be reencoded between
+   nodes.  It seems fast enough for that, and neighboring nodes should
+   have most similar mempools.
+
+6. It performs reasonably well on my 100 block sample in bitcoin-corpus
+   (chosen to include a mempool spike):
+
+   Average block range (bytes):                         7988-999829
+   Block size mean (bytes):                             401926
+
+   Minimal decodable BLT size range (bytes):            314-386361
+   Minimal decodable BLT size mean (bytes):             13265
+
+7. Actual results will have to be worse than these minima, as peers will
+   have to oversize the IBLT to have reasonable chance of success.
+
+8. There is more work to do, and more investigation to be done, but I
+   don't expect more than a 25% reduction in this "ideal minimum"
+   result.
+
+Special thanks to Kalle Rosenbaum for helping investigate IBLTs with me
+last year.
+
+Cheers,
+Rusty.
+PS. I work for Blockstream.  And I'm supposed to be working on
+    Lightning, not this.
