@@ -1,0 +1,276 @@
+From: will.madden@novauri.com (Will)
+Date: Wed, 24 Jun 2015 09:06:40 -0400
+Subject: [bitcoin-dev] Draft BIP : fixed-schedule block size increase
+In-Reply-To: <CADm_WcZ52_fvNk_rWzu+Nw1CBz2o6t6cMkEfOm3BpdjH7iQKrw@mail.gmail.com>
+References: <CABsx9T2HegqOBqd1jijk1bZBE6N+NH8x6nfwbaoLBACVf8-WBQ@mail.gmail.com>
+	<558A0B4A.7090205@riseup.net> <558A1E8E.30306@novauri.com>
+	<CADm_WcZ52_fvNk_rWzu+Nw1CBz2o6t6cMkEfOm3BpdjH7iQKrw@mail.gmail.com>
+Message-ID: <2DC61141-96C9-4727-81D6-3CF572BC6BD7@novauri.com>
+
+Yes, but with a key distinction.   Today miners may collude to (or unintentionally) lower the block size limit for blocks they win.  BIP-100 introduces the possibility of lowering the block size limit for everyone over the next 12,000 blocks.
+
+Another gap involves laziness.  What is a far more likely issue is not a conspiracy but that miners will be lazy and hard code their vote values, requiring arm twisting later to change them.  Preventing this headache introduces the need for more complexity, either by making the default a non-vote (which makes it easier to game the system with less voting power), or by making the default vote = MAX_BLOCK_SIZE * 1.09 (which makes the default similar is to Gavin's proposal).
+
+I think with a default vote that is ~9% larger than the previous max block size and no option to lower the max block size then BIP-100 could work without added risk or defeating the intended purpose.  Still, one has to ask if the benefit is there to justify the additional moving parts.
+
+> On Jun 23, 2015, at 11:49 PM, Jeff Garzik <jgarzik at gmail.com> wrote:
+> 
+> Miners can collude today to lower the block size limit.
+> 
+> In fact, this largely happens already out of laziness - miners often follow the "soft" default limit set by Bitcoin Core, to the point where you can chart when miners upgrade to new software: http://hashingit.com/analysis/39-the-myth-of-the-megabyte-bitcoin-block
+> 
+> 
+> 
+>> On Tue, Jun 23, 2015 at 8:05 PM, William Madden <will.madden at novauri.com> wrote:
+>> Here are refutations of the approach in BIP-100 here:
+>> http://gtf.org/garzik/bitcoin/BIP100-blocksizechangeproposal.pdf
+>> 
+>> To recap BIP-100:
+>> 
+>> 1) Hard form to remove static 1MB block size limit
+>> 2) Add new floating block size limit set to 1MB
+>> 3) Historical 32MB message limit remains
+>> 4) Hard form on testnet 9/1/2015
+>> 5) Hard form on main 1/11/2016
+>> 6) 1MB limit changed via one-way lock in upgrade with a 12,000 block
+>> threshold by 90% of blocks
+>> 7) Limit increase or decrease may not exceed 2x in any one step
+>> 8) Miners vote by encoding 'BV'+BlockSizeRequestValue into coinbase
+>> scriptSig, e.g. "/BV8000000/" to vote for 8M.
+>> 9) Votes are evaluated by dropping bottom 20% and top 20%, and then the
+>> most common floor (minimum) is chosen.
+>> 
+>> 8MB limits doubling just under every 2 years makes a static value grow
+>> in a predictable manner.
+>> 
+>> BIP-100 makes a static value grow (or more importantly potentially
+>> shrink) in an unpredictable manner based on voting mechanics that are
+>> untested in this capacity in the bitcoin network.  Introducing a highly
+>> variable and untested dynamic into an already complex system is
+>> unnecessarily risky.
+>> 
+>> For example, the largely arbitrary voting rules listed in 9 above can be
+>> gamed.  If I control pools or have affiliates involved in pools that
+>> mine slightly more than 20% of blocks, I could wait until block sizes
+>> are 10MB, and then suddenly vote "/BV5000000/" for 20% of blocks and
+>> "/BV5000001/" for the remaining 10%.  If others don't consistently vote
+>> for the same "/BV#/" value, vote too consistently and have their value
+>> thrown out as the top 20%, I could win the resize to half capacity
+>> "/BV5000001/" because it was the lowest repeated value not in the bottom
+>> 20%.
+>> 
+>> I could use this to force an exodus to my sidechain/alt coin, or to
+>> choke out the bitcoin network.  A first improvement would be to only let
+>> BIP-100 raise the cap and not lower it, but if I can think of a
+>> vulnerability off the top of my head, there will be others on the other
+>> side of the equation that have not been thought of.  Why bother
+>> introducing a rube goldberg machine like voting when a simple 8mb cap
+>> with predictable growth gets the job done, potentially permanently?
+>> 
+>> 
+>> On 6/23/2015 9:43 PM, odinn wrote:
+>> > -----BEGIN PGP SIGNED MESSAGE-----
+>> > Hash: SHA1
+>> >
+>> > 1) Hard fork not (necessarily) needed
+>> > 2) See Garzik's BIP 100, better (this is not meant to say "superior to
+>> > your stuff," but rather simply to say, "Better you should work with
+>> > Garzik to implement BIP-100, that would be good")
+>> > 3) See points 1 and 2 above
+>> > 4) If still reading... changes should be (as you seem to have been
+>> > trying to lean towards)... lean towards gradual change; hence, changes
+>> > that would flow from this BIP would be better off oriented in a
+>> > process that dies not require the "way you have done it."
+>> >
+>> > You did address that, to be fair - in your TODO, this link:
+>> > http://gavinandresen.ninja/time-to-roll-out-bigger-blocks
+>> >
+>> > contained the following link:
+>> >
+>> > http://gavinandresen.ninja/bigger-blocks-another-way
+>> >
+>> > However, in reading that, I didn't see any meaningful statements that
+>> > would refute the approach in Garzik's BIP-100.
+>> >
+>> > Maybe a better way to say this is,
+>> >
+>> > Work with Jeff Garzik (which I am sure you are already having such
+>> > discussions in private) as well as the list discussions,
+>> > Move forward on BIP-100 with Garzik and other developers (not such a
+>> > bad plan really) and don't get caught up in XT.  (If you feel you can
+>> > develop XT further, that is your thing but it would perhaps make you
+>> > lose focus, work together with other developers.)
+>> >
+>> > Relax into the process.  Things will be ok.
+>> >
+>> > Respectfully,
+>> >
+>> > - -O
+>> >
+>> > On 06/22/2015 11:18 AM, Gavin Andresen wrote:
+>> >> I promised to write a BIP after I'd implemented
+>> >> increase-the-maximum-block-size code, so here it is. It also lives
+>> >> at:
+>> >> https://github.com/gavinandresen/bips/blob/blocksize/bip-8MB.mediawiki
+>> >>
+>> >>  I don't expect any proposal to please everybody; there are
+>> >> unavoidable tradeoffs to increasing the maximum block size. I
+>> >> prioritize implementation simplicity -- it is hard to write
+>> >> consensus-critical code, so simpler is better.
+>> >>
+>> >>
+>> >>
+>> >>
+>> >> BIP: ?? Title: Increase Maximum Block Size Author: Gavin Andresen
+>> >> <gavinandresen at gmail.com <mailto:gavinandresen at gmail.com>> Status:
+>> >> Draft Type: Standards Track Created: 2015-06-22
+>> >>
+>> >> ==Abstract==
+>> >>
+>> >> This BIP proposes replacing the fixed one megabyte maximum block
+>> >> size with a maximum size that grows over time at a predictable
+>> >> rate.
+>> >>
+>> >> ==Motivation==
+>> >>
+>> >> Transaction volume on the Bitcoin network has been growing, and
+>> >> will soon reach the one-megabyte-every-ten-minutes limit imposed by
+>> >> the one megabyte maximum block size. Increasing the maximum size
+>> >> reduces the impact of that limit on Bitcoin adoption and growth.
+>> >>
+>> >> ==Specification==
+>> >>
+>> >> After deployment on the network (see the Deployment section for
+>> >> details), the maximum allowed size of a block on the main network
+>> >> shall be calculated based on the timestamp in the block header.
+>> >>
+>> >> The maximum size shall be 8,000,000 bytes at a timestamp of
+>> >> 2016-01-11 00:00:00 UTC (timestamp 1452470400), and shall double
+>> >> every 63,072,000 seconds (two years, ignoring leap years), until
+>> >> 2036-01-06 00:00:00 UTC (timestamp 2083190400). The maximum size of
+>> >> blocks in between doublings will increase linearly based on the
+>> >> block's timestamp. The maximum size of blocks after 2036-01-06
+>> >> 00:00:00 UTC shall be 8,192,000,000 bytes.
+>> >>
+>> >> Expressed in pseudo-code, using integer math:
+>> >>
+>> >> function max_block_size(block_timestamp):
+>> >>
+>> >> time_start = 1452470400 time_double = 60*60*24*365*2 size_start =
+>> >> 8000000 if block_timestamp >= time_start+time_double*10 return
+>> >> size_start * 2^10
+>> >>
+>> >> // Piecewise-linear-between-doublings growth: time_delta =
+>> >> block_timestamp - t_start doublings = time_delta / time_double
+>> >> remainder = time_delta % time_double interpolate = (size_start *
+>> >> 2^doublings * remainder) / time_double max_size = size_start *
+>> >> 2^doublings + interpolate
+>> >>
+>> >> return max_size
+>> >>
+>> >> ==Deployment==
+>> >>
+>> >> Deployment shall be controlled by hash-power supermajority vote
+>> >> (similar to the technique used in BIP34), but the earliest possible
+>> >> activation time is 2016-01-11 00:00:00 UTC.
+>> >>
+>> >> Activation is achieved when 750 of 1,000 consecutive blocks in the
+>> >> best chain have a version number with bits 3 and 14 set (0x20000004
+>> >> in hex). The activation time will be the timestamp of the 750'th
+>> >> block plus a two week (1,209,600 second) grace period to give any
+>> >> remaining miners or services time to upgrade to support larger
+>> >> blocks. If a supermajority is achieved more than two weeks before
+>> >> 2016-01-11 00:00:00 UTC, the activation time will be 2016-01-11
+>> >> 00:00:00 UTC.
+>> >>
+>> >> Block version numbers are used only for activation; once activation
+>> >> is achieved, the maximum block size shall be as described in the
+>> >> specification section, regardless of the version number of the
+>> >> block.
+>> >>
+>> >>
+>> >> ==Rationale==
+>> >>
+>> >> The initial size of 8,000,000 bytes was chosen after testing the
+>> >> current reference implementation code with larger block sizes and
+>> >> receiving feedback from miners stuck behind bandwidth-constrained
+>> >> networks (in particular, Chinese miners behind the Great Firewall
+>> >> of China).
+>> >>
+>> >> The doubling interval was chosen based on long-term growth trends
+>> >> for CPU power, storage, and Internet bandwidth. The 20-year limit
+>> >> was chosen because exponential growth cannot continue forever.
+>> >>
+>> >> Calculations are based on timestamps and not blockchain height
+>> >> because a timestamp is part of every block's header. This allows
+>> >> implementations to know a block's maximum size after they have
+>> >> downloaded it's header, but before downloading any transactions.
+>> >>
+>> >> The deployment plan is taken from Jeff Garzik's proposed BIP100
+>> >> block size increase, and is designed to give miners, merchants,
+>> >> and full-node-running-end-users sufficient time to upgrade to
+>> >> software that supports bigger blocks. A 75% supermajority was
+>> >> chosen so that one large mining pool does not have effective veto
+>> >> power over a blocksize increase. The version number scheme is
+>> >> designed to be compatible with Pieter's Wuille's proposed "Version
+>> >> bits" BIP.
+>> >>
+>> >> TODO: summarize objections/arguments from
+>> >> http://gavinandresen.ninja/time-to-roll-out-bigger-blocks.
+>> >>
+>> >> TODO: describe other proposals and their advantages/disadvantages
+>> >> over this proposal.
+>> >>
+>> >>
+>> >> ==Compatibility==
+>> >>
+>> >> This is a hard-forking change to the Bitcoin protocol; anybody
+>> >> running code that fully validates blocks must upgrade before the
+>> >> activation time or they will risk rejecting a chain containing
+>> >> larger-than-one-megabyte blocks.
+>> >>
+>> >> Simplified Payment Verification software is not affected, unless
+>> >> it makes assumptions about the maximum depth of a transaction's
+>> >> merkle branch based on the minimum size of a transaction and the
+>> >> maximum block size.
+>> >>
+>> >> ==Implementation==
+>> >>
+>> >> https://github.com/gavinandresen/bitcoinxt/tree/blocksize_fork
+>> >>
+>> >>
+>> >>
+>> >> _______________________________________________ bitcoin-dev mailing
+>> >> list bitcoin-dev at lists.linuxfoundation.org
+>> >> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>> >>
+>> >
+>> > - --
+>> > http://abis.io ~
+>> > "a protocol concept to enable decentralization
+>> > and expansion of a giving economy, and a new social good"
+>> > https://keybase.io/odinn
+>> > -----BEGIN PGP SIGNATURE-----
+>> > Version: GnuPG v1
+>> >
+>> > iQEcBAEBAgAGBQJVigtJAAoJEGxwq/inSG8CqZwIAIG3ZQzekfccPxBOMqtim175
+>> > Crov6hrO9FaIzbLljECpUi60RKuDM/fs09ZJsKKIaJPkB5dlJjs4huc206veAIO+
+>> > K2h3DmAcA6W/Thk0C2cV3ewv+OiELDOhpeoddBBLPadAfaBGr4l9ltqWLdBtMCmw
+>> > OtmiWstEuXTao9ApgoFOmybdmCjbfrfhejOOHs/pMiSn5xVE60RK4x2HFTFsHfAN
+>> > fZAeLCuwuN2qWMrVrr+cbpCXjEuE1xZG3WEj7ppYoGR+AgF/Y5/U1j7S4PVpk85s
+>> > CgMkpcWvLnBMmSCrllnRZy1Gfrwk36Pg0rXD/l/NNd0/KTpmPSvkX/bCyzFwbzo=
+>> > =ft62
+>> > -----END PGP SIGNATURE-----
+>> > _______________________________________________
+>> > bitcoin-dev mailing list
+>> > bitcoin-dev at lists.linuxfoundation.org
+>> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>> >
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150624/cc0ad835/attachment-0001.html>
