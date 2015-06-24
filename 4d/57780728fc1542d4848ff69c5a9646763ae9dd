@@ -1,0 +1,150 @@
+From: kristovatlas.lists@gmail.com (Kristov Atlas)
+Date: Wed, 24 Jun 2015 18:09:32 -0400
+Subject: [bitcoin-dev] [Bitcoin-development] [RFC] Canonical input and
+ output ordering in transactions
+In-Reply-To: <CAGH37S+674cAVC7=WvST_SPkXjfNkzbj7Y_me_M6C+ieHX6EAA@mail.gmail.com>
+References: <87k2vhfnx9.fsf@rustcorp.com.au>
+	<CAAS2fgRgWZX_O_2O1bgdFd_04xVp5Lnpw4hf=v6RSTXmsbdzPQ@mail.gmail.com>
+	<CAGH37S+674cAVC7=WvST_SPkXjfNkzbj7Y_me_M6C+ieHX6EAA@mail.gmail.com>
+Message-ID: <CAGH37SJxUsGQU_WjnQE4N3=hPeOtNHUyTStkajeMK6h6OBCjow@mail.gmail.com>
+
+Following up on this topic...
+
+gmaxwell has reserved BIP 69 for my proposal.
+
+It has been implemented by Electrum in v2.3.2:
+https://github.com/spesmilo/electrum/blob/master/RELEASE-NOTES
+
+Rusty has kindly tweaked his original canonical ordering proposal
+implementation for Bitcoin Core's wallet client to fit my proposal:
+https://github.com/rustyrussell/bitcoin/tree/bip-69 (needs testing)
+
+Outstanding objections appear to me to boil down to two points:
+
+1) Some transactions cannot comply with this BIP because there are input
+and/or put index dependencies.
+
+My response: No big deal, it's informational. They simply won't be
+compliant with the BIP, and that's fine with me.
+
+2) If we set a standard now for transactions that is not apparently random
+ordering from the perspective of passive blockchain observers, transactions
+that can't comply with this BIP will stand out. Also, if we change our
+collective minds in the future about how ordering should be handled, those
+future transactions would stand out. Therefore, the "safe" course of action
+is to come up with another scheme that appears to be random ordering from
+the perspective of a passive blockchain observer.
+
+My response: Apparently-random but owner-verifiable ordering is doable.
+Discussion of this has revolved around what I have called a "sorting key"
+-- sort lexicographically, and then reorder according to the bits in a
+sorting key that is impossible to predict by an attacker. This means
+passive observers cannot determine anything meaningful about the
+transaction (e.g. which output is change, information leaked based on utxo
+selection algorithm for inputs, etc.) but the owner of the funds and the
+sorting key can verify that his transaction matches the canonical
+specification. Ideally, I think the key should rotate for each transaction
+to avoid the possibility that a static key can link multiple transactions
+together. The key should be rotated in such a fashion that the next
+iteration is not predictable to anyone except the key holder (e.g. put the
+key through a secure pseudo-random function for each new iteration). This
+could be done by generating a few bytes of entropy upon wallet creation and
+keeping track of the current iteration of rotation. HD wallets could derive
+the initial state of the sorting key by deriving it from the HD seed. There
+are a variety of schemes that could work here.
+
+My main objection to this family of approaches at present is complexity. I
+suspect that many wallet clients will not want to implement the BIP if they
+have to maintain a sorting key.
+
+A second objection is that no one will be able to detect anomalies in BIP
+compliance except for the sorting key holder. Most users probably will not
+bother to verify this. For code reviewers, this means that the sorting key
+is yet another aspect of the code base that must be scrutinized to ensure
+it is not being used as a covert channel or has been underhandedly weakened
+in some fashion.
+
+Also, I will mention an ancillary benefit of a non-random canonical
+ordering: it makes unit testing of transactions for Bitcoin wallets simpler.
+
+Given all of the above, I will reiterate my preference to keep the proposal
+as it is now. The pull request is here:
+https://github.com/bitcoin/bips/pull/157
+
+If there is market demand for it, a separate sorting key-based proposal
+could be written which can compete with this BIP and over time successfully
+deprecate it. I would currently envision that as an HD BIP with a new
+purpose code.
+
+-Kristov
+
+
+On Mon, Jun 15, 2015 at 12:01 AM, Kristov Atlas <
+kristovatlas.lists at gmail.com> wrote:
+
+> On Sun, Jun 14, 2015 at 7:02 PM, Gregory Maxwell <gmaxwell at gmail.com>
+> wrote:
+>
+>> I'm not a great fan of this proposal for two reasons: The first is
+>> that the strict ordering requirements is incompatible with future
+>> soft-forks that may expose additional ordering constraints. Today we
+>> have _SINGLE, which as noted this interacts with poorly, but there
+>> have been other constraints proposed that this would also interact
+>> with poorly.
+>>
+>
+> I'm not clear on why this is a problem, so long as the canonical ordering
+> BIP is *optional*. Unless there is a specific plan to soft fork a change
+> that would break the BIP and it is fairly imminent, I see this only as a
+> reason not to integrate it into isStandard().
+>
+>
+>> The second is that even absent consensus rules there may be invisible
+>> constraints in systems-- e.g. hardware wallets that sign top down, or
+>> future transaction covenants that have constraints about ordering,  or
+>> proof systems that use (yuck) midstate compression for efficiency. Right
+>> now, with random ordering these applications are fairly
+>> indistinguishable from other random uses (since their imposed order
+>> could come about by chance) but if everyone else was ordered, even if
+>> wasn't enforced.. these would be highly distinguishable. Which would
+>> be unfortunate.
+>
+>
+> Maybe they shouldn't be doing that. :-P
+>
+>
+>> I think perhaps the motivations here are understated. We have not seen
+>> any massive deployments of accidentally broken ordering that I'm aware
+>> of-- and an implementation that got this wrong in a harmful way would
+>> likely make far more fatal mistakes (e.g. non random private keys).
+>>
+>
+> In my reading of various wallet client sources, it is common that wallet
+> clients will use cryptographically weak sources of randomness to sort
+> outputs -- that is, the ones that actually bother to randomly sort. I can
+> hunt down some examples if this would substantially contribute to the
+> discussion.
+>
+> As an alternative to this proposal the ordering can be privately
+>> derandomized in the same way DSA is, to avoid the need for an actual
+>> number source.  If getting the randomness right were really the only
+>> motivation, I'd suggest we propose a simple derandomized randomization
+>> algorithm--- e.g. take the order from (H(input ids||client secret)).
+>>
+>
+> This sounds similar to an idea that Sergio pitched to me privately, which
+> was for wallets to have a private sorting key that they can use to sort
+> inputs and outputs. However, I suspect that adding yet another key which
+> will necessarily require special key rotation rules and maybe special
+> backup procedures will mean that this standard will not be widely adopted
+> any time soon. Ideally, I'd like to see someone write a different BIP with
+> the sorting key idea and let them compete in the wallet client market
+> rather than trying to anticipate what is best for all clients and
+> distilling two good ideas into one artificially.
+>
+> -Kristov
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150624/b1579282/attachment.html>
