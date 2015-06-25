@@ -1,0 +1,122 @@
+From: kalle@rosenbaum.se (Kalle Rosenbaum)
+Date: Thu, 25 Jun 2015 23:02:25 +0200
+Subject: [bitcoin-dev] [RFC] IBLT block testing implementation
+In-Reply-To: <871th3t1go.fsf@rustcorp.com.au>
+References: <871th3t1go.fsf@rustcorp.com.au>
+Message-ID: <CAPswA9yUUUH7XM_wC=+QXnbEhp49hOyFAtfJztq+r2p0rNmeiQ@mail.gmail.com>
+
+2015-06-23 7:53 GMT+02:00 Rusty Russell <rusty at rustcorp.com.au>:
+> Hi all,
+>
+>         I've come up with a model for using IBLT to communicate blocks
+> between peers.  The gory details can be found on github: it's a
+> standalone C++ app for testing not integrated with bitcoin.
+>
+>         https://github.com/rustyrussell/bitcoin-iblt
+
+Good to see that you're working on this. Really exciting!
+
+I want to take the opportunity to link to my previous work on IBLTs, for
+those that haven't seen it, where I investigate the behaviour of the IBLT
+when changing different parameters, like cell count, hashFunctionCount etc:
+https://github.com/kallerosenbaum/bitcoin-iblt/wiki
+
+>From glancing over your implementation, I see that you don't use a
+keyHashSum, in fact you don't use a key at all, but only a
+concatenatenation of (txid48, fragid, tx-chunk) as value. Here the
+txid48+fragid functions as a kind of keyHashSum. I think this might be a
+very good idea,
+
+If you have a false positive with count == 1, then you would probably
+detect it if fragid is outside reasonable limit from from base_fragid. Did
+you implement your idea to remove all the count==1 fagments in ascending
+order of (fragid-base_fragid)?
+
+Anyhow, I think we should make some more comparable tests, just as you
+proposed last year when I didn't reply, sorry... My code is a more straight
+forward implementation of the IBLT paper (http://arxiv.org/pdf/1101.2245.pdf)
+and encoding blocks is done pretty much as Gavin proposed in his gist. That
+should function as a baseline so that we can validate that your
+optimizations actually work. Please contact me directly if you are
+interested in that, and we'll figure something out.
+
+More comments/questions inline:
+
+>
+> Assumptions and details:
+>
+> 1. The base idea comes from Gavin's Block Propagation gist:
+>         https://gist.github.com/gavinandresen/e20c3b5a1d4b97f79ac2
+>
+> 2. It relies on similarity in mempools, with some selection hints.  This
+>    is designed to be as flexible as possible to make fewest assumptions
+>    on tx selection policy.
+>
+> 3. The selection hints are: minimum fee-per-byte (fixed point) and
+>    bitmaps of included-despite-that and rejected-despite-that.  The
+>    former covers things like child-pays-for-parent and the priority
+>    area.  The latter covers other cases like Eligius censoring "spam",
+>    bitcoin version differences, etc.
+>
+
+There is a chance that the bit prefix of the added or removed tx is not
+unique within the receiver's mempool. In that case the receiver can
+probably just use the earliest matching transaction and hope for the best.
+If not -> bad luck. Is that how you do it?
+
+> 4. Cost to represent these exceptional added or excluded transactions is
+>    (on average) log2(transactions in mempool) bits.
+
+These exceptional tx *could* instead be encoded in the IBLT, just as if
+they were unknown differences. Your bitmaps is probably a more compact
+representation, but it's also more complex.
+
+>
+> 5. At Peiter Wuille's suggestion, it is designed to be reencoded between
+>    nodes.  It seems fast enough for that, and neighboring nodes should
+>    have most similar mempools.
+>
+
+What is the purpose of reencoding when relaying? Is that to improve the
+failure probability as new tx may have arrived in the mempool of the
+intermediary node?
+
+> 6. It performs reasonably well on my 100 block sample in bitcoin-corpus
+>    (chosen to include a mempool spike):
+>
+>    Average block range (bytes):                         7988-999829
+>    Block size mean (bytes):                             401926
+>
+>    Minimal decodable BLT size range (bytes):            314-386361
+>    Minimal decodable BLT size mean (bytes):             13265
+>
+> 7. Actual results will have to be worse than these minima, as peers will
+>    have to oversize the IBLT to have reasonable chance of success.
+>
+
+Yes, I have made some analysis on this here:
+https://github.com/kallerosenbaum/bitcoin-iblt/wiki/FailureProbability. We
+use quite different data structures for encoding blocks in IBLT, but it
+might apply to your implementation as well. An interesting result is that
+the space saving percentage actually increases as blocks grow.
+
+> 8. There is more work to do, and more investigation to be done, but I
+>    don't expect more than a 25% reduction in this "ideal minimum"
+>    result.
+>
+> Special thanks to Kalle Rosenbaum for helping investigate IBLTs with me
+> last year.
+
+Thank you too!
+
+Regards,
+Kalle
+
+>
+> Cheers,
+> Rusty.
+> PS. I work for Blockstream.  And I'm supposed to be working on
+>     Lightning, not this.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150625/6fd25491/attachment.html>
