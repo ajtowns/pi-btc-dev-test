@@ -1,0 +1,143 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Sat, 27 Jun 2015 14:16:35 +0930
+Subject: [bitcoin-dev] [RFC] IBLT block testing implementation
+In-Reply-To: <CAPswA9yUUUH7XM_wC=+QXnbEhp49hOyFAtfJztq+r2p0rNmeiQ@mail.gmail.com>
+References: <871th3t1go.fsf@rustcorp.com.au>
+	<CAPswA9yUUUH7XM_wC=+QXnbEhp49hOyFAtfJztq+r2p0rNmeiQ@mail.gmail.com>
+Message-ID: <87a8vlvjv8.fsf@rustcorp.com.au>
+
+Kalle Rosenbaum <kalle at rosenbaum.se> writes:
+> 2015-06-23 7:53 GMT+02:00 Rusty Russell <rusty at rustcorp.com.au>:
+>> Hi all,
+>>
+>>         I've come up with a model for using IBLT to communicate blocks
+>> between peers.  The gory details can be found on github: it's a
+>> standalone C++ app for testing not integrated with bitcoin.
+>>
+>>         https://github.com/rustyrussell/bitcoin-iblt
+>
+> Good to see that you're working on this. Really exciting!
+>
+> I want to take the opportunity to link to my previous work on IBLTs, for
+> those that haven't seen it, where I investigate the behaviour of the IBLT
+> when changing different parameters, like cell count, hashFunctionCount etc:
+> https://github.com/kallerosenbaum/bitcoin-iblt/wiki
+
+Yep, I stole the hashFunctionCount = 3 straight from there, same
+with 64-byte bucket contents.
+
+>>From glancing over your implementation, I see that you don't use a
+> keyHashSum, in fact you don't use a key at all, but only a
+> concatenatenation of (txid48, fragid, tx-chunk) as value. Here the
+> txid48+fragid functions as a kind of keyHashSum. I think this might be a
+> very good idea,
+>
+> If you have a false positive with count == 1, then you would probably
+> detect it if fragid is outside reasonable limit from from base_fragid. Did
+> you implement your idea to remove all the count==1 fagments in ascending
+> order of (fragid-base_fragid)?
+
+Yep!  I keep records of all the 1 and -1 buckets; separate lists
+depending on how far they are off the base.  Lists for 0, 1, 2, ... 7,
+then powers of 2.  See todo in iblt.cpp.
+
+> Anyhow, I think we should make some more comparable tests, just as you
+> proposed last year when I didn't reply, sorry... My code is a more straight
+> forward implementation of the IBLT paper (http://arxiv.org/pdf/1101.2245.pdf)
+> and encoding blocks is done pretty much as Gavin proposed in his gist. That
+> should function as a baseline so that we can validate that your
+> optimizations actually work. Please contact me directly if you are
+> interested in that, and we'll figure something out.
+
+Absolutely, will do that offline.
+
+> More comments/questions inline:
+>
+>>
+>> Assumptions and details:
+>>
+>> 1. The base idea comes from Gavin's Block Propagation gist:
+>>         https://gist.github.com/gavinandresen/e20c3b5a1d4b97f79ac2
+>>
+>> 2. It relies on similarity in mempools, with some selection hints.  This
+>>    is designed to be as flexible as possible to make fewest assumptions
+>>    on tx selection policy.
+>>
+>> 3. The selection hints are: minimum fee-per-byte (fixed point) and
+>>    bitmaps of included-despite-that and rejected-despite-that.  The
+>>    former covers things like child-pays-for-parent and the priority
+>>    area.  The latter covers other cases like Eligius censoring "spam",
+>>    bitcoin version differences, etc.
+>>
+>
+> There is a chance that the bit prefix of the added or removed tx is not
+> unique within the receiver's mempool. In that case the receiver can
+> probably just use the earliest matching transaction and hope for the best.
+> If not -> bad luck. Is that how you do it?
+
+No; they add or remove all matching.  If they add too many, that's the
+easy case, of course.  They can't remove too many (since they know that
+bit prefix was unique on the other end).
+
+>> 4. Cost to represent these exceptional added or excluded transactions is
+>>    (on average) log2(transactions in mempool) bits.
+>
+> These exceptional tx *could* instead be encoded in the IBLT, just as if
+> they were unknown differences. Your bitmaps is probably a more compact
+> representation, but it's also more complex.
+
+It's pretty easy to cut the bitmaps to zero and test this (comment them
+out in wire_encode.cpp, for example).
+
+But the overhead of IBLT is some factor greater than txsize (need to
+measure that factor, too!); whereas these are a log(#txs-in-mempool) bits.
+
+>> 5. At Peiter Wuille's suggestion, it is designed to be reencoded between
+>>    nodes.  It seems fast enough for that, and neighboring nodes should
+>>    have most similar mempools.
+>
+> What is the purpose of reencoding when relaying? Is that to improve the
+> failure probability as new tx may have arrived in the mempool of the
+> intermediary node?
+
+Yep, and estimation ability.  The theory is that adjacent nodes will
+have closer mempools, allowing for smaller IBLTs.  The size of mempool
+differences for each block can be fed back, so you have an idea of the
+likely delta to peers (ie. add that to the actual difference between
+your mempool and the new block, to estimate the amount of IBLT
+reconstruction required).
+
+>> 6. It performs reasonably well on my 100 block sample in bitcoin-corpus
+>>    (chosen to include a mempool spike):
+>>
+>>    Average block range (bytes):                         7988-999829
+>>    Block size mean (bytes):                             401926
+>>
+>>    Minimal decodable BLT size range (bytes):            314-386361
+>>    Minimal decodable BLT size mean (bytes):             13265
+>>
+>> 7. Actual results will have to be worse than these minima, as peers will
+>>    have to oversize the IBLT to have reasonable chance of success.
+>>
+>
+> Yes, I have made some analysis on this here:
+> https://github.com/kallerosenbaum/bitcoin-iblt/wiki/FailureProbability. We
+> use quite different data structures for encoding blocks in IBLT, but it
+> might apply to your implementation as well. An interesting result is that
+> the space saving percentage actually increases as blocks grow.
+
+Let's pick a 5% as our failure target (given most nodes will get blocks
+from more than 1 peer, and our other estimates of mempool differences
+will be conservative).  Seems like 16/16 transactions takes ~400 cells
+for recovery, 64/64 takes ~1400, 128/128 takes ~2480, 256/256 says
+~4600.
+
+Using that 128/128 => 198k number, and your txs were about 300B, that
+implies an overhead of 2.6, right?
+
+We're probably better estimating in terms of "cells recovered" (ie. sum
+of cells for txs which we were missing, plus number of txs we added
+erroneously).
+
+Cheers,
+Rusty.
