@@ -1,0 +1,58 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Sun, 28 Jun 2015 19:47:22 +0200
+Subject: [bitcoin-dev] TXO + STXO vs UTXO Re:  Original Vision
+Message-ID: <CABm2gDpLDs9WN2E67O_0OuVGiE7HBhtBnhQchpDaoAM7rZjn_w@mail.gmail.com>
+
+On Sun, Jun 28, 2015 at 6:15 PM, Mark Friedenbach <mark at friedenbach.org> wrote:
+> Assuming randomly-picked outputs, it's actually worse. The slowdown factor
+> has to do with the depth of the tree, and TXO and STXO trees are always
+> growing. It's still complexity O(log N), but with TXO/STXO N is the size of
+> the entire block chain history, whereas with UTXO it's just the set of
+> unspent transaction outputs.
+
+But you can prune them.
+
+> But it is not the case that TXO/STXO gives you constant time updates. The
+> append-only TXO tree might be close to that, but you'd still need the spent
+> or unspent tree which is not insertion ordered. There are alternatives like
+> updating the TXO tree and requiring blocks and transactions to carry proofs
+> with them (so validators can be stateless), but that pushes the same (worse,
+> actually) problem to whoever generated or assembled the proof. It may be a
+> tradeoff worth making, but it's not an easy answer...
+
+No, no.
+You don't need a non-constant update of any spent flag (because
+there's none), that's the whole point of having 2 separated trees for
+everything on one side, and only spent outputs on the other side.
+This proposal is not useful for SPV wallets but it lets you build the
+UTXO at any height from the committed txo + stxo trees and update it
+yourself from there. You could have a fast synchronization mode in
+which you're not really a full node from the beginning but you end up
+validating the older blocks later, when you have time after
+synchronizing to the tip of the chain.
+
+For the SPV use case you would need a committed UTXO (or the TXO with
+a fIsSpent bit) but that seems to be more complicated and can be done
+separately later.
+
+> On Sun, Jun 28, 2015 at 8:51 AM, Jorge Tim?n <jtimon at jtimon.cc> wrote:
+>>
+>> On Sun, Jun 28, 2015 at 5:23 PM, Mark Friedenbach <mark at friedenbach.org>
+>> wrote:
+>> > UTXO commitments are the nominal solution here. You commit the validator
+>> > state in each block, and then you can prove things like a negative by
+>> > referencing that state commitment. The trouble is this requires maintaining
+>> > a hash tree commitment over validator state, which turns out to be insanely
+>> > expensive. With the UTXO commitment scheme (the others are not better) that
+>> > ends up requiring 15 - 22x more I/O during block validation. And I/O is
+>> > presently a limiter to block validation speed. So if you thought 8MB was
+>> > what bitcoin today could handle, and you also want this commitment scheme
+>> > for fraud proofs, then you should be arguing for a block size limit decrease
+>> > (to 500kB), not increase.
+>>
+>> What about a TXO and a STXO O(1)-append commitment? That shouldn't
+>> cause that much overhead and you can build UTXO from TXO - STXO.
+>> I know it's not so efficient in some respects but it scales better I
+>> think.
+>
+>
