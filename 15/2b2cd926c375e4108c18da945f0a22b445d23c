@@ -1,0 +1,87 @@
+From: jeanpaulkogelman@me.com (Jean-Paul Kogelman)
+Date: Thu, 02 Jul 2015 01:33:08 -0700
+Subject: [bitcoin-dev] Defining a min spec
+In-Reply-To: <20150702071814.GA1904@banane.informatik.uni-ulm.de>
+References: <F6C7E867-1CCA-4DFB-8A88-361316A76FC3@me.com>
+	<20150702071814.GA1904@banane.informatik.uni-ulm.de>
+Message-ID: <7A4D6052-CAA8-4E22-92E4-83828E589570@me.com>
+
+In the case of Bitcoin Core, for a starting point, you basically have to work backwards from what we have right now. We know some of the bounds already. Block size already tells you a lot about your bandwidth requirements, and Pieter?s simulations gives you even more information when you take orphan rates into account. There?s also a hard cap on the number of SigOps if I recall correctly, so that?s probably a good starting point for a MIPS metric, etc.
+
+Memory is probably the hardest to pin down since some memory structures like (from what I understand, correct me if I?m wrong) the UTXO database live fully in memory and are basically unbounded. Perhaps this can somehow be capped at a certain size and move all the really old UTXO?s that are unlikely to move to disk and just take the CPU / disk hit in the unlikely event that they are referenced by a new block. Has the address database been capped yet? Mempool? I realize that it?s probably debatable whether or not this behaviour should be independent of available memory since any bugs here could affect consensus (especially the UTXO db).
+
+Ultimately, what comes out of it is a list of numbers. A Mbit network I/O, B MIPS, C MB memory, D Disk space, etc. At that point you can debate whether or not such a machine can be considered an entrypoint bitcoin full node. You round up the numbers that are not really available anymore in off the shelf hardware (like disk space) and you round down the numbers that seem too high. For all we know we?re already over budget on some of the metrics that we decide to track as min spec. Network I/O for example. At that point you can start focussed research into bringing Bitcoin Core back into budget on those metrics. Then the discussion moves from ?it?s probably too high? to ?we?re X% over budget?.
+
+The most valuable thing that could come out of this is to get some kind of formulation how all the different levers in Bitcoin Core affect the min spec and ideally have a benchmark tool. For example, we could settle on a min spec that would exclude the Raspberry Pi 1 on MIPS, but when secp256k1 is enabled for validation, the MIPS requirement could drop significantly, allowing us to adjust the min spec downward to include the Raspberry Pi 1 again (again, just an example).
+
+Ideally some people would have the actual min spec machine built and running. The cost of that shouldn?t be too high (it?s the min spec after all) and I?m sure people would be happy to chip in a couple bits for this.
+
+Remember, the min spec should be able to handle Bitcoin Core running under full load; that?s maxed out blocks with maxed out SigOps, etc.
+
+
+jp
+
+
+> On Jul 2, 2015, at 12:18 AM, Henning Kopp <henning.kopp at uni-ulm.de> wrote:
+> 
+> Hi Jean-Paul,
+> 
+> that's a very interesting point of view and I have never thought about
+> it this way, since I have a totally different background.
+> 
+> How would you go on about defining a min spec? Is this done by testing
+> the software on different hardware configurations or are you looking
+> at the requirements a priori?
+> 
+> Best regards
+> Henning
+> 
+> 
+> On Wed, Jul 01, 2015 at 09:04:19PM -0700, Jean-Paul Kogelman wrote:
+>> Hi folks,
+>> 
+>> I?m a game developer. I write time critical code for a living and have to deal with memory, CPU, GPU and I/O budgets on a daily basis. These budgets are based on what we call a minimum specification (of hardware); min spec for short. In most cases the min spec is based on entry model machines that are available during launch, and will give the user an enjoyable experience when playing our games. Obviously, we can turn on a number of bells and whistles for people with faster machines, but that?s not the point of this mail.
+>> 
+>> The point is, can we define a min spec for Bitcoin Core? The number one reason for this is: if you know how your changes affect your available budgets, then the risk of breaking something due to capacity problems is reduced to practically zero.
+>> 
+>> One way of doing so is to work backwards from what we have right now: Block size (network / disk I/O), SigOps/block (CPU), UTXO size (memory), etc. Then there?s Pieter?s analysis of network bottlenecks and how it affects orphan rates that could be used to set some form of cap on what transfer time + verification time should be to keep the orphan rate at an acceptable level.
+>> 
+>> So taking all of the above (and more) into account, what configuration would be the bare minimum to comfortably run Bitcoin Core at maximum load and can it be reasonably expected to still be out there in the field running Bitcoin Core? Also, can the parameters that were used to determine this min spec be codified in some way so that they can later be used if Bitcoin Core is optimized (or extended with new functionality) and see how it affects the min spec? Basically, with any reasonably big change, one of the first questions could be: ?How does this change affect min spec?"
+>> 
+>> For example, currently OpenSSL is used to verify the signatures in the transactions. The new secp256k1 implementation is several times faster than (depending on CPU architecture, I?m sure) OpenSSL?s implementation. So it would result in faster verification time. This can then result in the following things; either network I/O and CPU requirements are adjusted downward in the min spec (you can run the new Bitcoin Core on a cheaper configuration), or other parameters can be adjusted upwards (number of SigOps / transaction, block size?), through proper rollout obviously. Since we know how min spec is affected by these changes, they should be non-controversial by default. Nobody running min spec is going to be affected by it, etc.
+>> 
+>> Every change that has a positive effect on min spec (do more on the same hardware) basically pushes the need to start following any of the curve laws (Nielsen, Moore) forward. No need for miners / node operators to upgrade.
+>> 
+>> Once we hit what we call SOL (Speed Of Light, the fastest something can go on a specific platform) it?s time to start looking at periodically adjusting min spec upwards, or by that time maybe it?s possible to use conservative plots of the curve laws as a basis.
+>> 
+>> Lastly, a benchmark test could be developed that can tell everyone running Bitcoin Core how their setup compares to the min spec and how long they can expect to run on this setup.
+>> 
+>> What do you guys think?
+>> 
+>> 
+>> jp
+> 
+> 
+> 
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
+> 
+> --
+> Henning Kopp
+> Institute of Distributed Systems
+> Ulm University, Germany
+> 
+> Office: O27 - 3402
+> Phone: +49 731 50-24138
+> Web: http://www.uni-ulm.de/in/vs/~kopp
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 842 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150702/25b86f6a/attachment.sig>
