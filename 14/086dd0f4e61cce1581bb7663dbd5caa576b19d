@@ -1,0 +1,167 @@
+From: dkbryant@gmail.com (Dan Bryant)
+Date: Wed, 1 Jul 2015 23:44:41 -0500
+Subject: [bitcoin-dev] REQ BIP # / Discuss - Sweep incoming unconfirmed
+	transactions with a bounty.
+Message-ID: <CAAUFj10D37A1kfqFNPWz6bOMYSFXQbecJ+RxxOnw6HtwUg70mg@mail.gmail.com>
+
+This is a process BIP request to add functionality to the Bitcoin-Core
+reference implementation.  If accepted, this could also add
+flexibility into any future fee schedules.
+
+https://github.com/d4n13/bips/blob/master/bip-00nn.mediawiki
+
+Note, left the formatting in, since mediawiki is a fairly light markup.
+==================================
+<pre>
+  BIP: nn
+  Title: Sweep unconfirmed transactions by including their outputs in
+high fee transactions
+  Author: Dan Bryant <dkbryant at gmail.com>
+  Status: Draft
+  Type: Process
+  Created: 2015-07-01
+</pre>
+
+==Abstract==
+
+This BIP describes an enhancement to the reference client that
+addresses the need incentive inclusion of unconfirmed transactions.
+This method will create new high fee (or bounty) transactions that
+spend the desired unconfirmed transactions.  To claim the high fee
+(bounty) transactions, miners will need to include the desired
+unconfirmed transactions.
+
+==Motivation==
+
+There are times when an individual receives a payment from someone
+that is in a poorly crafted transaction.  This transaction may include
+no fees, or insufficient fees to be included by many miners.  The
+recipient would be willing to pay a nominal transaction fee to have
+the payment transaction swept into the next block, but has no simple
+way to craft this incentive.
+
+This BIP could be highly desirable for merchants who may have little
+control over the type of wallets their customers use.  A merchant will
+want to ensure that all POS transactions to their hot wallet be given
+a high probability of inclusion in the next block.  This BIP would
+allow the merchant to sweep all their POS transactions currently in
+the mempool into one high fee sweep, thus greatly increasing the
+chance that they are in the next block.
+
+Although many wallets have the ability to tailor the transaction fees
+of payments that are sent, this BIP is unique in the sense that it
+allows people to offer a bounty for transactions that are incoming.
+
+==Specification==
+
+This BIP would have two implementations; an automatic sweep of
+incoming unconfirmed transaction setting, and a manual sweep of
+unconfirmed transaction setting.  Both would have the ability to set
+the fee amount the user would like to pay for the sweep.
+
+====Automatic sweep of incoming unconfirmed transactions====
+
+An automatic sweep configuration may be ideal for merchants who want
+to ensure that their incoming transactions are not skipped over by
+miners.  An automatic sweep setting would consist of four fields,
+<tt>'''sweep_fee'''</tt>, <tt>'''skipped_count'''</tt>, and
+<tt>'''btc_threshold'''</tt>
+
+Currently, the standard transaction fee is 0.0001 BTC, a generous
+sweep bounty would be 0.001 BTC.  Skipped-count will control the age
+of unconfirmed transactions to include in the sweep.  If skipped-count
+is set to three, then any incoming transaction that remains
+unconfirmed for 3 blocks would trigger a sweep.  A skipped-count of 0
+would trigger a sweep whenever any transaction is skipped, or if it
+reaches an age of 10 minutes, regardless of how long the current block
+is taking.
+
+As a safeguard to paying a bounty for small "dust" transactions, a
+minimum btc-threshold would be required for any automatic
+configuration.  A good starting threshold would be 0.10 BTC.  These
+automatic settings would allow a wallet implementing this BIP to
+automatically perform a sweep of unconfirmed transactions whenever
+more than 0.10 BTC of incoming transactions were detected in the
+mempool.  Furthermore, no more than one automatic sweep would be
+performed in any 10 minute window.
+
+Whenever a sweep is triggered, all incoming unconfirmed transactions
+should be swept, not simply the ones that triggered the sweep.  These
+would include new transactions as well as dust transactions.  Each
+sweep transaction would go to a new wallet address since recycling
+wallet addresses is poor practice.
+
+====Manual sweep of incoming unconfirmed transactions====
+
+A manual sweep of incoming unconfirmed transactions would be a special
+type of "Send" in the current reference implementation.  A manual
+sweep would auto-fill a send transaction with all currently
+unconfirmed incoming transactions in the mempool.  The fee field would
+be completely settable by the user and would auto-fill with the
+suggestions of 0.001 BTC
+
+A manual sweep would also be available as a context option when
+selecting any unconfirmed transaction.
+
+==Compatibility==
+
+Wallet software that does not support this BIP will continue to
+operate without modification.
+
+==Examples==
+
+<pre>
+ //unconf_tx = ef7c0cbf6ba5af68d2ea239bba709b26ff7b0b669839a63bb01c2cb8e8de481e
+ //hifee_tx  = f5a5ce5988cc72b9b90e8d1d6c910cda53c88d2175177357cc2f2cf0899fbaad
+ //rcpt_addr = moQR7i8XM4rSGoNwEsw3h4YEuduuP6mxw7 # recipient controlled addr.
+ //chng_addr = mvbnrCX3bg1cDRUu8pkecrvP6vQkSLDSou # recipient controlled addr.
+
+ // UNCONF_TX - Assume a zero fee TX that miners are refusing in mempool
+ {
+     "txid" : "$unconf_tx",
+     //...
+     "vin" : [
+     //...
+     ],
+     "vout" : [
+         {
+             "value" : 1.50000000,
+             "n" : 0,
+             "scriptPubKey" : {
+                 //...
+                 "addresses" : [
+                     "$rcpt_addr"
+                 ]
+             }
+         }
+     ]
+ }
+
+ // HIFEE_TX - Requires UNCONF_TX to be included in order to claim the
+ //  high (0.001 BTC) fee.  Note this transaction is going from one
+ //  address to another in the same wallet.  Both are controlled by the
+ //  recipient.
+ {
+     "txid" : "$hifee_tx",
+     //...
+     "vin" : [
+         {
+             "txid" : "$unconf_tx",
+             "vout" : 0
+             //...
+         }
+     ],
+     "vout" : [
+         {
+             "value" : 1.49900000,
+             "n" : 0,
+             "scriptPubKey" : {
+                 //...
+                 "addresses" : [
+                     "$chng_addr"
+                 ]
+             }
+         }
+     ]
+ }
+</pre>
