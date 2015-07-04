@@ -1,0 +1,59 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Sat, 4 Jul 2015 11:04:40 +0100
+Subject: [bitcoin-dev] Fork of invalid blocks due to BIP66 violations
+In-Reply-To: <20150704033016.GA14836@savin.petertodd.org>
+References: <COL402-EAS128602FDFB9DA83AC6C1BD2CD950@phx.gbl>
+	<CAAS2fgQR15_1JVbtSD2yS9o5cpY-rNLsxpzuaeW2sexbQMuwQg@mail.gmail.com>
+	<20150704033016.GA14836@savin.petertodd.org>
+Message-ID: <CAE-z3OVJE4Gtgu3jzqCOCWF04V7jKqXrhGbQ5z7dGM+oxo4MmA@mail.gmail.com>
+
+On Sat, Jul 4, 2015 at 4:30 AM, Peter Todd <pete at petertodd.org> wrote:
+
+> As for what "SPV mining" is:
+>
+> While blocks are propagating throughout the network, frequently it's
+> possible for miners to get the header of the block before they get and
+> fully validate the block itself. This is just a few seconds to tens of
+> seconds, but that's a big deal for profitability. So miners have been
+> running custom patches that mine on top of the longest chain they know
+> about, even if they haven't actually verified the blocks in it due to
+> propagation delays.
+>
+
+Is the invalid fork pretty much all empty blocks then?
+
+SPV mining isn't inherently dangerous, if it is only for a short period of
+time.  It can boost the total work for the block chain.
+
+Inherently, invalid blocks are rare, so assuming a header is valid is the
+correct assumption.
+
+For safety (for the miner), SPV miners should switch back to full mining
+after 20-30 seconds without fully validating the chain that they are on.
+
+- header received
+- header verified (they skipped this step)
+- build on header with empty block
+- receive full block
+-- mark header as invalid if this step times out
+- verify full block
+-- mark header as invalid if verification fails
+- build on full block with non-empty block
+
+An easier rule is that you only build on a header if the header's parent
+(or even grandparent) has been fully verified.  That rule would prevent the
+illegal fork from growing past 1-2 blocks.  It would mean that SPV miners
+would start wasting hashing power once the invalid fork hit 2 blocks.  They
+wouldn't even build on their own block.
+
+I guess miners never added code of that kind?  That is pretty shocking that
+a majority would SPV mine without that safeguard against the main
+vulnerability of SPV mining.
+
+Even waiting a few minutes before switch back would protect against this.
+
+Worse, in this case, is that it wasn't just an invalid block, it was an
+invalid header chain.  They could have done the check with headers only.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150704/378fcbfd/attachment.html>
