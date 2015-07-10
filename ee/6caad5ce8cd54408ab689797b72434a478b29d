@@ -1,0 +1,94 @@
+From: jgarzik@gmail.com (Jeff Garzik)
+Date: Fri, 10 Jul 2015 12:31:01 -0400
+Subject: [bitcoin-dev] Why not Child-Pays-For-Parent?
+In-Reply-To: <CAE-z3OV+-18VLbOfWzDnE5HWJ4436HGtC_qDFFVkFQTGyjGOVw@mail.gmail.com>
+References: <6D3AACE5-D6CD-4785-8A55-F6DF0B94D927@ricmoo.com>
+	<CAE-z3OV+-18VLbOfWzDnE5HWJ4436HGtC_qDFFVkFQTGyjGOVw@mail.gmail.com>
+Message-ID: <CADm_WcYQLzqQLY-Dspd1jUtF9Z=_721TReoc_eKYk5JCQ4fejg@mail.gmail.com>
+
+This is a good explanation but it does not address reachability.  TX_a, the
+first tx sent out on the network, presumably has insufficient fee to get
+mined - which also means it did not necessarily even reach all miners.
+
+Simply sending out TX_b with added fee does not guarantee that nodes
+suddenly have TX_a, which they may have ignored/dropped before.
+
+
+
+On Fri, Jul 10, 2015 at 12:28 PM, Tier Nolan <tier.nolan at gmail.com> wrote:
+
+>
+>
+> On Fri, Jul 10, 2015 at 5:09 PM, Richard Moore <me at ricmoo.com> wrote:
+>
+>> I was also wondering, with CPFP, should the transaction fee be based on
+>> total transactions size, or the sum of each transaction?s required fee? For
+>> example, a third transaction C whose unconfirmed utxo from transaction B
+>> has an unconfirmed utxo in transaction A (all of A?s inputs are confirmed),
+>> with each A, B and C being ~300bytes, should C?s transaction fee be 0.0001
+>> btc for the ~1kb it is about to commit to the blockchain, or 0.0003 btc for
+>> the 3 transactions it is going to commit.
+>>
+>
+> It should be whatever gives the highest fee.  In effect, child pays for
+> parent creates compound transactions.
+>
+> A: 250 bytes, 0 fee
+> B: 300 bytes: 0.0005 fee
+> C: 400 bytes: 0.0001 fee
+>
+> There are 3 combinations to consider
+>
+> A: 0 fee for 250 bytes = 0 per byte
+> A&B: 0.0005 fee for 550 bytes = 0.91 uBTC per byte
+> A&B&C: 0.0006 fee for 950 bytes = 0.63uBTC per byte
+>
+> This means that the A&B combination has the best fee per byte value.  A&B
+> should be added to the memory pool (if 0.91 uBTC per byte is above the
+> threshold).
+>
+> Once A&B are added, then C can be reconsidered on its own.
+>
+> C: 0.0001 for 400 bytes = 0.25 BTC per byte
+>
+> If that is above the threshold, then C should be added.
+>
+> In practice, it isn't possible to check every combination.  If there are N
+> transactions, then checking all triple combinations costs around N cubed.
+>
+> A 2 pass system could get a reasonably efficient result.
+>
+> B is 0.0005 fee for 300 bytes = 1.67 uBTC per byte and is assumed to be a
+> high value transaction.
+>
+> The algorithm would be
+>
+> Pass 1:
+> Process all transactions in order of BTC per byte, until block is full
+>     If the transaction's parents are either already in the pool or a
+> previous block, add the transaction.
+>
+> Pass 1:
+> Process all non-included transactions in order of BTC per byte, until
+> block is full
+>     If the transaction's parents are either already in the pool or a
+> previous block, add the transaction.
+>
+>     Otherwise, consider the transaction plus all non-included ancestors as
+> a single transaction
+>         If this combined transaction has a higher BTC per byte than the
+> lowest transaction(s),
+>             add the combined transaction
+>             drop the other transaction(s)
+>
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150710/24c24be6/attachment.html>
