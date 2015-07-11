@@ -1,0 +1,168 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Sat, 11 Jul 2015 14:17:53 +0100
+Subject: [bitcoin-dev] SPV Mining reveals a problematic incentive issue.
+In-Reply-To: <CAFdHNGj8BXAazAtHZsPe0qwxjRaxn6fQ4G-==bLCqwp+QH09Kg@mail.gmail.com>
+References: <CAFdHNGg2dezj4V-i-E6dRLp99nZMQ_ErKdBo0OgQJ=9WPm90jQ@mail.gmail.com>
+	<CABm2gDoAa5F5crO4enKO-Qqb+Zd3=9b8ohBDYmrygsPSWdevoQ@mail.gmail.com>
+	<CAE-z3OWOoHfMaEN04CQ-j8tzmAr1+Evjh+tfHRDbF6F1jxykHA@mail.gmail.com>
+	<CAFdHNGj8BXAazAtHZsPe0qwxjRaxn6fQ4G-==bLCqwp+QH09Kg@mail.gmail.com>
+Message-ID: <CAE-z3OW8rOmnBOpK=mFdxK_sATNL-2TRhqzv=r0in3EzF4cGoA@mail.gmail.com>
+
+On Sat, Jul 11, 2015 at 1:09 PM, Nathan Wilcox <nathan at leastauthority.com>
+wrote:
+
+>
+> If there's any cost to non-SPV mining, and the chance that an incoming
+> block contains only valid transactions is very high, isn't there still an
+> incentive to make this timeout longer and longer?
+>
+
+The benefit drops off pretty quickly as the timeout increases (and
+eventually goes negative).
+
+You could look at it that headers having 4 states.
+
+1) Valid
+2) Probably Valid
+3) Probably Invalid
+4) Invalid
+
+SPV mining puts newly received headers into the "probably valid" category.
+
+It builds empty (coinbase only) blocks on top of probably valid headers and
+build empty blocks on the header.
+
+Once it receives the full block, it can change the state to Valid.  At that
+point, it can build full blocks on top of the header.
+
+As time passes without the full block being received/validated, it becomes
+less and less likely that the block is actually valid.
+
+The timeout is to recognize that fact.  Making the timeout 24 hours is not
+likely to give the miner much benefit over making it 1-2 minutes.
+
+Setting the timeout to low means that the miner sometimes switches away
+from a header that turns out to be valid.
+
+Setting it to high means that the miner ends up staying to long on a header
+that turns out to be invalid.
+
+At some point, the second effect is stronger than the first effect.  The
+timeout needs to be high enough so switching away from valid headers is
+rare but low enough so that it doesn't stay on invalid headers for ages.
+
+If 99% of full blocks are received (and validated) within 30 seconds of the
+header arriving, then it is reasonable for the miner to assume that if the
+full block hasn't arrived within 60 seconds of the header arriving, then
+the header is for an invalid block.
+
+Yes. If it's rare enough, then skipping transaction validation saves more
+> cost than the expected cost of mining atop an invalid block.  ... but if
+> everyone follows that logic, the chance is no longer rare.
+>
+
+SPV miners don't actually produce invalid blocks though (other than
+building on invalid blocks).  The full blocks they produce are still fully
+checked blocks.
+
+
+> SPV-mining is to prevent hashing hardware from having to waste power when
+>> it isn't needed.
+>>
+>>
+> It may be less of a problem if (when?) electricity costs dominate hardware
+>> capital costs.
+>>
+>
+> Oh.  This is a different explanation than Peter Todd's I linked to above,
+> which claimed it was network latency in receiving transactions.
+>
+
+SPV mining is mainly to protect against latency.  The reason that matters
+is that latency means that hashers end up building on blocks even though a
+new block has been found.
+
+You can look at it as wasting hashing power due to latency.
+
+In the world where minting fees are very low, there is no point in SPV
+mining.
+
+I assume at the point, the memory pool/queue is a few blocks deep.  This
+means that the pool can create a full block without having to wait for new
+transactions to be sent in.
+
+It still needs to wait for the new full block before it knows which
+transactions to remove from its memory pool.
+
+Pools have to pay their hashers for hashing power.  When minting fees are
+tiny, pools only get income only from tx fees.
+
+There is no point in creating empty blocks, since they don't pay anything.
+
+Between when the block is found and the pool has a new block ready to mine,
+there is no incentive for the pool to give out new work.  The stratum
+protocol could be modified so pools can say.  (It might already support
+this)
+
+<Send work to hashers>
+
+-- block is found by some other pool --
+
+<Cancel work for miners>
+
+-- pool builds new block --
+
+<Send new work to hashers>
+
+The cancel command says that the pool will not accept any of the work that
+has been made obsolete.
+
+This gives a window of 20-30 seconds after each block where the pool has
+invalidated the old work, but does not send new work.  Hashers' hardware
+would be stalled.
+
+On the other hand, the pool that found the block could create a new block
+straight away.  There is an incentive for hashers to have a connection to
+multiple pools.
+
+Pools might go pure pay per share.  The protocol would say how much they
+are willing to pay for a share and the local mining proxy would pick the
+most profitable pool.  This eliminates pools having lots of ways of saying
+how they charge fees, you just connect to lots of pools and go with the one
+that pays the most.
+
+More interestingly, the average fee per byte for transactions in the memory
+pool is likely to increase as time passes since the last block.
+
+When two blocks are found very fast one after another, the second block is
+likely to have lower average fees.  This is because the first block would
+have included most of the high value transactions and there wasn't enough
+time for new ones to arrive before the second block was found.
+
+Hashers would end up getting variable payouts based on how long since the
+last block was received.  If some miners increase/decrease their output
+based on the fees the pools offer, then as time passes since the last
+block, the hashing rate would increase.  This reduces the variation in
+block to block times.
+
+For example, if there was 1.5MB of transactions in the memory pool and they
+all paid the same fee per byte, then the block would be a full block at
+that rate.  However, there would only be 0.5MB of transactions left.  This
+means that the next block would be half full and only be able to pay out
+50% of the fee, but the difficulty would be the same.  The pay per hash
+would be 50% lower.  Once 0.5MB of new transactions arrive, the fee would
+be back up to the same as the previous block.
+
+If there are major SHA256 altcoins (or side chains), then miners might end
+up switching between coins.  The longer a coin went without a new block
+being found, the more tx fees available in the memory pool, so the more
+hashing power would decide to switch to that coin.
+
+There could be a situation where adding a few more transactions to the
+memory pool of a coin would cause a 100X increasing in hashing until the
+block was found and then it stalling again as the hashing power switches
+away.  This is similar to alt coins getting blasted by coin switching pools
+and then dropping to almost no power.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150711/08dc0f8c/attachment-0001.html>
