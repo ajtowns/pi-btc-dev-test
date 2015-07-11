@@ -1,0 +1,145 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Sat, 11 Jul 2015 17:26:30 +0100
+Subject: [bitcoin-dev] SPV Mining reveals a problematic incentive issue.
+In-Reply-To: <719E65A8-AC95-408C-8E00-FB06DCC6CDB1@hashingit.com>
+References: <CAFdHNGg2dezj4V-i-E6dRLp99nZMQ_ErKdBo0OgQJ=9WPm90jQ@mail.gmail.com>
+	<CABm2gDoAa5F5crO4enKO-Qqb+Zd3=9b8ohBDYmrygsPSWdevoQ@mail.gmail.com>
+	<CAE-z3OWOoHfMaEN04CQ-j8tzmAr1+Evjh+tfHRDbF6F1jxykHA@mail.gmail.com>
+	<CAFdHNGj8BXAazAtHZsPe0qwxjRaxn6fQ4G-==bLCqwp+QH09Kg@mail.gmail.com>
+	<CAE-z3OW8rOmnBOpK=mFdxK_sATNL-2TRhqzv=r0in3EzF4cGoA@mail.gmail.com>
+	<719E65A8-AC95-408C-8E00-FB06DCC6CDB1@hashingit.com>
+Message-ID: <CAE-z3OVztaWW7RYLyHUF=JxqDoM+fWFQFcB7EhxZ=cDwKNwwJw@mail.gmail.com>
+
+On Sat, Jul 11, 2015 at 4:04 PM, Dave Hudson <dave at hashingit.com> wrote:
+
+> This would probably be worse. The 1 MB would include the highest fee
+> transactions, leaving the lowest fees in the remaining 0.5 MB.
+>
+
+Right, in the example, I was assuming all transactions had the same fee per
+byte.
+
+
+> If hashing isn't constantly applied all the time then the inter-block
+> times will expand and the difficulty will reduce. This means that a pool
+> that decides to use all of its available hashing 100% of the time now has a
+> distinct advantage over those who are playing nicely. This is the same
+> problem that the "proof of idle" idea had; it only works if no-one chooses
+> to try to exploit it (which seems very unlikely).
+>
+
+Uh, I don't think so.  Pools would offer a price per hash based on how much
+tx fees that they can get at that moment.
+
+Offering more than that would mean they make a loss on average.
+
+Say, for the sake of argument that over a nominal 10 minute period we see
+> 10 BTC worth of transaction fees. If the mempool is empty of interesting
+> fees at the start of a block then we might like to imagine that rational
+> miners will power down their hashing to save energy costs until the fees
+> are worthwhile. Let's assume, for the sake of argument, that this nominally
+> takes 5 minutes.
+>
+
+I think the hardware would be able to power down nearly instantly.
+Granted, if they have generators or similar, they may not be able to do it
+so fast.
+
+Switching to an altcoin is pretty much instant though.
+
+
+> After 5 minutes we go from 0% to 100% as all hashing engines switch on.
+> The difficulty will have corrected to mean that 100% of the work will
+> nominally happen in the next 5 minutes, but that means that a malicious
+> miner has a 2x amplification of their nominal hashing rate to do mischief
+> in the preceding 5 minutes.
+>
+
+I think you need to split it into hashers and pools, rather than miners.
+Hashers have to pay electricity costs to keep their equipment running.
+Powering down for 5 minutes is cheaper than using that hashing for other
+things.
+
+The ratio of capital costs and electricity determines which wins out.
+
+In the example given, it would work out as something like this.
+
+0 mins: pool offers 0
+2 mins: pool offers 20% of average
+4 mins: pool offers 40% of average
+6 mins: pool offers 60% of average
+8 mins: pool offers 80% of average
+10 mins: pool offers 100% of average
+12 mins: pool offers 120% of average
+14 mins: pool offers 140% of average
+...
+
+This means that more and more miners will accept the offer as time passes.
+If a miner was using solar power for their miners, then they might as well
+run it for the full 10 mins, since it is pointless to leave the equipment
+off.  With batteries they could shift some of their output to the more
+profitable period.
+
+Such a malicious miner would choose to spend their 5 minutes re-mining the
+> previous block, but dropping some amount of the transactions from it. Let's
+> say that they try to re-mine only 9.5 BTC out the previous 10 BTC. If they
+> succeed then they're offering everyone else an extra 0.5 BTC (5%) if they
+> mine on top of their re-mined block and as an incentive to orphan the
+> original block. Rational miners would definitely choose to build on the
+> re-mined block because they get more reward from doing so.
+>
+
+If they find that block, it will be a tie with the other block, but created
+much later.  That means that nobody will build on the block they found.
+
+
+> Of course the extra hashing that our malicious miner is doing will
+> actually push the difficulty back up somewhat, but they're still running at
+> an advantage over the long-term. I've also ignored some of the other
+> security implications of the hashing amplification effects (e.g. 25% of the
+> hash rate can end up controlling 50% of the blocks in the scenario above).
+>
+> I think mining strategy once minting fees are greatly reduced is an
+interesting question.  We can't assume that miners are all going to build
+on the tip.
+
+In your example, you can bribe the miner of the next block by paying to
+OP_TRUE.
+
+A <- B <-C
+
+Assume that C pays 1BTC in fees and the miner creates a new version of C
+that pays 1.1BTC in fees.
+
+C' pays 1.1 BTC in fees and also pays 0.05BTC to OP_TRUE.
+
+This means that miners who build on C' instead of C get a 0.05BTC 'bribe'
+to ignore the fact that C' was found much later.
+
+It isn't clear if other miners would be better off building D anyway, since
+they could take 100% of the fees.
+
+If the average fees per block was 1BTC and someone send a block that pays
+10BTC in fees, it could stall the block chain.  You can do the same bribery
+trick.
+
+If C has the 10BTC transaction, you can create a C' block and pay 1BTC to
+OP_TRUE.  The miner who builds on C' include a transaction which pays that
+money to him.
+
+Another miner can produce C'' that pays 2BTC to OP_TRUE.
+
+
+> The only way I can see that this wouldn't be the case would be if there
+> were always useful fees available to mine immediately after a block is
+> found. If block space is kept moderately scarce then immediately a block is
+> found then everyone will keep mining and the incentives to try to
+> deliberately orphan the last block are dramatically reduced.
+>
+
+True, if there is multiple blocks worth of transactions in the memory pool,
+then losing one block's worth of transactions won't drop the total fees
+down to zero.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150711/088faeb4/attachment-0001.html>
