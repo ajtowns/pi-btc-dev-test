@@ -1,0 +1,49 @@
+From: dave@hashingit.com (Dave Hudson)
+Date: Sat, 11 Jul 2015 16:04:47 +0100
+Subject: [bitcoin-dev] SPV Mining reveals a problematic incentive issue.
+In-Reply-To: <CAE-z3OW8rOmnBOpK=mFdxK_sATNL-2TRhqzv=r0in3EzF4cGoA@mail.gmail.com>
+References: <CAFdHNGg2dezj4V-i-E6dRLp99nZMQ_ErKdBo0OgQJ=9WPm90jQ@mail.gmail.com>
+	<CABm2gDoAa5F5crO4enKO-Qqb+Zd3=9b8ohBDYmrygsPSWdevoQ@mail.gmail.com>
+	<CAE-z3OWOoHfMaEN04CQ-j8tzmAr1+Evjh+tfHRDbF6F1jxykHA@mail.gmail.com>
+	<CAFdHNGj8BXAazAtHZsPe0qwxjRaxn6fQ4G-==bLCqwp+QH09Kg@mail.gmail.com>
+	<CAE-z3OW8rOmnBOpK=mFdxK_sATNL-2TRhqzv=r0in3EzF4cGoA@mail.gmail.com>
+Message-ID: <719E65A8-AC95-408C-8E00-FB06DCC6CDB1@hashingit.com>
+
+
+> On 11 Jul 2015, at 14:17, Tier Nolan <tier.nolan at gmail.com> wrote:
+> 
+> On Sat, Jul 11, 2015 at 1:09 PM, Nathan Wilcox <nathan at leastauthority.com <mailto:nathan at leastauthority.com>> wrote:
+> 
+> If there's any cost to non-SPV mining, and the chance that an incoming block contains only valid transactions is very high, isn't there still an incentive to make this timeout longer and longer?
+> 
+> The benefit drops off pretty quickly as the timeout increases (and eventually goes negative).
+> 
+> Hashers would end up getting variable payouts based on how long since the last block was received.  If some miners increase/decrease their output based on the fees the pools offer, then as time passes since the last block, the hashing rate would increase.  This reduces the variation in block to block times.
+> 
+> For example, if there was 1.5MB of transactions in the memory pool and they all paid the same fee per byte, then the block would be a full block at that rate.  However, there would only be 0.5MB of transactions left.  This means that the next block would be half full and only be able to pay out 50% of the fee, but the difficulty would be the same.  The pay per hash would be 50% lower.  Once 0.5MB of new transactions arrive, the fee would be back up to the same as the previous block.
+
+This would probably be worse. The 1 MB would include the highest fee transactions, leaving the lowest fees in the remaining 0.5 MB.
+
+> If there are major SHA256 altcoins (or side chains), then miners might end up switching between coins.  The longer a coin went without a new block being found, the more tx fees available in the memory pool, so the more hashing power would decide to switch to that coin.
+> 
+> There could be a situation where adding a few more transactions to the memory pool of a coin would cause a 100X increasing in hashing until the block was found and then it stalling again as the hashing power switches away.  This is similar to alt coins getting blasted by coin switching pools and then dropping to almost no power.
+
+
+If hashing isn't constantly applied all the time then the inter-block times will expand and the difficulty will reduce. This means that a pool that decides to use all of its available hashing 100% of the time now has a distinct advantage over those who are playing nicely. This is the same problem that the "proof of idle" idea had; it only works if no-one chooses to try to exploit it (which seems very unlikely).
+
+One might ask why a pool might wish to try to exploit this, but let's assume we have a fees-only reward, so here's a quick thought experiment - the numbers are only approximate and would need a thorough simulation but serve for discussion:
+
+Say, for the sake of argument that over a nominal 10 minute period we see 10 BTC worth of transaction fees. If the mempool is empty of interesting fees at the start of a block then we might like to imagine that rational miners will power down their hashing to save energy costs until the fees are worthwhile. Let's assume, for the sake of argument, that this nominally takes 5 minutes.
+
+After 5 minutes we go from 0% to 100% as all hashing engines switch on. The difficulty will have corrected to mean that 100% of the work will nominally happen in the next 5 minutes, but that means that a malicious miner has a 2x amplification of their nominal hashing rate to do mischief in the preceding 5 minutes.
+
+Such a malicious miner would choose to spend their 5 minutes re-mining the previous block, but dropping some amount of the transactions from it. Let's say that they try to re-mine only 9.5 BTC out the previous 10 BTC. If they succeed then they're offering everyone else an extra 0.5 BTC (5%) if they mine on top of their re-mined block and as an incentive to orphan the original block. Rational miners would definitely choose to build on the re-mined block because they get more reward from doing so.
+
+Of course the extra hashing that our malicious miner is doing will actually push the difficulty back up somewhat, but they're still running at an advantage over the long-term. I've also ignored some of the other security implications of the hashing amplification effects (e.g. 25% of the hash rate can end up controlling 50% of the blocks in the scenario above).
+
+An obvious objection to this scenario is that everyone would notice the malicious mining. Statistically, yes, the orphan rate would be much higher, but there's no guarantee that anyone could ever work out who was behind this. It's all too easy to create an "unknown" pool, or a series of "unknown" pools. Of course our malicious miner might choose to only target blocks that had particularly high fees associated with it, in which case the orphan rate might barely change.
+
+The only way I can see that this wouldn't be the case would be if there were always useful fees available to mine immediately after a block is found. If block space is kept moderately scarce then immediately a block is found then everyone will keep mining and the incentives to try to deliberately orphan the last block are dramatically reduced.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150711/3208fd52/attachment.html>
