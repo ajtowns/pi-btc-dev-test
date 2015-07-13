@@ -1,0 +1,103 @@
+From: hearn@vinumeris.com (Mike Hearn)
+Date: Tue, 14 Jul 2015 00:31:36 +0200
+Subject: [bitcoin-dev] Proposal: extend bip70 with OpenAlias
+Message-ID: <CA+w+GKQbOMz5nb_SnLB6Xb0FYzNZ_rEj5nbNjm2jY0+L8JJGAA@mail.gmail.com>
+
+Hi Thomas,
+
+FYI there is a company called Netki is also working on a kind of DNSSEC
+integration with BIP70, there's a thread here about their efforts:
+
+
+https://groups.google.com/forum/#!searchin/bitcoinj/dnssec/bitcoinj/QFAH1F2dEwE/36oWDwREEV4J
+
+If you would like to work on this, perhaps it's worth teaming up with them?
+Obviously they plan to have an open spec and open source implementation.
+
+Now w.r.t. the other things - I think we have discussed this before, but to
+reiterate:  the biggest flaw with doing things the way you suggest is that
+in practice, no email provider is going to implement your scheme any time
+soon. Most obviously the big web mail providers won't. Therefore hardly
+anyone will use it.
+
+Whilst having an extension cannot really hurt, obviously, BIP70 will not be
+amended to reduce the certificate types it allows in favour of a system
+that has a very low chance of mainstream adoption. Restricting options like
+that would just make no sense at all.
+
+I think your primary concern is that if your email account is hacked,
+someone could get a cert issued in your name, and you'd be unable to revoke
+it? But that's not quite true. Every CA I know of allows you to revoke a
+certificate that was issued for your email address if you have access to
+that email address. Now, if you don't know that this issuance took place,
+you cannot invoke that procedure of course .... but that's what certificate
+transparency is already working on solving in a scalable manner:
+
+  https://crt.sh/
+
+That site doesn't currently index email address certs, but it certainly
+could with minimal extra effort by the creators as they're almost identical
+to domain name certs.
+
+So the existing infrastructure seems to have everything in place to solve
+that issue.
+
+Now, if you still want a mechanism that eliminates the CA entirely, I think
+there's a better approach which is backwards compatible with existing email
+providers. It works like this:
+
+   1. User sends a public key in the subject line to a one-time collector
+   address like <random-number>@publish-email-headers.net    (who runs this
+   service is arbitrary as they do not need to be trusted). On receiving the
+   email, the headers are made available via
+   https://publish-email-headers.net/<random-number> for download by the
+   users wallet.
+
+   2. The act of sending the email triggers DKIM signing of the subject
+   line and From header, and thus, the public key and email address are bound
+   together via the ESP's own signing key.
+
+   3. The textual email headers can be run through the DKIM validation
+   algorithm in combination with the domain key retrieved via DNS.
+
+With this scheme, setup is largely automatic and involves the wallet asking
+the operating system to open a mailto: URL. The user just has to press
+"send" and the wallet can then sit on a long-lived HTTPS connection waiting
+for the headers to turn up. Once the headers are downloaded, they can be
+saved to disk and this becomes your "DKIM certificate" which can then be
+used with a new pki_type in BIP70.
+
+Note the following useful characteristics of this approach:
+
+   1. It does not require the email provider to know/care about Bitcoin.
+   DKIM is already widely deployed by major email providers due to its
+   benefits for spam and phishing protection: the majority of all email on the
+   internet is DKIM signed. So you automatically have a system that works with
+   nearly all consumer email accounts.
+
+   2. The enrolment UI is straightforward, assuming the user has a working
+   mailto: handler on their system. Even webmail services like Gmail can
+   attach themselves to mailto: handling these days.
+
+   3. There are DKIM validation libraries already in existence, so new code
+   required is minimal.
+
+And the downsides:
+
+   1. There is no way to revoke such a "certificate" because you have, of
+   course, abandoned the PKI which specifies how to handle all these details.
+   You could potentially hijack/reuse OCSP to allow such a custom cert to be
+   revoked, but then the question is, who actually runs such a revocation
+   server. Doing things like this is why we have CAs in the first place.
+
+   2. The UX leaves a bit of binary nonsense in the users sent folder that
+   clutters up their account.
+
+   3. Does it even solve the right problem? A lot of users don't actually
+   use emails as identifiers anymore. In the modern world people are using
+   their social networking profiles (i.e. Facebook) and phone numbers (e.g.
+   for WhatsApp) as the personal identifier of choice. Email address support
+   might be solving yesterdays problem.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150714/58de7de1/attachment.html>
