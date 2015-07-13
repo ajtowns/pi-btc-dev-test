@@ -1,0 +1,112 @@
+From: thomasv@electrum.org (Thomas Voegtlin)
+Date: Mon, 13 Jul 2015 15:06:08 +0200
+Subject: [bitcoin-dev] Proposal: extend bip70 with OpenAlias
+In-Reply-To: <55A3B52C.9020003@electrum.org>
+References: <55A3B52C.9020003@electrum.org>
+Message-ID: <55A3B7C0.6030909@electrum.org>
+
+Dear Bitcoin developers,
+
+I would like to propose an extension of the signature scheme used in
+the Payment Protocol (BIP70), in order to authorize payment requests
+signed by user at domain aliases, where the alias is verified using
+DNSSEC (OpenAlias).
+
+Note that the Payment Protocol already includes the possibility to
+sign requests with user at domain aliases, using so-called "SSL email
+certificates". Email certificates do not require ownership of a domain
+name. They are usually delivered by a trusted CA, to the owner of an
+email address.
+
+So, why extend BIP70? Well, I believe that SSL email certificates, as
+they exist today, are not well suited for payment requests. The core
+issue is that email certificates are not delivered by the entity that
+owns the same domain. This has the following implications:
+
+1. No cross-verification. Two different CAs may deliver certificates
+   for the same email address. Thus, if a user's mailbox is
+   compromised, the hacker can obtain a new certificate for the
+   compromised email address, from another CA, and sign payment
+   requests with it.  OTOH, if the certificate was delivered by the
+   same entity, they could require revokation of the existing
+   certificate before issuing a new one. Revocation of a certificate
+   would require signing a challenge with the corresponding private
+   key.
+
+2. Dilution of responsibilities. Three parties are involved in the
+   security of an email certificate: the owner of the email address,
+   the CA who signs the certificate, and the owner of the domain
+   hosting the email service. If something goes wrong and a user
+   claims that a payment request was not signed by them, it is not
+   possible to determine who is to blame: the user, the domain owner
+   or the CA? Any of these parties could have obtained or issued a new
+   certificate.  OTOH, if the alias "user at domain" was issued by
+   "domain", we would have clear semantics and clear
+   responsibilities. Instead of involving three parties, as in "User X
+   hosted at domain Y was verified by trusted authority Z who is not
+   shown in the alias", the alias only involves two parties: "user X
+   was verified by domain Y". If domain Y misbehaves and issues a
+   second certificate for user X, while the first certificate is still
+   valid, then the first certificate can serve as a public proof that
+   they misbehaved.
+
+3. Lowest common denominator: email is only a communication channel,
+   used for authentication by some CAs. Other CAs may decide to use
+   other, possibly better, identity verification procedures. However,
+   because of the absence of cross verification, the security of the
+   whole scheme will always be the security of an email address,
+   because it remains the method used by less regarding CAs.
+
+In fact, these issues are so bad that I believe BIP70 should be
+amended to reject email certificates.
+
+These issues would be solved, if we could enforce that the user at domain
+certificate was delivered by the same entity that controls the domain.
+How can we do that? Clearly, we need to change the certificate chain
+validation procedure. I see two methods to achieve this:
+
+  1. Keep using TLS and change the certificate chain validation.
+  2. Use DNSSEC and Openalias.
+
+
+Method 1: Modified chain validation.
+------------------------------------
+
+This introduces a new type of user certificate, where:
+
+ - The commonName is a user at domain alias.
+ - The certificate for user at domain must be issued by a domain
+   certificate for the same domain (with some rules to allow
+   wildcards).
+ - Validation of the user at domain certificate does not require the
+   issuer certificate to have a CA bit.
+
+This solution would probably be the easiest to deploy, because it uses
+TLS certificate chain validation, which is already available in BIP70
+compatible wallets. However, it will break compatibility with the
+existing certificate validation procedures.
+
+
+Method 2: DNSSEC and OpenAlias.
+-------------------------------
+
+OpenAlias (http://openalias.org) is a standard for storing Bitcoin
+addresses and public keys in DNS TXT records. DNSSEC chain validation
+imposes that a record is signed by its parent.
+
+In order to use DNSSEC with BIP70, we may add a new pki_type to BIP70
+payment requests (let me call it 'dnssec+btc'), that indicates that
+the request has been signed with a Bitcoin public key, and that the
+chain validation uses DNSSEC. The chain of signatures may be included
+in the payment request.
+
+This solution has my preference. It has been implemented in Electrum
+and will be available in version 2.4.
+
+
+
+Please let me know what you think. Standardizing that proposal will
+probably require a new BIP number, because BIP70 is already final. I
+am willing to help doing that. OpenAlias developers have also expressed
+their support, and are willing to provide assistance.
+
