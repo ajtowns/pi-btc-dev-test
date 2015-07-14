@@ -1,0 +1,201 @@
+From: ric@spagni.net (Riccardo Spagni)
+Date: Tue, 14 Jul 2015 21:07:28 +0200
+Subject: [bitcoin-dev] Proposal: extend bip70 with OpenAlias
+Message-ID: <CADhj2oT_rgaf6LFgwMawwJKaA8384v5jQ=e-7T8GNY4gGZ2udQ@mail.gmail.com>
+
+> To break it down briefly, we have an open lookup standard based on
+> both the namecoin blockchain as well as traditional DNSSEC.  (You can
+> choose your own adventure of using namecoin based names or traditional
+> ICANN names).
+
+
+Good, that's roughly analogous with what OpenAlias defines.
+
+We DO provide a service where we will register or host
+> names on your behalf. However if you follow the format and host them
+> yourself, everything will work just fine, and our open source lookup
+> server and libraries will provide those results exactly the same as if
+> the names were hosted with us.
+
+
+Also good, much the same as https://cryptoname.co and https://xmr.link
+
+
+> To that end, we have had conversations
+> with several companies in the space who intend to host their own
+> names, and we intend to work with them on the effort to ensure our
+> documentation is sufficient to ensure they can successfully do so.
+>
+> In terms of comparisons to OpenAlias, I think there are a lot of
+> similarities, but a few differences.  First the similarities:
+>
+>
+> 1> We both use DNSSEC.
+>
+> 2> We both have the option of storing the address directly in the DNS
+> record.
+>
+>
+> Differences:
+>
+> 1> We do not use DNSCrypt.  I understand why you chose to, but we were
+> concerned about broad interoperability and easy broad distribution of
+> hosting, so decided not to use it.  We have other ways of achieving
+> privacy, using HD Wallets and Payment Requests.
+>
+
+And this is the part where you guys look really, really incompetent (and I
+don't mean that in a terribly demeaning way, it's just that you're in a
+space where you want to be a domain expert, not make a series of
+embarrassing and public faux pas).
+
+DNSCrypt requires NO work on the part of the alias creator, DNS server,
+SOA, or anything else. It is entirely client side, and allows for *private
+lookups*. HD Wallets and Payment Requests are inconsequential, an ISP still
+knows every DNS resolution their users are performing.
+
+When using dnscrypt-proxy to perform private lookups they are done against
+the 55 free and public DNSCrypt resolvers [1], provided by oVPN, OpenNIC,
+OpenDNS, okTurtles, CloudNS, and various individuals. OpenAlias links to
+and recommends four of these specifically, as they have the unique
+combination of providing Namecoin lookups, supporting DNSSEC validation for
+lightweight verification, and claiming not to store logs.
+
+Therefore, DNSCrypt provides encrypted, private, secure, end-user lookups
+with no implication on the creation side. That you are unaware of this
+(when presumably you at least read the Wikipedia article on the topic) and
+are not embracing it is quite surprising, to say the least.
+
+
+> 2> We have the option of storing a URL rather than just a wallet
+> address in the TXT record.  This allows a second level lookup against
+> the URL to get back a unique HD Wallet address or Payment Request each
+> time, further protecting user privacy and security.  Using Wallet
+> Names with Payment Requests allows for the user experience of typing
+> in an easy to remember name and getting back the "green lock" and who
+> the validated recipient is.  This also provides an auto audit of the
+> end to end DNS SEC process, in the case the path were somehow
+> compromised, the signature on the payment request can provide an
+> additional check.
+>
+
+OpenAlias supports this as well, except it does it better by allowing the
+KV pairs to also contain a TLSA record before the request, which
+effectively makes it a DANE-secured interaction. Your interaction requires
+the trusting of multiple CAs, which is an inherent weakness.
+
+3> We use a 2 tier lookup format.  The first lookup returns a list of
+> currencies or payment types supported by the Wallet Name.  The second
+> lookup goes to a record specific to that currency type to get the
+> address to go to.  We believe this to be a more scalable solution in a
+> world where someone can have both multiple digital currency types, but
+> then also multiple types of colored coins, and wants a simple way to
+> share a single name for all of those different addresses.  This allows
+> the wallet to do the work behind the scene of choosing the currency it
+> wants to send, and automatically getting back the right address to
+> send to, without the user having to do anything different.
+>
+
+We do the same thing, except in a single call. Here's an example of a
+record that has both XMR and BTC addresses:
+https://api.openalias.org/donate.getmonero.org?view=full (here are the DNS
+records for that:
+http://mxtoolbox.com/SuperTool.aspx?action=txt%3adonate.getmonero.org&run=toolpage
+)
+
+
+> 4> We mandate DNSSEC while you make it optional.  We did this because
+> we believe giving the user the option of NOT using DNSSEC is like
+> letting them order a car with no brakes.  We weren't sure how we would
+> explain to them why their money was gone when they really didn't
+> understand the risks they were taking up front. We had a lot of
+> discussion about it before coming to the decision we did, and I can
+> see why you went the other way, although I do believe we made the
+> right choice.
+>
+
+With OpenAlias a DNSSEC fail is a soft fail, and the user has to confirm
+the address. The reasons are threefold:
+
+1. At the moment only 83.5% of the TLDs are signed [2]. The unsigned ones
+include some biggies like .sg, .za, and .to
+
+2. Even if the zone *is* signed, DNSSEC deployment is hard. Unmanaged
+DNSSEC deployment is out of scope for probably 99.9% of users, even the
+usually-technically-ok Bitcoin crowd. Managed DNSSEC is available, but is
+quite pricey. UltraDNS, Dyn, and GoDaddy (ikr?) are the three big
+providers, and of those three only GoDaddy has a consumer-affordable
+product.
+
+3. ThomasV and I have done a stack of testing behind residential and
+commercial routers where DNSSEC simply fails (eg. the router runs a really
+outdated DNS server that doesn't provide RRSIGs in its response, or the ISP
+doesn't care about DNSSEC). Unsurprisingly, this can be fixed by...you
+guessed it...doing the lookup via DNSCrypt.
+
+Until we are closer to the bulk of all TLDs being signed, and DNSSEC
+becomes at least a little more ubiquitous, we can't lock out huge portions
+of the Internet, because then we're not really providing a useful and
+usable solution. All we can is make it more difficult to pay an unverified
+domain.
+
+Of course, if your aim is to force people to use you as a domain registrar,
+then it makes total sense why you'd lock people out;)
+
+Additionally, we just released another open source API server to help
+> with the "other half" of the lookup problem.  Its in its infancy, and
+> we are certainly taking feedback on it at this time.  It is called
+> Addressimo <https://github.com/netkicorp/addressimo> and will serve
+> unique HD Wallet addresses or Payment Requests for every lookup, thus
+> allowing a user to have a private, secure way to share a Wallet Name
+> that can be used to send them any digital currency.
+>
+
+Oh snap...https://github.com/openalias/openalias-api
+
+
+> I'd love to talk here or offline about merging standards going
+> forward.  As an FYI, Verisign has also delivered a standard to the
+> IETF using DNSSEC to pass payment information here:
+> https://tools.ietf.org/html/draft-wiley-paymentassoc-00  We have
+> started discussions with them about merging standards as well.
+>
+>
+> They actually have a really nice way in their standard to encode email
+> addresses that more or less ensures that there won't be name space
+> collision in the case that there is already a record "joe.user.com"
+> and you want to create one for "joe at user.com" that we are looking at
+> adding to what we are doing in the next update to our record formats.
+>
+
+OpenAlias (and your system) doesn't really have to worry about that, as TXT
+records can live side-by-side with A / CNAME / MX etc. records. More
+importantly, OpenAlias especially doesn't have to worry about it, because
+OpenAlias TXT records have a prefix: "oa1:" for OpenAlias v1 records. The
+risk of there being a legitimate TXT record that starts with oa1: and
+*isn't* an OpenAlias record is, well, pretty negligible.
+
+In any case, I'd much rather we had one effort going forward than
+> multiples, so let's talk!
+>
+
+I agree, and you guys are in an ideal position to change to supporting the
+OpenAlias standard (and enhancing it) without skipping a beat. We would
+definitely appreciate and take your input and efforts, and that would make
+OpenAlias v2 (oa2:) a standard built out in conjunction with Netki.
+
+Not only do you get Electrum support without lifting a finger, but it will
+go a long way to repairing your relationship with the open-source community
+at large, several proponents of which have taken great umbrage at what you
+were previously pushing as a closed-source, centralised system.
+
+Riccardo
+
+Footnotes:
+
+[1] -
+https://github.com/jedisct1/dnscrypt-proxy/blob/master/dnscrypt-resolvers.csv
+[2] - http://stats.research.icann.org/dns/tld_report/
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150714/8b285f92/attachment.html>
