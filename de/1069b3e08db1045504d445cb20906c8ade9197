@@ -1,0 +1,48 @@
+From: tomh@thinlink.com (Tom Harding)
+Date: Tue, 14 Jul 2015 17:24:23 -0700
+Subject: [bitcoin-dev] Mempool "Expected Byte Stay" policy
+Message-ID: <55A5A837.1090203@thinlink.com>
+
+Spammers out there are being very disrepectful of my fullnode resources 
+these days!  I'm making some changes. In case others are interested, 
+here's a description:
+
+There is now a maximum size for the memory pool.  Space is allocated 
+with a pretty simple rule.  For each tx, I calculate MY COST of 
+continuing to hold it in the mempool.  I measure the cost to me by 
+"expected byte stay":
+
+expectedByteStay = sizeBytes * expectedBlocksToConfirm(feeRate)
+
+
+Rule 1: When there's not enough space for a new tx, I try to make space 
+by evicting txes with expectedByteStay higher than tx.
+
+I'm NOT worrying about
+  - Fees
+    EXCEPT via their effect on confirmation time
+
+  - Coin age
+    You already made money on your old coins.  Pay up.
+
+  - CPFP
+    Child's expectedBlocksToConfirm is max'ed with its
+    parent, then parent expectedByteStay is ADDED to child's
+
+  - Replacement
+    You'll get another chance in 2 hours (see below).
+
+
+Rule 2: A transaction and its dependents are evicted on its 2-hour 
+anniversary, whether space is required or not
+
+
+The latest expectedBlocksToConfirm(feeRate) table is applied to the 
+entire mempool periodically.
+
+What do you think?  I'll let you know how it works out.  I'm putting a 
+lot of faith in the new fee estimation (particularly its size 
+independence).  Another possibility is clog-ups by transactions that 
+look like they'll confirm next block, but don't because of factors other 
+than fees (other people's blacklists?)
+
