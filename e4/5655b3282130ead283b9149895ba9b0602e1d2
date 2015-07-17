@@ -1,0 +1,253 @@
+From: justin@netki.com (Justin Newton)
+Date: Thu, 16 Jul 2015 18:01:20 -0700
+Subject: [bitcoin-dev] Proposal: extend bip70 with OpenAlias
+In-Reply-To: <CABqynxKf=xBOG_38LYqtps2jXWeOR3g4PVFm6AKbJKLndG3Tig@mail.gmail.com>
+References: <CADhj2oT_rgaf6LFgwMawwJKaA8384v5jQ=e-7T8GNY4gGZ2udQ@mail.gmail.com>
+	<CABqynxKf=xBOG_38LYqtps2jXWeOR3g4PVFm6AKbJKLndG3Tig@mail.gmail.com>
+Message-ID: <CABqynxL5AhEPLSw8TYjn9CVTc42+OHihKPGY6X3GP5W6u6TZaQ@mail.gmail.com>
+
+[continued]
+
+
+
+> 3> We use a 2 tier lookup format.  The first lookup returns a list of
+>> currencies or payment types supported by the Wallet Name.  The second
+>> lookup goes to a record specific to that currency type to get the
+>> address to go to.  We believe this to be a more scalable solution in a
+>> world where someone can have both multiple digital currency types, but
+>> then also multiple types of colored coins, and wants a simple way to
+>> share a single name for all of those different addresses.  This allows
+>> the wallet to do the work behind the scene of choosing the currency it
+>> wants to send, and automatically getting back the right address to
+>> send to, without the user having to do anything different.
+>>
+>
+> We do the same thing, except in a single call. Here's an example of a
+> record that has both XMR and BTC addresses:
+> https://api.openalias.org/donate.getmonero.org?view=full (here are the
+> DNS records for that:
+> http://mxtoolbox.com/SuperTool.aspx?action=txt%3adonate.getmonero.org&run=toolpage
+> )
+>
+
+
+We looked at doing this in a single lookup as you did.  With one or two
+currencies this can be potentially more efficient.  As the number of
+supported currencies and addresses under a single name grows, however, this
+solution becomes potentially more problematic.  Please follow the use cases
+below:
+
+Use case 1:  Wallet Name = "bob.foo.bar" or OpenAlias = "bob.foo.bar"
+
+The only currency supported is bitcoin, and there are no colored coin
+formats supported.
+
+OpenAlias case:
+
+1 packet lookup to "bob.foo.bar"
+1 packet response with bitcoin address
+
+= 2 packets
+
+
+Wallet Name case:
+
+1 packet lookup to "_wallet.bob.foo.bar"
+1 packet response with supported address types
+1 packet lookup to "_btc._wallet.bob.foo.bar"
+1 packet response with bitcoin address
+
+= 4 packets
+
+Wallet Name Case 1a:
+
+The wallet doing the lookup knows it wants bitcoin, so it skips the
+supported addresses lookup
+
+1 packet lookup to "_btc._wallet.bob.foo.bar"
+1 packet response with bitcoin address
+
+= 2 packets
+
+In this use case we might create more traffic, but it could also be reduced
+by doing smart lookups.
+
+
+Use case 2:  Wallet Name = "bob.foo.bar" or OpenAlias = "bob.foo.bar"
+
+Many currencies and colored coin addresses are supported under the same
+name, lets say 100.  When you count different currencies and colored coin
+types, it could easily be hundreds, or over a thousand.
+
+
+OpenAlias case:
+
+1 packet lookup to "bob.foo.bar"
+100 packet responses with various addresses
+
+= 101 packets
+
+
+Wallet Name case:
+
+1 packet lookup to "_wallet.bob.foo.bar"
+1 packet response with supported address types
+1 packet lookup to "_btc._wallet.bob.foo.bar"
+1 packet response with bitcoin address
+
+= 4 packets
+
+Wallet Name Case 2a:
+
+The wallet doing the lookup knows it wants bitcoin, so it skips the
+supported addresses lookup
+
+1 packet lookup to "_btc._wallet.bob.foo.bar"
+1 packet response with bitcoin address
+
+= 2 packets
+
+
+While you may end doing "less lookups" under Open Alias, as it scales, you
+end up causing a significant amount of extra, unnecessary traffic.
+
+In addition to the obvious impact of being orders of magnitude more
+wasteful than necessary, it also creates privacy "leakage" by returning
+someone 100 different addresses when they only asked for one.
+
+Finally, because a single packet UDP transaction for a DNS lookup can
+create possibly hundreds of packets in response, the service can
+essentially become an amplifier for DDoS attacks.  (If I spoof the source
+address of my target with a query to a lookup that issues hundreds of
+packets in response to one packet, and I can have a real impact :( )
+
+
+
+
+>
+>
+>> 4> We mandate DNSSEC while you make it optional.  We did this because
+>> we believe giving the user the option of NOT using DNSSEC is like
+>> letting them order a car with no brakes.  We weren't sure how we would
+>> explain to them why their money was gone when they really didn't
+>> understand the risks they were taking up front. We had a lot of
+>> discussion about it before coming to the decision we did, and I can
+>> see why you went the other way, although I do believe we made the
+>> right choice.
+>>
+>
+> With OpenAlias a DNSSEC fail is a soft fail, and the user has to confirm
+> the address. The reasons are threefold:
+>
+> 1. At the moment only 83.5% of the TLDs are signed [2]. The unsigned ones
+> include some biggies like .sg, .za, and .to
+>
+
+I think this is a good point, and one we weighed.  When we were making our
+original decisions.  Given the importance of ensuring that the lookups
+return the correct value, and the known vulnerabilities in DNS without
+DNSSEC, coupled with the fact that ICANN has mandated all zones and
+registries move to DNSSEC, our belief was and is that it was worth the
+trade off that there were cases where existing domains would not work.
+
+
+It is important to note, that ICANN has "required" for some years that
+registrars and registries support DNSSEC on the domains they register.  I
+personally believe we shouldn't delay use of DNSSEC until their registries
+had come up to current required Internet standards.  (Here are ICANN's
+registrar requirements showing the DNSSEC requirement, btw:
+https://www.icann.org/resources/pages/approved-with-specs-2013-09-17-en#operation
+)
+
+That said, what do others in the industry think?  We are basing our current
+standard on our believed best practices, and defaulted to "first, lose no
+money", given the irreversibility of bitcoin.
+
+
+
+> 2. Even if the zone *is* signed, DNSSEC deployment is hard. Unmanaged
+> DNSSEC deployment is out of scope for probably 99.9% of users, even the
+> usually-technically-ok Bitcoin crowd. Managed DNSSEC is available, but is
+> quite pricey. UltraDNS, Dyn, and GoDaddy (ikr?) are the three big
+> providers, and of those three only GoDaddy has a consumer-affordable
+> product.
+>
+
+
+I think "DNSSEC is hard" is a bit of a boogey man that's not really true.
+We are working on developing registrar by registrar instructions of how to
+do this, and we have typically found that if you are setting up DNS by
+yourself, adding DNSSEC doesn't take a lot of additional time, maybe an
+hour or so depending on your registrar.
+
+This known concern, however, is why when we launched our product (based on
+our standard record formats) that we wanted to launch it with a variety of
+options for people.
+
+In addition to these options there are also other hosting providers, and
+certain registrars that will allow you to setup DNSSEC on their DNS
+platforms.
+
+
+1> One could choose the "0 click" installation process of just getting a
+free Wallet Name underneath their provider's name space.  This option has
+been free to end users in all cases so far, and I expect it always will be
+in the future (although that is up to the partner, so some may choose to
+charge).
+
+2> If they wanted some provider independence, but someone to manage things
+for them, they can register a name through us and manage everything via our
+web interface.  This can cost them as little as $1.95/yr through us.
+
+3> Finally, for the "do it yourselfer" who wants full control themselves,
+they can simply follow the formats on our developer page and do the whole
+thing themselves.  If they do this by registering their own ".bit" this
+will cost them less than $0.25.  If they have an existing domain name, even
+less.
+
+
+
+
+
+
+>
+> 3. ThomasV and I have done a stack of testing behind residential and
+> commercial routers where DNSSEC simply fails (eg. the router runs a really
+> outdated DNS server that doesn't provide RRSIGs in its response, or the ISP
+> doesn't care about DNSSEC). Unsurprisingly, this can be fixed by...you
+> guessed it...doing the lookup via DNSCrypt.
+>
+
+That's some interesting data, and runs counter to the research of the IETF
+DNS working group.  If you are willing to share your data, I can put you in
+touch with the appropriate folks there to share your research.  I'd also
+love to see it!
+
+
+
+>
+> Until we are closer to the bulk of all TLDs being signed, and DNSSEC
+> becomes at least a little more ubiquitous, we can't lock out huge portions
+> of the Internet, because then we're not really providing a useful and
+> usable solution. All we can is make it more difficult to pay an unverified
+> domain.
+>
+> Of course, if your aim is to force people to use you as a domain
+> registrar, then it makes total sense why you'd lock people out;)
+>
+
+I'd argue that we aren't locking "huge portions" of the Internet.  You are
+correct that about 15% of TLD's are not yet signed, even though they were
+required to be by ICANN.
+
+As I said above, I believe the requirement to not lose money and the fact
+that other options are available for those running on TLD's that are out of
+compliance, is worth the trade off that some existing names won't work
+until their TLD's come into compliance with current Internet standards.
+
+And, as we covered above, we don't force anyone to use our registrar, nor
+any of our services in order for Wallet Names to work for them.  We never
+have.  It's just not who we are.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150716/7ccc45ce/attachment-0001.html>
