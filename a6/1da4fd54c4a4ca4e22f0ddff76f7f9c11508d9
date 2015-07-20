@@ -1,0 +1,133 @@
+From: hearn@vinumeris.com (Mike Hearn)
+Date: Mon, 20 Jul 2015 16:40:36 +0200
+Subject: [bitcoin-dev] QR code alternatives (was: Proposal: extend bip70
+	with OpenAlias)
+Message-ID: <CA+w+GKRRfT=8xALsVMqEUAZWzd87Lf4HqFPuDigatY+nHzafQQ@mail.gmail.com>
+
+Hey Thomas,
+
+Here are some thoughts on a third way we can tackle our BIP 70 usability
+problem sans servers: by finding an upgrade to QR codes that give us more
+space and then optimising the hell out of BIP70 to make it fit.
+
+*Better QR codes*
+
+Let's start with this paper, High Capacity Colored Two Dimensional Codes
+<http://proceedings2010.imcsit.org/pliks/79.pdf>. It develops an upgrade to
+standard QR codes that extend them with the use of colour. The resulting
+codes have ~4x the capacity but similar levels of scanning robustness.
+
+This paper is also interesting: DualCodes
+<https://books.google.at/books?id=O5a6BQAAQBAJ&pg=PA25&lpg=PA25&dq=%22DualCodes:+Backward+Compatible+Multi-layer+2D-Barcodes%22&source=bl&ots=ql_G8iyXXi&sig=9-VwhFLbkfgh2Fi0tdM3AWOyajA&hl=en&sa=X&redir_esc=y#v=onepage&q=%22DualCodes%3A%20Backward%20Compatible%20Multi-layer%202D-Barcodes%22&f=false>
+
+It works by overlaying one QR code on top of another using shades of grey.
+The resulting code is still scannable by older applications (backwards
+compatibility!) but an enhanced reader can also extract the second code.
+They explicitly mention digital signatures as a possible use case.
+
+In both cases the code does not appear to be available but the same
+approach was used: extend libqrcode for creation and ZXing for decoding
+(Android). We could ask the authors and see if they're willing to open
+source their work.
+
+BIP 70 has the potential to add many features. But most of them, even the
+extensions currently proposed only as ideas, can be expressed with
+relatively few bytes.
+
+So with a 4x boost in capacity, or a 2x boost with backwards compat, what
+could we do?
+
+*Optimised BIP70*
+
+If we define our own certificate formats and by implication our own CAs,
+then we can easily make a certificate be 32 bytes for the ECC
+signature+length of the asserted textual identity, e.g. email address.
+
+Can we go smaller? Arguably, yes. 32 bytes for a signature is for Really
+Strong Security? (a 256 bit curve), which gives 128 bits of security. If we
+are willing to accept that a strong adversary could eventually forge a
+certificate, we can drop down to a weaker curve, like a 128 bit cure with
+64 bits of security. This is well within reach of, say, an academic team
+but would still pose a significant hurdle for run of the mill payment
+fraudsters. If these short CA keys expired frequently, like once a month,
+the system could still be secure enough.
+
+As we are defining our own PKI we can make CA keys expire however
+frequently we like, up to the expiry period of the BIP70 request itself.
+Thus certificates that expire monthly is not an issue if the wallet has a
+way to automatically refresh the certificate by using a longer term
+stronger credential that it keeps around on disk.
+
+If we accept a single payment address i.e. no clever tricks around merge
+avoidance, such a QR code could look like this:
+
+bitcoin:1aBcD1234....?x=serialized_payment_request
+
+However this requires text mode and wastes bytes at the front for the URI
+type.
+
+If we're willing to accept QR codes that can't be read by a standalone app
+and which requires an embedded reader, then we can just scrap the legacy
+and serialise a binary BIP70 request directly into the QR code. Andreas'
+wallet, for example, can already handle this because it has an embedded QR
+reader. I don't know what the situation on iOS is like.
+
+If we were to use the DualCodes system we could define the primary QR code
+as being an unsigned payment request, and the second layer as being the
+signature/pki data.
+
+*Getting response data back to the recipient*
+
+One reason to have a store/forward network is the "forward" part: we don't
+only want to host a static PaymentRequest, but also receive a private
+response e.g. for the memo field, or to implement the well known "Stealth
+Address" / ECDH in the payment protocol proposals:
+
+https://medium.com/@octskyward/ecdh-in-the-payment-protocol-cb2f81962c1b
+
+Stealth addresses try and (ab)use the block chain as a store/forward layer
+and break SPV in the process as well as wasting lots of resources. ECDH in
+BIP70 avoids those issues but at the cost of requiring a separate
+store-and-forward network with some notion of account privacy.
+
+These ideas come with another steep price: restoring a wallet from seed
+words is no longer possible. You must have the extra random data to
+calculate the private keys for money sent to you :(  If you lose the extra
+data you lose the money. It can be fixed but only by having wallets
+regularly sweep the sent money to keys derived from the BIP32 seed, meaning
+privacy-hurting merging and extra traffic.
+
+I don't know of any way to solve this except by using some servers,
+somewhere, that store the Payment messages for people: potentially for a
+long period of time. If we have such servers, then having them host BIP70
+requests is not a big extra requirement.
+
+I have imagined this being a p2p-ish network of HTTPS servers that accept
+POSTs and GETs. But if we are thinking about alternatives, it could also be
+a separate service of the existing Bitcoin P2P network. That's what
+OP_RETURN (ab)use effectively does. But as these messages don't really have
+to be kept forever, a different system could be used: Payment messages
+could be broadcast along with their transactions and stored at every node,
+waiting for download. But unlike regular transactions, they are not stored
+forever in a block chain. They are just written to disk and eventually
+erased, perhaps, ordered in a mempool like way where more fee attached ==
+stored for longer, even though the nodes storing the data aren't actually
+receiving the fee.
+
+A signature over the Payment metadata using the same output keys as the
+transaction would bind them together for the purposes of broadcast, but
+doesn't need to be stored after that.
+
+As the data storage is just a helpful service but not fundamentally
+required, nodes could shard themselves by announcing in their addr messages
+that they only store Payment metadata for e.g. the half which have a hash
+starting with a one bit. And when outputs are seen being spent, the
+associated Payment metadata can be erased too, as by then it's fair to
+assume that the users wallet has downloaded the metadata and no longer
+cares about it.
+
+Of course you have then all the regular DoS issues. But any P2P network
+that stores data on the behalf of others has these.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150720/7b5c3cb0/attachment-0001.html>
