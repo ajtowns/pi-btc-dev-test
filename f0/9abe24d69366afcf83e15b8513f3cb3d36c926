@@ -1,0 +1,110 @@
+From: jrn@jrn.me.uk (Ross Nicoll)
+Date: Mon, 20 Jul 2015 20:58:27 +0100
+Subject: [bitcoin-dev] For discussion: limit transaction size to
+ mitigate CVE-2013-2292
+In-Reply-To: <CABsx9T30aUx+Leb2HXx2QrMT8R_eTXV9hiC99av957645iQm1Q@mail.gmail.com>
+References: <CABsx9T30aUx+Leb2HXx2QrMT8R_eTXV9hiC99av957645iQm1Q@mail.gmail.com>
+Message-ID: <55AD52E3.3070306@jrn.me.uk>
+
+I take it there's no feasibility in suggesting the script execution code 
+has run time maximums? I'm aware these would be much harder to have 
+consensus on, but would seem like the better solution if at all possible.
+
+Ross
+
+On 20/07/2015 20:10, Gavin Andresen via bitcoin-dev wrote:
+> Draft BIP to prevent a potential CPU exhaustion attack if a 
+> significantly larger maximum blocksize is adopted:
+>
+>   Title: Limit maximum transaction size
+>   Author: Gavin Andresen <gavinandresen at gmail.com 
+> <mailto:gavinandresen at gmail.com>>
+>   Status: Draft
+>   Type: Standards Track
+>   Created: 2015-07-17
+>
+> ==Abstract==
+>
+> Mitigate a potential CPU exhaustion denial-of-service attack by limiting
+> the maximum size of a transaction included in a block.
+>
+> ==Motivation==
+>
+> Sergio Demian Lerner reported that a maliciously constructed block could
+> take several minutes to validate, due to the way signature hashes are
+> computed for OP_CHECKSIG/OP_CHECKMULTISIG 
+> ([[https://bitcointalk.org/?topic=140078|CVE-2013-2292]] 
+> <https://bitcointalk.org/?topic=140078%7CCVE-2013-2292]]>).
+> Each signature validation can require hashing most of the transaction's
+> bytes, resulting in O(s*b) scaling (where n is the number of signature
+> operations and m is the number of bytes in the transaction, excluding
+> signatures). If there are no limits on n or m the result is O(n^2) 
+> scaling.
+>
+> This potential attack was mitigated by changing the default relay and
+> mining policies so transactions larger than 100,000 bytes were not
+> relayed across the network or included in blocks. However, a miner
+> not following the default policy could choose to include a
+> transaction that filled the entire one-megaybte block and took
+> a long time to validate.
+>
+> ==Specification==
+>
+> After deployment, the maximum serialized size of a transaction allowed
+> in a block shall be 100,000 bytes.
+>
+> ==Compatibility==
+>
+> This change should be compatible with existing transaction-creation 
+> software,
+> because transactions larger than 100,000 bytes have been considered 
+> "non-standard"
+> (they are not relayed or mined by default) for years.
+>
+> Software that assembles transactions into blocks and that validates 
+> blocks must be
+> updated to reject oversize transactions.
+>
+> ==Deployment==
+>
+> This change will be deployed with BIP 100 or BIP 101.
+>
+> ==Discussion==
+>
+> Alternatives to this BIP:
+>
+> 1. A new consensus rule that limits the number of signature operations 
+> in a
+> single transaction instead of limiting size. This might be more 
+> compatible with
+> future opcodes that require larger-than-100,000-byte transactions, 
+> although
+> any such future opcodes would likely require changes to the Script 
+> validation
+> rules anyway (e.g. the 520-byte limit on data items).
+>
+> 2. Fix the SIG opcodes so they don't re-hash variations of the 
+> transaction's data.
+> This is the "most correct" solution, but would require updating every
+> piece of transaction-creating and transaction-validating software to 
+> change how
+> they compute the signature hash.
+>
+> ==References==
+>
+> [[https://bitcointalk.org/?topic=140078|CVE-2013-2292] 
+> <https://bitcointalk.org/?topic=140078%7CCVE-2013-2292]>]: Sergio 
+> Demian Lerner's original report
+>
+>
+>
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150720/b969dd16/attachment.html>
