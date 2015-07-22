@@ -1,0 +1,124 @@
+From: fireduck@gmail.com (=?UTF-8?B?Sm9zZXBoIEdsZWFzb24g4pGI?=)
+Date: Wed, 22 Jul 2015 23:07:12 +0000
+Subject: [bitcoin-dev] Making Electrum more anonymous
+In-Reply-To: <55B01731.6070306@voskuil.org>
+References: <55AFBBE6.3060702@electrum.org> <55AFC52C.3010700@voskuil.org>
+	<55B01731.6070306@voskuil.org>
+Message-ID: <CA+ASnrFxPtxE2vsDS4dz2FxddAtW5fQK=gkBbrPVp878zeV_Hw@mail.gmail.com>
+
+I would recommend the following solution as a decent compromise between
+complexity and privacy:
+
+1) Encourage electrum server operators to have their servers reachable as
+tor hidden services (.onion addresses)
+2) Make sure server discovery works well with .onion addresses
+3) Make the privacy a user configurable setting:
+  - None - Allows any server connection type
+  - SSL - Requires SSL at least, no plain text
+  - Tor - Requires tor, no direct TCP
+  - Multi-Tor - Uses a variety of tor paths to reach a variety of servers
+(maybe configurable number of servers)
+
+Default should be 'SSL' probably.
+
+
+
+
+
+
+
+
+On Wed, Jul 22, 2015 at 3:20 PM Eric Voskuil via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> I should add that the obvious resolution to this set of problems is to
+> use a distinct Tor route for each Bitcoin address, not to reinvent Tor
+> and reproduce its community. So ultimately this is easy to implement,
+> but the downside is performance.
+>
+> But it's important to keep in mind that poor-performing perfect privacy
+> for address monitoring is trivial to achieve - just sync the full
+> blockchain.
+>
+> Presumably if you don't trust a server to protect your privacy, you also
+> don't trust it with your money. So any robust privacy optimization would
+> at least be designed to support partial (SPV) chain clients. It would
+> also need to support wallet restoration from backup.
+>
+> The level of privacy will always be a performance trade-off. The ideal
+> solution would allow a client to balance privacy against performance.
+>
+> e
+>
+> On 07/22/2015 09:30 AM, Eric Voskuil wrote:
+> > Hi Thomas,
+> >
+> > The scheme is essentially onion routing. The set of {M} are entry nodes
+> > and the set of {S} are exit nodes. The weaknesses are as you would see
+> > in an analogous TOR implementation:
+> >
+> > (1) The lack of relay nodes {R} make collaboration between any subset of
+> > {M} and {S} trivial.
+> >
+> > (2) OR is a mixnet, so the size of the network matters a lot.
+> >
+> > (3) The directory is a perpetual weakness.
+> >
+> > (4) Content is visible to the exit node (or the final service). This
+> > means each address must be passed via a distinct route to prevent
+> > correlation.
+> >
+> > e
+> >
+> > On 07/22/2015 08:51 AM, Thomas Voegtlin via bitcoin-dev wrote:
+> >> Hello,
+> >>
+> >> Although Electrum clients connect to several servers in order to fetch
+> >> block headers, they typically request address balances and address
+> >> histories from a single server. This means that the chosen server knows
+> >> that a given set of addresses belong to the same wallet. That is true
+> >> even if Electrum is used over TOR.
+> >>
+> >> There have been various proposals to improve on that, but none of them
+> >> really convinced me so far. One recurrent proposal has been to create
+> >> subsets of wallet addresses, and to send them to separate servers. In my
+> >> opinion, this does not really improve anonymity, because it requires
+> >> trusting more servers.
+> >>
+> >> Here is an idea, inspired by TOR, on which I would like to have some
+> >> feedback: We create an anonymous routing layer between Electrum servers
+> >> and clients.
+> >>
+> >> * Each server S publishes a RSA public key, KS
+> >> * Each client receives a list of available servers and their pubkeys
+> >> * For each wallet address, addr_i, a client chooses a server S_i, and a
+> >> RSA keypair (K_addr_i, k_addr_i)
+> >> * The client creates a list of encrypted requests. Each request contains
+> >> addr_i and K_addr_i, and is encrypted with the pubkey KS_i of S_i
+> >> * The client chooses a main server M, and sends the list of encrypted
+> >> requests to M
+> >> * M dispatches the client's requests to the corresponding servers S_i
+> >> (without the client's IP address.)
+> >> * Each server decrypts the requests it receives, performs the request,
+> >> and encrypts the result with K_addr_i
+> >> * M receives encrypted responses, and forwards them to the client.
+> >> * The client decrypts the encrypted response with k_addr_i
+> >>
+> >> What do you think? What are the costs and benefits of such an approach?
+> >>
+> >> (Note: this will not work if all servers, or a large fraction of them,
+> >> are controlled by the same entity that controls M)
+> >>
+> >>
+> >> Thomas
+> >> _______________________________________________
+> >
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150722/da02ff32/attachment.html>
