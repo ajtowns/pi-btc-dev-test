@@ -1,0 +1,218 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Thu, 23 Jul 2015 16:30:06 +0200
+Subject: [bitcoin-dev] Libconsensus separated repository (was Bitcoin Core
+	and hard forks)
+Message-ID: <CABm2gDrApVuxF8DFf32V=pQhDKvvVfcDK=LeCXJ9h9o8CY+wNQ@mail.gmail.com>
+
+On Thu, Jul 23, 2015 at 2:49 AM, Eric Voskuil via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> On 07/22/2015 05:13 PM, Eric Lombrozo via bitcoin-dev wrote:
+>> Only being partly serious - I strongly am in favor of a sufficiently
+> modularized codebase that swapping out consensus rules is fairly
+> straightforward and easy to test...
+>
+> We (libbitcoin) have taken the time to publish and maintain bitcoind's
+> "libbitcoinconsensus" source files as an independent C++ library (with
+> Java and Python bindings).
+>
+> https://en.bitcoin.it/wiki/Libbitcoin_Consensus
+>
+> It can be easily verified against bitcoind sources and in builds of
+> libbitcoin-blockchain it can be swapped out for libbitcoin's native
+> consensus checks.
+>
+> https://en.bitcoin.it/wiki/Libbitcoin_Blockchain#Consensus_Validation
+>
+> So there is really no reason to consider the original client synonymous
+> with consensus. I initially argued for this library to be natively
+> isolated from bitcoind, but that didn't seem to be in the cards so we
+> did it independently.
+
+I think there were some misunderstandings in our previous conversation
+about this topic.
+I completely agree with having a separated repository for libconsensus
+(that's the whole point, alternative implementations can be
+consensus-safe by using it, and in the event of a schism fork[1], they
+can fork just that smaller project without having to relay on Bitcoin
+Core [satoshi] at all).
+But I thought you also wanted Bitcoin Core to use libconsensus instead
+of just having a subtree/subrepository like it currently does with
+libsecp256k1.
+I'm not sure if that would ever be accepted, but in any case we're
+certainly far away from that goal. Here are some things that need to
+happen first:
+
+1) Finish encapsulating consensus code so that it can be built without
+any (we've done it only with script-related code so far). Here are
+some related PRs (other people havee done other things that help with
+this as well):
+
+** MERGED or DELETED
+*** MERGED Consensus: Decouple pow from chainparams #5812 [consensuspow]
+*** DELETED MOVEONLY: Move constants and globals to consensus.h and
+policy.o #5696 [consensus_policy0]
+*** DELETED Refactor: Create CCoinsViewEfficient interface for
+CCoinsViewCache #5747 [coins]
+*** MERGED Chainparams: Refactor: Decouple IsSuperMajority from
+Params() #5968 [params_consensus]
+*** MERGED Remove redundant getter
+CChainParams::SubsidyHalvingInterval() #5996 [params_subsidy]
+*** MERGED Separate CValidationState from main #5669 [consensus]
+*** DELETED Consensus: Refactor: Separate CheckFinalTx from
+main::IsFinalTx #6063 [consensus_finaltx]
+*** MERGED Consensus: Decouple ContextualCheckBlockHeader from
+checkpoints #5975 [consensus_checkpoints]
+*** MERGED Separate Consensus::CheckTxInputs and GetSpendHeight in
+CheckInputs #6061 [consensus_inputs]
+*** MERGED Bugfix: Don't check the genesis block header before
+accepting it #6299 [5975-quick-fix]
+** REVIEW Optimizations: Consensus: In AcceptToMemoryPool,
+ConnectBlock, and CreateNewBlock #6445 [consensus-txinputs-0.12.99]
+** REBASE MOVEONLY: Move most of consensus functions (pre-block) #6051
+[consensus_moveonly]
+** REBASE Consensus: Refactor: Turn CBlockIndex::GetMedianTimePast
+into independent function #6009 [consensus_mediantime]
+** DEPENDENT Consensus: Refactor: Consensus version of
+CheckBlockHeader() #6035 [consensus_checkblockheader]
+** DEPENDENT Consensus: Consensus version of pow functions [consensus_pow2]
+
+2) Finish libconsensus's API: expose more things than VerifyScript, at
+the very least, also expose VerifyTx, VerifyHeader and VerifyBlock.
+Feedback from alternative implementations like libbitcoin is extremely
+valuable here. Some related closed-for-now PRs:
+
+** DEPENDENT API: Expose bitcoinconsensus_verify_header() in
+libconsensus #5995 [consensus_header]
+** DEPENDENT API: Expose bitcoinconsensus_verify_block() in
+libconsensus #5946 [consensus_tip]
+** REBASE Chainparams: Explicit Consensus::Params arg in consensus
+functions #6024 [params_consensus2]
+
+3) Move libconsensus to a separate repository as a
+subtree/subrepository of Bitcoin Core.
+
+Only after all that we can discuss whether Bitcoin Core itself should
+include libconsensus' code or just use its API directly.
+I hope that after all this, libbitcoin also reconsiders whether to
+reimplement its own libconsensus or use the "official" one directly
+instead.
+
+> In any case I agree with your stated need for this isolation (if not the
+> means) for the reasons you state. The community needs to move beyond a
+> largely singular and monolithic codebase that is holding that position
+> in part due to fear about consensus bug forks.
+
+I completely agree. That's the goal of libconsensus (and an
+alternative implementation like libbitcoin being able to use it
+without sacrificing any of its current or future design differences
+from Bitcoin Core would be a sign of success in this reward).
+Unfortunately any changes that touch consensus code are risky and
+therefore slow. And when consensus encapsulation changes conflict with
+other changes (not because the other changes need to change consensus
+but because consensus code is still coupled with policy and other
+bitcoind-specific code), refactors are never prioritized. Ironically,
+you need to encapsulate the consensus code to avoid such conflicts,
+which would make all non-consensus changes far less risky (reducing
+the consensus-critical review development bottleneck).
+
+Unfortunately and ironically again, safer, small and incremental
+changes are less interesting for reviewers.
+For example, I've been trying to move consensus code to the consensus
+folder for a long time. The correctness of a MOVEONLY change is
+trivial to review for anyone who knows how to copy/paste in its
+favorite editor and how to use git diff, but will I ever get answers
+to my questions in [1]?
+I know there's many people who really care about this, Cory Fields,
+Wladimir and Pieter Wuille to name a few have reviewed many of this
+changes (I've just got used to publicly whine about lack of review on
+this front and policy encapsulation [very related fronts] as an
+attempt to get some attention: not always, but begging for review
+actually works some times).
+
+Another unfortunate fact is that although a script-only libconsensus
+allows you to avoid a big part of all possible consensus fork bugs,
+there cannot be users of a finished libconsensus to ask things to util
+a finished libconsensus actually exists. At the same time, the future
+users (alternative implementations, since bitcoin core is already
+"using libconsensus") are the most relevant people to listen when it
+comes to the C API. That's why I beg you to comment on [2], even if
+#5995 is currently closed. Your input on [1] would be very appreciated
+as well (maybe you think it's better to expose verifyTx before
+exposing verifyHeader, even if exposing verifyHeader is something that
+could be done faster).
+
+ > To make choice regarding consensus an actual choice (and thereby actual
+> consensus) the modularity you suggest is essential. One must be able to
+> take new developments without having to take consensus changes. The
+> option to fork the codebase is not reasonable for most people. At this
+> point there is no defensible reason for coupling consensus checks with
+> other features.
+
+Would you agree that asking people to fork an independent libconsensus
+project instead of having to fork the full Bitcoin-qt is much more
+reasonable?
+I mean, I agree with your points. If "the specification of the
+consensus rules is an implementation", then that implementation
+shouldn't be coupled with a bunch of policy and non-consensus
+technical choices (storage, dependencies, p2p protocol...). But I
+still think that "the specification of the consensus rules should be a
+concrete implementation" rather than based purely on a natural
+language like English.
+I believe that's the only point where we fundamentally disagree, but
+it shouldn't be a barrier in our common goal of taking "power" away
+from Bitcoin Core development. If we're successful Bitcoin Core won't
+have any privileged position with regards to, say, libbitcoin when it
+comes to deciding consensus rules changes.
+You see, people like Mike Hearn believe that "uncontroversial
+acceptance by Bitcoin Core devs" is the same as "uncontroversial
+acceptance by all users of the system" (for a libbitcoin developer
+like you, obviously a superset of Bitcoin Core's users). He thinks
+that Gavin proposal is only a schism consensus fork[3] because the
+code is in github/bitcoinxt/bitcoinxt instead of
+github/bitcoin/bitcoin, not because PeterTodd-the-user-of-the-system
+(he doesn't care about him) opposes it.
+But let's imagine a different situation:
+
+1) libconsensus us finished and used by libbitcoin
+2) Bitcoin Core was unanimously in favor of Gavin's 32 GB initial
+proposal and the changes are applied to bitcoin/bitcoin and
+bitcoin/libconsensus (or Bitcoin Core has a dictator like Mike
+wants[4] and he accepts it, it doesn't really matter for this
+example).
+
+But let's also assume that X% of the users and 10% of the miners are
+against that Schism hardfork, and they don't want to be forced to
+change the rules by any influential group, mining, economic or user
+majority.
+Libbitcoin cannot be forced to accept the next, controversial version
+of bitcoin/libconsensus, so you guys fork libbitcoin/libconsensus out
+of the last ok version.
+Centralized-bitcoin and old-bitcoin would become 2 separated
+currencies and some people would likely lose money in the transition
+from one currency to 2 of them, but the users of old-bitcoin have the
+right of keeping the rules they signed up for and the only responsible
+people for this likely-catastrophic schism would be the Bitcoin core
+developers for trying to impose consensus changes into others against
+their will. Trying to impose consensus changes against the will of
+some users is wrong, and it is irrelevant if that happens in Bitcoin
+Core or Bitcoin Tx (if it is uncontroversial, it's also irrelevant
+where it gets implemented first).
+
+I really believe bitcoin needs competitive alternative implementations
+and I believe libconsensus is a tool to help that happen and reduce
+the "gatekeeping" friction that there's (unfortunately) around Bitcoin
+Core. I look forward to any potential collaboration on this front.
+Even if you still want to maintain a reimplementation of libconsensus
+(which I humbly think it's a mistake, but I don't think there's any
+point on keep discussing that, since we know we disagree) we can
+collaborate on the future common API of a complete libconsensus (with
+verifyBlock and all). I really hope we can do that.
+
+[1] https://github.com/bitcoin/bitcoin/pull/6051#issuecomment-120708121
+
+[2] (kind of outdated, but the API is what matters here)
+https://github.com/jtimon/bitcoin/commit/00b9b227afc8669a877984561329dde75d3d8942
+
+[3] https://github.com/jtimon/bips/blob/bip-forks/bip-forks.org#schism1-hardforks
+
+[4] http://lmgtfy.com/?q=mike+hearn+dictator&l=1
