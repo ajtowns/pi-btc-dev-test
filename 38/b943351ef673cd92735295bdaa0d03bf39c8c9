@@ -1,0 +1,68 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Thu, 23 Jul 2015 11:41:18 -0400
+Subject: [bitcoin-dev] For discussion: limit transaction size to
+	mitigate CVE-2013-2292
+In-Reply-To: <CAAS2fgRBa47ye-ouV2jDe16MJFCKxYh0zF0Jw4BTwzpXVKgwOg@mail.gmail.com>
+References: <CABsx9T30aUx+Leb2HXx2QrMT8R_eTXV9hiC99av957645iQm1Q@mail.gmail.com>
+	<CAAS2fgRBa47ye-ouV2jDe16MJFCKxYh0zF0Jw4BTwzpXVKgwOg@mail.gmail.com>
+Message-ID: <CABsx9T3mEYPMFfxFbM-Jj7nADWsVg9HbvQOr0JZeEjC8gOvLZA@mail.gmail.com>
+
+On Mon, Jul 20, 2015 at 4:55 PM, Gregory Maxwell <gmaxwell at gmail.com> wrote:
+
+> On Mon, Jul 20, 2015 at 7:10 PM, Gavin Andresen via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > Mitigate a potential CPU exhaustion denial-of-service attack by limiting
+> > the maximum size of a transaction included in a block.
+>
+> This seems like a fairly indirect approach. The resource being watched
+> for is not the size (otherwise two transactions for 200k would be
+> strictly worse than one 200k transactions) but the potential of N^2
+> costs related to repeated hashing in checksig; which this ignores.
+>
+
+To get a feeling for the implementation complexity / correctness tradeoff,
+I implemented changes to Core to count exactly how many signature operations
+are performed and how many bytes are hashed to compute sighashes:
+
+https://github.com/gavinandresen/bitcoin-git/commit/08ecd6f67d977271faa92bc1890b8f94b15c2792
+
+I haven't benchmarked how much keeping track of the counts affects
+performance (but I expect
+it to be minimal compared to ECDSA signature validation, accessing inputs
+from the UTXO, etc).
+
+I like the idea of a consensus rule that directly addresses the attack--
+e.g. "validating
+a transaction must not require more than X megabytes hashed to compute
+signature hashes."
+(or: "validating a block must not require more than X megabytes hashed..."
+which is
+more symmetric with the current "maximum number of sigops allowed per
+block")
+
+Thinking about this and looking at block 364,292, I think I see a simple
+optimization that would
+speed up validation for transactions with lots of inputs:  use
+SIGHASH_ANYONECANPAY
+for all of the inputs instead of SIGHASH_ALL.
+
+(which would make the transaction malleable-- if that's a concern, then
+make one of the inputs
+SIGHASH_ALL and the rest SIGHASH_ANYONECANPAY-- I think this is a change
+that
+should be made to Core and other wallets should make).
+
+---
+
+I'd like to hear from maintainers of other full implementations: how hard
+would it be for you
+to keep track of the number of bytes hashed to validate a transaction or
+block, and use
+it as a consensus rule?
+
+-- 
+--
+Gavin Andresen
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150723/f0db9377/attachment.html>
