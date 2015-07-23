@@ -1,0 +1,115 @@
+From: jl2012@xbt.hk (jl2012 at xbt.hk)
+Date: Thu, 23 Jul 2015 19:26:33 +0000
+Subject: [bitcoin-dev] BIP draft: Hardfork bit
+In-Reply-To: <CAE-z3OWZGsSS2s1OZU5ScH7C4BcOtCb9mcz62TA7HZQe_=y0uA@mail.gmail.com>
+References: <20150723162321.Horde.bphh__8AhyXa_m-YAYpiyw1@server47.web-hosting.com>
+	<CAE-z3OWZGsSS2s1OZU5ScH7C4BcOtCb9mcz62TA7HZQe_=y0uA@mail.gmail.com>
+Message-ID: <20150723192633.Horde.cGMZGo9Ji0-_9HZhcSUpww5@server47.web-hosting.com>
+
+
+Quoting Tier Nolan via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>:
+
+> On Thu, Jul 23, 2015 at 5:23 PM, jl2012 via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> 2) Full nodes and SPV nodes following original consensus rules may not be
+>> aware of the deployment of a hardfork. They may stick to an
+>> economic-minority fork and unknowingly accept devalued legacy tokens.
+>>
+>
+> This change means that they are kicked off the main chain immediately when
+> the fork activates.
+>
+> The change is itself a hard fork.  Clients have be updated to get the
+> benefits.
+
+I refrain from calling it the "main chain". I use "original chain" and  
+"new chain" instead as I make no assumption about the distribution of  
+mining power. This BIP still works when we have a 50/50 hardfork. The  
+main point is to protect all users on both chains, and allow them to  
+make an informed choice.
+
+
+> 3) In the case which the original consensus rules are also valid under the
+>> new consensus rules, users following the new chain may unexpectedly reorg
+>> back to the original chain if it grows faster than the new one. People may
+>> find their confirmed transactions becoming unconfirmed and lose money.
+>>
+>
+> I don't understand the situation here.  Is the assumption of a group of
+> miners suddenly switching (for example, they realise that they didn't
+> intend to support the new rules)?
+>
+
+Again, as I make no assumption about the mining power distribution,  
+the new chain may actually have less miner support. Without any  
+protection (AFAIK, for example, BIP100, 101, 102), the weaker new  
+chain will get 51%-attacked by the original chain constantly.
+
+
+>>
+>> Flag block is constructed in a way that nodes with the original consensus
+>> rules must reject. On the other hand, nodes with the new consensus rules
+>> must reject a block if it is not a flag block while it is supposed to be.
+>> To achieve these goals, the flag block must 1) have the hardfork bit
+>> setting to 1, 2) include a short predetermined unique description of the
+>> hardfork anywhere in its coinbase, and 3) follow any other rules required
+>> by the hardfork. If these conditions are not fully satisfied, upgraded
+>> nodes shall reject the block.
+>>
+>
+> Ok, so set the bit and then include BIP-GIT-HASH of the canonical BIP on
+> github in the coinbase?
+
+I guess the git hash is not known until the code is written? (correct  
+me if I'm wrong) As the coinbase message is consensus-critical, it  
+must be part of the source code and therefore you can't use any kind  
+of hash of the code itself (a chicken-and-egg problem)
+
+> Since it is a hard fork, the version field could be completely
+> re-purposed.  Set the bit and add the BIP number as the lower bits in the
+> version field.  This lets SPV clients check if they know about the hard
+> fork.
+
+This may not be compatible with the other version bits voting mechanisms.
+
+> There network protocol could be updated to add getdata support for asking
+> for a coinbase only merkleblock.  This would allow SPV clients to obtain
+> the coinbase.
+
+Yes
+
+
+> Automatic warning system: When a flag block is found on the network, full
+>> nodes and SPV nodes should look into its coinbase. They should alert their
+>> users and/or stop accepting incoming transactions if it is an unknown
+>> hardfork. It should be noted that the warning system could become a DoS
+>> vector if the attacker is willing to give up the block reward. Therefore,
+>> the warning may be issued only if a few blocks are built on top of the flag
+>> block in a reasonable time frame. This will in turn increase the risk in
+>> case of a real planned hardfork so it is up to the wallet programmers to
+>> decide the optimal strategy. Human warning system (e.g. the emergency alert
+>> system in Bitcoin Core) could fill the gap.
+>>
+>
+> If the rule was that hard forks only take effect 100 blocks after the flag
+> block, then this problem is eliminated.
+>
+> Emergency hard forks may still have to take effect immediately though, so
+> it would have to be a custom not a rule.
+
+The flag block itself is a hardfork already and old miners will not  
+mine on top of the flag block. So your suggestion won't be helpful in  
+this situation.
+
+To make it really meaningful, we need to consume one more bit of the  
+'version' field ("notice bit"). Supporting miners will turn on the  
+notice bit, and include a message in coinbase ("notice block"). When a  
+full node/SPV node find many notice blocks with the same coinbase  
+message, they could bet that the subsequent flag block is a legit one.  
+However, an attacker may still troll you by injecting an invalid flag  
+block after many legit notice blocks. So I'm not sure if it is worth  
+the added complexity.
+
+
+
