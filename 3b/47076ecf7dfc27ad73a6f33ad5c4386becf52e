@@ -1,0 +1,157 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Fri, 24 Jul 2015 16:59:40 -0400
+Subject: [bitcoin-dev] For discussion: limit transaction size to
+	mitigate CVE-2013-2292
+In-Reply-To: <CABsx9T3mEYPMFfxFbM-Jj7nADWsVg9HbvQOr0JZeEjC8gOvLZA@mail.gmail.com>
+References: <CABsx9T30aUx+Leb2HXx2QrMT8R_eTXV9hiC99av957645iQm1Q@mail.gmail.com>
+	<CAAS2fgRBa47ye-ouV2jDe16MJFCKxYh0zF0Jw4BTwzpXVKgwOg@mail.gmail.com>
+	<CABsx9T3mEYPMFfxFbM-Jj7nADWsVg9HbvQOr0JZeEjC8gOvLZA@mail.gmail.com>
+Message-ID: <CABsx9T2s3WaRZK8rEZLd9+FEVaUPxz=EmhL2JH=CnH-y6C1b0w@mail.gmail.com>
+
+After thinking about it, implementing it, and doing some benchmarking, I'm
+convinced replacing the existing, messy, ad-hoc sigop-counting consensus
+rules is the right thing to do.
+
+The last two commits in this branch are an implementation:
+   https://github.com/gavinandresen/bitcoin-git/commits/count_hash_size
+
+>From the commit message in the last commit:
+
+Summary of old rules / new rules:
+
+Old rules: 20,000 inaccurately-counted-sigops for a 1MB block
+New: 80,000 accurately-counted sigops for an 8MB block
+
+A scan of the last 100,000 blocks for high-sigop blocks gets
+a maximum of 7,350 sigops in block 364,773 (in a single, huge,
+~1MB transaction).
+
+For reference, Pieter Wuille's libsecp256k1 validation code
+validates about 10,000 signatures per second on a single
+2.7GHZ CPU core.
+
+Old rules: no limit for number of bytes hashed to generate
+signature hashes
+
+New rule: 1.3gigabytes hashed per 8MB block to generate
+signature hashes
+
+Block 364,422 contains a single ~1MB transaction that requires
+1.2GB of data hashed to generate signature hashes.
+
+TODO: benchmark Core's sighash-creation code ('openssl speed sha256'
+reports something like 1GB per second on my machine).
+
+Note that in normal operation most validation work is done as transactions
+are received from the network, and can be cached so it doesn't have to be
+repeated when a new block is found. The limits described in this BIP are
+intended, as the existing sigop limits are intended, to be an extra "belt
+and suspenders" measure to mitigate any possible attack that involves
+creating and broadcasting a very expensive-to-verify block.
+
+
+Draft BIP:
+
+  BIP: ??
+  Title: Consensus rules to limit CPU time required to validate blocks
+  Author: Gavin Andresen <gavinandresen at gmail.com>
+  Status: Draft
+  Type: Standards Track
+  Created: 2015-07-24
+
+==Abstract==
+
+Mitigate potential CPU exhaustion denial-of-service attacks by limiting
+the maximum number of ECDSA signature verfications done per block,
+and limiting the number of bytes hashed to compute signature hashes.
+
+==Motivation==
+
+Sergio Demian Lerner reported that a maliciously constructed block could
+take several minutes to validate, due to the way signature hashes are
+computed for OP_CHECKSIG/OP_CHECKMULTISIG ([[
+https://bitcointalk.org/?topic=140078|CVE-2013-2292]]).
+Each signature validation can require hashing most of the transaction's
+bytes, resulting in O(s*b) scaling (where s is the number of signature
+operations and b is the number of bytes in the transaction, excluding
+signatures). If there are no limits on s or b the result is O(n^2) scaling
+(where n is a multiple of the number of bytes in the block).
+
+This potential attack was mitigated by changing the default relay and
+mining policies so transactions larger than 100,000 bytes were not
+relayed across the network or included in blocks. However, a miner
+not following the default policy could choose to include a
+transaction that filled the entire one-megaybte block and took
+a long time to validate.
+
+==Specification==
+
+After deployment, the existing consensus rule for maximum number of
+signature operations per block (20,000, counted in two different,
+idiosyncratic, ad-hoc ways) shall be replaced by the following two rules:
+
+1. The maximum number of ECDSA verify operations required to validate
+all of the transactions in a block must be less than or equal to
+the maximum block size in bytes divided by 100 (rounded down).
+
+2. The maximum number of bytes hashed to compute ECDSA signatures for
+all transactions in a block must be less than or equal to the
+maximum block size in bytes times 160.
+
+==Compatibility==
+
+This change is compatible with existing transaction-creation software,
+because transactions larger than 100,000 bytes have been considered
+"non-standard"
+(they are not relayed or mined by default) for years, and a block full of
+"standard" transactions will be well-under the limits.
+
+Software that assembles transactions into blocks and software that validates
+blocks must be updated to enforce the new consensus rules.
+
+==Deployment==
+
+This change will be deployed with BIP 100 or BIP 101.
+
+==Discussion==
+
+Linking these consensus rules to the maximum block size allows more
+transactions
+and/or transactions with more inputs or outputs to be included if the
+maximum
+block size increases.
+
+The constants are chosen to be maximally compatible with the existing
+consensus rule,
+and to virtually eliminate the possibility that bitcoins could be lost if
+somebody had locked some funds in a pre-signed, expensive-to-validate,
+locktime-in-the-future
+transaction.
+
+But they are chosen to put a reasonable upper bound on the CPU time
+required to validate
+a maximum-sized block.
+
+===Alternatives to this BIP:===
+
+1. A simple limit on transaction size (e.g. any transaction in a block must
+be 100,000
+bytes or smaller).
+
+2. Fix the CHECKSIG/CHECKMULTISIG opcodes so they don't re-hash variations
+of
+the transaction's data. This is the "most correct" solution, but would
+require
+updating every piece of transaction-creating and transaction-validating
+software
+to change how they compute the signature hash, and to avoid potential
+attacks would
+still require some limit on how many such operations were permitted.
+
+==References==
+
+[[https://bitcointalk.org/?topic=140078|CVE-2013-2292]]: Sergio Demian
+Lerner's original report
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150724/742c5a7d/attachment-0001.html>
