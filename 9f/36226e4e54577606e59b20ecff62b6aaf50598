@@ -1,0 +1,82 @@
+From: s7r@sky-ip.org (s7r)
+Date: Fri, 24 Jul 2015 14:12:39 +0300
+Subject: [bitcoin-dev] Making Electrum more anonymous
+In-Reply-To: <55AFBBE6.3060702@electrum.org>
+References: <55AFBBE6.3060702@electrum.org>
+Message-ID: <55B21DA7.2020706@sky-ip.org>
+
+Hi,
+
+I think this would be too complicated in practice and you'd have to
+defend against many other types of attacks, including but not limited to
+Sybil attacks, misbehaving servers not responding to requests,
+misbehaving servers not forwarding requests, you'd need some kind of
+directory servers or master servers which sign and authenticate the
+public server keys, otherwise someone can poison that data and provide
+the clients with wrong server keys.
+
+Secondly, you'd not use RSA for this, but rather Ed25519 which is
+faster, more cpu efficient and provides better security.
+
+Last but not least, I don't see this as a major issue and I really thin
+it is not worth your time. Better work on electrum server defenses,
+hardening them against DoS. After all, Electrum is a SPV based Bitcoin
+wallet, so it cannot be more anonymous than Bitcoin itself, which we
+already know it is pseudonymous, not anonymous and transactions can
+/will be linked to addresses. This is just a limitation of Bitcoin as it
+is today, and using SPV you assume the risk of trusting the server, it's
+just how SPV should work. As a pro, it gives you the ability to sync
+immediately and not download the entire blockchain.
+
+Privacy concerned people should run their own Electrum server and make
+it accessible via .onion, and connect the bitcoind running on the
+electrum server host only to other onion peers (onlynet=tor). We should
+highlight that using Electrum with Tor cannot leak more that some
+addresses belong to the same wallet, which is not the end of the world.
+
+On 7/22/2015 6:51 PM, Thomas Voegtlin via bitcoin-dev wrote:
+> Hello,
+> 
+> Although Electrum clients connect to several servers in order to fetch
+> block headers, they typically request address balances and address
+> histories from a single server. This means that the chosen server knows
+> that a given set of addresses belong to the same wallet. That is true
+> even if Electrum is used over TOR.
+> 
+> There have been various proposals to improve on that, but none of them
+> really convinced me so far. One recurrent proposal has been to create
+> subsets of wallet addresses, and to send them to separate servers. In my
+> opinion, this does not really improve anonymity, because it requires
+> trusting more servers.
+> 
+> Here is an idea, inspired by TOR, on which I would like to have some
+> feedback: We create an anonymous routing layer between Electrum servers
+> and clients.
+> 
+> * Each server S publishes a RSA public key, KS
+> * Each client receives a list of available servers and their pubkeys
+> * For each wallet address, addr_i, a client chooses a server S_i, and a
+> RSA keypair (K_addr_i, k_addr_i)
+> * The client creates a list of encrypted requests. Each request contains
+> addr_i and K_addr_i, and is encrypted with the pubkey KS_i of S_i
+> * The client chooses a main server M, and sends the list of encrypted
+> requests to M
+> * M dispatches the client's requests to the corresponding servers S_i
+> (without the client's IP address.)
+> * Each server decrypts the requests it receives, performs the request,
+> and encrypts the result with K_addr_i
+> * M receives encrypted responses, and forwards them to the client.
+> * The client decrypts the encrypted response with k_addr_i
+> 
+> What do you think? What are the costs and benefits of such an approach?
+> 
+> (Note: this will not work if all servers, or a large fraction of them,
+> are controlled by the same entity that controls M)
+> 
+> 
+> Thomas
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
