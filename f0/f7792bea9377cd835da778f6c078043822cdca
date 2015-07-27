@@ -1,0 +1,61 @@
+From: ric@spagni.net (Riccardo Spagni)
+Date: Tue, 28 Jul 2015 00:46:50 +0200
+Subject: [bitcoin-dev] Proposal: extend bip70 with OpenAlias
+Message-ID: <CADhj2oTj91fqe3wvNNfS1yEp2faijmmQOGzj64z6_QsGHGsnuw@mail.gmail.com>
+
+There are several reasons why we rejected doing it this way with OpenAlias:
+
+1. It adds complexity for the alias creator. This may seem
+unimportant, but the OpenAlias standard was created to empower people
+to create their own aliases as simply as possible, not to make it
+overly complex.
+
+2. It's harder to mess things up by dropping a sub-record; you either
+have the complete, valid record, or you don't. With a "tiered" system
+you can claim that you support a particular alias, but then lack all
+or some of the records for it.
+
+3. You retain both forward and backwards compatibility (no need to
+introduce a new OA version unnecessarily), as you can have an "old" KV
+pair and a "new" KV pair within the same record. The addition of KV
+pairs doesn't require the application to know the new pairs exist,
+which makes it more extensible.
+
+4. Even better - since an application gets the whole record it can
+start off with a minimum viable product that merely gets the address,
+and then at a later stage when support is added for additional
+metadata *it already has the metadata* and can interpret it.
+
+5. You can still do DNS delegation (proper, SOA delegation) or you can
+do delegation via a KV pair of some sort (say, a reroute= pair or
+something). In both cases delegation requires an additional lookup, so
+there's nothing saved or improved with the two-tier system.
+
+In this instance, as in many others, simplicity trumps complexity, and
+the bonus is that the simpler solution is more extensible and
+flexible.
+
+Riccardo
+
+> Thinking about it, I think that it would be better to separate those two
+> operations: on one hand, the listing of TXT records under a name, and on
+> the other hand, the possibility to use Zone Delegation.
+>
+> For example, let us use the "_oa2" name (Openalias version 2) when we
+> need to introduce an intermediate level, and "_oa2_keys" for key listing.
+>
+> Here is an example:
+>
+> _oa2_keys.sample      3600 IN TXT "btc ltc email fullname"
+> _btc.sample           3600 IN TXT "bitcoinaddress"
+> _ltc.sample           3600 IN TXT "litecoinaddress"
+> _btc.sample           3600 IN TXT "otherbitcoinaddress"
+> _email.sample         3600 IN TXT "john.smith at googlemail.com"
+> _fullname.sample      3600 IN TXT "John Smith"
+>
+> Zone Delegation: Let us assume example.com wants to delegate all its
+> Bitcoin aliases to Netki. We introduce an intermediate level, with the
+> "_oa2" name. In the alias, this string is translated as "@"
+>
+> john._oa2.example.com        <--  will be looked up as john at example.com
+> _btc.john._oa2.example.com   <--  bitcoin address of john at example.com
