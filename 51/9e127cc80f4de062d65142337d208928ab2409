@@ -1,0 +1,300 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Tue, 28 Jul 2015 11:58:33 +0200
+Subject: [bitcoin-dev] Libconsensus separated repository (was Bitcoin
+	Core and hard forks)
+In-Reply-To: <55B723EA.7010700@voskuil.org>
+References: <CABm2gDrApVuxF8DFf32V=pQhDKvvVfcDK=LeCXJ9h9o8CY+wNQ@mail.gmail.com>
+	<55B723EA.7010700@voskuil.org>
+Message-ID: <CABm2gDok2gH2R8=x3a8PmPiM56WFg3TKzCum_WS=uV9-T1Ss3g@mail.gmail.com>
+
+Ok, I'm going to separate terms: current-libconsensus from theoretical
+future-libconsensus (implementing ALL consensus rules).
+
+On Tue, Jul 28, 2015 at 8:40 AM, Eric Voskuil <eric at voskuil.org> wrote:
+> libsecp256k1 has it's own repository, libbitcoinconsensus doesn't.  A
+> separate repository was what I considered as a requirement for us to use it.
+
+We want to complete future-libconsensus (decouple all the consensus
+rules from the rest of the bitcoin core code) first.
+Then we can move future-libconsensus to a subrepository/subtree like
+libsecp256k1 and I believe everybody wants this to eventually happen.
+Separating current-libconsensus now may make completing
+future-libconsensus harder.
+
+>> I'm not sure if that would ever be accepted, but in any case we're
+>> certainly far away from that goal.
+>
+> If it's not certain whether this would even be accepted, the commitment
+> to a community consensus library is too weak to take a strong dependency
+> on. But for us it's moot, as we have made the already accomplished that
+> goal.
+
+What I mean is that once it is separated to a subtree, there's one more step:
+
+Make Bitcoin Core use future-libconsensus' API instead of a subtree.
+Decoupling future-libconsensus from Bitcoin Core is one thing, and
+Decoupling Bitcoin Core from future-libconsensus is another thing: you
+need to decouple Bitcoin Core from all future-libconsensus
+implementation internals. For example, script/sign (part of Bitcoin
+Core) depends on individual non-API-exposed classes in
+current-libconsensus.
+Moving from a subtree to a completely separated library is what I
+don't know will ever happen, but I don't think this is "unfairly
+advantageous" for Bitcoin Core or anything like that: other
+implementations can also use future-libcosensus as a subtree instead
+of the C API as well.
+
+You have accomplished the goal of separating curren-libconsensus, not
+future-libconsensus.
+In fact, if you complete the equivalent of future-libconsensus in
+libbitcoin and separate that, maybe that's a better place to start
+drafting a full API.
+
+>> 2) Finish libconsensus's API: expose more things than VerifyScript, at
+>> the very least, also expose VerifyTx, VerifyHeader and VerifyBlock.
+>> Feedback from alternative implementations like libbitcoin is extremely
+>> valuable here. Some related closed-for-now PRs:
+>
+> In our earlier discussion I believe you said that the library would not
+> be undergoing significant change or feature creep. If this is the very
+> least that's projected it would seem that constraint will not hold.
+
+future-libconsensus will not have significant changes *once it is
+completed*. Currently future-libconsensus is spread around many places
+inclusing src/main, so that obviously needs to change before it can be
+separated to an independent repo.
+
+>> 3) Move libconsensus to a separate repository as a
+>> subtree/subrepository of Bitcoin Core.
+>>
+>> Only after all that we can discuss whether Bitcoin Core itself should
+>> include libconsensus' code or just use its API directly.
+>
+> I don't think it's a question of whether it *should* use its own library
+> as it is published for others - this is a practically self-evident
+> conclusion.
+
+Well, Bitcoin Core is "currently the only user of future-libconsensus"
+since bitcoin core and future-libconsensus are currently mutually
+coupled.
+Bitcoin Core will always keep using future-libconsensus. The only
+question is whether it will use it through the C API or as a
+subtree/subrepository (both options are also available to other
+implementations). I don't know if decoupling Bitcoin Core from
+future-libconsensus' implementation details enough to be able to
+directly use the API is worth it or if anyone will be interested in
+doing so. For me this last step is not all that interesting: if we
+have an independent repo with a full API that other implementations
+can use, I don't really care about Bitcoin Core not going through the
+API and using including all the code directly instead.
+
+>> I hope that after all this, libbitcoin also reconsiders whether to
+>> reimplement its own libconsensus or use the "official" one directly
+>> instead.
+>
+> We use a fork of libsecp256k1 and would probably do the same with the
+> consensus library if it was cleanly isolated.
+
+Great.
+
+>>> In any case I agree with your stated need for this isolation (if not the
+>>> means) for the reasons you state. The community needs to move beyond a
+>>> largely singular and monolithic codebase that is holding that position
+>>> in part due to fear about consensus bug forks.
+>>
+>> I completely agree. That's the goal of libconsensus (and an
+>> alternative implementation like libbitcoin being able to use it
+>> without sacrificing any of its current or future design differences
+>> from Bitcoin Core would be a sign of success in this reward).
+>
+> It's a performance sacrifice, and then there's the OpenSSL dependency,
+> but these are both optional within our stack - so the application
+> developer has the option. So the only downside is that we are
+> maintaining the conditional compilation.
+
+As I told you before the reason why current-libconsensus is using
+OpenSSL instead of libsecp256k1 is that the very authors of
+libsecp256k1 warned that using libsecp256k1 for validation was
+consensus risky. As Wladimir said, Pieter Wuille will make an
+announcement about this soon.
+In any case, as I told you in previous conversations, the plan is to
+move from OpenSSL to libsecp256k1 for validation too (so libconsensus
+wil drop the OpenSSL dependency and this is just a temporary concern).
+
+> I think it's worthwhile work, especially if you are passionate about the
+> longer term objectives. I haven't been involved in these reviews as I
+> spend very little time with the satoshi client
+
+Well, the questions about the API are just in english, no need to
+deeply know Bitcoin Core's (satoshi client) internals.
+But maybe we should have an independent mailing list for
+consensus-only things. Not all future-libconsensus users will be
+interested in Bitcoin Core-specific discussions, and making them
+subscribe and filter seems like an unnecessary burden to
+participation.
+
+> Well a cynic might observe that fear of consensus bugs is what keeps
+> people on the satoshi client, and therefore accelerating the development
+> of a clean and independent consensus library would be a very low priority.
+
+I think that's precisely what makes it a high priority in the eyes of
+all the people working on it or reviewing related changes.
+But, yes, I guess "evil-thinking", maybe that's what make it a low
+priority for someone evil that wants Bitcoin Core's implementation
+have more importance than it shold forever. I prefer not to evil-think
+and just attribute it to having other priorities or just apathy about
+it.
+
+>> Another unfortunate fact is that although a script-only libconsensus
+>> allows you to avoid a big part of all possible consensus fork bugs,
+>> there cannot be users of a finished libconsensus to ask things to until
+>> a finished libconsensus actually exists.
+>
+> Software is never finished, but this exists and we are using it.
+
+By "finished" I mean a future-libconsensus that implements ALL
+consensus rules. We don't have that yet.
+
+>> At the same time, the future
+>> users (alternative implementations, since bitcoin core is already
+>> "using libconsensus")
+>
+> It is using the same source files, but AFAICT not the library.
+
+Bitcoin Core is the ONLY "user" of future-libconsensus (which actually
+only exists inside Bitcoin Core and it's not exposed).
+Current-libconsensus is used by Bitcoin Core and also exposed as an
+independent build (not a separated repository yet).
+
+Once future-Bitcoin's API is completed and the code in a different
+repo, how is Bitcoin Core using the API instead of the sources
+directly of any importance to other implementations?
+That's really the part that I cannot understand. It will be a problem
+Bitcoin Core, but if other implementations want to have (and maybe
+solve later) the same problem they can use a subtree too and start
+coupling their code with implementations details from
+future-libconsensus.
+Why would they want to do that? Again, I have no idea. I don't
+understand what the complain is here.
+
+>> are the most relevant people to listen when it
+>> comes to the C API. That's why I beg you to comment on [2], even if
+>> #5995 is currently closed. Your input on [1] would be very appreciated
+>> as well (maybe you think it's better to expose verifyTx before
+>> exposing verifyHeader, even if exposing verifyHeader is something that
+>> could be done faster).
+>
+> I haven't looked at any of these commits, but I'll make some time to at
+> least give a cursory review.
+
+Great. I mean, I wasn't asking about reviewing the commits themselves
+(which is also great if you do), but rather on answering the questions
+I'm making there, ie: what to expose next (ie VerifyTx or
+VerifyHeader)? would this be an acceptable way to expose VerifyHeader
+? Which of he step-checks functions is worth exposing too (Bitcoin
+Core is currently using some to prevent DoS attacks, for example)?
+
+>> Would you agree that asking people to fork an independent libconsensus
+>> project instead of having to fork the full Bitcoin-qt is much more
+>> reasonable?
+>
+> Yes, of course. We've already done it. For each release of the satoshi
+> client since we made libbitcoin-consensus I've copied the sources. It's
+> pretty much automated and easy to visually verify that the sources
+> match. That would be quite a bit more difficult if there wasn't an
+> independent build.
+
+Well, neither libbitcoincosnensus nor libbitcoin-consensus implements
+all the consensus rules.
+That's what makes them different from future-libconsensus.
+But great, we're confirming more views that we share.
+
+> Useful specifications often have two reference implementations. It's the
+> idea that there can be only one legitimate implementation that's
+> problematic.
+
+Well, this is where I fear we will never agree. I think "Bitcoin is
+different" in this reward and you disagree.
+Maybe Pieter's explanation is more convincing to you:
+https://youtu.be/PxW5D9xCIsc?t=769
+Otherwise, I think I'll stop trying convincing you.
+But one last try:
+
+If there's 2 "specification implementations":
+
+1) widely deployed but containing 1 bug
+2) not deployed anywhere but more readable and without the bug.
+
+When the bug is found, is it a consensus rule or not?
+If it is, it turns out the second implementation wasn't an specification at all.
+If it's not, nobody has been ever following consensus rules!!
+
+>> I believe that's the only point where we fundamentally disagree, but
+>> it shouldn't be a barrier in our common goal of taking "power" away
+>> from Bitcoin Core development. If we're successful Bitcoin Core won't
+>> have any privileged position with regards to, say, libbitcoin when it
+>> comes to deciding consensus rules changes.
+>
+> I don't think we disagree on anything fundamental. My issues with the
+> library were (1) the lack of isolation, (2) the fact that the satoshi
+> client wouldn't actually use the library, and (3) backtracking to use
+> OpenSSL, which we had recently removed from libbitcoin.
+
+1) Working on it
+2) The Satohi client has been using all along and it will use it
+forever (maybe not through the API, but I don't get what the problem
+with that is).
+3) There will be an announce about this soon.
+
+>> Libbitcoin cannot be forced to accept the next, controversial version
+>> of bitcoin/libconsensus, so you guys fork libbitcoin/libconsensus out
+>> of the last ok version.
+>
+> This is already done.
+
+Once future-libconsensus exists as a separated repository, I don't
+think you want to preemptively fork it unless you're actually changing
+something.
+
+> I don't disagree, but you previously argued that *everyone* had to agree
+> on consensus. Above you are making the argument that people can choose
+> to disagree. Yes, this is important. Yet it's unrealistic for any
+> alternative consensus to overcome inertia unless there are widely
+> deployed independent implementations.
+
+Ideally schism consensus-rules changes will never happen, since they
+effectively divide the currency in 2 and force the users to chose
+(apart from other complications).
+But if someone is trying to impose a schism fork (from Bitcoin Core,
+from the new future-lbiconsensus repo or from anywhere else) it
+becomes trivial to protect your implementation against forced changes.
+Ideally all consensus changes will be uncontroversial or not happen at all.
+But I think about non-ideal cases too.
+
+> I'm maintain our fork of the consensus sources until they are (1)
+> properly isolated from the satoshi client and (2) the satoshi client
+> uses the actual library.
+
+1) Reasonable.
+2) You mean use it through the API? Seriously, why do you care?
+
+> I don't see it as important or even productive to try and wedge the
+> consensus library into the repository/build for bitcoind and Bitcoin-QT.
+> It's straightforward to maintain the consensus library independently.
+
+To be clear, Bitcoin Core's using future-libconsensus through a
+subtree instead of the API is not a preference or a goal: it is just
+how things will be just after completing and separating
+future-libconsensus. Making it use the API instead of the subtree will
+be additional work. I'm not sure I will want/have time to do it and I
+don't know of anyone planning to do that (which seems very reasonably
+given that a separated future-libconsensus is a dependency for such a
+change).
+
+> Always willing to work with you on it, although we're all busy, and this
+> isn't my top priority presently.
+
+Is it because "fear of consensus bugs is what keeps people on the
+satoshi client" and you want to keep things this way?
+Sorry, just joking about your previous "cynic" comment. See? Don't
+attribute to malice what can be attributed to lack of time.
