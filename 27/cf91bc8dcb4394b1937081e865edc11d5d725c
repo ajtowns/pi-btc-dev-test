@@ -1,0 +1,266 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Wed, 29 Jul 2015 23:46:49 +0200
+Subject: [bitcoin-dev] Libconsensus separated repository (was Bitcoin
+	Core and hard forks)
+In-Reply-To: <55B939CF.1080903@voskuil.org>
+References: <CABm2gDrApVuxF8DFf32V=pQhDKvvVfcDK=LeCXJ9h9o8CY+wNQ@mail.gmail.com>
+	<55B723EA.7010700@voskuil.org>
+	<CABm2gDok2gH2R8=x3a8PmPiM56WFg3TKzCum_WS=uV9-T1Ss3g@mail.gmail.com>
+	<55B939CF.1080903@voskuil.org>
+Message-ID: <CABm2gDq1wHP01Tncw3hu=SCWQHaAOMjWOVYQWdQsOZ+E7zp9Yw@mail.gmail.com>
+
+On Wed, Jul 29, 2015 at 10:38 PM, Eric Voskuil <eric at voskuil.org> wrote:
+> On 07/28/2015 02:58 AM, Jorge Tim?n wrote:
+> Oh, I misunderstood your ask then. I don't have a preference on
+> prioritizing VerifyTx vs VerifyHeader.
+
+Ok, let's assume we want to expose verifyHeader first (which I think
+will be easier).
+
+>> would this be an acceptable way to expose
+>> VerifyHeader?
+>
+> I'm not sure how you mean to expose it, could you clarify?
+
+In https://github.com/bitcoin/bitcoin/pull/5995 I had one (probably
+stupid) proposal.
+But it had so many preparations commits that I had to close it.
+In the last commit
+https://github.com/jtimon/bitcoin/commit/00b9b227afc8669a877984561329dde75d3d8942
+you can see that I'm adding a new function in
+script/bitcoinconsensus.cpp with the following declaration:
+
+int bitcoinconsensus_verify_header(const unsigned char* blockHeader,
+unsigned int blockHeaderLen,
+ const Consensus::Params& params, int64_t nTime, CBlockIndexBase*
+pindexPrev, PrevIndexGetter indexGetter,
+ bitcoinconsensus_error* err)
+
+The ugly parts that you may not like are the CBlockIndexBase struct
+(or maybe it's not so unreasonable) and the function pointer
+PrevIndexGetter.
+To see their "ugliness" you can look at:
+
+https://github.com/jtimon/bitcoin/commit/4528ec69617f1b6d6c8f0d73dc4091cded7c216c
+
+The PrevIndexGetter function pointer that Bitcoin Core would use
+internally would be:
+
+const CBlockIndexBase* GetPrevIndex(const CBlockIndexBase* pindex)
+{
+    return ((CBlockIndex*)pindex)->pprev;
+}
+
+with an ugly casting. But, well, I guess that's only ugly for Bitcoin
+Core, not necessarily for other libconsensus users, which can define
+their own function pointer, provided that it's of the form:
+
+typedef const CBlockIndexBase* (*PrevIndexGetter)(const CBlockIndexBase*);
+
+The struct that I think needs more refinement (and I just used what I
+considered easier to implement at the time) is the CBlockIndexBase
+struct itself:
+
++struct CBlockIndexBase
++{
++ //! pointer to the hash of the block, if any. Memory is owned by
+this CBlockIndexBase
++ const uint256* phashBlock;
++ //! block header
++ int32_t nVersion;
++ uint256 hashMerkleRoot;
++ uint32_t nTime;
++ uint32_t nBits;
++ uint32_t nNonce;
++ //! height of the entry in the chain. The genesis block has height 0
++ int nHeight;
++};
+
+I don't like phashBlock being a pointer instead of just a ref or even an object
+Should that struct have a CBlockIndexBase* pprev; field (moving it
+down from CBlockIndex)?
+That's the kind of question where your feedback seems very important
+from other-implementations developers (because you won't necessarily
+take into account the difficulty of the refactors required in Bitcoin
+Core to expose the right interface, and "libconsensus shouldn't care"
+either, all we want is the best interface).
+
+>> Which of he step-checks functions is worth exposing too (Bitcoin
+>> Core is currently using some to prevent DoS attacks, for example)?
+>
+> I don't see any reason to expose checkpoints in this library. They are
+> trivial to implement and are not part of consensus.
+
+Agreed, and I would say all of the checkpoint check separation has
+been done already.
+What I mean by step functions is...look at verfyHeader internals, for example:
+
+https://github.com/jtimon/bitcoin/commit/11ede96f59f611ede596a1335e896b1fef4fb5b2
+
+It internally calls Consensus::CheckBlockHeader (quite cheap with no
+context required) and Consensus::ContextualCheckBlockHeader (not so
+cheap).
+Bitcoin Core never calls (yet) the full verifyHeader at once. It does
+the cheap tests first and the expensive later. For example,
+
+call CheckBlockHeader, then CheckBlock (also cheap), then
+ContextualCheckBlockHeader and then ContextualCheckBlock.
+
+The question is, will other implementations want access to these
+not-full-but-cheap tests?
+In other words, apart from exposing VerifyHeader that fully validates
+all consensus rules for a header, do we also want to expose
+CheckBlockHeader and ContextualCheckBlockHeader to give more
+flexibility to libconsensus' users?
+
+I think, yes, other implementations will want this for the same DoS
+reasons that Bitcoin Core currently wants them. But it would be nice
+to know what a second person thinks about this.
+
+> Nothing can eliminate all consensus risk, not even a common full node
+> implementation.
+
+In fact, one thing does: never changing the code again (but the cure
+would be worse than the illness).
+Agreed, any software changes in the consensus code can cause consensus
+forks (and that's why you don't want to touch libconsensus that much
+once it's separated).
+
+
+>>> Useful specifications often have two reference implementations. It's the
+>>> idea that there can be only one legitimate implementation that's
+>>> problematic.
+>>
+>> Well, this is where I fear we will never agree. I think "Bitcoin is
+>> different" in this reward and you disagree.
+>> Maybe Pieter's explanation is more convincing to you:
+>> https://youtu.be/PxW5D9xCIsc?t=769
+>> Otherwise, I think I'll stop trying convincing you.
+>
+> Maybe I wasn't sufficiently explicit. It is problematic. That is the
+> core issue we are dealing with. That doesn't mean I disagree with the
+> objectives of an independent community consensus library.
+>
+> The premise of the "one true library" idea is that there is *no way* to
+> sufficiently test for consensus bugs in any software release. That of
+> course means that each release of the satoshi client poses a significant
+> risk to the network. This risk is presently greater than that posed by
+> other implementations simply because of adoption. That is the basis of
+> the red herring argument:
+
+Well, the "one true library" will be much better than the current "one
+true full node".
+The "one true library" would be the specification of the consensus
+rules, but that doesn't mean you can't fork and modify it however you
+want.
+
+> The bottom line is that nobody has control over this process. There are,
+> and will always be, a multitude of consensus implementations that intend
+> to target the same coin. Presently there are multiple versions of the
+> satoshi client, and this has produced forks, and will continue to do so.
+
+I get this point, even if the current satoshi client contains the
+consensus rules specification (and many other things, obviously), that
+doesn't mean is somehow protected from forking with itself if the
+consensus code is changed in the wrong way accidentally. But the more
+separated libconsensus and Bitcoin Core (satoshi client) are, the less
+likely that changes in Bitcoin Core that weren't supposed to change
+consensus rules actually do it by accident (like last time with the
+migration out of bdb).
+
+> Isolating the satoshi consensus checks to an independent library serves
+> not to eliminate that risk, but can reduce it somewhat. Importantly it
+> will allow various implementations to overcome a perception problem,
+> which will improve implementation diversity and developer participation.
+
+I think alternative implementations using a full libconsensus can
+increase their adoption a lot, since they become just as vulnerable to
+consensus forks as Bitcoin Core (instead of more vulnerable like now).
+
+>>>> I believe that's the only point where we fundamentally disagree, but
+>>>> it shouldn't be a barrier in our common goal of taking "power" away
+>>>> from Bitcoin Core development. If we're successful Bitcoin Core won't
+>>>> have any privileged position with regards to, say, libbitcoin when it
+>>>> comes to deciding consensus rules changes.
+>>>
+>>> I don't think we disagree on anything fundamental. My issues with the
+>>> library were (1) the lack of isolation, (2) the fact that the satoshi
+>>> client wouldn't actually use the library, and (3) backtracking to use
+>>> OpenSSL, which we had recently removed from libbitcoin.
+>>
+>> 1) Working on it
+>
+> For the sake of clarity, this is now a non-issue for us.
+
+You mean libbitcoin's code is better organized than Bitcoin Core's?
+I don't doubt it. Maybe we can create a full-libbitcoin-libconsensus
+first and work on the API there.
+
+>> 2) The Satoshi client has been using all along and it will use it
+>> forever (maybe not through the API, but I don't get what the problem
+>> with that is).
+>
+> Again, I consider this a requirement for us to link directly to it as a
+> library. If the sources are isolated into an independent repo, but the
+> satoshi client is embedding its own copies, one must continue to diff
+> the client sources against the library sources. We are doing this
+> already, so the benefit to having the independent repo is in no longer
+> having to do this.
+
+Oh, I see, you don't like that libsecp256k1 is currently a subtree of
+Bitcoin Core either for the same reasons, right?
+To not need to know when the changes in libconsensus are applied in
+Bitcoin Core.
+Mhmm, once libconsensus is complete, why would you care about it?
+You just care about the libconsensus version (which doesn't have to
+coincide with Bitcoin Core versions anymore).
+
+> There are also differences in the build system that can affect outcome.
+> Comparing those differences across repos can be more challenging. For
+> this reason I consider it important to your objective that the satoshi
+> client actually use the library - as I assume it will at some point.
+
+For the sake of clarity, please say "use the library's API". It's
+going to use the library one way or another.
+
+> If the satoshi client folks are to maintain a consensus library for the
+> community it's also important to show a commitment to its independence.
+> Dogfooding is of course a software engineering best practice. But there
+> is also the cynical perspective - the independent library in some ways
+> works against an advantage of the satoshi client.
+>
+> I personally don't think the committers are parochial enough to let this
+> become an issue. We are all after something bigger. But if there was
+> push-back against using the library it would be a red flag. So until
+> that point passes I would just maintain our independent library, cloning
+> the sources from the satoshi client.
+
+To be clear, I don't oppose to "dogfooding", it's just clear to me
+that it will take even longer.
+So what I don't understand is "once libbitcoin is complete and ready
+for us to use, we will keep using our reimplementation of consensus
+until Bitcoin Core uses the API as well. If Bitcoin core doesn't use
+the API, we prefer not to use the library at all and keep having the
+same consensus risk. We will do what we think it's worse for us until
+Bitcoin Core uses the library through the API".
+
+>> 3) There will be an announce about this soon.
+>
+> Yes, I've seen this as a temporary setback.
+
+And we will hopefully migrate the current libconsensus from openSSL to
+libsecp256k1 soon. So we will be able to enjoy libsecp256k1's
+performance improvements without risking consensus. One problem less.
+
+>>> Always willing to work with you on it, although we're all busy, and this
+>>> isn't my top priority presently.
+>>
+>> Is it because "fear of consensus bugs is what keeps people on the
+>> satoshi client" and you want to keep things this way?
+>
+> No, I see it as less significant to the adoption of libbitcoin-server
+> than other issues we are working on, especially given the existence of
+> libbitcoin-consensus. I also trust you will make progress regardless.
+
+This was just a joke because you said something similar earlier.
+Don't take it seriously.
