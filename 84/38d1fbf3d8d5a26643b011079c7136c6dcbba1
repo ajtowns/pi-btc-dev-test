@@ -1,0 +1,93 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Wed, 29 Jul 2015 22:27:29 +0200
+Subject: [bitcoin-dev] Consensus fork activation thresholds: Block.nTime vs
+	median time vs block.nHeight
+Message-ID: <CABm2gDoxr4yY6XPZOEG0CF_iPO+b1H3_yFoKnYa68Y4b=Tcwrw@mail.gmail.com>
+
+When it comes to define thresholds for consensus fork activation there
+are 3 options that I know of and each of them has at least a
+disadvantage that the other 2 lack:
+
+-Block.nTime: It's not monotonic
+-median time: You cannot validate it without context (in contrast,
+nTime is contained in the block header and nHeight in the coinbase)
+-block.nHeight: You cannot know the exact time when a given height
+will be reached.
+
+I personally think that nHeight's disadvantage is the less worse, but
+others will likely disagree. The point is we need to find a solid
+criteria to decide.
+
+When combining the threshold with a later miner's "voting" (upgrade
+confirmation) on top of it, not being monotonic may be a real problem.
+Doing that on top of height seems straight forward: check if
+(prevBlockIndex.nHeight > threshold &&
+IsSuperMajority(...,prevBlockIndex,...))
+With median time, seems safe too: if
+(prevBlockIndex.CalculateMedianTime > threshold &&
+IsSuperMajority(...,prevBlockIndex,...))
+Just a little bit less efficient.
+It would look more like if (IsSuperMajority(...,prevBlockIndex,...) &&
+GetFirstBlockUsedInVoting(prevBlockIndex).nTime > threshold)
+
+
+But in some cases (say, an emergency consensus fork) you won't combine
+the mining confirmation, so you may not have the prevBlockIndex
+available and you may need to pass the height or medianTime down.
+If the current block is not accessible from wherever the check is
+being made, you would need an additional blockTime parameter as well.
+
+Are there any example cases where a rule activation check doesn't have
+the block available?
+
+Of course, let's consider the following hardfork example:
+
+before the hardfork: consensus_size(tx) = real_size(tx)
+after the hardfork: after consensus_size(tx) = real_size(tx) +
+delta_utxo_size(tx)
+
+that would allow miners to create bigger blocks if the transactions
+help reducing the size of the utxo (and penalize transactions that
+make the utxo grow by considering bigger when it comes to block
+inclusion).
+
+Well, at the block validation level (the most important one), you
+obviously have block.nTime available.
+But what if you're checking an unconfirmed transaction?
+It's size (and thus it's validity and the policy relay decisions)
+depends on whether the hardfork is activated or not.
+So to check an unconfirmed transaction, you would need the block.nTime
+of the next block, which is unpredictable (unless you're a miner)
+because miners set those.
+
+AcceptToMemoryPool already uses the nHeight (in fact, there's nHeight
+and nSpendHeight there, not sure why we need to of them yet), so this
+case would be trivial to implement.
+Calculating the median time there wouldn't be difficult either: even
+if globals weren't so heavily-used in AcceptToMemoryPool, the
+prevIndex can always be passed down as parameter.
+
+Some people may think that I'm discussing tiny details, but I would
+really like that we can chose whatever is more generic for any type of
+consensus fork and always use that from now on (instead of risking of
+having to use 2 of them if we find out later that the chosen option is
+not general enough).
+
+It would be also nice to have only one uniform type of threshold in
+Consensus::Params, and height seems to be the choice for softforks
+that have been accepted long ago via miners'
+voting/upgrade_confirmation, like in :
+https://github.com/bitcoin/bitcoin/pull/5966/files
+
+That doesn't mean it needs to necessarily be height: in a rebased
+version of #5966 we could replace consensus.nBIP34Height = 227931 with
+consensus.nBIP34Time = <something>.
+But I would really like to have a uniform threshold mechanism instead
+of using the 3 options depending on the fork.
+
+I had assumed that height was the preferred option for everyone and
+that's why I used it in
+http://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-June/008936.html
+But judging from the existing blocksize hardfork proposals (using
+block.nTime, the option I like less ) I was too fast there and clearly
+I need to reopen the discussion.
