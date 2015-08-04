@@ -1,0 +1,64 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Tue, 4 Aug 2015 22:02:53 +0200
+Subject: [bitcoin-dev] Consensus fork activation thresholds: Block.nTime
+ vs median time vs block.nHeight
+In-Reply-To: <CABsx9T0c10SDHCBy5=iPKVvsNPmKr2ejUxLp0rJPZmPRPQpfig@mail.gmail.com>
+References: <CABm2gDoxr4yY6XPZOEG0CF_iPO+b1H3_yFoKnYa68Y4b=Tcwrw@mail.gmail.com>
+	<CABsx9T0c10SDHCBy5=iPKVvsNPmKr2ejUxLp0rJPZmPRPQpfig@mail.gmail.com>
+Message-ID: <CABm2gDonaiD_VxGoRHjXC8Ut3jxRG-cHVfdL9Y4voZz5m=z7SA@mail.gmail.com>
+
+On Thu, Jul 30, 2015 at 8:16 PM, Gavin Andresen <gavinandresen at gmail.com> wrote:
+> I still think using the version and timestamp fields in the block header are
+> simplest and best.
+
+To be clear, all options can use the version.
+
+> Advantages:
+>   Available to SPV nodes with no change to the network protocol
+>   Available after headers downloaded, before full block data is available
+>   Once well past a fork, allows all block validation except validation
+> against the UTXO to happen in parallel, out-of-order, independent of any
+> other block.
+
+All advantages shared with the height option.
+
+> Disadvantages:
+>   Not monotonically increasing
+>
+>
+> I think discussion about transactions in the memory pool are just a
+> distraction: no matter what criteria is used (timestamp, height, median
+> time), a blockchain re-organization could mean the validity of transactions
+> you've accepted into the memory pool (if you're accepting transactions that
+> switch from valid to invalid at the consensus change -- Core tries hard not
+> to do that via IsStandard policy) must be re-evaluated.
+
+I'm talking about the non-reorg case. Without reorg, you know what the
+next height or current median time is, but you don't know what the
+next block time is.
+
+> I don't strongly care if median time or block timestamp is used, I think
+> either will work. I don't like height, there are too many cases where the
+> time is known but the block height isn't (see, for example, the
+> max-outputs-in-a-transaction sanity check computation at line 190 of
+> bitcoin-tx.cpp -- bitcoin-tx.cpp has no idea what the current block height
+> is).
+
+How does bitcoin-tx know about the next block time?
+It doesn't. You would need to use the current time as a proxy for the
+median time or the block.nTime which you don't know either.
+Or just keep the sanity check as it is. Note that this case is
+blocksize-specific: other hardforks (like my previous example, or the
+code proposal in BIP99) don't share that concern.
+
+One thing I've noticed there seems to be disagreement on is whether
+miners' upgrade confirmation (aka voting) is necessary for
+uncontroversial hardforks or not.
+In BIP99 the advice for uncontroversial hardforks is setting a
+threshold (based on height, but we can change it) and then wait for
+95% of the hashrate to upgrade to enforce the chain.
+But maybe the "voting" can happen first and then the threshold is
+added to the "miners' confirmation height/time".
+I think that may influence which of the three discussed options
+(height, block time and median time) is better, so maybe we should
+discuss that first.
