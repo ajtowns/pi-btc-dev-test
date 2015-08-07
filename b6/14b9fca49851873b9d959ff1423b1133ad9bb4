@@ -1,0 +1,110 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 7 Aug 2015 12:16:50 +1000
+Subject: [bitcoin-dev] Block size implementation using Game Theory
+In-Reply-To: <CAOvA3_hhzWqX0k7xbua=qFptb90fkbCU-WDMih4=mX+kRrWG1g@mail.gmail.com>
+References: <CAOvA3_hhzWqX0k7xbua=qFptb90fkbCU-WDMih4=mX+kRrWG1g@mail.gmail.com>
+Message-ID: <CAJS_LCWznwYy_mOHRf9ykyWAQEzO2u79EO2GGo5ex=sgCubofQ@mail.gmail.com>
+
+On 7 August 2015 at 09:52, Wes Green via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:?
+
+> Bitcoin is built on game theory. Somehow we seem to have forgotten that
+> and are trying to fix our "block size issue" with magic numbers, projected
+> percentage growth of bandwidth speeds, time limits, etc... There are
+> instances where these types of solutions make sense, but this doesn't
+> appear to be one of them. Lets return to game theory.
+>
+> Proposal: Allow any miner to, up to, double the block size at any given
+> time - but penalize them. Using the normal block reward, whatev
+> ?H?
+> er percentage increase the miner makes over the previous limit is taken
+> from both the normal reward and fees. The left over is rewarded to the next
+> miner that finds a block.
+> ??
+>
+> What this would look like: The miners start seeing what looks like natural
+> network growth, and make the decision (or program an algorithm, the beauty
+> is it leaves the "how" up to the miners) to increase the blocksize. They
+> think that, in the long run, having larger blocks will increase their
+> revenue and its worth taking the hit now for more fees later. They increase
+> the size to 1.25 MB. As a result, they reward would be 18.75 (75%). The
+> miner fees were .5BTC. The miner fees are also reduced to .375BTC.
+>
+
+The equilibrium for that game is just keeping the same block size, isn't
+it? Assume there's a huge backlog of fee-paying transactions, such that you
+can trivially fill 1MB, and easily fill 1.25MB for the forseeable future;
+fee per MB is roughly stable at "f". Then at any point in time, a miner has
+the choice between receiving 25 + f btc, or increasing the blocksize to 1+p
+MB and earning (25+f+pf) * (1-p) = f-ppf = 25(1-p) + f(1-pp) < 25+f. Even
+if you think bigger blocks are good long term, wouldn't you reason that
+other people will think so too, so why pay the price for it yourself,
+instead of waiting for someone else to pay it and just reaping the benefit?
+
+
+An idea I've been pondering is having the block size adjustable in
+proportion to fees being paid. Something like "a block is invalid if
+a(B-c)*B > F" where B is the block's size, F is the total fees for the
+block, and a and c are scaling parameters -- either hardcoded in bitcoin,
+or dynamically adjusted by miner votes. ATM, bitcoin's behavour is
+effectively the same as setting c=1MB, a>=21M BTC/byte.
+
+Having a more reasonable value for a would make it much easier to produce a
+fee market for bitcoin transactions -- if the blocksize is currently around
+some specific "B", then the average cost per byte of a transaction is just
+"a(B-c)". If you pay more than that, then a miner will include your txn
+sooner, increasing the blocksize beyond average if necessary; if you pay
+less, you may have to wait for a lull in transactions so that the blocksize
+ends up being smaller than average and miners can afford to include your
+transaction (or someone might send an unnecessarily high fee paying txn
+through, and yours might get swept along with it).
+
+To provide some real numbers, you need to make some assumptions on fee
+levels. If you're happy with:
+
+ - 1 MB blocks are fine, even if no one's paying any fees
+ - if people are paying 0.1 mBTC / kB (=0.1 BTC/MB) in fees on average then
+8MB is okay
+
+then a(1-c)=0, so c=1MB, and a(8-1)=0.1, so a=0.0143 and the scaling works
+out like:
+
+ - 1MB blocks: free transactions, no fees
+ - 2MB blocks: 0.0143 mBTC/kB, 0.02 btc in fees/block
+ - 4MB blocks: 0.043 mBTC/kB, 0.17 btc in fees/block
+ - 8MB blocks: 0.1 mBTC/kB, 0.8 btc in fees/block
+ - 20MB blocks: 0.27 mBTC/kB, 5.4 btc in fees/block
+ - 40MB blocks: 0.56 mBTC/kB, 22 btc in fees/block
+
+In the short term, miners can just maximise fees for a block -- ie, add the
+highest fee/byte txns in order until adding the next one would invalidate
+the block.
+
+Over the long term, you'd still want to be able to adjust a and c -- as the
+price of bitcoin in USD/real terms goes up, a should decrease
+proportionally; as hardware/software improve, a should decrease and/or c
+should increase.  Essentially miners would want to choose a,c such that the
+market for block space clears at a price of some $x/byte, where $x is
+determined by their costs -- ie, hardware/software constraints. If they set
+a too high, or c too low, then they'll be unable to accept some
+transactions offering $x/byte, and thus lose out. If they set a too low or
+c too high, they'll be mining bigger blocks for less reward, and lose out
+that way too. At the moment, I think it's a bit of both problems -- c is
+too low (meaning some transactions get dropped), but a is too high (meaning
+fees are too low to pay for the effort of bigger blocks).
+
+Note that, as described, miners could try cheating this plan by making a
+high fee transaction to themselves but not publishing it -- they'll collect
+the fee anyway, and now they can mine arbitrarily large blocks. You could
+mitigate this by having a(B-c) set the /minimum/ fee/byte of every
+transaction in a block, or alternatively by enforcing each miner pay a
+significant %ge of collected fees to the miner of the next block(s).
+
+?Cheers,
+aj?
+
+-- 
+Anthony Towns <aj at erisian.com.au>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150807/5cb3837b/attachment-0001.html>
