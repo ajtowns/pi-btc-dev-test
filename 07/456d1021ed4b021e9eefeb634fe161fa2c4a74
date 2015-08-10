@@ -1,0 +1,173 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Tue, 11 Aug 2015 05:02:40 +0800
+Subject: [bitcoin-dev] What Lightning Is
+In-Reply-To: <CABsx9T03BXULmu_mNq+3Qd-68CYpYy67+CpMV9hCYaYb1Bc+1A@mail.gmail.com>
+References: <CABm2gDqV1NdHJZBmUWX3AxVYy6ErU7AB-wsWgGzbiTL1twdq6g@mail.gmail.com>
+	<CA+w+GKTLBWj6b4ppwrmnXb_gybYFcrX7haLBSdCnMaijy2An4w@mail.gmail.com>
+	<CABm2gDpWPhYNh=g-ZXCsfe-aPq=N6NKSWKP9kr-KtPVrWAxB7Q@mail.gmail.com>
+	<CAAO2FKHsczkwwqO87cJFtxBp9JE=vf=GcxLx37GpRUkPq8VGHQ@mail.gmail.com>
+	<55C79FF0.8040100@thinlink.com>
+	<CAOG=w-skYq84=PtN45FB-dGoY1783Jz7K1T16e2JVGjLazWuyA@mail.gmail.com>
+	<CALJP9GDMgqn2VeR4y4RVxqJ_iW57hExwXBHNSkxo+-AK+7Zb6g@mail.gmail.com>
+	<55C7CECB.7050905@gmail.com>
+	<CAAO2FKFBC46rFe7FV+F_H0gPiVfY8S7g09O2RNxMoZMCwywp6A@mail.gmail.com>
+	<CABsx9T03BXULmu_mNq+3Qd-68CYpYy67+CpMV9hCYaYb1Bc+1A@mail.gmail.com>
+Message-ID: <20150810210240.GC12450@navy>
+
+On Sun, Aug 09, 2015 at 06:44:08PM -0400, Gavin Andresen via bitcoin-dev wrote:
+> I'd love to see somebody write up a higher-level description of what the
+> user experience is like, what communication happens underneath, and what
+> new pieces of infrastructure need to get built to make it all work.
+> 
+> A use-case to start with:
+> 
+> A customer starts with eleven on-chain bitcoin. They want to pay for a nice
+> cup of tea.
+
+IMO:
+
+ 1. User swipes their phone over merchant's NFC device
+    (or scans a QR code displayed by the register or whatever)
+
+ 2. Dialog pops up on phone:
+     "Pay Infinitea $5.20? [yes] [no]"
+
+ 3. User presses [yes]
+
+ 4. Brief pause
+
+ 5. "Payment confirmed" appears on both user's phone and merchant's POS
+    device
+
+The backend bits that need to happen:
+
+ 1. Merchant passes on their identity and public key, an amount, and a
+    hash for the payment.
+
+ 2. User's phone goes online to see if a route to the vendor can be
+    worked out, and to work out what lightning network fees are needed.
+    Also translates the bitcoins requested into the user's preferred
+    currency so they don't have to do maths in their head.
+
+ 3. User's phone prepares a lightning transaction to the vendor, signed
+    with the corresponding lightning channel keys, using the hash the
+    merchant provided, and sends it through one of the channels the user
+    already has open and funded (at >$5.20 worth of bitcoins).
+
+ 4. The transaction makes its way through the lightning network, and the
+    confirmation makes its way back. It's not clear to me how long this
+    realistically takes (either how many hops are likely, or how long
+    a single hop will actually take; I assume it should be a couple
+    of seconds).
+
+ 5. UIs at both ends update. User gets a nice cup of tea.
+
+There's a few potential problems with this:
+
+ - what if the merchant says "no you didn't pay me, your phone is lying,
+   you're a liar, I hate you, no tea for you" despite your phone saying
+   you paid?
+
+     a) you could mitigate this by having the payments be incremental
+        (here's 1c, 520 times) with both terminals visibly updating;
+        but that would take up to 520x longer than sending a single
+        transaction, and mightn't really be any better anyway
+
+     b) you could also have the initial negotiation involve signing
+        something that could be adjudicated independently later (hey,
+        here's a QR code saying he owed me a tea, here's a QR code showing
+        I paid for it, and here's a video of him saying "no tea for you").
+
+     c) Or maybe you just bite the $5 and never shop there again; just
+        as you would if you handed over $5.20 in cash and then they told
+        you you hadn't paid them.
+
+ - what if the transaction's unroutable? then you get a "service
+   unavailable" notice on your phone and pay by other means -- blockchain,
+   cash, etc. Same as if your credit card won't register. ditto if your
+   phone can't get on the internet.
+
+ - what if the fees are large? (eg, the coffee costs $5, and the fees are
+   20c?)
+
+     a) I think they'll actually be small -- even for a 10% pa interest
+        rate denominated in bitcoin, the time-value of $5.20 in bitcoin
+        for 7 days is just under 1c (.35%). If so, that's noise, and the
+        user legitimately doesn't care. OTOH, it does get multiplied by
+        number of hops, and maybe the user cares about $5.20 vs $5.26.
+
+     b) Alternatively, the app could just indicate the fees ("Pay $5.20 +
+        <1c in fees") and/or the user could have an explicit setting for
+        fee info ("Only warn me when fees are greater than either 5c/1%")
+
+     c) Or you could have some UI magic, so the vendor's POS device
+        initially says "advertised price is $5.20, but I actually
+        expect just $5.05, call the rest a discount", the phone says
+        "fees are 5c, so I'll display "Pay just $5.10 for a $5.20 cup of
+        coffee!". That's closer to how Visa/Mastercard do it and might
+        be reasonable in many cases.
+
+ - what happens if the user presses "yes" but the lightning transaction
+   then fails? you don't want to wait for the 7 day timeout to know if
+   you can have a cup of tea; and you don't want the payment to go through
+   after you've paid for your tea in cash, drank it, and gone home.
+
+     a) Maybe the lightning network hubs just reply early cancelling the
+        transactions, and your phone can say "failed". You can't force
+        them to do this, but maybe the incentives work out okay so that
+        they'll want to anyway. (I think they will) If so, everything's
+        fine. As far as the merchant's concerned, you may as well have
+        just pressed "No".
+
+     b) The vendor could issue a conditional refund, eg an on-blockchain
+        transaction for the amount of the coffee from them to you,
+        payable if you ever receive the hash token. (And if you don't,
+        redeemable by them after a timeout). That doesn't work real well
+        if the fee for a blockchain txn is more than the price of a cup
+        of tea of course.
+
+> Assume neither the customer nor the tea shop are technically sophisticated
+> -- assume the customer is using an SPV wallet and the tea shop is using a
+> service similar to Bitpay.
+
+IMHO, most of the complexity isn't in doing the transaction, it's in
+maintaining the channels. For example:
+
+ - what if the tea shop has a sudden run of customers, and all their
+   payment channels fill up?
+
+ - how do you close the till at the end of the day (ie, put your
+   earnings into a cold wallet so they can't be hacked as easily and
+   clear your channel so you can accept more payments tomorrow?) Do you
+   do this on the blockchain or do you have a different lightning
+   network channel to your "bank account"?
+
+ - inversely; if you do all your weekly shopping and impulse buys (tea,
+   coffee, beer, meals, groceries, fuel, road tolls, ...) on lightning,
+   how do you reset your channels once a day/week/fortnight/month with
+   some money from your salary/savings, so they don't run out?
+
+ - do refunds work, even after the original txn has finished? ("Oh,
+   actually we're out of tea")
+
+ - you have to watch the blockchain once a week or so in case your
+   counterparty tries stealing your balance by replaying old states and
+   hoping you don't notice
+
+ - how do you keep the channel keys/secrets sufficiently available
+   and secure?
+
+ - how do you figure out who to make channels with in the first place,
+   and if/when to change them?
+
+ - what happens if your phone breaks, is stolen or gets lost; have you
+   lost your channel secrets, and potentially all the coins in your
+   balance?
+
+ - etc.
+
+(I don't think they're unsolvable or anything, though)
+
+Cheers,
+aj
+
