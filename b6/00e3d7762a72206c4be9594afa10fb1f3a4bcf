@@ -1,0 +1,128 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Tue, 11 Aug 2015 02:50:31 +0800
+Subject: [bitcoin-dev] Off-chain transactions and miner fees
+In-Reply-To: <55C7D234.1040306@bitmarkets.net>
+References: <55C7D234.1040306@bitmarkets.net>
+Message-ID: <20150810185031.GA31610@navy>
+
+On Mon, Aug 10, 2015 at 12:20:36AM +0200, info--- via bitcoin-dev wrote:
+> one argument I often read on this mailing list is that it's essential to
+> reward miners with transaction fees at some point to secure the network.
+
+That's not a universally held belief. See for example:
+
+ https://en.bitcoin.it/wiki/Funding_network_security#Alternatives
+ https://bitcointalk.org/index.php?topic=157141.0
+
+It's also not clear to me what amount of security people actually "want".
+In late May, Mike Hearn wrote:
+
+ "Currently the Bitcoin community is being effectively taxed about
+  $832,000 per day ... just to support mining! [...]
+
+  We?re not spending so much on mining because we really need it. It?s
+  because printing money distorts behaviour."
+
+  -- https://medium.com/@octskyward/hashing-7d04a887acc8
+
+If $832k (25*240 btc/day * $231 USD/btc) is too much, maybe $475k/day
+(reward halved, at current price) will still be too much in a year's
+time? If bitcoin's price rises at just 19% pa on average (which doesn't
+seem like much if you're thinking in startup/VC terms?), then the block
+reward will still be worth about $475k/day after it halves again to 6.25
+coins per block. So maybe the block reward pays for bitcoin transactions
+and fees are effectively zero right up until the day the block reward
+goes away entirely?
+
+In any event, the lightning network offers three potential benefits over
+on-chain transactions:
+
+ - lower fees
+ - shorter confirmation times
+ - no ongoing costs once the channel is closed
+
+If you have zero fees, lightning is still interesting for quick
+transactions (since they offer better assurance of payment than
+zero-confirmation transactions), and also for microtransactions (where
+spamming the blockchain and the UTXO db with thousands of transactions
+just to move $1 from here to there isn't appealing).
+
+> Off-chain transactions, whether it's Lightning or something else,
+> potentially extract fees, which may otherwise be paid to miners, if the
+> transactions were actually on-chain.
+
+Every lightning transaction happens through a series of channels (at least
+one, but realistically at least two; with any amount of decentralisation,
+probably more likely somewhere in the range of three to twenty). Each
+of those channels requires at least two blockchain transactions (one or
+two to create the channel; one or three to close the channel and spend
+the balances).
+
+It's not 100% clear at this point, but keeping a lightning channel open
+will probably have (hardware) costs that grow linearly in the number of
+transactions [0]; in which case keeping them open forever won't be an
+option, and they'll be closed when the cost of keeping it open is less
+than the cost of resetting it on the blockchain (only one blockchain
+transaction required). So in that case even if lightning is crazy popular,
+there'll still be activity on the blockchain at whatever fee rate there
+is, just by people trading off storage costs for blockchain fees.
+
+[0] http://lists.linuxfoundation.org/pipermail/lightning-dev/2015-July/000057.html
+
+Even if it's not the case, closing a channel eventually is probably
+good practice in order to rollover keys. Channels also have a maximum
+theoretical number of transactions, but that's likely on the order
+of exa-transactions, so is probably irrelevant. Channel profitability
+likely varies over time, and since channels lock up bitcoin, closing
+less profitable channels so the funds can be used elsewhere is likely
+also valuable. 
+
+With all those things together, ballpark max lifetime of a random channel
+(IMHO) is somewhere in the range of two weeks to two years. If lightning
+is the only thing doing transactions on the blockchain and only using
+250B/txn, 8M channels with an average lifetime of 2 weeks would fill
+1MB blocks; as would 210M channels with an average lifetime of a year,
+or 420M channels with an average lifetime of two years. Those sort
+of numbers probably roughly cover lots of Americans having access to
+a lightning based point-of-sale network to buy Starbucks, eg, but not
+much more than that. (You need at least one channel per customer, plus
+one per business, plus something on the order of log(N) hubs to connect
+them all; having multiple channels is probably about as good an idea as
+having multiple credit cards).
+
+> In this context, wouldn't it be contradictory, maybe even harmful, to
+> aim for an environment, where some/many/most transactions are off-chain?
+
+Lightning transactions will have to pay for several things:
+
+ - the blockchain fees for opening/closing the channel
+ - the time value of the funds being used to keep the channels open,
+   for each channel in the route from payer to payee
+ - the maintenance costs of the hardware/software to run a lightning
+   channel
+
+By contrast, blockchain transactions just have to pay miners the
+blockchain fee for the transaction; there's no other intermediaries
+who have to be compensated. At some point, the latter will certainly
+be cheaper than the former -- since the lightning network has to pay
+for third parties' time value of bitcoin there should certainly be some
+"sufficiently large" amount whose time value is higher than the bitcoin
+txn fee, even for a very short txn time.
+
+It's all a bit hypothetical though -- not only is lightning still
+unimplemented as yet, but I think at present the time value of bitcoin is
+effectively zero (ie, afaik people recommend "just buy and hold bitcoin
+and wait for the next bubble", rather than "buy bitcoin and put it in
+AwesomeBank's Term Deposit product and gain 3% pa"), and most of the
+time fees seem to be basically zero too.
+
+I think the general answer is that lightning relies on the blockchain --
+if the blockchain doesn't work, neither does lightning. So whatever level
+of txn fees it takes to make the blockchain work; whether that's $0/txn,
+1c/txn or $50/txn, nodes in the lightning network will pay that fee,
+and, presumably, pass it on to the lightning network's end users in the
+form of txn fees on the lightning network.
+
+Cheers,
+aj
+
