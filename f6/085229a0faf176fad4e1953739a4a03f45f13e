@@ -1,0 +1,89 @@
+From: lists@coryfields.com (Cory Fields)
+Date: Tue, 18 Aug 2015 13:50:23 -0400
+Subject: [bitcoin-dev] libconsensus assertion fails if used in multiple
+	threads
+In-Reply-To: <CAApLimhbZj44OE0HStooCtzW33=jba=eEjf89H=0uJATxAvu5g@mail.gmail.com>
+References: <09C8843E-8379-404D-8357-05BDB1F749C1@me.com>
+	<CADZB0_YvvDDq4XzfvQeeWJ2oZxPukP0oXYSrEeC3gy9_Fk0ZuA@mail.gmail.com>
+	<D018B1B0-B613-4C05-84BB-02CE6E2FEA3E@me.com>
+	<499C1F46-5EB8-4846-86B6-0B3F2E02D972@bitsofproof.com>
+	<CAApLimiQFaUPgQTLiCKvEb+PQ7pOGg-JvfMfYGzq_X7SfmWLHQ@mail.gmail.com>
+	<CAApLimgAHB4Bgqp9WG1LiGegUPeKxuppTgizheN4-jwxiuAUag@mail.gmail.com>
+	<68E206FF-4ABD-4547-BF73-8661A7C2F08B@bitsofproof.com>
+	<CAApLimhbZj44OE0HStooCtzW33=jba=eEjf89H=0uJATxAvu5g@mail.gmail.com>
+Message-ID: <CAApLimhj8yMcfEFBWBHjos6eqC8m2=brk6j-o=L2og5BmPp59g@mail.gmail.com>
+
+Pull request submitted: https://github.com/bitcoin/bitcoin/pull/6571
+
+Regards,
+Cory
+
+On Tue, Aug 18, 2015 at 1:25 PM, Cory Fields <lists at coryfields.com> wrote:
+> See responses inline.
+>
+> On Tue, Aug 18, 2015 at 6:31 AM, Tamas Blummer <tamas at bitsofproof.com> wrote:
+>> Thanks a lot Cory for following through the test case and producing a patch.
+>>
+>> I confirm that libconsensus is now running stable within the Bits of Proof
+>> stack,
+>> in-line with test cases we use to verify the java implementation of the
+>> script engine,
+>> that are BTW borrowed from Bitcoin Core.
+>>
+>> The performance of libconsensus is surprisingly close to the java one.
+>> Validating a 2-of-2 a multi-sig  transaction runs at 1021 ops/sec with java
+>> and 1135 ops/sec
+>> in libconsensus. This is on a 2.2GH i7 laptop (4 hyper threading cores used
+>> by 8 threads).
+>> Another nice demonstration why one should not trade in advances
+>> of languages for the last decades for a marginal gain of performance with
+>> C/C++,
+>> I assume thereby that Bouncy Castle? EC lib s not superior to OpenSSL's.
+>
+> A few points there. First, Core is switching to libsecp256k1 for
+> several reasons, and one of them is speed. I seem to recall it being
+> up to 8x faster than OpenSSL.
+>
+> Also, it can depend heavily on compiler switches and optimization
+> levels. For example, In playing with my test-case for hitting the
+> OpenSSL race issue, I managed to get a ~100% speedup by simply using
+> -O3 and lto.
+>
+>>
+>> I disagree that the problem was rare in the real-world, it should affect any
+>> modern
+>> implementation that validates transactions parallel in multiple threads.
+>>
+>
+> Well I'd say you're a bit biased in this case ;)
+>
+> It's only those using ancient (0.98 or 1.00) versions of OpenSSL who
+> are affected, or those with OPENSSL_BN_ASM_MONT support disabled or
+> missing. Note that official releases of libbitcoinconsensus are
+> compiled against a much newer version and shouldn't have any issues.
+>
+> The earlier patches for locking callbacks should be unnecessary.
+>
+>> Aborting also does not make the problem less severe in my opinion.
+>
+> Well it's not a good thing by any means, but it's certainly better
+> than incorrect results! In any undefined/error condition for the
+> consensus library, aborting is the right thing to do. If we can't
+> explain how we've reached a certain "unreachable" condition as is the
+> case here, the only reasonable recourse is to shut down. Otherwise we
+> risk network forks, DOS, etc.
+>
+>> Therefore hope the pull will be included into Core with next release.
+>>
+>
+> It will likely be unnecessary for the next release, but I do think
+> it's worth backporting to the 0.10 and 0.9 series.
+>
+>> I can?t assign a timeline to ?near future" secp256k1 integration. Can you?
+>
+> I believe the libsecp256k1 guys are generally happy with the lib these
+> days, but I'll avoid guessing at a timeline. We can discuss that on
+> the PR for this fix, which I'll do today.
+>
+> Regards,
+> Cory
