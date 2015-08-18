@@ -1,0 +1,163 @@
+From: tamas@bitsofproof.com (Tamas Blummer)
+Date: Tue, 18 Aug 2015 12:31:52 +0200
+Subject: [bitcoin-dev] libconsensus assertion fails if used in multiple
+	threads
+In-Reply-To: <CAApLimgAHB4Bgqp9WG1LiGegUPeKxuppTgizheN4-jwxiuAUag@mail.gmail.com>
+References: <09C8843E-8379-404D-8357-05BDB1F749C1@me.com>
+	<CADZB0_YvvDDq4XzfvQeeWJ2oZxPukP0oXYSrEeC3gy9_Fk0ZuA@mail.gmail.com>
+	<D018B1B0-B613-4C05-84BB-02CE6E2FEA3E@me.com>
+	<499C1F46-5EB8-4846-86B6-0B3F2E02D972@bitsofproof.com>
+	<CAApLimiQFaUPgQTLiCKvEb+PQ7pOGg-JvfMfYGzq_X7SfmWLHQ@mail.gmail.com>
+	<CAApLimgAHB4Bgqp9WG1LiGegUPeKxuppTgizheN4-jwxiuAUag@mail.gmail.com>
+Message-ID: <68E206FF-4ABD-4547-BF73-8661A7C2F08B@bitsofproof.com>
+
+Thanks a lot Cory for following through the test case and producing a patch.
+
+I confirm that libconsensus is now running stable within the Bits of Proof stack,
+in-line with test cases we use to verify the java implementation of the script engine,
+that are BTW borrowed from Bitcoin Core.
+
+The performance of libconsensus is surprisingly close to the java one.
+Validating a 2-of-2 a multi-sig  transaction runs at 1021 ops/sec with java and 1135 ops/sec
+in libconsensus. This is on a 2.2GH i7 laptop (4 hyper threading cores used by 8 threads).
+Another nice demonstration why one should not trade in advances
+of languages for the last decades for a marginal gain of performance with C/C++,
+I assume thereby that Bouncy Castle? EC lib s not superior to OpenSSL's.
+
+I disagree that the problem was rare in the real-world, it should affect any modern
+implementation that validates transactions parallel in multiple threads.
+
+Aborting also does not make the problem less severe in my opinion.
+Therefore hope the pull will be included into Core with next release.
+
+I can?t assign a timeline to ?near future" secp256k1 integration. Can you?
+
+Tamas Blummer
+
+
+> On Aug 18, 2015, at 07:03, Cory Fields <lists at coryfields.com> wrote:
+> 
+> Back to the list (from github) in case anyone finds this via Google.
+> 
+> The patch that I posted here a few days ago did not fix the issue for Tamas.
+> 
+> I spent some time tracking down this edge-case because
+> libbitcoinconsensus needs to be as bullet-proof as possible. Thanks to
+> Tamas for creating a bare-bones test case after some discussion.
+> 
+> I finally managed to reproduce the issue on OSX. It's subtle and
+> likely rare in the real-world, though obviously not impossible given
+> the report here. For posterity, here's a rundown (braindump) of the
+> issue.
+> 
+> When calling EC_KEY_new_by_curve_name(), openssl internally checks to
+> see how to setup the curve's EC_METHOD (simple, montgomery, or nist).
+> 
+> Unfortunately, in all released OpenSSL versions (as far as I can tell
+> master is the only branch that has fixed this issue), it's tested like
+> so:
+> 
+> - Try a method. If it fails, set a global error and return.
+> - If the global error is set, try a different method.
+> 
+> Prior to OpenSSL 1.0.0, these were tested in the order:
+> EC_GFp_nist_method -> EC_GFp_mont_method. The secp256k1 curve fails
+> the ec_GFp_nist_group_set_curve test and sets the global error. That
+> error is then checked for failure, and EC_GFp_mont_method is tried
+> (and succeeds).
+> 
+> Obviously that global error usage is dangerous, especially since it
+> happens for _each_ transaction verification in libbitcoinconsensus. In
+> a multi-threaded environment, a crash is guaranteed within a few
+> seconds.
+> 
+> However, OpenSSL 1.0.1 reversed the order, trying EC_GFp_mont_method
+> first, so that the global error doesn't end up being used:
+> https://github.com/openssl/openssl/commit/17674bfdf75bffa4e225f8328b9d42cb74504005
+> 
+> This was backported from master back to 1.0.1, but not to 1.0.0 or 0.9.8.
+> 
+> So that change (accidentally) "solved" the problem. As you can see,
+> it's still possible to hit the reversed order in the
+> !defined(OPENSSL_BN_ASM_MONT) case. That's easily tested by building
+> OpenSSL with the -no-asm config option. It's probably also the case
+> for obscure architectures and OSs, but I haven't looked deeply into
+> that. In that case, it's reasonable to assume that this crash would
+> likely occur on such platforms.
+> 
+> Also, OSX, even the latest version (10.10 as of now), still ships with
+> OpenSSL 0.9.8. Which is how Tamas ran into it.
+> 
+> Since Bitcoin Core and libbitcoinconsensus are switching away from
+> OpenSSL for verification in the near future, I don't think this is
+> much of an issue. Especially since the problem manifests as a
+> controlled assertion failure/abort. However, I've prepared a patch for
+> anyone who may run into the issue in the short-term:
+> https://github.com/theuni/bitcoin/commit/adf0a691ee1c2f02e26828f976cfe5b78896b507
+> 
+> I'll open a pull-request for Bitcoin Core to discuss whether it's
+> worth merging or not.
+> 
+> Regards,
+> Cory
+> 
+> On Fri, Aug 14, 2015 at 5:10 PM, Cory Fields <lists at coryfields.com> wrote:
+>> Ugh, what an unfortunate oversight!
+>> 
+>> The good news is that this issue should be solved in future versions
+>> when we switch to the new libsecp256k1 lib for validation.
+>> 
+>> For now, I've thrown together a quick hack to allow a user-specifiable
+>> callback for libbitcoinconsensus. I think it's not worth messing with
+>> the official API since it will be fixed soon, but rather hacked in as
+>> a temporary work-around as needed. It _should_ be documented as an
+>> issue with the current version, though.
+>> 
+>> Please see here for a work-around to try:
+>> https://github.com/theuni/bitcoin/commits/openssl-consensus-threads
+>> Unfortunately it's not pretty, but it works fine here. Note that you
+>> should give this some _serious_ testing before deploying in any real
+>> way. It should mimic the way we do it in Core, though.
+>> 
+>> That's on top of current master, but it should be trivial to apply to
+>> release tags.
+>> 
+>> Please let me know how it works out.
+>> 
+>> Regards,
+>> Cory
+>> 
+>> On Fri, Aug 14, 2015 at 12:37 PM, Tamas Blummer via bitcoin-dev
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>> We integrated libconsensus into bits of proof. It works well, in-line for all test cases with our Java engine and is about 50% faster on a single thread.
+>>> 
+>>> The performance advantage unfortunatelly reverses if libconsensus is executed on several threads simultaneously as we do with the Java engine, since an error:
+>>> 
+>>>        Assertion failed: (pkey != NULL), function CECKey, file ecwrapper.cpp, line 96.
+>>> 
+>>> arises under that stress.
+>>> 
+>>> I guess that the cause is that thread callbacks as advised for OpenSSL on https://www.openssl.org/docs/crypto/threads.html are not registered.
+>>> Registering those however would require access to OpenSSL functions, not exported from the lib.
+>>> 
+>>> I?d be thankful for a pointer to a workaround.
+>>> 
+>>> Tamas Blummer
+>>> 
+>>> _______________________________________________
+>>> bitcoin-dev mailing list
+>>> bitcoin-dev at lists.linuxfoundation.org
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>> 
+> 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150818/43bc1a5b/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 496 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150818/43bc1a5b/attachment.sig>
