@@ -1,0 +1,167 @@
+From: thomas.kerin@gmail.com (Thomas Kerin)
+Date: Tue, 18 Aug 2015 02:22:10 +0100
+Subject: [bitcoin-dev] BIP: Using Median time-past as endpoint for locktime
+	calculations
+Message-ID: <55D288C2.9020207@gmail.com>
+
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Hi all,
+
+In collaboration with Mark Friedenbach, we have drawn up a proposal for
+using
+the median time of the past 11 blocks in locktime calculations.
+
+<pre>
+  BIP: XX
+  Title: Median time-past as endpoint for lock-time calculations
+  Author: Thomas Kerin <me at thomaskerin.io>
+          Mark Friedenbach <mark at friedenbach.org>    
+  Status: Draft
+  Type: Standards Track
+  Created: 2015-08-10
+</pre>
+
+
+==Abstract==
+
+This BIP is a proposal to redefine the semantics used in determining a
+time-locked transaction's eligibility for inclusion in a block. The
+median of the last 11 blocks is used instead of the block's timestamp,
+ensuring that it increases monotonically with each block.
+
+
+==Motivation==
+
+At present, transactions are excluded from inclusion in a block if the
+present time or block height is less than or equal to that specified
+in the locktime. Since the consensus rules do not mandate strict
+ordering of block timestamps, this has the unfortunate outcome of
+creating a perverse incentive for miners to lie about the time of
+their blocks in order to collect more fees by including transactions
+that by wall clock determination have not yet matured.
+
+This BIP proposes comparing the locktime against the median of the
+past 11 block's timestamps, rather than the timestamp of the block
+including the transaction. Existing consensus rules guarantee this
+value to monotonically advance, thereby removing the capability for
+miners to claim more transaction fees by lying about the timestamps of
+their block.
+
+This proposal seeks to ensure reliable behaviour in locktime calculations as
+required by BIP65, BIP68, and BIPXX (OP_CHECKSEQUENCEVERIFY).
+
+
+==Specification==
+
+The values for transaction locktime remain unchanged. The difference is
+only in
+the calculation determining whether a transaction can be included.
+Instead of
+an unreliable timestamp, the following function is used to determine the
+current
+block time for the purpose of checking lock-time constraints:
+
+    enum { nMedianTimeSpan=11 };
+    
+    int64_t GetMedianTimePast(const CBlockIndex* pindex)
+    {
+        int64_t pmedian[nMedianTimeSpan];
+        int64_t* pbegin = &pmedian[nMedianTimeSpan];
+        int64_t* pend = &pmedian[nMedianTimeSpan];
+        for (int i = 0; i < nMedianTimeSpan && pindex; i++, pindex =
+pindex->pprev)
+             *(--pbegin) = pindex->GetBlockTime();
+        std::sort(pbegin, pend);
+        return pbegin[(pend - pbegin)/2];
+    }
+
+Lock-time constraints are checked by the consensus method IsFinalTx(),
+or LockTime() under BIP68. These methods take the block time as one
+parameter. This BIP proposes that after activation calls to
+IsFinalTx() or LockTime() within consensus code use the return value
+of `GetMedianTimePast(pindexPrev)` instead.
+
+A reference implementation of this proposal is provided in the
+following git repository:
+
+https://github.com/maaku/bitcoin/tree/medianpasttimelock
+
+
+==Deployment==
+
+We reuse the double-threshold switchover mechanism from BIPs 34 and 66,
+with the
+same thresholds, but for block.nVersion = 4. The new rules are in effect for
+every block (at height H) with nVersion = 4 and at least 750 out of 1000
+blocks
+preceding it (with heights H-1000...H-1) also have nVersion = 4.
+Furthermore,
+when 950 out of the 1000 blocks preceding a block do have nVersion = 4,
+nVersion = 3 blocks become invalid, and all further blocks enforce the
+new rules.
+
+It is recommended that this soft-fork deployment trigger include other
+related
+proposals for improving Bitcoin's lock-time capabilities, such as BIP
+65, BIP68
+and CHECKSEQUENCEVERIFY.
+
+
+==Acknowledgements==
+
+Mark Friedenbach for designing and authoring the reference
+implementation of this BIP.
+
+Thomas Kerin authored this BIP document.
+
+
+==Compatibility==
+
+Transactions generated using time-based lock-time will take
+approximately an hour longer to confirm than would be expected under
+the old rules. This is not known to introduce any compatibility
+concerns with existing protocols.
+
+
+==References==
+[https://github.com/bitcoin/bips/blob/master/bip-0065.mediawiki BIP65:
+OP_CHECKLOCKTIMEVERIFY]
+
+[https://github.com/bitcoin/bips/blob/master/bip-0068.mediawiki BIP68:
+Consensus-enforced transaction replacement signaled via sequence numbers]
+
+[https://github.com/bitcoin/bips/blob/master/bip-00.mediawiki BIPXX:
+CHECKSEQUENCEVERIFY]
+
+
+==Copyright==
+
+This document is placed in the public domain.
+
+
+
+
+- -- 
+My PGP key can be found here: <https://thomaskerin.io/me.pub.asc>
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2
+
+iQIcBAEBCgAGBQJV0oi8AAoJEAiDZR291eTl2soP/1MOjgQDncoUdMptqfeqMLfU
+ewENNPLQwXXje7PFn/gIVa+Ghxu+f9rrRHt6v8Udd4wsnDTqhz2gV6dKCyF0K4IS
+seLTH2kyTfPGm1KOp6WSwvxoyc5iWLBH4wkSm4oI9WmXkLzDq0yEYUDE8t9yNYwf
+0Fgrg1KPIP4bhoxWchEa237rrH/qTh0Zdxdj/N0YCrX9u4fBy+xoTM6gnt0bFCK2
+SaGXvC8PsA23gkJjjwFnWh/JU0Q5BJTElUsq1re3gmwcnLNKyB5cx0bFephk2pFd
+NC3rqEIIVPd7aLs+lWmD4/NXdm+VtUEQo3MmQ1YW5zwjeoJxZhfMfXwmQw3vw2f7
+FSyExUXNNwh2lMoLCcWvWWEOKYaSV9iLX4TacvpbOSDQgz3rDl3iqeLmSgp3S8M3
+Se1S9AzilJsT0jIe2Ob2hu/gXEXeBmI9k2kRJELSaIFgCWadUky63NwNNfRipiBq
+USroBIym2dpXFLygcwgwf6F/yAYYg6/5QiUKclhqvxArxVEcijw18SHGZVYpW83S
+Q0mzJnRVGF7yscJl84zHyAj5QMWoMFgKSqFbOLcmNDUPLoaFJxAGezGCLXNaHinA
+LY5Qp0t0Vg4hXi6QcCiWv2U8E1K4oN5VZNSlagUyXsAHd3c4icZTVj+TTWKJ7GLB
+Gmbe3i9G90rpgDbHWXFq
+=EQdY
+-----END PGP SIGNATURE-----
+
+
