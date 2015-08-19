@@ -1,0 +1,84 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 19 Aug 2015 14:03:14 -0700
+Subject: [bitcoin-dev] CLTV/CSV/etc. deployment considerations due to
+ XT/Not-BitcoinXT miners
+In-Reply-To: <CAOG=w-uCPnSv9XxWLBteCFjU9B6Kg7RpFb=UknehMVPMUc0nag@mail.gmail.com>
+References: <20150819055036.GA19595@muck>
+	<CAOG=w-unJ+xnWFgiBO3jmgj4Q72ZH6-LOn08TwUF58trc-_WWg@mail.gmail.com>
+	<CAE-z3OWjvR73jHrGhozxgqr_QUDu_hvDmHJWdiEGOcAGMB9oqA@mail.gmail.com>
+	<CAOG=w-uCPnSv9XxWLBteCFjU9B6Kg7RpFb=UknehMVPMUc0nag@mail.gmail.com>
+Message-ID: <20150819210314.GA31482@muck>
+
+On Wed, Aug 19, 2015 at 09:32:49AM -0700, Mark Friedenbach via bitcoin-dev wrote:
+> I think you misunderstand my suggestion Tier. I am suggesting the same as
+> BtcDrak, I think:
+> 
+> Modify IsSuperMajority to take an (optional) mask field. Bits set in that
+> mask are zero'd for the purpose of the IsSuperMajority calculation. For
+> this vote we mask bits 0x20000007.
+> 
+> Thus to signal support for CLTV/CSV/etc. (on Core, XT, or not-XT), you set
+> bit 4. On Core this would mean a minimum version of 0x8, on XT/not-XT a
+> minimum version of 0x20000008.
+> 
+> However the vote is still over whether to enforce BIP 65, 68, etc. for
+> blocks with nVersion>=4. So when this all clears up we haven't needlessly
+> wasted an additional bit.
+
+Ah, I see your point now re: wasting bits; my post was a bit incorrect
+on that point.
+
+So a subtle thing with the IsSuperMajority() mechanism, and the nVersion
+bits proposal alternative, is one of the main objectives of the latter
+proposal proposal is to allow forks to *fail* to be adopted cleanly.
+
+To illustrate the problem, consider a hypothetical CLTV soft-fork,
+implemented with IsSuperMajority() nVersion >= 4. We release Bitcoin
+Core with that code, call it Bitcoin Core v0.12.0, however some
+substantial fraction of the mining community refuses to upgrade,
+believing CLTV to be a bad idea. This forms the community into Bitcoin
+Core and Bitcoin Not-CLTV camps. The Not-CLTV camp then wants to do a
+new soft-fork upgrade, say for CHECKSIG2
+
+What now? If CHECKSIG2 is implemented via IsSuperMajority, nVersion >=
+5, that'll falsely trigger Core nodes to think the upgrade has gone
+though. You could safely define >= 5 semantics to be "OP_CLTV is now
+disabled", but that's pretty ugly and unnecessarily uses up a NOP.
+
+You can avoid this problem by assigning one bit out of nVersion for
+every soft-fork, but then you can only do ~29 more soft-forks - ugly!
+
+
+Come to think of it, if you're Really Sure? the soft-fork will be
+adopted, you can recycle those bits by using the following rule:
+
+    if (IsFlagBitMaskSuperMajority(1 << 4, pindex->pprev) || block.nMedianTime > CLTV_SOFTFORK_DEADLINE) {
+        flags |= SCRIPT_VERIFY_CLTV;
+    }
+
+IsFlagBitMaskSuperMajority() is a masked version of the existing
+IsSuperMajority() logic. CLTV_SOFTFORK_DEADLINE would be set some
+reasonable amount of time in the future, perhaps 3 years.
+
+This would probably be ok for non-controversial forks - implementing
+DERSIG this way would have been fine - and an unlimited number of
+soft-forks can be done this way safely. (even in parallel)
+
+However, this idea still causes problems if forks ever fail to get
+adoption, something the nVersion bits proposal handles cleanly, albeit
+at the cost of a significantly more complex implementation. With a
+sufficiently far off fork deadline in practice that may not be a big
+issue - nearly everyone would have upgraded their software anyway -  but
+it's still technically creating hard-fork scenarios with respect to
+older software whenever forks fail to get adoption.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000402fe6fb9ad613c93e12bddfc6ec02a2bd92f002050594d
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150819/74bc1191/attachment-0001.sig>
