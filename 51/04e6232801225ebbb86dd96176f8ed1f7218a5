@@ -1,0 +1,89 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 18 Aug 2015 18:36:45 -0700
+Subject: [bitcoin-dev] Bitcoin XTs Tor IP blacklist downloading system
+ has significant privacy leaks.
+In-Reply-To: <CANOOu=_8BA1REkjRA3OUU_UEk6iOkQDW7=C8bEByAFGF4KHrbg@mail.gmail.com>
+References: <CANOOu=_8BA1REkjRA3OUU_UEk6iOkQDW7=C8bEByAFGF4KHrbg@mail.gmail.com>
+Message-ID: <20150819013645.GC2835@muck>
+
+On Tue, Aug 18, 2015 at 09:08:01PM -0400, Christophe Biocca via bitcoin-dev wrote:
+> So I checked, and the code described *does not* run when behind a
+> proxy of any kind, including tor:
+> 
+> https://github.com/bitcoinxt/bitcoinxt/commit/73c9efe74c5cc8faea9c2b2c785a2f5b68aa4c23#diff-11780fa178b655146cb414161c635219R265
+> 
+> At least based on my admittedly weak understanding of how the internal works.
+> 
+> Hopefully I save the next reader of your post from also having to dig
+> around to find the code and realize this is a false alert.
+
+That's not entirely correct.
+
+The code does disable downloading of the Tor exit node list if fListen
+is false, or if there is a proxy setup, this means the statement:
+
+>  Connections are made over clearnet even when using a proxy or
+>  onlynet=tor,
+
+is false. However, in the common scenario of a firewalled node, where
+the operator has neglected to explicitly set -listen=0, the code does
+still download the Tor exit node list, revealing the true location of
+the node. This is contrary to the previous behavior of not revealing any
+IP information in that configuration.
+
+FWIW Gregory Maxwell removed the last "call home" feature in pull-req
+#5161, by replacing the previous calls to getmyip.com-type services with
+a local peer request. Similarly the DNS seeds use the DNS protocol
+specifically to avoid leaking IP address information.
+
+tl;dr: Yes, Bitcoin XT has a privacy problem with the automatic Tor exit
+node list download.
+
+> On Tue, Aug 18, 2015 at 6:36 PM F L via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> > Bitcoin XT contains an unmentioned addition which periodically downloads
+> > lists of Tor IP addresses for blacklisting, this has considerable privacy
+> > implications for hapless users which are being prompted to use the
+> > software.  The feature is not clearly described, is enabled by default, and
+> > has a switch name which intentionally downplays what it is doing
+> > (disableipprio).  Furthermore these claimed anti-DoS measures are trivially
+> > bypassed and so offer absolutely no protection whatsoever.
+> >
+> > Connections are made over clearnet even when using a proxy or onlynet=tor,
+> > which leaks connections on the P2P network with the real location of the
+> > node.  Knowledge of this traffic along with uptime metrics from
+> > bitnodes.io can allow observers to easily correlate the location and
+> > identity of persons running Bitcoin nodes.  Denial of service can also be
+> > used to crash and force a restart of an interesting node, which will cause
+> > them to make a new request to the blacklist endpoint via the clearnet on
+> > relaunch at the same time their P2P connections are made through a proxy.
+> > Requests to the blacklisting URL also use a custom Bitcoin XT user agent
+> > which makes users distinct from other internet traffic if you have access
+> > to the endpoints logs.
+> >
+> >
+> >
+> > https://github.com/bitcoinxt/bitcoinxt/commit/73c9efe74c5cc8faea9c2b2c785a2f5b68aa4c23
+> >
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000402fe6fb9ad613c93e12bddfc6ec02a2bd92f002050594d
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150818/0b97ea6b/attachment.sig>
