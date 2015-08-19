@@ -1,0 +1,127 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 18 Aug 2015 22:50:36 -0700
+Subject: [bitcoin-dev] CLTV/CSV/etc. deployment considerations due to
+ XT/Not-BitcoinXT miners
+Message-ID: <20150819055036.GA19595@muck>
+
+Deployment of the proposed CLTV, CSV, etc. soft-forks has been recently
+complicated by the existence of XT(1) and Not-Bitcoin-XT(2) miners. Both
+mine blocks with nVersion=0x20000007, which would falsely trigger the
+previously suggested implementation using the IsSuperMajority()
+mechanism and nVersion=4 blocks. Additionally while the
+XT/Not-Bitcoin-XT software claims to support Wuille/Todd/Maxwell's
+nVersion soft-fork mechanism(3) a key component of it - fork
+deadlines(3) - is not implemented.
+
+
+XT/Not-Bitcoin-XT behavior
+--------------------------
+
+Both implementations produce blocks with nVersion=0x20000007,
+or in binary: 0b001...111
+
+Neither implementation supports a fork deadline; both Not-Bitcoin-XT and
+XT will produce blocks with those bits set indefinitely under any
+circumstance, with the proviso that while XT has a hashing power
+majority, blocks it produces might not be part of the Bitcoin blockchain
+after Jan 11th 2016. (though this can flap back and forth if reorgs
+happen)
+
+Curiously the BIP101 draft was changed(4) at the last minute from using
+the nVersion bits compliant 0x20000004 block nVersion, to using two more
+bits unnecessarily. The rational for doing this is unknown; the git
+commit message associated with the change suggested "compatibility
+concerns", but what the concerns actually were isn't specified. Equally
+even though implementing the fork deadline would be very each in the XT
+implementation, this was not done. (the XT codebase has had almost no
+peer review)
+
+
+Options for CLTV/CSV/etc. deployment
+------------------------------------
+
+1) Plain IsSuperMajority() with nVersion=4
+
+This option can be ruled out immediately due to the high risk of
+premature triggering, without genuine 95% miner support.
+
+
+2) nVersion mask, with IsSuperMajority()
+
+In this option the nVersion bits set by XT/Not-Bitcoin-XT miners would
+be masked away, prior to applying standard IsSuperMajority() logic:
+
+    block.nVersion & ~0x20000007
+
+This means that CLTV/CSV/etc. miners running Bitcoin Core would create
+blocks with nVersion=8, 0b1000. From the perspective of the
+CLTV/CSV/etc.  IsSuperMajority() test, XT/Not-Bitcoin-XT miners would be
+advertising blocks that do not trigger the soft-fork.
+
+For the perpose of soft-fork warnings, the highest known version can
+remain nVersion=8, which is triggered by both XT/Not-Bitcoin-XT blocks
+as well as a future nVersion bits implementation. Equally,
+XT/Not-Bitcoin-XT soft-fork warnings will be triggered, by having an
+unknown bit set.
+
+When nVersion bits is implemented by the Bitcoin protocol, the plan of
+setting the high bits to 0b001 still works. The three lowest bits will
+be unusable for some time, but will be eventually recoverable as
+XT/Not-Bitcoin-XT mining ceases.
+
+Equally, further IsSuperMajority() softforks can be accomplished with
+the same masking technique.
+
+This option does complicate the XT-coin protocol implementation in the
+future. But that's their problem, and anyway, the maintainers
+(Hearn/Andresen) has strenuously argued(5) against the use of soft-forks
+and/or appear to be in favor of a more centralized mandatory update
+schedule.(6)
+
+
+3) Full nVersion bits implementation
+
+The most complex option would be to deploy via full nVersion bits
+implementation using flag bit #4 to trigger the fork. Compliant miners
+would advertise 0x20000008 initially, followed by 0x20000000 once the
+fork had triggered. The lowest three bits would be unusable for forks
+for some time, although they could be eventually recovered as
+XT/Not-Bitcoin-XT mining ceases.
+
+The main disadvantage of this option is high initial complexity - the
+reason why IsSuperMajority() was suggested for CLTV/CSV in the first
+place. That said, much of the code required has been implemented in XT
+for the BIP101 hard-fork logic, although as mentioned above, the code
+has had very little peer review.
+
+
+References
+----------
+
+1) https://github.com/bitcoinxt/bitcoinxt
+
+2) https://github.com/xtbit/notbitcoinxt
+
+3) "Version bits proposal",
+    Pieter Wuille, May 26th 2015, Bitcoin-development mailing list,
+    http://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-May/008282.html,
+    https://gist.github.com/sipa/bf69659f43e763540550
+
+4) https://github.com/bitcoin/bips/commit/3248c9f67bd7fcd1d05b8db7c5c56e4788deebfe
+
+5) "On consensus and forks - What is the difference between a hard and soft fork?",
+   Mike Hearn, Aug 12th 2015,
+   https://medium.com/@octskyward/on-consensus-and-forks-c6a050c792e7
+
+6) 2013 San Jose Bitcoin conference developer round-table
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000402fe6fb9ad613c93e12bddfc6ec02a2bd92f002050594d
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150818/b88cb49a/attachment.sig>
