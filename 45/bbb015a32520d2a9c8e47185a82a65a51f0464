@@ -1,0 +1,112 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Thu, 20 Aug 2015 10:06:28 +0200
+Subject: [bitcoin-dev] Libconsensus separated repository (was Bitcoin
+ Core and hard forks)
+In-Reply-To: <C4EA4A39-1920-4F33-822C-FBD12DF81004@bitsofproof.com>
+References: <CABm2gDrApVuxF8DFf32V=pQhDKvvVfcDK=LeCXJ9h9o8CY+wNQ@mail.gmail.com>
+	<55B723EA.7010700@voskuil.org>
+	<CABm2gDok2gH2R8=x3a8PmPiM56WFg3TKzCum_WS=uV9-T1Ss3g@mail.gmail.com>
+	<55B939CF.1080903@voskuil.org>
+	<CABm2gDq1wHP01Tncw3hu=SCWQHaAOMjWOVYQWdQsOZ+E7zp9Yw@mail.gmail.com>
+	<CABm2gDr_ePfPeWB8pEO8QNHDjUZpybVuCAdDmMxJxMaC8+2bGA@mail.gmail.com>
+	<C4EA4A39-1920-4F33-822C-FBD12DF81004@bitsofproof.com>
+Message-ID: <CABm2gDqkF20ZoexQSV8iORb3ukxxZr5RasTLxJqQfSTsTqHvog@mail.gmail.com>
+
+On Thu, Aug 20, 2015 at 9:14 AM, Tamas Blummer <tamas at bitsofproof.com> wrote:
+> Jorge,
+>
+> separating script engine into libconsensus was very helpful, since wrapped
+> the piece of consensus
+> that would least likely to be captured exactly with an implementation from
+> scratch. Thank you for your
+> effort there.  Bits of Proof now uses its own or alternatively libconsensus
+> for full validation.
+
+It wasn't just me: I didn't had the idea of creating a libconsensus
+with a C API (thank Matt Corallo for that), I didn't removed all the
+undesired dependencies or prepared the building part (thank Cory
+Fields) and also thank at least Wladimir and Pieter who also
+contributed in some ways I don't remember.
+And of course also thank all the reviewers that made the PR merges possible.
+
+I'm really happy to hear that libconsensus is being used, thank you
+for your effort there too.
+
+> I am sceptical however that a ?full? consensus lib extracted from satoshi?s
+> code is worth trying.
+> Not because it was impossible, but because the result would not be higher
+> quality, if measured on agreement
+> with satoshi, than other re-implementations. It would actually be lower
+> quality because of the antique tool set.
+
+I don't understand what you mean by "quality" in this context. One of
+the goals is to have as little dependencies as possible (so "more
+modern tool sets" may not be suitable for libconsensus). libsecp256k1
+will keep on being a dependency (highly optimized C code) and that's
+about it.
+Ideally I would like to slowly move libconsensus from C++ to C too,
+but it seems other people would prefer to move to C++11 instead.
+
+> The rules outside script engine are simpler, therefore much easier to
+> capture exactly. They are however
+> scattered around in the spaghetti and are often just a single if statement,
+> also repeated elsewhere.
+
+Yes, they are simpler and thus there's less risks of consensus fork
+bugs, but it still exists.
+It is true that the consensus code is currently spread all around
+(specially in main.cpp), but completing libconsensus would solve that.
+Lastly, since for consensus rules "the code is the specification", it
+is unfortunate that the specification is coupled with a concrete
+implementation (Bitcoin Core) and we should fix that.
+
+> You would either have to very extensively refactor the code, that unlikely
+> goes through as a PR, or
+> do what me and others did. Read satoshi code and rewrite the same. You have
+> a slight advantage of copy-paste small fragments, but I doubt the consensus
+> relevant advantage of that.
+
+But the goal is not reimplementing the consensus rules but rather
+extract them from Bitcoin Core so that nobody needs to re-implement
+them again.
+It is not only exposing it but also separating it from Bitcoin Core so
+that they can be changed without having to also change/take into
+account non-consensus Bitcoin Core specific things.
+A single PR would certainly be unacceptable, I was making many little
+more acceptable ones (some of them already merged):
+
+* [1/9] Consensus
+** MERGED or DELETED
+*** MERGED Consensus: Decouple pow from chainparams #5812 [consensuspow]
+*** MERGED MOVEONLY: Move constants and globals to consensus.h #5696
+[consensus_policy0]
+*** DELETED Refactor: Create CCoinsViewEfficient interface for
+CCoinsViewCache #5747 [coins]
+*** MERGED Chainparams: Refactor: Decouple IsSuperMajority from
+Params() #5968 [params_consensus]
+*** MERGED Remove redundant getter
+CChainParams::SubsidyHalvingInterval() #5996 [params_subsidy]
+*** MERGED Separate CValidationState from main #5669 [consensus]
+*** DELETED Consensus: Refactor: Separate CheckFinalTx from
+main::IsFinalTx #6063 [consensus_finaltx]
+*** MERGED Consensus: Decouple ContextualCheckBlockHeader from
+checkpoints #5975 [consensus_checkpoints]
+*** MERGED Separate Consensus::CheckTxInputs and GetSpendHeight in
+CheckInputs #6061 [consensus_inputs]
+*** MERGED Bugfix: Don't check the genesis block header before
+accepting it #6299 [5975-quick-fix]
+** REBASE Chainparams: Explicit Consensus::Params arg in consensus
+functions #6024 [params_consensus2]
+** REBASE Optimizations: Consensus: In AcceptToMemoryPool,
+ConnectBlock, and CreateNewBlock #6445 [consensus-txinputs-0.12.99]
+** REBASE MOVEONLY: Move most of consensus functions (pre-block) #6051
+[consensus_moveonly]
+** REBASE Consensus: Refactor: Turn CBlockIndex::GetMedianTimePast
+into independent function #6009 [consensus_mediantime]
+** DEPENDENT Consensus: Refactor: Consensus version of
+CheckBlockHeader() #6035 [consensus_checkblockheader]
+** DEPENDENT Consensus: Consensus version of pow functions [consensus_pow2]
+** DEPENDENT API: Expose bitcoinconsensus_verify_header() in
+libconsensus #5995 [consensus_header]
+** DEPENDENT API: Expose bitcoinconsensus_verify_block() in
+libconsensus #5946 [consensus_tip]
