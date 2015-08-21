@@ -1,0 +1,101 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 20 Aug 2015 22:38:19 -0700
+Subject: [bitcoin-dev] Revisiting NODE_BLOOM: Proposed BIP
+In-Reply-To: <55D6AD19.10305@mattcorallo.com>
+References: <55D6AD19.10305@mattcorallo.com>
+Message-ID: <20150821053819.GA18176@muck>
+
+On Fri, Aug 21, 2015 at 04:46:17AM +0000, Matt Corallo wrote:
+> Peter: Since I stole most of this text from your old BIP, should I leave
+> you as an author?
+
+That's fine by me.
+
+> BIP: ?
+> Title: NODE_BLOOM service bit
+> Author: Matt Corallo <bip at bluematt.me>, Peter Todd <pete at petertodd.org>
+> Type: Standards Track (draft)
+> Created: 20-08-2015
+> 
+> Abstract
+> ========
+> 
+> This BIP extends BIP 37, Connection Bloom filtering, by defining a
+> service bit to allow peers to advertise that they support bloom filters
+> explicitly. It also bumps the protocol version to allow peers to
+> identify old nodes which allow bloom filtering of the connection despite
+> lacking the new service bit.
+> 
+> 
+> Motivation
+> ==========
+> 
+> BIP 37 did not specify a service bit for the bloom filter service, thus
+> implicitly assuming that all nodes that serve peers data support it.
+> However, the connection filtering algorithm proposed in BIP 37, and
+> implemented in several clients today, has been shown to provide little
+> to no privacy, as well as being a large DoS risk on some nodes. Thus,
+> allowing node operators to disable connection bloom filtering is a
+> much-needed feature.
+
+I'd reference that paper on bloom filters re: the "little to no privacy"
+issue. There's also a post in the bitcoinj mailing list somewhere IIRC
+talking about the default settings, and how they don't provide any
+privacy.
+
+> Specification
+> =============
+> 
+> The following protocol bit is added:
+> 
+>     NODE_BLOOM = (1 << 2)
+> 
+> Nodes which support bloom filters should set that protocol bit.
+> Otherwise it should remain unset. In addition the protocol version is
+> increased from 70002 to 70011 in the reference implementation. It is
+> often the case that nodes which have a protocol version smaller than
+> 70011, but larger than 70000 support bloom filtered connections without
+> the NODE_BLOOM bit set, however clients which require bloom filtered
+> connections should avoid making this assumption.
+> 
+> NODE_BLOOM is distinct from NODE_NETWORK, and it is legal to advertise
+> NODE_BLOOM but not NODE_NETWORK (eg for nodes running in pruned mode
+> which, nonetheless, provide filtered access to the data which they do have).
+> 
+> If a node does not support bloom filters but receives a "filterload",
+> "filteradd", or "filterclear" message from a peer the node should
+> disconnect that peer immediately. For backwards compatibility, in
+> initial implementations, nodes may choose to only disconnect nodes which
+> have the new protocol version set and attempt to send a filter command.
+> 
+> While outside the scope of this BIP it is suggested that DNS seeds and
+> other peer discovery mechanisms support the ability to specify the
+> services required; current implementations simply check only that
+> NODE_NETWORK is set.
+
+Good to note Mike Hearn's Cartography seed protocol here.
+
+> Design rational
+> ===============
+> 
+> A service bit was chosen as applying a bloom filter is a service.
+> 
+> The increase in protocol version is for backwards compatibility. In
+> initial implementations, old nodes which are not yet aware of NODE_BLOOM
+> and use a protocol version < 70011 may still send filter* messages to a
+> node without NODE_BLOOM. This feature may be removed after there are
+> sufficient NODE_BLOOM nodes available and SPV clients have upgraded,
+> allowing node operators to fully close the bloom-related DoS vectors.
+
+Ah good! That solves the backwards compatibility quite nicely.
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000402fe6fb9ad613c93e12bddfc6ec02a2bd92f002050594d
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150820/13cefeff/attachment.sig>
