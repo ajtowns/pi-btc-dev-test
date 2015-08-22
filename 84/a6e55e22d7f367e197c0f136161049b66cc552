@@ -1,0 +1,137 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 21 Aug 2015 17:57:49 -0700
+Subject: [bitcoin-dev] BIP: Using Median time-past as endpoint for
+ locktime calculations
+In-Reply-To: <55D707C5.50803@gmail.com>
+References: <55D288C2.9020207@gmail.com> <20150819010404.GB2835@muck>
+	<CAOG=w-tENY3aFbg88Gvhi26jgJ6m-bMqkEi1CaLP+wct7dErnA@mail.gmail.com>
+	<55D707C5.50803@gmail.com>
+Message-ID: <20150822005749.GA22371@muck>
+
+On Fri, Aug 21, 2015 at 12:13:09PM +0100, Thomas Kerin wrote:
+> 
+> I submitted the pull-request for the median-past timelock BIP just now
+> 
+> https://github.com/bitcoin/bips/pull/182
+> 
+> Any luck finding the link to this discussion? It would be nice to
+> include this for posterity.
+
+Found it! From #bitcoin-wizards, 2013-07-16:
+
+23:57 < petertodd> See, it'd be possible for nLockTime w/ time-based locks to create some really ugly incentives for miners to mine blocks at thelimit of the 2hr window - a timestamping chain could provide a way for nodes to at least detect that their clocks are off, especially given how peers can mess with them.
+23:58 < petertodd> It's still dodgy though... I was thinking if nLockTime-by-time inclusion was based on the previous block timestamp it'd be ok, but that still leaves large miners with incentives to screw with the 2hr window, never mind how it can reduce competition if there exists clock skew in the mining nodes.
+--- Log closed Wed Jul 17 00:00:57 2013
+--- Log opened Wed Jul 17 00:00:57 2013
+00:01 < petertodd> (remember that if this is a timestamping facility any node wanting to know the current time simply gets a nonce timestamped, and then they know what time it is!)
+00:11 < Luke-Jr> I don't see how nLockTime can discourage forward-dating blocks
+00:11 < Luke-Jr> and there is no 2hr window backward..
+00:12 < Luke-Jr> well, I guess if miners are behaving there is <.<
+00:19 < petertodd> The problem is a block being created with nTime > actual time, and the incentive is to get a head start on other miners to put, say, a high-fee nLockTime in the block you are creating.
+00:21 < Luke-Jr> petertodd: but nLockTime only sets a minimum time, it cannot set a maximum
+00:22 < petertodd> but that's it, if I have a 1BTC fee tx, with nLockTime expiring in two hours, why not take the increased orphan chance and set nTime on my block to two hours ahead/
+00:22 < petertodd> ?
+00:22 < petertodd> yet if we allow that incentive, it's very bad for consensus
+00:23 < gmaxwell> ha. We can fix.
+00:23 < gmaxwell> it's a soft forking fix.
+00:23 < gmaxwell> use the last blocks ntime, not this one.
+00:23 < Luke-Jr> is sipa's secp256k1 branch reasonably stable?
+00:23 < petertodd> gmaxwell: that's what I said...
+00:24 < gmaxwell> petertodd: sorry I just read the last couple lines.
+00:24 < Luke-Jr> petertodd: AFAIK we already don't relay transactions with time in the future?
+00:24 < gmaxwell> petertodd: well I agree. (or not even the last block? it could use the minimum time)
+00:24 < petertodd> gmaxwell: The problem is, that's only a fix if mining power is well distributed, it actually makes things worse because if there is a lot of profit to be gained the miners with a lot of hashing power still have the incentive, and it's to a much greater degree. (their orphan rate is less)
+00:24 < Luke-Jr> gmaxwell: the minimum time will be earlier than the last block's :p
+00:25 < gmaxwell> Luke-Jr: sure, but that doesn't change it really. Presumably if people start locking in the future miners will run nodes that take what they get and selfishly horde them, creating incentives for all miners to run good collection networks.
+00:25 < petertodd> Luke-Jr: sure, but there are lots of ways to learn that a tx exists
+00:26 < gmaxwell> petertodd: one of the reasons that the min is important there is because (1) it's hard to advance, and (2) when you advance it you raise the difficulty.
+00:26 < petertodd> gmaxwell: I was working on figuring out the expected return - the math is really ugly
+00:27 < gmaxwell> petertodd: a worst case expected return may be easier.
+00:27 < petertodd> gmaxwell: Worst case is easy - your block is orphaned.
+00:28 < petertodd> gmaxwell: See the issue is that once I find a block, the other side needs to find two blocks to beat me. As time goes on more of the other sides hashing power will accept my from the future block as valid, so then you get the next level where the remainder needs three blocks and so on.
+00:28 < petertodd> gmaxwell: Pretty sure it can't be done as a closed-form equation.
+00:30 < petertodd> gmaxwell: I don't think minimum time works either, because you still get to manipulate it by creating blocks in the future, although the ability too is definitely less. If I could show you'd need >50% hashing power to do anything interesting I'd be set.
+00:31 < Luke-Jr> petertodd: hmm, is block-uneconomic-utxo-creation basically just an older revision of what Gavin did in 0.8.2?
+00:31 < gmaxwell> petertodd: moving the minimum time forward needs the coperation of >50% of the hashpower over the small median window.
+00:32 < petertodd> Luke-Jr: It's what Gavin did but non-hardcoded. I'd emphasize the better, not the older. :P
+00:32 < Luke-Jr> petertodd: will you be rebasing it despite its closed status?
+00:32 < Luke-Jr> actually, what about Gavin's is hardcoded? <.<
+00:33 < petertodd> gmaxwell: Yeah, but you have to assume a steady stream of these incentives.
+00:33 < gmaxwell> petertodd: right, so you have some force that turns all miners into a conspiracy.
+00:34 < petertodd> gmaxwell: exactly
+00:34 < petertodd> gmaxwell: nLockTime by time should have never been added in the first place, but it's such a nice idea on the face of it
+00:35 -!- realazthat is now known as rudeasthat
+00:35 -!- rudeasthat is now known as rudest
+00:35 < Luke-Jr> softfork so nLockTime requires data on what block a transaction was created at, and enforces the 10 min per block <.<
+00:36 -!- rudest is now known as heh
+00:36 < petertodd> Luke-Jr: ?
+00:36 -!- heh is now known as realz
+00:36 < Luke-Jr> petertodd: for example, if you nLockTime for 1 day from now, it also enforces 144 blocks passing too
+00:37 < Luke-Jr> so block count must be >now+144 AND time must be >now+24h
+00:37 < Luke-Jr> not perfect, but might help
+00:37 < petertodd> Still doesn't help in the usual case where mean interval is < 10 minutes, because you're back to only caring about time.
+00:38 < Luke-Jr> usual now, but not eventually
+00:38 < petertodd> Right, you've solved half the problem, when measured over the entire lifespan of Bitcoin, and only approximately half. :P
+00:39 < Luke-Jr> theory is so much nicer than practice <.<
+00:39 < gmaxwell> I'm forgetting why this is a problem again?  If miners mine blocks early, people will just artifically inflate their times or switch to height locking.
+00:39 < petertodd> The problem is you're incentivising miners to make the 2hr window for block acceptance effectively shorter.
+00:39 < petertodd> Thus requiring accurate clocks for consensus.
+00:39 < gmaxwell> if miners do this consistently they'll drive difficulty up too which wouldn't be in their interest.
+00:39 < Luke-Jr> ^
+00:40 < petertodd> gmaxwell: It's only a fixed 2hr offset, that just drives difficulty up by 0.5%
+00:40 < Luke-Jr> and on top of that, you'd just end up treating nTime with a minus-2-hours :p
+00:41 < Luke-Jr> if everyone does it, it's predictable.
+00:41 < petertodd> More to the point for any individual miner the marginal difference if they do it is effectively zero.
+00:41 < gmaxwell> consider, why why cant the 2 hour window be 24 hours?
+00:41 < petertodd> Luke-Jr: But that's the problem, if everyone does it, and people respond, then you can extend the interval even further!
+00:41 < Luke-Jr> petertodd: how?
+00:41 < petertodd> gmaxwell: It should have been more like 24 hours in the first place...
+00:42 < Luke-Jr> you don't change the 2h rule
+00:42 < Luke-Jr> you just assume miner times will always be up against it
+00:42 < gmaxwell> Luke-Jr: move your clock/window forward so you dont reject stupid blocks.
+00:42 < petertodd> Luke-Jr: Again, the issue is the effect on *consusus*. I don't care when the tx gets mined, I care that miners are incentivised to break consunsus for anyone without NTP.
+00:43 < petertodd> The problem is no matter *what* the window is, there is an incentive to mine as close to the window as possible to accept a tx sooner than your competitors.
+00:43 < petertodd> It could be a week and people would still have an incentive to set nTime + 1 week - 1 second
+00:44 < Luke-Jr> if nTime is future, wait until that time before relaying it? <.<
+00:44 -!- realz is now known as pleasedont
+00:44 < gmaxwell> and once people did that, you'd want to start accepting blocks that where nTime + 1 week because god knows you don't want to reject a block if your clock was 2 seconds slow and most hashpower accepted it.
+00:44 < petertodd> About the only thing that might change that is if the rule was nLockTime > nTime of last block, and then after that being allowed to include a tx was based on H(txhash, last hash) or similar
+00:45 < petertodd> gmaxwell: exactly, the fundemental issue is there is no good incentive to set nTime accurately other than miners rejecting your blocks, and nLockTime sabotages that
+00:45 -!- pleasedont is now known as realzies
+00:45 < petertodd> gmaxwell: (timestamping could do, but the cause->effect is less obvious)
+00:45 < Luke-Jr> I guess I just incentivized always setting nTime to the minimum then
+00:45 < Luke-Jr> [04:32:26] <Luke-Jr> petertodd: will you be rebasing it despite its closed status? (block-uneconomic-utxo-creation)
+00:46 < petertodd> Luke-Jr: again, relaying does nothing - consider the case of nLockTime'd fidelity bonds where it's guaranteed 100% of the hashing power know (why I wrote the spec as by-block-height in the first place)
+00:46 < petertodd> Luke-Jr: sure
+00:46 < Luke-Jr> petertodd: I mean delaying relaying the BLOCK
+00:46 < Luke-Jr> ie, increasing the risk of it being stale
+00:47 < petertodd> Luke-Jr: then you have your mining pool connect directly to other mining pools playing the same game
+00:47 < petertodd> you have to assume perfect information knowledge in this stuff, at least if you're writing worst-case academic papers
+00:48 < gmaxwell> petertodd: so ... prior block vs minimum time.
+00:48 < petertodd> see, that's why I was talking about timestamping, because it provides a way for all users to set their clocks to what the majority of hashing power thinks nTime is, sidestepping the problem
+00:48 < gmaxwell> petertodd: what are your arguments there?
+00:48 < petertodd> gmaxwell: minimum time is definitely stronger because it involves more hashing power
+00:49 < petertodd> gmaxwell: users would prefer minimum time - easier to understand why the tx isn't getting mined
+00:49 < gmaxwell> sidestepping the problem < that doesn't sidestep the problem, it would allow the majority of hashpower to mine difficulty down to 1; also moots nlocktime as _time_ being more reliable than a height.
+00:49 < gmaxwell> petertodd: plus, you can just add a constant offset to your nlocktime to adjust for the expected minimum lag.
+00:51 < petertodd> gmaxwell: yes, it creates a new problem, but it did sidestep the existing one :P
+00:51 < gmaxwell> petertodd: yea, lol, creates an inflation attack. Keep it up and you'll be qualified to create an altcoin. :P
+00:52 < gmaxwell> (sorry, hah, I'm not poking fun at you, I'm poking fun at all the altcoins that "solved the Foo problem" where foo is something no one else thinks is a problem and they totally broke security as a side effect)
+00:52 < petertodd> gmaxwell: yup, now you see how it only sidesteps the problem truly when there is enough hashing power setting their clocks back, IE 50% honest, which is better
+00:53 < petertodd> gmaxwell: without the timestamping, nodes have the consensus failures, which can be attacked, likely it trades off one risk for a more existential risk
+00:53 < petertodd> gmaxwell: and it's a good excuse for timestamping, lol
+00:54 < gmaxwell> I thin the min solves the consensus failure so long as hashpower is well distributed.
+00:54 < petertodd> yeah, I'm thinking min is probably the best we can do
+
+https://download.wpsoftware.net/bitcoin/wizards/2013/07/13-07-16.log
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000402fe6fb9ad613c93e12bddfc6ec02a2bd92f002050594d
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150821/52081477/attachment-0001.sig>
