@@ -1,0 +1,163 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 21 Aug 2015 18:48:06 -0700
+Subject: [bitcoin-dev] Revisiting NODE_BLOOM: Proposed BIP
+In-Reply-To: <55D7CB7D.6080100@mattcorallo.com>
+References: <55D6AD19.10305@mattcorallo.com> <20150821053819.GA18176@muck>
+	<20150821054219.GB18176@muck> <55D7662E.4090104@mattcorallo.com>
+	<20150821220603.GC7450@muck> <55D7CB7D.6080100@mattcorallo.com>
+Message-ID: <20150822014805.GC20340@muck>
+
+On Sat, Aug 22, 2015 at 01:08:13AM +0000, Matt Corallo wrote:
+> > Well actually, we can reference the DoS attacks that Bitcoin XT nodes
+> > are undergoing right now - part of the attack is repeated Bloom filter
+> > requests to soak up disk IO bandwidth. I've CC'd Gavin and Mike - as far
+> > as I know they haven't published details of those attacks - a write-up
+> > would be very helpful.
+> > 
+> > While so far those are being directed only at XT nodes, obviously this
+> > is a potential issue for Core nodes as well. Like I mentioned last time
+> > around, it's critical that miners aren't affected by these attacks -
+> > nodes simply serving SPV wallet clients are much less latency sensitive,
+> > so a good DoS attack mitigation strategy would be to have the two
+> > classes of nodes out there "in the wild"
+> 
+> Ehh, I was going more for the oldest mention.
+
+One of the oldest mentions is the to-be-published-later portion of my
+Litecoin Audit report; attached.
+
+(see http://lists.linuxfoundation.org/pipermail/bitcoin-dev/2013-July/003044.html
+for the original report/timestamping/verification)
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000939524874a2896a46ea96bf59776ed869ccff95679cb087
+-------------- next part --------------
+Security vulnerabilities related to the Litecoin v0.8.3.6 release
+=================================================================
+
+Nonce: c0854ae01b1ed8526af3bb6fb82550ff
+Date:  Jul 29 2013
+
+To be released in full on January 29, 2014 to the public.
+
+
+LevelDB
+=======
+
+Something not well appreciated outside of the Bitcoin developers is that the
+temporary limits on block size and complexity introduced in response to the
+fork, automatically removed on May 15th, were simply voluntary measures to
+protect against accidental triggering of the fork. The measures did not protect
+against malicious attempts to trigger the the fork.
+
+Litecoin is no different. Because of that I strongly recomend that miners be
+encouraged to transition to v0.8.3.6 as soon as possible to ensure as much
+hashing power as possible is consolidated on one version. Transitioning for
+users/merchants is also important, however with sufficient mining power on the
+new version it would be difficult to pull off a double-spend attack against an
+older version simply because it would take so long to get the required number
+of confirmations.
+
+The development team may want to clarify this point to the Litecoin community
+and encourage users to be suspicious if it takes an especially long time to get
+confirmations. Merchants with automatic systems should use fail-safes triggered
+by unusually long confirmation times, and as always ensure that total possible
+losses are limited. It would be good if popular "blockchain information" sites
+upgraded to v0.8.3.6 along with miners to give users accurate information on
+the state of the blockchain. In any case users and merchants should take this
+advice in general regardless of specific threats.
+
+I would not be surprised to see someone deliberately attempt to fork Litecoin
+by exploiting the issue; there is a lot of hostility torwards and within the
+alt-coins.
+
+
+SPV and network-wide DoS attacks
+================================
+
+Bitcoin is quite vulnerable currently to network-wide DoS attacks due to the
+maximum connections limits; we do not have any form of filtering on incoming
+connections so an attack can be made simply by making sufficient connections to
+all nodes that they hit that incoming connections limit. This is public
+knowledge, as is the suggestion to stop the attack by having concepts of peer
+"usefullness" so that "useless" peers can be dropped. Of course SPV nodes are
+badly impacted by such measures.
+
+What isn't as well-known publicly is that Litecoin will make this attack
+significantly less costly to the attacker in v0.8.3.6 by adding support for
+bloom filters. That support allows the attacker to reduce their bandwidth
+consumption to a minimum, making the attack easier to pull off on a wide scale.
+
+The Bitcoin team is aware of the issue. Our plans in the event of an attack are
+to ensure that large pools and merchants connect to each other via a private
+"darknet" while fixes are implemented. These plans are also useful in the event
+of an attack exploiting the vulnerability discussed below.
+
+
+Bloom filters and disk IO
+=========================
+
+However it gets worse: there is nothing limiting peers from requesting blocks.
+Without bloom filters bandwidth is a natural limit, however with bloom filters
+a malicious peer can simply set the filter to match almost nothing and simply
+submit getdata messages to the target requesting all blocks. The target will do
+an extremely large amount of disk IO at almost no cost to the attacker.
+
+To quote one core developer in a private conversation regarding bloom filtering
+"I think we didn't think hard enough before implementing this"
+
+A good first measure would be to assign a service bit to advertise bloom filter
+support:
+
+ /** nServices flags */
+ enum
+ {
+     NODE_NETWORK = (1 << 0),
++    NODE_BLOOM_FILTER = (1 << 1),
+ };
+
+Secondly add a command line switch that allows bloom filtering to be turned on
+or off entirely. I would suggest that the next version of Litecoin be released
+soon and have bloom filters *disabled* by default unless the user specifically
+turns them on.
+
+There is a *very* good chance of an attack being launched targetting this
+vulnerability by people using it as a way to show their opinion of Mike Hearn;
+lots of people strongly dislike him for what they regard as very poor judgement
+on security and scalability issues and would be happy to show that a design he
+promoted is flawed.
+
+Disabling bloom filering does of course cause problems for SPV clients, however
+in the Litecoin realm such clients are non-existent. In the long run DNS seeds
+should allow for the specification of desired service bits and rate limiting of
+getdata operations implemented. However given that attacks are likely imminent
+I strongly suggest a quick solution.
+
+Bitcoin should have done bloom filtering as a service bit on day one; not doing
+so was a mistake.
+
+The Bitcoin team is aware of this issue. Please contact me to discuss the
+release process for a fix; I will also be happy to review it. Unfortunately due
+to the impact on SPV clients this issue is political as well as technical on
+the Bitcoin side of things.
+
+
+CHECKMULTISIG dummy value
+=========================
+
+The AreInputsStandard() test does not check the contents of the dummy value
+required to spend a BIP11 CHECKMULTISIG scriptPubKey; anything that be put in
+that space as a way to get data into the blockchain. Less well appreciated is
+that because scriptSigs are unsigned any node, even a non-miner, can change the
+txid of a CHECKMULTISIG transaction by modifying the dummy value.
+
+This issue will probably be fixed in Bitcoin soon, not to mention revealed
+publically; I'm only including it for the sake of completeness.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150821/d43573b7/attachment.sig>
