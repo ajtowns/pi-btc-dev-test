@@ -1,0 +1,93 @@
+From: hearn@vinumeris.com (Mike Hearn)
+Date: Mon, 24 Aug 2015 17:21:47 +0200
+Subject: [bitcoin-dev] Revisiting NODE_BLOOM: Proposed BIP
+In-Reply-To: <55D7AF85.2020707@thinlink.com>
+References: <55D6AD19.10305@mattcorallo.com>
+	<CADm_WcZJEe4fz4dLYKeOzC0CWbM=-o92BvEF0qiGvNwyMjrEiA@mail.gmail.com>
+	<20150821055534.GA27259@muck>
+	<CADm_WcanqF7oHn7huKuYP8iFWmY4XE58tG01M_Nqg9qx6YFu9A@mail.gmail.com>
+	<20150821060716.GA31674@muck> <55D7AF85.2020707@thinlink.com>
+Message-ID: <CA+w+GKSy5oEy-pS_JsoaGBEp3Fn=x5HZSiFAEVnmkQi5=qhP5Q@mail.gmail.com>
+
+NACK: stated rationales are invalid: both privacy and DoS (see below for
+experimental data).
+
+
+1 - Bloom filtering doesn't add privacy for node operators, it adds privacy
+for lightweight wallets. And in fact, with a high FP rate it does do that.
+Most users want both low bandwidth usage *and* query scrambling, which is
+harder to do but not impossible. There is a clear roadmap for how to
+implement that with smarter clients: no protocol changes are needed.
+
+So the first stated rationale is spurious: disabling Bloom filtering
+doesn't improve privacy for anyone. It can only hurt.
+
+
+
+2 - SPV usage is rising, not falling.
+
+Peter's data is flawed because he ignored the fact that SPV clients tend to
+connect, sync, then disconnect. They don't remain connected all the time.
+So merely examining a random snapshot of what's connected at a single point
+in time will give wildly varying and almost random results.
+
+A more scientifically valid approach is to check the number of actual
+connections over a long span of time. Here's the data from my node:
+
+mike at plan99:~/.bitcoin$ grep -Po 'receive version message: ([^:]*):'
+debug.log |sort |uniq -c|sort -n|tac|head -n 10
+  11027 receive version message: /getaddr.bitnodes.io:
+   6264 receive version message: /bitcoinseeder:
+   4944 receive version message: /bitcoinj:
+   2531 receive version message: /Snoopy:
+   2362 receive version message: /breadwallet:
+   1127 receive version message: /Satoshi:
+    204 receive version message: /Bitcoin XT:
+    128 receive version message: /BitCoinJ:
+     97 receive version message: /Bither1.3.8/:
+     82 receive version message: /Bitaps:
+
+Once crawlers are removed, SPV wallets (bitcoinj, breadwallet) make up the
+bulk of all P2P clients. This is very far from 1% and falling, as Todd
+wrongly suggests.
+
+
+
+3 - It is said that there is a DoS attack possible. This claim does not
+seem to have been researched.
+
+I decided to test it out for real, so I implemented a DoS attack similar to
+the one we've seen against XT nodes: it sends getdata for large (1mb)
+filtered blocks over and over again as fast as possible.
+
+As was reported and makes sense, CPU usage goes to 100%. However I couldn't
+see any other effects. RPCs still react immediately, the Qt GUI is fully
+responsive, I was even able to sync another SPV client to that node and it
+proceeded at full speed. It's actually pretty nice to see how well it held
+up.
+
+Most importantly transactions and blocks continued to be relayed without
+delay. I saw my VPS node receive a block only eight seconds after my local
+node, which is well within normal propagation delays.
+
+There's another very important point here: I profiled my local node whilst
+it was under this attack. It turns out that Bloom filtering is extremely
+fast. 90% of the CPU time is spent on loading and deserializing the data
+from disk. Only 10% of the CPU time was spent actually filtering.
+
+Thus you can easily trigger exactly the same DoS attack by just using
+regular getdata requests on large blocks over and over. You don't need
+Bloom filtering. If you don't want to actually download the blocks just
+don't TCP ACK the packets and then FIN after a few seconds .... the data
+will all have been loaded and be sitting in the send buffers.
+
+So even if I refine the attack and find a way to actually deny service to
+someone, the fix would have to apply to regular non-filtered block fetches
+too, which cannot be disabled.
+
+
+In summary: this BIP doesn't solve anything, but does create a big upgrade
+headache.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150824/ece22a74/attachment.html>
