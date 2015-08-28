@@ -1,0 +1,82 @@
+From: jl2012@xbt.hk (jl2012 at xbt.hk)
+Date: Fri, 28 Aug 2015 11:27:23 -0400
+Subject: [bitcoin-dev] BIP: Using Median time-past as endpoint for
+ locktime calculations
+In-Reply-To: <20150827231913.GC4125@muck>
+References: <20150827231913.GC4125@muck>
+Message-ID: <c3aa6fd8d7f41a902ac1981921c37214@xbt.hk>
+
+I have an ugly solution to this problem, with minimal change to the 
+current softfork logic, and still allows all features described in 
+sipa's Version bits BIP
+
+1. xVersion = nVersion AND 0b10000000000000000000000000011000
+2. miners supporting BIP65 will set xVersion = 8 or greater
+3. If 750 of the last 1000 blocks are xVersion >= 8, reject invalid 
+xVersion 8 (or greater) blocks
+4. If 950 of the last 1000 blocks are xVersion >= 8, reject all blocks 
+with xVersion < 8
+
+So the logic is exactly the same as BIP66, with the AND masking in step 
+1. After the BIP65 softfork is implied, xVersion may take only one of 
+the following values: 8, 16, 24
+
+This is basically moving the "high bits" in sipa's proposal to the 
+middle of the nVersion field. After the BIP65 softfork, this will still 
+leave 29 available bits for parallel soft forks, just in different 
+position.
+
+This is ugly, but I believe this is the easiest solution
+
+Ref: https://gist.github.com/sipa/bf69659f43e763540550
+
+Peter Todd via bitcoin-dev ? 2015-08-27 19:19 ??:
+> On Thu, Aug 27, 2015 at 11:08:32PM +0100, Btc Drak wrote:
+>> This BIP was assigned number 113.
+>> 
+>> I have updated the text accordingly and added credits to Gregory 
+>> Maxwell.
+>> 
+>> Please see the changes in the pull request:
+>> https://github.com/bitcoin/bips/pull/182
+> 
+> On Thu, Aug 27, 2015 at 11:11:10PM +0100, Btc Drak via bitcoin-dev 
+> wrote:
+>> I have changed BIPS 112 and 113 to reflect this amended deployment
+>> strategy. I'm beginning to think the issues created by Bitcoin XT are
+>> so serious it probably deserves converting OPs text into an
+>> informational BIP.
+> 
+> I thought we had decided that the masking thing doesn't work as
+> intended?
+> 
+> To recap, XT nodes are producing blocks with nVersion=0b001...111
+> 
+> You're suggesting that we apply a mask of ~0b001...111 then trigger the
+> soft-fork on nVersion >= 0b0...100 == 4, with miners producing blocks 
+> with
+> nVersion=0b0...1000
+> 
+> That will work, but it still uses up a version bit. The reason why is
+> blocks with nVersion=0b001...000 - the intended deployment of the
+> nVersion bits proposal - will be rejected by the nVersion >= 4 rule,
+> hard-forking them off the network. In short, we have in fact "burnt" a
+> version bit unnecessarily.
+> 
+> If you're going to accept hard-forking some people off the network, why
+> not just go with my stateless nVersion bits w/ time-expiration proposal
+> instead? The only case where it leads to a hard-fork is if a soft-fork
+> has been rejected by the time the upgrade deadline is reached. It's 
+> easy
+> to set this multiple years into the future, so I think in practice it
+> won't be a major issue for non-controversial soft-forks.
+> 
+> Equally, spending the time to implement the original stateful nVersion
+> bits proposal is possible as well, though higher risk due to the extra
+> complexity of tracking soft-fork state.
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
