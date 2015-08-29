@@ -1,0 +1,74 @@
+From: natanael.l@gmail.com (Natanael)
+Date: Sat, 29 Aug 2015 21:13:12 +0200
+Subject: [bitcoin-dev] Consensus based block size retargeting algorithm
+	(draft)
+In-Reply-To: <CABr1YTe+sCAioRMqsAjUC-1v+bfsz24=jjDKaatP=Gbm9sDf8g@mail.gmail.com>
+References: <CADJgMzvWKA79NHE2uFy1wb-zL3sjC5huspQcaDczxTqD_7gXOg@mail.gmail.com>
+	<CADr=VrQR6rYK4sJJsDpUdFJaWZqhv=AkMqcG64EhsOCg1tDxVg@mail.gmail.com>
+	<CADJgMzvkBDBD9_=53kaD_6_jWH=vbWOnNwOKK5GOz8Du-F08dQ@mail.gmail.com>
+	<2081355.cHxjDEpgpW@crushinator>
+	<A30CC2E3-A769-445C-95A2-35B963EFC283@gmail.com>
+	<CAB+qUq7ZzLHrFZ5FQazrcALA-b-jFh_bf-XX1GaJbGY1KQB5YA@mail.gmail.com>
+	<CAOG=w-vkOzGXosc=C7NwX5_ewaT0Sdrkw49gfO+a9hohYctLaw@mail.gmail.com>
+	<CABm2gDreJ1PwZu3WgZdj_RR0W9JoQTF9w-Qwyfoh6uk1EM0ajg@mail.gmail.com>
+	<CAOG=w-uYFbyUF+PZABNvMqHei2-yuoCETtXnfkYV-Rr9-pPKuw@mail.gmail.com>
+	<CADJgMzvJDSk6oZMZPc4C8ENHhGvspdeF7WURfnY6OPKWs33a7w@mail.gmail.com>
+	<CABr1YTe+sCAioRMqsAjUC-1v+bfsz24=jjDKaatP=Gbm9sDf8g@mail.gmail.com>
+Message-ID: <CAAt2M19uCDHgMU8eFVhxuHka7aZ__9VoYtpHEp9qY5APC132Kw@mail.gmail.com>
+
+My current idea:
+
+* There's a scheduled hardcap that goes up over time.
+
+* Miners vote on the blocksize limit within the hardcap, choosing the new
+votecap. No particular idea for scheduling change. The 2016 block period
+seems a bit long though, in case of sudden peak load.
+(I'd suggest rolling vote over X blocks, enacted Y blocks later (with votes
+counted from block A to block B = block A+X, the change is enacted at block
+C = B+Y = A+X+Y). I'm fine with fixed-period schedules too if they span a
+reasonable time, such as IMHO 2 days - we need rapid peak adjustment. No
+suggestion on vote result calculation mechanism.)
+
+* Casting votes are free.
+
+* The mean (average) blocksize over the last time period X is calculated
+for every block, or at the end of every fixed-length period (depending on
+what scheduling is used for votes).
+
+* Creating blocks larger than the mean but below the votecap raises the
+difficulty target for the miner (and slightly raises the mean for future
+blocks).
+
+* The degree of difficulty raise depends on where between the mean and
+votecap that the size of the given block is (and it follows that lots of
+votes for large raise reduces per-extra-Kb penalty, allowing for cheaper
+peak load adjustment if a large miner majority agrees). The degree of
+increase may be either linear or logarithmic, I've got no suggestion
+currently on any particular metric.
+(Some might think this is an easy way for miners to collude to make large
+blocks cheaper. If so, you could commit to only pay fee to miners that
+don't vote for a block size above the size you accept, as a
+counter-incentive.)
+
+* Question: When the votecap is lowered, should the calculated mean be
+forced down to follow (forcing a penalty for making blocks close to the
+votecap straight after the change)? If so, how? Or should it be allowed to
+fall naturally as new blocks with size below the votecap are created?
+
+This is how miners would pay for actually creating larger blocks, and
+leaves us with three methods of keeping the size in check (hardcap, votecap
+and softcap). The softcap mechanism is then our third check to use if
+deemed necessary (orphaning valid blocks if considered problematically
+large). This third option do not need coordination with miners, they just
+need to be aware which block size is accepted by the community.
+
+I can't think of any sensible non-miner mechanism of deciding max block
+size outside of using a community coordinated softcap, anything else will
+not work reliably. Too hard to measure objectively and judge fairly.
+
+The community would thus agree on a hardcap schedule in advance, and have
+the option to threaten orphaning blocks via softfork later on if
+circumstances would change and the votecap is too large.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150829/a985f3e6/attachment.html>
