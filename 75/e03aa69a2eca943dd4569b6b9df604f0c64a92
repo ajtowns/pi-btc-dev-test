@@ -1,0 +1,347 @@
+From: kristovatlas.lists@gmail.com (Kristov Atlas)
+Date: Sun, 30 Aug 2015 15:45:07 -0400
+Subject: [bitcoin-dev] Open Bitcoin Privacy Protect Privacy
+ Questionnaire, Mid-Year 2015 report
+In-Reply-To: <b0813349d690442d6ef3961748d1c9fb@openbitcoinprivacyproject.org>
+References: <b0813349d690442d6ef3961748d1c9fb@openbitcoinprivacyproject.org>
+Message-ID: <CAGH37SLB2bsSCzC1+u-L6v1bQ305MLvDE2uXHVGCy7y61mE5bQ@mail.gmail.com>
+
+Hi Wei,
+
+As you know, I'm not a developer of Bitcoin-Qt, but we'll need to make our
+best guesses for these answers if the developers won't reply. I'm going to
+post my best guesses here so that people reading the list have a short
+window of opportunity to correct me if they wish.
+
+
+On Fri, Aug 7, 2015 at 2:46 PM, Wei via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+>         Transaction Formatting
+>
+> 1.      Does your application take any steps to create ambiguity between
+> transactions which unavoidably spend from multiple addresses at the same
+> time and intentional mixing transactions?
+>
+
+No, Bitcoin-Qt does not try to make non-mixing transactions look like
+mixing transactions.
+
+
+> 2.      What algorithms does your application use for ordering inputs and
+> outputs in a transaction? In particular, how do you handle the change
+> output and do you take into account common practices of other wallet
+> applications when determining ordering?
+>
+
+Not yet BIP 69. These notes suggest that outputs are randomized:
+https://bitcoin.org/en/release/v0.8.1
+
+
+> 3.      Does your application minimize the harmful effects of address
+> reuse by spending every spendable input (?sweeping?) from an address when a
+> transaction is created?
+>
+
+Unknown
+
+4.      Does your application fully implement BIP 62?
+>
+
+Here's a detailed answer on stack exchange:
+http://bitcoin.stackexchange.com/questions/35904/how-much-of-bip-62-dealing-with-malleability-has-been-implemented
+
+By item, my extremely brief interpretation:
+
+Non-DER encoded ECDSA signatures: BIP66 soft fork has happened, so this is
+presumed to be implemented
+Non-push operations in scriptSig: Implemented
+Push operations in scriptSig of non-standard size type: Implemented in 0.9.0
+Zero-padded number pushes: Implemented in 0.10.0 (current available version
+is 0.11.0)
+Inherent ECDSA signature malleability: ...implemented?
+Superfluous scriptSig operations: implemented 0.6.0
+Inputs ignored by scripts: Only partly addressed by 0.10.0.  It appears
+that the rest would require changes to consensus rules, so Bitcoin-Qt is as
+compliant as it can be.
+Sighash flags based masking and New signatures by the sender: Can't be
+implemented without changes to consensus rules.
+
+I would summarize this as a "yes."
+
+
+>
+> Mixing
+>
+> 5.      If your application supports mixing:
+>
+
+It doesn't. There's an issue for CoinJoin here:
+https://github.com/bitcoin/bitcoin/issues/3226
+
+
+> a.      What is the average number of participants a user can expect to
+> interact with on a typical join transaction?
+> b.      Does your application attempt to construct join transactions in a
+> way that avoids distinguishing them from non-join transactions?
+> c.      Does your application perform any kind of reversibility analysis
+> on join transactions prior to presenting them to the user for confirmation?
+> d.      Is the mixing technique employed secure against correlation
+> attacks by the facilitator, such as a CoinJoin server or off-chain mixing
+> service?
+> e.      Is the mixing technique employed secure against theft of funds by
+> the facilitator or its participants?
+>
+> Donations
+>
+> 6.      If your application has a fee or donation to the developers
+> feature:
+>
+
+No donation feature last time I checked.
+
+
+> a.      What steps do you take to make the donations indistinguishable
+> from regular spend in terms of output sizes and destination addresses?
+>
+> Balance Queries and Tx Broadcasting
+>
+> 7.      Please describe how your application obtains balance information
+> in terms of how queries from the user?s device can reveal a connection
+> between the addresses in their wallet.
+> a.      Does the application keep a complete copy of the blockchain
+> locally (full node)?
+>
+
+Yes
+
+
+> b.      Does the user?s device provide a filter which matches some
+> fraction of the blockchain while providing a false positive rate (bloom or
+> prefix filters)?
+>
+
+No, it just downloads the whole blockchain and performs local queries.
+
+
+> i.      If so, approximately what fraction of the blockchain does the
+> filter match in a default configuration (0% - 100%)?
+>
+
+100%, unless a user bootstraps downloading the blockchain. Bootstrapping
+will potentially limit the user's anonymity set to other people who have
+downloaded that bootstrap.dat file.
+
+
+> c.      Does the user?s device query all of their addresses at the same
+> time?
+>
+
+N/A
+
+
+> d.      Does the user?s device query addresses individually in a manner
+> that does not allow the query responder to correlate queries for different
+> addresses?
+>
+
+No. Just download blocks and processes that information locally.
+
+
+> e.      Can users opt to obtain their balance information via Tor (or
+> equivalent means)?
+>
+
+If Tor is set up as a SOCKS proxy, you can configure Bitcoin-QT download
+the blockchain and broadcast txs through a single Tor circuit. This can be
+configured once before opening Bitcoin-Qt.
+
+8.      Does the applications route outgoing transactions independently
+> from the manner in which it obtains balance information? Can users opt to
+> have their transactions submitted to the Bitcoin network via Tor (or an
+> equivalent means) independently of how they obtain their balance
+> information?
+>
+
+No, you can only configure a single proxy.
+
+
+> 9.      If your application supports multiple identities/wallets, does
+> each one connect to the network as if it were completely independent from
+> the other?
+>
+
+No built-in support for multiple identities. You can hotswap wallet files
+to crudely simulate this. You'd have to manually change the Tor connection
+outside of Bitcoin-Qt to create the effect of making the network
+connections independent.
+
+
+> a.      Does the application ever request balance information for
+> addresses belonging to multiple identities in the same network query?
+>
+
+Blocks are downloaded and tx broadcasts received/relayed rather than
+querying the utxo set for a particular address. When swapping between
+wallet files, some information may be leaked e.g. the client may be at the
+same block height in terms of what it has downloaded from the p2p network,
+which may leak to global passive adversaries/AS's or sybil attackers the
+fact that a single client was used for multiple wallets.
+
+
+> b.      Are outgoing transactions from multiple identities routed
+> independently of each other to the Bitcoin network?
+>
+
+Transactions from multiple identities would not be routed at the same time.
+I'm not clear what happens if you have a single wallet (identity) open and
+then open a new wallet (identity) without closing Bitcoin-Qt -- some of the
+same routing paths may still be used such that an attacker might observe
+transactions broadast signed by private keys from multiple wallets
+(identities) and observe that they appear to come from the same wallet
+client. OBPP should assume the worst unless prevented contrary evidence.
+
+
+> c.      When an identity/wallet is deleted, does the deletion process
+> eliminate all evidence from the user's device that the wallet was
+> previously installed?
+>
+
+Identity is primarily tied to a wallet.dat file. Deleting it will remove
+most of the evidence that the wallet was installed on that device, but
+there may be some extra information in ancillary files that should also be
+deleted.  This is an OS-level function, as there is no operation built into
+the client to delete a wallet file (identity).
+
+
+>         Network Privacy
+>
+> 10.     When a user performs a backup operation for their wallet, does
+> this generate any automatic network activity, such as a web query or email?
+>
+
+No. Backups are local, and no email or SMS is linked. No web queries
+related to backup.
+
+
+> 11.     Does your application perform any lookup external to the user?s
+> device related to identifying transaction senders or recipients?
+>
+
+No
+
+
+> 12.     Does you application connect to known endpoints which would be
+> visible to an ISP, such as your domain?
+>
+
+Yes, some connections to known p2p full nodes to bootstrap the connection
+to the Bitcoin p2p network. This is configurable, but there are defaults.
+An ISP is likely to be able to identify a customer as running the
+Bitcoin-Qt client in particular on this basis.
+
+
+> 13.     If your application connects directly to nodes in the Bitcoin P2P
+> network, does it either use an unremarkable user agent string (Bitcoin
+> Core. BitcoinJ, etc), or randomize its user agent on each connection?
+>
+
+BIP12 specifies format for user agents:
+https://github.com/bitcoin/bips/blob/master/bip-0014.mediawiki
+
+It appears that the Bitcoin-QT leaks specific information about its client
+version through User Agent. This file defines the current client version:
+https://github.com/bitcoin/bitcoin/blob/55294a9fb673ab0a7c99b9c18279fe12a5a07890/src/clientversion.h
+
+Various other files seem to use this to build up the UA string, which is
+transmitted to other peers.
+
+
+>
+>         Physical Access
+>
+> 14.     Does the application uninstall process for your application
+> eliminate all evidence from the user's device that the application was
+> previously installed? Does it also eliminate wallet data?
+>
+
+Probably depends on the platform. Last time I checked, I think Bitcoin-Qt
+leaves behind a .bitcoin directory on most platforms even after you run an
+uninstall script.
+
+
+> 15.     Does your application use techniques such as steganography to
+> store persistent wallet metadata in a form not identifiable as belong to a
+> Bitcoin wallet application?
+>
+
+No
+
+
+> 16.     Please describe the degree to which users can use passwords/PINs
+> to protect their data:
+> a.      Can the user set a password/PIN to protect their private keys?
+>
+
+You can encrypt the wallet file with a password. The wallet is "locked"
+until the password is entered, preventing decryption of the private keys.
+
+
+> b.      Can the user set a password/PIN to protect their public keys and
+> balance information?
+>
+
+No -- any wallet.dat file can be opened and the public keys inspected
+without the password.
+
+
+> c.      Can the user set a password/PIN to encrypt other wallet metadata,
+> such as address books and transaction notes?
+>
+
+No -- any wallet.dat file can be opened and the metadata inspected without
+the password.
+
+
+> d.      Does the application use a single password/PIN to cover all
+> protected data, or does it allow the use of multiple passwords/PINs?
+>
+
+A single password for the wallet file.
+
+
+>
+> Custodianship
+>
+> 17.     Do you as a wallet provider ever have access to unencrypted copies
+> of the user?s private keys, public keys, or any other wallet metadata which
+> may be used to associate a user with their transactions or balances?
+>
+
+No custodianship.
+
+
+>        Telemetry Data
+>
+> 18.     If your application reports telemetry data, such as usage
+> information or automatic crash reporting, does the user have the
+> opportunity to review and approve all information transmitted before it is
+> sent?
+>
+
+No obvious telemetry data being sent.
+
+
+>         Source Code and Building
+>
+> 19.     Can a user of your application compile the application themselves
+> in a manner that produces a binary version identical to the version you
+> distribute (deterministic build system)?
+>
+
+Yes, I think that's the point of the gitian stuff.
+
+-Kristov
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150830/c489ab03/attachment-0001.html>
