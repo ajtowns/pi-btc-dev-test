@@ -1,0 +1,105 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Wed, 2 Sep 2015 01:57:16 +0200
+Subject: [bitcoin-dev] RFC - BIP: URI scheme for Blockchain exploration
+In-Reply-To: <CADJgMzuK6YpLyFQ1BnHuWi4GyoqOgnuaA7T3odukpB=Hh3pTgQ@mail.gmail.com>
+References: <CAE0pACLMcMzHkA=vEx+fiEmq7FA1bXDc4t_hQ+955=r=62V5=g@mail.gmail.com>
+	<CF21152C-15FA-421C-B369-A9A7DB59865F@ricmoo.com>
+	<CADJgMztaJHDrz0+7KLouwZMCz--Za6-2pitmjjYVHG+nJjrG=Q@mail.gmail.com>
+	<2509151.XgrrNGsCxR@crushinator>
+	<CABm2gDpC55dsr4GNAUabgnOeXcNTrgHSAtM7Jqfp0_QUfjXmoQ@mail.gmail.com>
+	<CAJN5wHVdneuRv6Vpf4q3d=mqwu2HkNeJwFhoqPHFiQcatt4RSg@mail.gmail.com>
+	<CADJgMzuK6YpLyFQ1BnHuWi4GyoqOgnuaA7T3odukpB=Hh3pTgQ@mail.gmail.com>
+Message-ID: <CABm2gDrcZM8TH7__ViSgJ0Sr94SP_Yg4L8SLTqtto5JnCq95ow@mail.gmail.com>
+
+On Wed, Sep 2, 2015 at 12:56 AM, Btc Drak <btcdrak at gmail.com> wrote:
+> When I brought up the issue originally, I deliberately steered away
+> from altchains choosing to focus on networks like mainnet, testnet
+> because I think it's easier to repurpose a protocol for an altcoin
+> than it is to make the proposal work for all cases. Take the payment
+> protocol for example. The BIP specifies a URI with bitcoin: well it's
+> just as easy to repurpose that for litecoin: etc than adding something
+> like ?cointype=litecoin, so that was my reason for not mentioning
+> altcoins at all.
+>
+> If the proposal is made to account for altcoins, genesis hash is
+> definitely not desirable, or at least not genesis hash in isolation,
+> and if that's the case, better to have an identifier
+
+I agree. That's why we don't need to account for altchains other than
+testchains (ie sidechains and altcoins).
+
+
+
+> On Sun, Aug 30, 2015 at 3:20 AM, Jorge Tim?n
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>> Some altcoins (LTC and FTC for example) have the same genesis block hash.
+>>
+>> That's obviously a design mistake in FTC, but it's not unsolvable. FTC could
+>> move their genesis block to the next block (or the first one that is not
+>> identical to LTC's).
+>>
+>> Bitcoin and all its test chains have different genesis blocks, so I'm not
+>> sure FTC should be a concern for a BIP anyway...
+>
+> That's a very sweeping generalisation indeed. Why should two chains
+> have to have a separate genesis? It's cleaner, but it's certainly not
+> a necessity. You cant exclude this case just because it doesn't fit
+> your concept of neat and tidy. Other BIP proposals that account for
+> alternative chains do not rely on the genesis hash, but instead an
+> identifier. Why should it be any different here?
+
+On Wed, Sep 2, 2015 at 12:59 AM, Btc Drak <btcdrak at gmail.com> wrote:
+> The only sane way to me see to have cointype like BIP44.
+> See https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki#coin-type
+
+We can do it the right way from now on (and as you say altcoins can
+trivially adapt to this).
+Sorry for having missed bip44 for review but that section is horrible
+in my opinion (see the links above). And it seems to be incompatible
+with bip001 which says are immutable once accepted (assuming that
+document is expected to be the central registry of registered chains).
+
+> How would you account
+> for a world with XTCoin and Bitcoin which would also share the same
+> genesis hash, but clearly not be the same coin.
+
+Schism hardforks are explicitly renouncing to reach consensus with all
+previous users. You're intentionally divorcing 2 chains, and you can
+do that without confusing users.
+In BIP99 the recommended deployment path for a schism fork is to
+simply use the nHeight for activation.
+The 95% miner's upgrade confirmation is not used here (like in
+uncontroversial hardforks and softforks) because you don't necessarily
+expect all miners to move to your side of the schism (and you don't
+want to wait for them, specially if it's an "anti-miner" hardfork).
+To avoid confusing users, you can define a new "genesis block" to use
+for the chain ID, for example, 1000 blocks before the activation
+height.
+The same applies for potentially pre-mined altcoins that haven't had
+the decency/competency of even changing the string in pszTimestamp.
+For example, FTC, coins generated with coingen (Matt Corallo or the
+current owner may want to correct me on this point) or elements alpha
+(https://github.com/ElementsProject/elements/blob/alpha/src/chainparams.cpp#L115).
+Fortunately alpha has a unique chain ID because it was changing both
+the block and transaction serialization formats anyway. But hopefully
+we will fix that for beta and later sidechains.
+All chains that want a unique chain ID can have it retroactively. At
+worst, they may need to use the hash of a block that is not the
+genesis block.
+In other words, they may need to move their "genesis checkpoint" upwards.
+Terminology may make things more clear. We can replace:
+
+"The chain ID is the hash of the genesis block"
+
+with
+
+"The chain ID is the hash of the genesis checkpoint".
+
+If we want a unique chain ID we can have it: it just cannot be
+memorable at the same time.
+And each chain and implementation can start using them (in addition to
+petname -> chain ID local dictionaries) at any point in time: this is
+retroactively (and obviously forwards) compatible.
+There can be many competing registries for the name -> chainID
+dictionaries (maybe one of them based on namecoin?) but bitcoin/bips
+shouldn't maintain one.
