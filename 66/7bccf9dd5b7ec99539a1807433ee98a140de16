@@ -1,0 +1,158 @@
+From: jgarzik@gmail.com (Jeff Garzik)
+Date: Thu, 3 Sep 2015 10:34:02 -0400
+Subject: [bitcoin-dev] BIP 100 specification
+In-Reply-To: <CADJgMzuWNNvMf6f9N0h0swAUATyAm4Y9Qu+ya33cEA1WB++sRg@mail.gmail.com>
+References: <CADm_WcZyK6LUcuKqSEuR-q0hTZOC3EdJsqY1HrS_ow0knDY=7A@mail.gmail.com>
+	<e54e93e519d776262f9c0f4ae23f54fb@xbt.hk>
+	<CADJgMzuWNNvMf6f9N0h0swAUATyAm4Y9Qu+ya33cEA1WB++sRg@mail.gmail.com>
+Message-ID: <CADm_WcbVRQMFHU0pS7hi99=Ey3Pu3t6pViaPG-KpHF40w69N6A@mail.gmail.com>
+
+A discussion of rolling out BIP 100 will not be avoided :)
+
+It is a hard fork; it would be silly to elide discussion of these key
+issues.
+
+I don't get the community's recent interest in avoiding certain topics.
+
+
+
+On Thu, Sep 3, 2015 at 7:20 AM, Btc Drak <btcdrak at gmail.com> wrote:
+
+> We should avoid discussing actual hard fork/softfork deployment
+> methodologies when discussing blocksize proposals because deployment
+> is a separate issue. As a recent case in point, look at how BIP65
+> (CHECKLOCKTIMEVERIFY) specifically avoided the issue of how to deploy.
+> That lead to a focused discussion of the functionality and relatively
+> quick inclusion.
+>
+> Deployment really is a separate issue than the mechanics of how BIP100
+> will function after activation.
+>
+> On Thu, Sep 3, 2015 at 8:57 AM, jl2012 via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > Some comments:
+> >
+> > The 75% rule is meaningless here. Since this is a pure relaxation of
+> rules,
+> > there is no such thing as "invalid version 4 blocks"
+> >
+> > The implication threshold is unclear. Is it 95% or 80%?
+> >
+> > Softfork requires a very high threshold (95%) to "attack" the original
+> fork.
+> > This makes sure that unupgraded client will only see the new fork.
+> > In the case of hardfork, however, the new fork is unable to attack the
+> > original fork, and unupgraded client will never see the new fork. The
+> > initiation of a hardfork should be based on its acceptance by the
+> economic
+> > majority, not miner support. 95% is an overkill and may probably never
+> > accomplished. I strongly prefer a 80% threshold rather than 95%.
+> >
+> > As I've pointed out, using 20-percentile rather than median creates an
+> > incentive to 51% attack the uncooperative minority.
+> >
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-August/010690.html
+> >
+> > Having said that, I don't have a strong feeling about the use of
+> > 20-percentile as threshold to increase the block size. That means the
+> block
+> > size is increased only when most miners agree, which sounds ok to me.
+> >
+> > However, using 20-percentile as threshold to DECREASE the block size
+> could
+> > be very dangerous. Consider that the block size has been stable at 8MB
+> for a
+> > few years. Everyone are happy with that. An attacker would just need to
+> > acquire 21% of mining power to break the status quo and send us all the
+> way
+> > to 1MB. The only way to stop such attempt is to 51% attack the attacker.
+> > That'd be really ugly.
+> >
+> > For technical and ethical reasons, I believe the thresholds for increase
+> and
+> > decrease must be symmetrical: increase the block size when the
+> x-percentile
+> > is bigger than the current size, decrease the block size when the
+> > (100-x)-percentile is smaller than the current size. The overall effect
+> is:
+> > the block size remains unchanged unless 80% of miners agree to.
+> >
+> > Please consider the use of "hardfork bit" to signify the hardfork:
+> >
+> >
+> https://www.reddit.com/r/bitcoin_devlist/comments/3ekhg2/bip_draft_hardfork_bit_jl2012_at_xbthk_jul_23_2015/
+> >
+> > https://github.com/jl2012/bips/blob/master/hardforkbit.mediawiki
+> >
+> > Or, alternatively, please combine the hardfork with a softfork. I'm
+> > rewriting the specification as follow (changes underlined):
+> >
+> > Replace static 1M block size hard limit with a floating limit
+> ("hardLimit").
+> >
+> > hardLimit floats within the range 1-32M, inclusive.
+> >
+> > Initial value of hardLimit is 1M, preserving current system.
+> >
+> > Changing hardLimit is accomplished by encoding a proposed value within a
+> > block's coinbase scriptSig.
+> >
+> > Votes refer to a byte value, encoded within the pattern "/BV\d+/"
+> Example:
+> > /BV8000000/ votes for 8,000,000 byte hardLimit. If there is more than one
+> > match with with pattern, the first match is counted.
+> > Absent/invalid votes and votes below minimum cap (1M) are counted as 1M
+> > votes. Votes above the maximum cap (32M) are counted as 32M votes.
+> > A new hardLimit is calculated at each difficult adjustment period (2016
+> > blocks), and applies to the next 2016 blocks.
+> > Calculate hardLimit by examining the coinbase scriptSig votes of the
+> > previous 12,000 blocks, and taking the 20th percentile and 80th
+> percentile.
+> > New hardLimit is the median of the followings:
+> >
+> > min(current hardLimit * 1.2, 20-percentile)
+> > max(current hardLimit / 1.2, 80-percentile)
+> > current hardLimit
+> >
+> > version 4 block: the coinbase of a version 4 block must match this
+> pattern:
+> > "/BV\d+/"
+> > 70% rule: If 8,400 of the last 12,000 blocks are version 4 or greater,
+> > reject invalid version 4 blocks. (testnet4: 501 of last 1000)
+> > 80% rule ("Point of no return"): If 9,600 of the last 12,000 blocks are
+> > version 4 or greater, reject all version <= 3 blocks. (testnet4: 750 of
+> last
+> > 1000)
+> > Block version number is calculated after masking out high 16 bits (final
+> bit
+> > count TBD by versionBits outcome).
+> >
+> > Jeff Garzik via bitcoin-dev ? 2015-09-02 23:33 ??:
+> >> BIP 100 initial public draft:
+> >> https://github.com/jgarzik/bip100/blob/master/bip-0100.mediawiki [1]
+> >>
+> >> Emphasis on "initial"  This is a starting point for the usual open
+> >> source feedback/iteration cycle, not an endpoint that Must Be This
+> >> Way.
+> >>
+> >>
+> >>
+> >> Links:
+> >> ------
+> >> [1] https://github.com/jgarzik/bip100/blob/master/bip-0100.mediawiki
+> >>
+> >> _______________________________________________
+> >> bitcoin-dev mailing list
+> >> bitcoin-dev at lists.linuxfoundation.org
+> >> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >
+> >
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150903/43c07e6d/attachment-0001.html>
