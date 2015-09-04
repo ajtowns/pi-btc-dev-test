@@ -1,0 +1,120 @@
+From: theandychase@gmail.com (Andy Chase)
+Date: Fri, 4 Sep 2015 00:53:48 -0700
+Subject: [bitcoin-dev] BIP 100 specification
+In-Reply-To: <CAE-z3OVd6+ncvJBwusSbcMTG6xaRxsboH3ru_zQXpbu2wW_Zng@mail.gmail.com>
+References: <CADm_WcZyK6LUcuKqSEuR-q0hTZOC3EdJsqY1HrS_ow0knDY=7A@mail.gmail.com>
+	<e54e93e519d776262f9c0f4ae23f54fb@xbt.hk>
+	<CAE-z3OVd6+ncvJBwusSbcMTG6xaRxsboH3ru_zQXpbu2wW_Zng@mail.gmail.com>
+Message-ID: <CAAxp-m93s5qDrs+1OHeSog+9=HV=XKs14Vs3jf4RdqSR9tA8xQ@mail.gmail.com>
+
+The 32Mb limit is here:
+https://github.com/bitcoin/bitcoin/blob/master/src/serialize.h#L25
+
+It's to keep the message size small enough that messages can be serialized
+in memory.
+
+Jeff if you decide to lift the 32MB limit (you really should, unless your
+plan is to potentially hard force another Blocksize discussion again which
+might be okay). I suggest having the 32MB ceiling auto-raise according to a
+exponential factor (1.5?) starting 1 year from now.
+
+Basically hard limit ceiling 2016-2017: 32 MB
+Hard limit ceiling 2018+: 32*((currentYear-2018)*1.5) MB
+
+The factor could be 2 like BIP-101 but I imagine you will want to be more
+conservative. The delay time could also be longer if you think it will take
+longer to fix the message size issue across all implementations.
+
+
+On Thu, Sep 3, 2015 at 4:59 AM, Tier Nolan via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+>
+>
+> On Thu, Sep 3, 2015 at 8:57 AM, jl2012 via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>>
+>>    1.
+>>
+>>    hardLimit floats within the range 1-32M, inclusive.
+>>
+>>
+>>
+> Does the 32MB limit actually still exist anywhere in the code?  In effect,
+> it is re-instating a legacy limitation.
+>
+> The message size limit is to minimize the storage required per peer.  If a
+> 32MB block size is required, then each network input buffer must be at
+> least 32MB. This makes it harder for a node to support a large number of
+> peers.
+>
+> There is no reason why a single message is used for each block.  Using the
+> merkleblock message (or a different dedicated message), it would be
+> possible to send messages which only contain part of a block and have a
+> limited maximum size.
+>
+> This would allow receiving parts of a block from multiple sources.
+>
+> This is a separate issue but should be considered if moving past 32MB
+> block sizes (or maybe as a later protocol change).
+>
+>
+>>
+>>    1. Changing hardLimit is accomplished by encoding a proposed value
+>>    within a block's coinbase scriptSig.
+>>       1. Votes refer to a byte value, encoded within the pattern
+>>       "/BV\d+/" Example: /BV8000000/ votes for 8,000,000 byte hardLimit. If
+>>       there is more than one match with with pattern, the first match is counted.
+>>
+>> Is there a need for byte resolution?  Using MB resolution would use up
+> much fewer bytes in the coinbase.
+>
+> Even with the +/- 20% rule, miners could vote for the nearest MB.  Once
+> the block size exceeds 5MB, then there is enough resolution anyway.
+>
+>
+>>    1. Absent/invalid votes and votes below minimum cap (1M) are counted
+>>       as 1M votes. Votes above the maximum cap (32M) are counted as 32M votes.
+>>
+>>
+> I think abstains should count for the status quo.  Votes which are out of
+> range should be clamped.
+>
+> Having said that, if core supports the change, then most miners will
+> probably vote one way or another.
+>
+> > New hardLimit is the median of the followings:
+> > min(current hardLimit * 1.2, 20-percentile)
+> > max(current hardLimit / 1.2, 80-percentile)
+> > current hardLimit
+>
+> I think this is unclear, though mathematically exact.
+>
+> Sort the votes for the last 12,000 blocks from lowest to highest.
+>
+> Blocks which don't have a vote are considered a vote for the status quo.
+>
+> Votes are limited to +/- 20% of the current value.  Votes that are out of
+> range are considered to vote for the nearest in range value.
+>
+> The raise value is defined as the vote for the 2400th highest block (20th
+> percentile).
+> The lower value  is defined as the vote for the 9600th highest block (80th
+> percentile).
+>
+> If the raise value is higher than the status quo, then the new limit is
+> set to the raise value.
+> If the lower value is lower than the status quo, then the new limit is set
+> to the lower value.
+> Otherwise, the size limit is unchanged.
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150904/7a2ee899/attachment.html>
