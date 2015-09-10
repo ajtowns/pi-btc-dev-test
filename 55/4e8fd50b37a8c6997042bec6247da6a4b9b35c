@@ -1,0 +1,277 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Thu, 10 Sep 2015 18:48:42 +0100
+Subject: [bitcoin-dev] Bitcoin threat modelling thread
+In-Reply-To: <CALqxMTEbRPsDLm=YkkEZWND6PnnWhS7DF5JNJdOF_AhsUPW1Ww@mail.gmail.com>
+References: <CALqxMTEbRPsDLm=YkkEZWND6PnnWhS7DF5JNJdOF_AhsUPW1Ww@mail.gmail.com>
+Message-ID: <CALqxMTE-+YdjXCqmecsS5gOQ-zXCQq3qh_27wry1CHhWHj_Omw@mail.gmail.com>
+
+Hi
+
+Came across this
+https://groups.google.com/forum/m/#!topic/bitcoin-xt/zbPwfDf7UoQ useful
+thread discussing Bitcoin threat modelling may reach wider audience on this
+list.
+
+Text from Mike Hearn:
+
+ think the next stage is to build a threat model for Bitcoin.
+
+This mail starts with background. If you already know what a threat model
+is you can skip to the last section where I propose a first draft, as the
+starting point for discussion.
+
+
+An intro to threat modelling
+
+In security engineering, a threat model
+<https://en.wikipedia.org/wiki/Threat_model> is a document that informally
+specifies:
+
+Which adversaries (enemies) do you care about?What can they do?Why do they
+want to attack you?As a result: what threats do they pose?How do you
+prioritise these threats?
+
+Establishing a threat model is an important part of any security
+engineering project. In the early days of secure computing, threat
+modelling hadn't been invented and as a result projects frequently hit the
+following problem:
+
+Every threat looked equally serious, so it became impossible to prioritise
+
+Almost anything could become a threat, if you squinted right
+
+So usability, performance, code maintainability etc were sacrificed over
+and over to try and defend against absurd or very unlikely threats just
+because someone identified one, in an endless race
+
+The resulting product sucked and nobody used it, thus protecting people
+from no threats at all
+
+PGP is a good example of this problem in action.
+
+Making good threat models isn't easy (see The Economist article,New Threat
+Model Army
+<http://www.economist.com/blogs/babbage/2013/11/internet-after-snowden>).
+It can be controversial, because a threat model involves accepting that you
+can't win all the time - there will exist adversaries that you
+realistically cannot beat. Writing them down and not worrying about them
+anymore liberates you to focus on other threats you might do a better job
+at, or to work on usability, or features, or other things that users might
+actually care about more.
+
+You can make your threat model too weak, so it doesn't encompass real
+threats your users are likely to encounter. But a much more common problem
+is making the model too strong: including *too many* different kinds of
+threats. Strangely, this can make your product *less* secure rather than
+more.
+
+One reason is that with too many threats in your model, you can lose your
+ability to prioritise: every threat seems equally important even if perhaps
+really they aren't, and then you can waste time solving "threats" that are
+absurd or incredibly unlikely.
+
+Even worse, once people add things in to a threat model they hate taking
+them out, because it'd imply that previous efforts were wasted.
+
+The Tor threat model
+
+A good example of this is Tor. As you my know I have kind of a love/hate
+relationship with Tor. It's a useful thing, but I often feel they could do
+things differently.
+
+The <https://www.torproject.org/about/overview.html.en#stayinganonymous>Tor
+<https://www.torproject.org/about/overview.html.en#stayinganonymous>
+project
+<https://www.torproject.org/about/overview.html.en#stayinganonymous>*does
+<https://www.torproject.org/about/overview.html.en#stayinganonymous>* have
+a threat model
+<https://www.torproject.org/about/overview.html.en#stayinganonymous>, and
+it is a very strong one. Tor tries to protect you against adversaries that
+care about very small leaks of application level data, like a browser
+reporting your screen size, because it sees its mission as making all
+traffic look identical, rather than just hiding your IP address. As a
+consequence of this threat model Tor is meant to be used with apps that are
+specifically "Torified", like their Tor Browser which is based on Firefox.
+If a user takes the obvious approach of just downloading and running the
+Tor Browser Bundle, their iTunes traffic won't be anonymised. The rationale
+is it's useless to route traffic of random apps via Tor because even if
+that hides the IP address, the apps might leak private data anyway as they
+weren't designed for it.
+
+This threat model has a couple of consequences:
+
+It's extremely easy to think you're hiding your IP address when in fact you
+aren't, due to using or accidentally running non-Torified apps.
+
+The Tor Browser is based on Firefox. When Chrome came along it had a
+clearly superior security architecture, because it was sandboxed, but the
+Tor project had made a big investment in customising Firefox to anonymise
+things like screen sizes. They didn't want to redo all that work.
+
+The end result of this is that Tor's adversaries discovered they could just
+break Tor completely by hacking the web browser, as Firefox is the least
+secure browser and yet it's the one the Tor project recommends. The Snowden
+files contain a bunch of references to this.
+
+Interestingly, the Tor threat model explicitly *excludes* the NSA because
+it can observe the whole network (it is the so-called "global passive
+adversary"). Tor does this because they want to support low latency web
+browsing, and nobody knows how to do that fast enough when your adversary
+can watch the traffic between all Tor nodes. So they just exclude such
+enemies from their threat model and that is why Tor is possible.
+
+But even more interestingly, it turned out that their threat model
+assumptions weren't quite correct. The NSA/GCHQ should, in theory, be able
+to totally deanonymise Tor. But in practice they can't. When the time
+finally came the 5 Eyes agencies attacked Tor by hacking the web browser,
+not by exploiting their global observation abilities.
+
+Tor has competitors - the commercial VPN providers. They have a rather
+different threat model, where they explicitly don't care about application
+level attacks like web sites looking at your screen size. They *only* care
+about hiding your IP address. As a result their products work for every
+app, and users can easily use Chrome or any other secure web browser.
+Additionally they only add one hop of latency because the VPN provider does
+not include itself in the threat model.
+
+This solves for a different set of adversaries, but for many users it's
+actually a more appropriate set and as a result VPNs are vastly more
+popular than Tor is.
+
+So to recap, we should build a threat model for Bitcoin because:
+
+We have limited manpower and therefore must prioritise, sometimes brutally
+
+Without a model anything can be a threat, so changes that are obvious or
+look like technical no-brainers can get shot down due to the risk of absurd
+or ridiculous attacks. This happens in Bitcoin Core *a lot*.
+
+It will bring more formality and rigour to our thinking about security.
+
+
+
+Proposed model
+
+This is *a suggestion only*. I expect vigorous debate and for some people
+to want a different (probably stronger) model. Models are just documents so
+they can always be tweaked later, there's no need for v1 to be perfect.
+
+OK. Adversaries I think we should care about in version 1, in priority
+order:
+
+Rational individuals and small groups, motivated by profit.
+
+The "global passive adversary" as defined by the
+<https://tools.ietf.org/html/rfc7624>IETF
+<https://tools.ietf.org/html/rfc7624>, motivated by a desire to map Bitcoin
+transactions to people in bulk.
+
+And that's it.
+
+*The GPA*
+
+The "global passive adversary" can mean intelligence agencies *but only
+sometimes*. Specifically, it assumes they only watch and they don't
+actively interfere. This assumption is of course not entirely valid - IAs
+do sometimes engage in active attacks. My suggested threat model doesn't
+include that activity because (1) it's hard to do anything about it and (2)
+they much prefer to stay stealthy anyway.
+
+Of course, in the Bitcoin system, there may be other GPAs. Anyone who
+watches the block chain can potentially be such an adversary. Note the
+careful wording: you have to be doing deanonymization *in bulk* to be an
+in-scope adversary. This is to avoid including block explorers that have
+notes features, people who build lists of well known addresses etc. We
+can't stop people doing that: it's up to Bitcoin users to avoid telling the
+world which transactions are theirs. It also excludes exchanges that are
+trying to monitor transactions going in and out of their platform for
+compliance purposes: they are not attempting to do this for the entire
+system, therefore, they are not adversaries in this threat model.
+
+*Individuals and small groups*
+
+They are assumed to have hacking skills that are considered good by the
+standards of ordinary hackers - they are not script kiddies. However they
+are also not state-level hackers: they do not have an endless bag of zero
+days that can exploit any imaginable device.
+
+These attackers are motivated by profit. An attack that yields only
+worthless pieces of data is not interesting to these adversaries: they want
+to monetise. Attacks that involve some incredibly convoluted process to
+turn data into money is also uninteresting: we assume a level of
+rationality that means they'll ignore attacks with very poor effort/reward
+ratios.
+
+*Examples*
+
+Here are some examples of attackers that would be in-scope for this threat
+model:
+
+? A hacker who is attempting to steal the contents of your Bitcoin wallet
+
+? A mugger at a conference who is trying to identify rich targets to beat up
+
+? A business owner who is attempting to discover the revenue of his
+competitor
+
+? A government attempting to build a map of every Bitcoin transaction to
+people
+
+? Someone attempting to profit off a quick market panic by short selling
+BTC and then DoSing the network
+
+.... and would not be in scope .....
+
+? An actor who learns IP addresses of people using Bitcoin (reason: not
+profitable, mere fact of use is not enough to build a GPA map)
+
+? A short seller who needs to successfully root a specific, well run server
+to cause problems (reason: without zero days it's hard to attack a fully
+patched and locked down machine)
+
+? A bitcoin exchange that demands proof of where your money came from
+(reason: not global adversary)
+
+? A government who wants to shut down Bitcoin globally (reason: active
+state adversary, can't realistically stop this as they can always mine a
+bogus chain)
+
+? A government who wants to shut down Bitcoin in their own territory
+(reason: active state adversary, can just find and arrest anyone
+advertising BTC acceptance)
+
+? A developer who wants to turn the block chain into a file sharing network
+(reason: not rational, the resulting product would be terrible)
+
+? A random individual learning the balance of wallets on random IP
+addresses (reason: can't monetise with any reasonable effort)
+
+.... and could be argued either way .....
+
+? A developer who wants to use the block chain for timestamping lots of
+data (can be seen as "motivated by profit", OTOH, actual threat is pretty
+low)
+
+? A miner who constantly tries to mine zero sized blocks or constantly
+double spends against high profile merchants (can be seen as "motivated by
+profit" but also not rational behaviour as it'd tank the price of BTC)
+
+Obviously this stuff is subjective. We can argue about what "rational"
+means for miners, for instance.
+
+The goal of the model is not to be 100% accurate or a perfect prediction of
+the future. It's just there to help people prioritise development efforts.
+Should I work on *this* new feature or addressing *that* threat? A threat
+model can help you decide whether it's worth it. People can still choose to
+work on threats that are outside of this model if they want to, and we can
+also choose to ignore threats that might be inside it, if the cost/benefit
+ratio is really bad.
+
+The exclusion of many types of government adversary might be controversial.
+It's for practical reasons: governments have lots of very effective ways to
+interfere with Bitcoin that we can't do anything about, like bank
+blockades, and so far most of them seem to be taking a wait-and-see stance
+anyway.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150910/76e85360/attachment-0001.html>
