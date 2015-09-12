@@ -1,0 +1,46 @@
+From: me@ricmoo.com (Richard Moore)
+Date: Sat, 12 Sep 2015 01:38:53 -0400
+Subject: [bitcoin-dev] Stealth Address Idea (special-less)
+Message-ID: <71A8E490-14C5-49F1-8E08-75C0A754B5BB@ricmoo.com>
+
+Hey all,
+
+I am throwing out an idea I?ve been toying with, for feedback and if it seems like an idea worth pursuing, possibly a BIP number.
+
+The goal is to make straight forward stealth address that are SPV friendly and easy to support in software without too much special goop.
+
+I?ve got working code at https://github.com/ricmoo/sandbox/tree/master/stealth, and here are some example transactions on the block chain:
+
+Target Public Key: 029ed06e396761c24416cf7323ed4f1cb29763ee9e2b0fccae347d6a2a3eaecbf5
+Target Public Key [tentative] Encoding (this is what you would give away): 59KkSZsVE7vErdqo8m5gtNoez44CbdwJQ5cSM1AAARzN19vkJ6NU
+
+Revocable Payment made: b4ad20cad4cc2fcbbec09bc071dfe8c4a4b1e8e57d1e56bf51947445cfc6c7af
+Irrevocable Payment made: f600643a1d32152117be0d9c652a86dc6182d2dab3be53340739395f524cd95c
+Cleared out all funds from stealth address: 58eb0fdab108c7add74835466251ffe5c51c7f4cec149f06daf0435d43d9ce55
+
+
+Idea overview:
+
+There are 2 modes of operation, revocable and irrevocable payments. Revocable payments result in both parties knowing the private key, allowing for a certain level of plausible deniability when the funds are swept, as to whether the funds were actually sent or were revoked? You could imagine WikiLeaks stating they will not claim donations for 1-3 months after receiving them; if the funds are claimed after 1.5 months, did the sender actually send funds? The other option is irrevocable, where only the receiver can claim the funds (allowing them to leave them in that address until they need to be spent).
+
+The basic idea is (the above code above gets into the nitty gritty), to send to targetPublicKey:
+Given the UTXO set of inputs into a transaction, choose one at random, senderUtxo
+Use ECDH(targetPublicKey, senderUtxo.privateKey) as sharedSecret
+For revocable payments, you are done; use sharedSecret as your privateKey, compute the address
+For irrevocable payments, create a sharedPrivateKey from the bytes of sharedSecret, use ECC addition (or would multiplication make more sense? advantages?) on the public key of sharedPrivateKey and the targetPublicKey. The receiver can then use ECC addition (or multiplication) on the sharedPrivateKey and the targetPrivateKey to generate the coresponding privateKey.
+
+The SPV-able part, is lightly discussed in the top of stealth.js, but I haven?t played with bloom filters enough and the idea is still all too fresh in my head; the general idea is to make a 1-of-2 multisig where the first is the resulting stealth address, and the second is something (anything) that looks like a valid public key, but will match a bloom filter (given a tweak that is generated deterministically from the targetPublicKey) and matches the targetPublicKey. Again, I need much more feedback on this.
+
+Thanks,
+RicMoo
+
+.???`?.??.???`?.??.???`?.??.???`?.??.???`?.?><(((?>
+
+Richard Moore ~ Founder
+Genetic Mistakes Software inc.
+phone: (778) 882-6125
+email: ricmoo at geneticmistakes.com <mailto:ricmoo at geneticmistakes.com>
+www: http://GeneticMistakes.com <http://geneticmistakes.com/>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150912/385fc6f2/attachment.html>
