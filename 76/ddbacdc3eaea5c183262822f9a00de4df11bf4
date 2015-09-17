@@ -1,0 +1,143 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Thu, 17 Sep 2015 00:23:41 -0400
+Subject: [bitcoin-dev] [BIP-draft] CHECKSEQUENCEVERIFY - An opcode for
+ relative locktime
+In-Reply-To: <4E3B7469-1018-4649-8DF1-6597F82774F1@gmail.com>
+References: <CADJgMztgE_GkbrsP7zCEHNPA3P6T=aSFfhkcN-q=gVhWP0vKXg@mail.gmail.com>
+	<CADJgMzv8G3EqLBwEYRHJZ+fO_Jwzy0koi2pJ_iNRkXmoVarGcg@mail.gmail.com>
+	<CABm2gDod9z6ksgaCv86qFCyKLTQSL3+oNns+__5H77hVhs05DQ@mail.gmail.com>
+	<CAOG=w-sbOcaogkic2i4A5eZnBQ79LUibsGy0dyKyvQg53ktY1Q@mail.gmail.com>
+	<55DA6470.9040301@thinlink.com>
+	<CAAS2fgQKQpHu-nC1uSrigDx2JLUt64p-LqidVmiuULDE0MJCFQ@mail.gmail.com>
+	<CABm2gDqW7OGuyZ1BTTeeivDf9wFVsAK9AaGYm8XWwLb2O2Lb+g@mail.gmail.com>
+	<CAOG=w-ubk3nPfxy25Hd6kPeehf7vnYD5chksLWU5wU2t=jL5TA@mail.gmail.com>
+	<CAOG=w-to4Vrx4ykKJTy5EAyN4GZd6Q=G5FzqZH-5J3Thz_VNpQ@mail.gmail.com>
+	<CAOG=w-tuFtX2t+0FVfkoObw_a9-7j4LwX87YJU1n7adYu=DMdQ@mail.gmail.com>
+	<CADJgMzsPrg7VhTQC8aCvcQ3yAN8rtt+Qv_yfrCKMqOALpGPVyg@mail.gmail.com>
+	<4E3B7469-1018-4649-8DF1-6597F82774F1@gmail.com>
+Message-ID: <CAOG=w-u2b9BTNyAxdzEnOxazr1Gc_Yrf5CxCfrjeJi39NV=cgQ@mail.gmail.com>
+
+Eric, that would be, I think, my sequencenumbers2 branch in which nSequence
+is an explicit relative lock-time field (unless the most significant bit is
+set). That has absolutely clear semantics. You should comment on #6312
+where this is being discussed.
+
+On Wed, Sep 16, 2015 at 7:23 PM, Eric Lombrozo <elombrozo at gmail.com> wrote:
+
+> I'd rather replace the whole nSequence thing with an explicit relative
+> locktime with clear semantics...but I'm not going to fight this one too
+> much.
+>
+>
+> On September 16, 2015 6:40:06 PM EDT, Btc Drak via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>
+>> Where do we stand now on which sequencenumbers variation to use? We
+>> really should make a decision now.
+>>
+>> On Fri, Aug 28, 2015 at 12:32 AM, Mark Friedenbach via bitcoin-dev <
+>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>
+>>> So I've created 2 new repositories with changed rules regarding
+>>> sequencenumbers:
+>>>
+>>> https://github.com/maaku/bitcoin/tree/sequencenumbers2
+>>>
+>>> This repository inverts (un-inverts?) the sequence number. nSequence=1
+>>> means 1 block relative lock-height. nSequence=LOCKTIME_THRESHOLD means 1
+>>> second relative lock-height. nSequence>=0x80000000 (most significant bit
+>>> set) is not interpreted as a relative lock-time.
+>>>
+>>> https://github.com/maaku/bitcoin/tree/sequencenumbers3
+>>>
+>>> This repository not only inverts the sequence number, but also
+>>> interprets it as a fixed-point number. This allows up to 5 year relative
+>>> lock times using blocks as units, and saves 12 low-order bits for future
+>>> use. Or, up to about 2 year relative lock times using seconds as units, and
+>>> saves 4 bits for future use without second-level granularity. More bits
+>>> could be recovered from time-based locktimes by choosing a higher
+>>> granularity (a soft-fork change if done correctly).
+>>>
+>>> On Tue, Aug 25, 2015 at 3:08 PM, Mark Friedenbach <mark at friedenbach.org>
+>>> wrote:
+>>>
+>>>> To follow up on this, let's say that you want to be able to have up to
+>>>> 1 year relative lock-times. This choice is somewhat arbitrary and what I
+>>>> would like some input on, but I'll come back to this point.
+>>>>
+>>>>  * 1 bit is necessary to enable/disable relative lock-time.
+>>>>
+>>>>  * 1 bit is necessary to indicate whether seconds vs blocks as the unit
+>>>> of measurement.
+>>>>
+>>>>  * 1 year of time with 1-second granularity requires 25 bits. However
+>>>> since blocks occur at approximately 10 minute intervals on average, having
+>>>> a relative lock-time significantly less than this interval doesn't make
+>>>> much sense. A granularity of 256 seconds would be greater than the Nyquist
+>>>> frequency and requires only 17 bits.
+>>>>
+>>>>  * 1 year of blocks with 1-block granularity requires 16 bits.
+>>>>
+>>>> So time-based relative lock time requires about 19 bits, and
+>>>> block-based relative lock-time requires about 18 bits. That leaves 13 or 14
+>>>> bits for other uses.
+>>>>
+>>>> Assuming a maximum of 1-year relative lock-times. But what is an
+>>>> appropriate maximum to choose? The use cases I have considered have only
+>>>> had lock times on the order of a few days to a month or so. However I would
+>>>> feel uncomfortable going less than a year for a hard maximum, and am having
+>>>> trouble thinking of any use case that would require more than a year of
+>>>> lock-time. Can anyone else think of a use case that requires >1yr relative
+>>>> lock-time?
+>>>>
+>>>> TL;DR
+>>>>
+>>>> On Sun, Aug 23, 2015 at 7:37 PM, Mark Friedenbach <mark at friedenbach.org
+>>>> > wrote:
+>>>>
+>>>>> A power of 2 would be far more efficient here. The key question is how
+>>>>> long of a relative block time do you need? Figure out what the maximum
+>>>>> should be ( I don't know what that would be, any ideas?) and then see how
+>>>>> many bits you have left over.
+>>>>> On Aug 23, 2015 7:23 PM, "Jorge Tim?n" <
+>>>>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>>>>
+>>>>>> On Mon, Aug 24, 2015 at 3:01 AM, Gregory Maxwell via bitcoin-dev
+>>>>>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>>>>> > Seperately, to Mark and Btcdrank: Adding an extra wrinkel to the
+>>>>>> > discussion has any thought been given to represent one block with
+>>>>>> more
+>>>>>> > than one increment?  This would leave additional space for future
+>>>>>> > signaling, or allow, for example, higher resolution numbers for a
+>>>>>> > sharechain commitement.
+>>>>>>
+>>>>>> No, I don't think anybody thought about this. I just explained this to
+>>>>>> Pieter using "for example, 10 instead of 1".
+>>>>>> He suggested 600 increments so that it is more similar to timestamps.
+>>>>>> _______________________________________________
+>>>>>> bitcoin-dev mailing list
+>>>>>> bitcoin-dev at lists.linuxfoundation.org
+>>>>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>>>>
+>>>>>
+>>>>
+>>>
+>>> _______________________________________________
+>>> bitcoin-dev mailing list
+>>> bitcoin-dev at lists.linuxfoundation.org
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>
+>>>
+>> ------------------------------
+>>
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>>
+> --
+> Sent from my Android device with K-9 Mail. Please excuse my brevity.
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150917/2a787e07/attachment-0001.html>
