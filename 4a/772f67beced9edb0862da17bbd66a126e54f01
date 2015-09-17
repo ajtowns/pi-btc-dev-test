@@ -1,0 +1,137 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Thu, 17 Sep 2015 15:07:34 -0400
+Subject: [bitcoin-dev] Fill-or-kill transaction
+In-Reply-To: <a50b82c156c805a284386d80a42cc926@xbt.hk>
+References: <a50b82c156c805a284386d80a42cc926@xbt.hk>
+Message-ID: <CAOG=w-vGqsAcw5vdY8SaGVe4Q6XX1J=GCsZftWgjES_N_5c2pA@mail.gmail.com>
+
+Note that this violates present assumptions about transaction validity,
+unless a constraint also exists that any output of such an expiry block is
+not spent for at least 100 blocks.
+
+Do you have a clean way of ensuring this?
+
+On Thu, Sep 17, 2015 at 2:41 PM, jl2012 via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Fill-or-kill tx is not a new idea and is discussed in the Scaling Bitcoin
+> workshop. In Satoshi's implementation of nLockTime, a huge range of
+> timestamp (from 1970 to 2009) is wasted. By exploiting this unused range
+> and with compromise in the time resolution, a fill-or-kill system could be
+> built with a softfork.
+>
+> -----------
+> Two new parameters, nLockTime2 and nKillTime are defined:
+>
+> nLockTime2 (Range: 0-1,853,010)
+> 0: Tx could be confirmed at or after block 420,000
+> 1: Tx could be confirmed at or after block 420,004
+> .
+> .
+> 719,999: Tx could be confirmed at or after block 3,299,996 (about 55 years
+> from now)
+> 720,000: Tx could be confirmed if the median time-past >= 1,474,562,048
+> (2016-09-22)
+> 720,001: Tx could be confirmed if the median time-past >= 1,474,564,096
+> (2016-09-22)
+> .
+> .
+> 1,853,010 (max): Tx could be confirmed if the median time-past >=
+> 3,794,966,528 (2090-04-04)
+>
+> nKillTime (Range: 0-2047)
+> if nLockTime2 < 720,000, the tx could be confirmed at or before block
+> (nLockTime2 + nKillTime * 4)
+> if nLockTime2 >= 720,000, the tx could be confirmed if the median
+> time-past <= (nLockTime2 - 720,001 + nKillTime) * 2048
+>
+> Finally, nLockTime = 500,000,000 + nKillTime + nLockTime2 * 2048
+>
+> Setting a bit flag in tx nVersion will activate the new rules.
+>
+> The resolution is 4 blocks or 2048s (34m)
+> The maximum confirmation window is 8188 blocks (56.9 days) or 16,769,024s
+> (48.5 days)
+>
+> For example:
+> With nLockTime2 = 20 and nKillTime = 100, a tx could be confirmed only
+> between block 420,080 and 420,480
+> With nLockTime2 = 730,000 and nKillTime = 1000, a tx could be confirmed
+> only between median time-past of 1,495,042,048 and 1,497,090,048
+>
+> ----------------
+> Why is this a softfork?
+>
+> Remember this formula: nLockTime = 500,000,000 + nKillTime + nLockTime2 *
+> 2048
+>
+> For height based nLockTime2 (<= 719,999)
+>
+> For nLockTime2 = 0 and nKillTime = 0, nLockTime = 500,000,000, which means
+> the tx could be confirmed after 1970-01-01 with the original lock time
+> rule. As the new rule does not allow confirmation until block 420,000, it's
+> clearly a softfork.
+>
+> It is not difficult to see that the growth of nLockTime will never catch
+> up nLockTime2.
+>
+> At nLockTime2 = 719,999 and nKillTime = 2047, nLockTime = 1,974,559,999,
+> which means 2016-09-22. However, the new rule will not allow confirmation
+> until block 3,299,996 which is decades to go
+>
+>
+>
+> For time based nLockTime2 (> 720,000)
+>
+> For nLockTime2 = 720,000 and nKillTime = 0, nLockTime = 1,974,560,000,
+> which means the tx could be confirmed after median time-past 1,474,560,000
+> (assuming BIP113). However, the new rule will not allow confirmation until
+> 1,474,562,048, therefore a soft fork.
+>
+> For nLockTime2 = 720,000 and nKillTime = 2047, nLockTime = 1,974,562,047,
+> which could be confirmed at 1,474,562,047. Again, the new rule will not
+> allow confirmation until 1,474,562,048. The 1 second difference makes it a
+> soft fork.
+>
+> Actually, for every nLockTime2 value >= 720,000, the lock time with the
+> new rule must be 1-2048 seconds later than the original rule.
+>
+> For nLockTime2 = 1,853,010 and nKillTime = 2047, nLockTime =
+> 4,294,966,527, which is the highest possible value with the 32-bit nLockTime
+>
+> ----------------
+> User's perspective:
+>
+> A user wants his tx either filled or killed in about 3 hours. He will set
+> a time-based nLockTime2 according to the current median time-past, and set
+> nKillTime = 5
+>
+> A user wants his tx get confirmed in the block 630000, the first block
+> with reward below 10BTC. He is willing to pay high fee but don't want it
+> gets into another block. He will set nLockTime2 = 210,000 and nKillTime = 0
+>
+> ----------------
+> OP_CLTV
+>
+> Time-based OP_CLTV could be upgraded to support time-based nLockTime2.
+> However, height-based OP_CLTV is not compatible with nLockTime2. To spend a
+> height-based OP_CLTV output, user must use the original nLockTime.
+>
+> We may need a new OP_CLTV2 which could verify both nLockTime and nLockTime2
+>
+> ----------------
+> 55 years after?
+>
+> The height-based nLockTime2 will overflow in 55 years. It is very likely a
+> hard fork will happen to implement a better fill-or-kill system. If not, we
+> could reboot everything with another tx nVersion for another 55 years.
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150917/78f51514/attachment.html>
