@@ -1,0 +1,110 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Fri, 18 Sep 2015 20:11:33 +0000
+Subject: [bitcoin-dev] Hash of UTXO set as consensus-critical
+In-Reply-To: <CAPWm=eWrnA9em725uR-56+r7uc752+C-6Ke-UcRXj__DBbwqYw@mail.gmail.com>
+References: <5D55F6EC-801B-4607-882F-B76CF57298B1@gmail.com>
+	<55FC6951.9010704@gmail.com>
+	<CAPWm=eWrnA9em725uR-56+r7uc752+C-6Ke-UcRXj__DBbwqYw@mail.gmail.com>
+Message-ID: <55FC6FF5.7090400@mattcorallo.com>
+
+I believe the discussion here is on improving initial-sync time by
+simply skipping initial-sync and getting a committed-to utxo set. This
+is obviously a new security model in between SPV and full-node (I would
+call it SPV with future validation). Still, I'm not convinced it buys us
+anything, we really should just tweak Bitcoin Core to do spv mode at
+startup and validate backwards in the background. I think this would
+alleviate most of the concerns raised, given the chain growth is not
+entirely unreasonable going forward.
+
+On 09/18/15 20:07, Alex Morcos via bitcoin-dev wrote:
+> I guess I always assumed that UTXO set commitments were an alternative
+> security model (between SPV and full-node), not that they would cause
+> the existing security model to be deprecated.
+> 
+> 
+> On Fri, Sep 18, 2015 at 3:43 PM, Patrick Strateman via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org
+> <mailto:bitcoin-dev at lists.linuxfoundation.org>> wrote:
+> 
+>     Full nodes using UTXO set commitments is a change to the bitcoin
+>     security model.
+> 
+>     Currently an attacker with >50% of the network hashrate can rewrite
+>     history.
+> 
+>     If full nodes rely on UTXO set commitments such an attacker could create
+>     an infinite number of bitcoins (as in many times more than the current
+>     21 million bitcoin limit).
+> 
+>     Before we consider mechanisms for UTXO set commitments, we should
+>     seriously discuss whether the security model reduction is reasonable.
+> 
+>     On 09/18/2015 12:05 PM, Rune Kj?r Svendsen via bitcoin-dev wrote:
+>     > Currently, when a new node wants to join the network, it needs to
+>     retrieve the entire blockchain history, starting from January 2009
+>     and up until now, in order to derive a UTXO set that it can verify
+>     new blocks/transactions against. With a blockchain size of 40GB and
+>     a UTXO size of around 1GB, the extra bandwidth required is
+>     significant, and will keep increasing indefinitely. If a newly mined
+>     block were to include the UTXO set hash of the chain up until the
+>     previous block ? the hash of the UTXO set on top of which this block
+>     builds ? then new nodes, who want to know whether a transaction is
+>     valid, would be able to acquire the UTXO set in a trustless manner,
+>     by only verifying proof-of-work headers, and knowing that a block
+>     with an invalid UTXO set hash would be rejected.
+>     >
+>     > I?m not talking about calculating a complicated tree structure
+>     from the UTXO set, which would put further burden on already
+>     burdened Bitcoin Core nodes. We simply include the hash of the
+>     current UTXO set in a newly created block, such that the
+>     transactions in the new block build *on top* of the UTXO set whose
+>     hash is specified. This actually alleviates Bitcoin Core nodes, as
+>     it will now become possible for nodes without the entire blockchain
+>     to answer SPV queries (by retrieving the UTXO set trustlessly and
+>     using this to answer queries). It also saves bandwidth for Bitcore
+>     Core nodes, who only need to send roughly 1GB of data, in order to
+>     synchronise a node, rather than 40GB+. I will continue to run a full
+>     Bitcoin Core node, saving the entire blockchain history, but it
+>     shouldn?t be a requirement to hold the entire transaction history in
+>     order to start verifying new transactions.
+>     >
+>     > As far as I can see, this also forces miners to actually maintain
+>     an UTXO set, rather than just build on top of the chain with the
+>     most proof-of-work. Producing a UTXO set and verifying a block
+>     against a chain is the same thing, so by including the hash of the
+>     UTXO set we force miners to verify the block that they want to build
+>     on top of.
+>     >
+>     > Am I missing something obvious, because as far as I can see, this
+>     solves the problem of quadratic time complexity for initial sync:
+>     http://www.youtube.com/watch?v=TgjrS-BPWDQ&t=2h02m12s
+>     >
+>     > The only added step to verifying a block is to hash the UTXO set.
+>     So it does require additional computation, but most modern CPUs have
+>     a SHA256 throughput of around 500 MB/s, which means it takes only
+>     two seconds to hash the UTXO set. And this can be improved further
+>     (GPUs can do 2-3 GB/s). A small sacrifice for the added ease of
+>     initial syncing, in my opinion.
+>     >
+>     > /Rune
+>     > _______________________________________________
+>     > bitcoin-dev mailing list
+>     > bitcoin-dev at lists.linuxfoundation.org
+>     <mailto:bitcoin-dev at lists.linuxfoundation.org>
+>     > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
+> 
+>     _______________________________________________
+>     bitcoin-dev mailing list
+>     bitcoin-dev at lists.linuxfoundation.org
+>     <mailto:bitcoin-dev at lists.linuxfoundation.org>
+>     https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
+> 
+> 
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
