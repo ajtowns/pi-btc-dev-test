@@ -1,0 +1,79 @@
+From: jl2012@xbt.hk (jl2012 at xbt.hk)
+Date: Thu, 17 Sep 2015 23:27:54 -0400
+Subject: [bitcoin-dev] Fill-or-kill transaction
+In-Reply-To: <C9A1D16E-03F7-4860-8E9B-32A98E06CE49@petertodd.org>
+References: <a50b82c156c805a284386d80a42cc926@xbt.hk>
+	<CAOG=w-vGqsAcw5vdY8SaGVe4Q6XX1J=GCsZftWgjES_N_5c2pA@mail.gmail.com>
+	<CABm2gDp_afyqskEV8QmO43=-6R_2OJm36GVQxcQO_3ao2jC1gw@mail.gmail.com>
+	<C9A1D16E-03F7-4860-8E9B-32A98E06CE49@petertodd.org>
+Message-ID: <014345a983eabf243d9ce127de0dff7c@xbt.hk>
+
+Peter Todd via bitcoin-dev ? 2015-09-17 18:44 ??:
+
+> It can be implemented by a "treat like Coinbase" flag in the
+> UTXO set, set when the output is created.
+
+I think this is the cleanest way to implement the maturity requirement. 
+I understand why we need maturity, However, requiring 100 block maturity 
+will unfortunately make the system much less appealing since the 
+recipient may not like it. A fill-or-kill tx may still be used as the 
+initial funding tx to the Lightning Network, as long as the counterparty 
+is willing to take the extra risk.
+
+Actually, a fill-or-kill tx is slight safer than a coinbase tx, 
+depending on the difference between the absolute kill time and actual 
+confirmation time. In a re-org, an orphaned coinbase tx is permanently 
+invalidated and has no hope to be included again. However, an orphaned 
+fill-or-kill tx may still be confirmed by another miner. If there is 
+still a few days until the absolute kill time, a fill-or-kill tx is 
+basically as safe as a normal tx.
+
+With possibility of re-org and unpredictable block interval in mind, 
+height-based fill-or-kill is not very useful since it is difficult for 
+users to determine the actual kill time. If we could abolish the idea of 
+height-based fill-or-kill, the resolution of time-based fill-or-kill 
+might be improved.
+
+
+------------------------------------
+
+Chun Wang ? 2015-09-17 18:33 ??:
+> We are currently using nLockTime for share info and nSequence for
+> extranonce2. I have carefully reviewed the reference implementation of
+> BIP68 and it should be compatible, but this proposal may break the
+> implementation unless it does not affect coinbase transactions.
+> 
+
+The fill-or-kill system is totally optional, using a bit flag in tx 
+nVersion to indicate. Everything should be fine unless you are also 
+messing with the nVersion
+
+
+-------------------------------------
+
+Btc Drak ? 2015-09-17 15:12 ??:
+> Forgive me if I have missed the exact use-case, but this seems overly
+> complex. Surely fill-or-kill refers to getting a transaction confirmed
+> within a few confirms or to drop the tx from the mempool so it wont be
+> considered for inclusion anymore. As such, you could just repurpose a
+> small range of nLocktime such that a TX will be accepted into mempool
+> for a specific period before expiring.
+
+What I'm describing is to implement fill-or-kill as consensus rule. 
+Certainly, we could implement it at the P2P network level: everything is 
+the same as I described, but the nLockTime2 and nKillTime are for 
+reference only and tx validity depends only on the nLockTime. Benevolent 
+miners should drop the tx after the suggested kill time but there is no 
+guarantee
+
+
+-------------------------------------
+
+I made a mistake in this example:
+
+> A user wants his tx get confirmed in the block 630000, the first block
+> with reward below 10BTC. He is willing to pay high fee but don't want
+> it gets into another block. He will set nLockTime2 = 210,000 and
+> nKillTime = 0
+
+The correct nLockTime2 for this example should be 210000/4 = 52500
