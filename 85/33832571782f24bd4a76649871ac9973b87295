@@ -1,0 +1,113 @@
+From: dscotese@litmocracy.com (Dave Scotese)
+Date: Sat, 19 Sep 2015 17:48:19 -0700
+Subject: [bitcoin-dev] Hash of UTXO set as consensus-critical
+In-Reply-To: <F59E7FFD-D4C7-45D3-8224-4C1D62D8AAB6@gmail.com>
+References: <5D55F6EC-801B-4607-882F-B76CF57298B1@gmail.com>
+	<55FC6951.9010704@gmail.com>
+	<A16FDC0B-877F-47F1-A631-77F46251BB07@gmail.com>
+	<55FCC8B5.9070906@openbitcoinprivacyproject.org>
+	<4424FA4D-C84F-43DD-BA7F-BAC2D570A373@gmail.com>
+	<55FD990F.8060102@openbitcoinprivacyproject.org>
+	<F59E7FFD-D4C7-45D3-8224-4C1D62D8AAB6@gmail.com>
+Message-ID: <CAGLBAhetQ0A39ca=DKH=V0pYoeKyXG08t6GWSZzDx9f+fO9Mdg@mail.gmail.com>
+
+It seems there should be a practical limit to the size of a re-org - I mean
+a practical limit that is smaller than the current height.  Vincent's
+proposal suggests that a year's worth of blocks is such a practical limit.
+I agree.  There are probably lower limits that are practical too, but I
+like an entire year just to be conservative.  As Vincent points out, "An
+attacker will need to have hidden hashing power to overwrite a years worth
+of blocks."
+
+TL;DR for the rest of this: Txns that lose confirmations from a reorg and
+then show up in the mempool but not in any of the next few blocks indicate
+malicious mining.
+
+I see a blind spot here.  We are seeing the rule that says the longest
+chain is the valid chain as impossible to break, but it isn't.  We broke it
+to fix the BerkelyDB problem.  The code itself would have prevented us from
+doing that IF 51% of the hashpower had been used to build on the wrong
+chain, but it wasn't.
+
+Justus' question about what malicious means is key here.  The blind spot is
+a bit more complex than just viewing the longest chain as impossible to
+break except with more than 51% of the hash power.  The blind spot is our
+inability to distinguish between malicious blocks and honest blocks.
+
+Rune suggests that empty blocks indicate malice.  I like that (which is why
+I advocate using BitcoinDaysDestroyed to decide between blocks at the same
+height that appear at nearly the same time, rather than first-seen).  There
+are other methods we can use to distinguish between malicious blocks and
+honest ones.  I'm inventing one right now, but I'm sure better ones can be
+found.
+
+Here's mine: Once a transaction has been confirmed, its originator
+generally takes on the responsibility of re-broadcasting it if it gets
+re-org'd out of its confirmation(s).  Many mempools will see that
+re-broadcast, *if it happens*.  Any malice in a 51% attack would come in
+the form of failing to include such transactions.  If we have a history of
+orphaned blocks, then we can check to see which ones have been included in
+non-orphaned blocks since they got reorg'd out.  Such transactions should
+be top-priority after a reorg, even if they have zero fees.  When there is
+a transaction that doesn't appear in a new block within a couple hours of a
+reorg, that indicates dishonesty, usually in the sender (but that could be
+negligence), but possibly in the miner.  Looking at the mempool would
+determine which, wouldn't it?
+
+notplato
+
+On Sat, Sep 19, 2015 at 1:11 PM, Rune K. Svendsen via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> An honest miner is a miner that supports the network by building on top of
+> the best valid chain. A malicious miner is one who wants to disrupt the
+> Bitcoin network, not support it, for example by executing a 51% attack
+> which mines empty blocks on top of the best chain.
+>
+>
+> /Rune
+>
+> > Den 19/09/2015 kl. 19.19 skrev Justus Ranvier <
+> justus at openbitcoinprivacyproject.org>:
+> >
+> >> On 19/09/15 10:45, Rune Kj?r Svendsen wrote:
+> >> We need to distinguish between two different things here:
+> >>
+> >> 1) A 51% attack, where the majority of mining power is *malicious*
+> (hence ?attack?)
+> >
+> > What does "malicious" mean?
+> >
+> > In other words, If miner A is mining honestly, and miner B is mining
+> > maliciously, what are some of the possible difference in their behaviour
+> > we would observe?
+> >
+> >
+> > --
+> > Justus Ranvier
+> > Open Bitcoin Privacy Project
+> > http://www.openbitcoinprivacyproject.org/
+> > justus at openbitcoinprivacyproject.org
+> > E7AD 8215 8497 3673 6D9E 61C4 2A5F DA70 EAD9 E623
+> > <0xEAD9E623.asc>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+
+
+
+-- 
+I like to provide some work at no charge to prove my value. Do you need a
+techie?
+I own Litmocracy <http://www.litmocracy.com> and Meme Racing
+<http://www.memeracing.net> (in alpha).
+I'm the webmaster for The Voluntaryist <http://www.voluntaryist.com> which
+now accepts Bitcoin.
+I also code for The Dollar Vigilante <http://dollarvigilante.com/>.
+"He ought to find it more profitable to play by the rules" - Satoshi
+Nakamoto
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150919/43bfbb1d/attachment-0001.html>
