@@ -1,0 +1,237 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Wed, 23 Sep 2015 18:58:16 +0200
+Subject: [bitcoin-dev] libconsensus and bitcoin development process
+In-Reply-To: <CABsx9T0dHxXzemxJN87mU59j4_KZ=zOdwxpXOUe-NhB0ENVMWw@mail.gmail.com>
+References: <CADm_WcY8Vy+k+5BaBS+jV6D6tmSXrok8rAxoPxxKOzUhyPWgMg@mail.gmail.com>
+	<CABm2gDoXa9ERY7iSsouxjypq1PwV_9HuBrtFQ_jrs5pGFst=KQ@mail.gmail.com>
+	<CABsx9T0dHxXzemxJN87mU59j4_KZ=zOdwxpXOUe-NhB0ENVMWw@mail.gmail.com>
+Message-ID: <CABm2gDofHuR-6A+BheaGYfHJ9_hjSScC+34nc6exkvAk3g=bHQ@mail.gmail.com>
+
+On Tue, Sep 22, 2015 at 8:27 PM, Gavin Andresen <gavinandresen at gmail.com> wrote:
+> You need to write a high-level overview document, explaining things like:
+>
+> + Who should use libconsensus
+
+Separating the consensus code is extremely important for less risky
+and wider contributions regardless of what is exposed.
+But once a complete libconsensus is exposed, alternative
+implementations should use it (SPV implementations may not use all of
+it though) and Bitcoin Core should eventually use it through its API
+as well.
+
+> + What functionality it will provide, and what it won't
+
+It will provide full consensus validation (verification) for the
+following structures:
+
+- Script (done, VerifyScript is already exposed)
+- Block Headers
+- Transactions
+- Blocks (including headers and transactions)
+
+The user of the library has to manage storage by itself. This library
+will be stateless (apart from libsecp256k1's context) and won't
+provide storage.
+This library won't tell you which is the longest chain, the highest
+level function is VerifyBlock() that just tells you whether a block is
+valid or not.
+
+> + How the API works (is it C++ ? C ? Is it stateless ? How is information
+> sent to/from -- classes ? structs ? serialized data structures ? Are there
+> callbacks ?  How are errors returned ?)
+
+Like the existing libconsensus, a complete libconsensus will have a C API.
+The concrete API of each function is to be determined. The exact
+concrete way to expose CCoinsViewCache and CBlockIndex (which are not
+stateless) will require some discussion.
+My preference is using function pointers combined with structs but
+there's several possibilities there.
+Once the code is separated and the rest of the undesired dependencies
+are eliminated, people will be able to propose concrete final APIs
+with a few commits.
+
+> + What functions are in the API ?
+
+At the very least:
+
+- VerifyScript
+- VerifyHeader
+- VerifyTx
+- VerifyBlock
+
+To allow users of the library to intertwine policy or DoS checks with
+the full verification of a structure (like Bitcoin core does today), I
+would also expose at least:
+
+- CheckTransaction/Consensus::CheckTx
+- Consensus::CheckTxInputs
+- Consensus::CheckTxInputsScripts (doesn't exist yet in master)
+- CheckBlockHeader
+- ContextualCheckBlockHeader
+- CheckBlock
+- ContextualCheckBlock
+
+> Nobody has time to wade through pull requests to try to figure all that out.
+
+Nobody has the time to review a PR with the many commits necessary to
+propose a final independently buildable and complete C API.
+This is a work in progress and there's more people participating, not just me.
+There's many possible roads that lead to Rome, but let's not allow
+perfection be the enemy of walking the very first step.
+Can we at least agree on most of the functions that are clearly
+consensus critical and separate those so it's easy to build them
+separately from main.cpp ?
+Can we agree on some of the dependencies that are obviously undesired
+and relatively easy to remove?
+
+> On Tue, Sep 22, 2015 at 2:12 PM, Jorge Tim?n
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>
+>> On Tue, Sep 15, 2015 at 6:10 AM, Jeff Garzik via bitcoin-dev
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> > [collating a private mail and a github issue comment, moving it to a
+>> > better forum]
+>> >
+>> > On libconsensus
+>> > ---------------
+>> > In general there exists the reasonable goal to move consensus state
+>> > and code to a specific, separate lib.
+>> >
+>> > To someone not closely reviewing the seemingly endless stream of
+>> > libconsensus refactoring PRs, the 10,000 foot view is that there is a
+>> > rather random stream of refactors that proceed in fits and starts
+>> > without apparent plan or end other than a one sentence "isolate
+>> > consensus state and code" summary.
+>> >
+>> > I am hoping that
+>> > * There is some plan
+>> > * We will not see a five year stream of random consensus code movement
+>> > patches causing lots of downstream developer headaches.
+>> >
+>> > I read every code change in every pull request that comes into
+>> > github/bitcoin/bitcoin with three exceptions:
+>> > * consensus code movement changes - too big, too chaotic, too
+>> > frequent, too unfocused, laziness guarantees others will inevitably
+>> > ACK it without me.
+>> > * some non-code changes (docs)
+>> > * ignore 80% of the Qt changes
+>> >
+>> > As with any sort of refactoring, they are easy to prove correct, easy
+>> > to reason, and therefore quick and easy to ACK and merge.
+>> >
+>> > Refactors however have a very real negative impact.
+>> > bitcoin/bitcoin.git is not only the source tree in the universe.
+>> > Software engineers at home, at startups, and at major companies are
+>> > maintaining branches of their own.
+>> >
+>> > It is very very easy to fall into a trap where a project is merging
+>> > lots of cosmetic changes and not seeing the downstream ripple effects.
+>> > Several people complained to me at the conference about all the code
+>> > movement changes breaking their own work, causing them to stay on
+>> > older versions of bitcoin due to the effort required to rebase to each
+>> > new release version - and I share those complaints.
+>> >
+>> > Complex code changes with longer development cycles than simple code
+>> > movement patches keep breaking.  It is very frustrating, and causes
+>> > folks to get trapped between a rock and a hard place:
+>> > - Trying to push non-trivial changes upstream is difficult, for normal
+>> > and reasonable reasons (big important changes need review etc.).
+>> > - Maintaining non-trivial changes out of tree is also painful, for the
+>> > aforementioned reasons.
+>> >
+>> > Reasonable work languishes in constant-rebase hell, and incentivizes
+>> > against keeping up with the latest tree.
+>> >
+>> >
+>> > Aside from the refactor, libconsensus appears to be engineering in the
+>> > dark.  Where is any sort of plan?  I have low standards - a photo of a
+>> > whiteboard or youtube clip will do.
+>>
+>> Just because you don't understand the changes proposed it doesn't mean
+>> that they are random.
+>> I may have done a poor job in communicating "my plan for libconsensus"
+>> but I have tried many times and in many ways.
+>> #bitcoin-dev logs show that I have not worked "in the dark" at all, on
+>> the contrary, I've been very tenacious when asking for review and
+>> opinions, to the point that several people (at least @laanwj and
+>> @theuni have complained about their github inboxes being full of
+>> "spam").
+>> This is a relatively recent thread where I describe my plan:
+>>
+>> http://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-July/009568.html
+>> Not my first attempt on this list.
+>>
+>> It is very frustrating that everybody seems to agree that separating
+>> libconsensus is a priority to maximize the number of people that can
+>> safely contribute to the project, but at the same time, nobody thinks
+>> that reviewing the necessary refactors to do so is a priority.
+>> I tried creating big PRs for people to see "the big picture" #5946 but
+>> those were too many commits and nobody wanted to read it. Gavin asked
+>> for an API.
+>> So I tried a smaller step: exposing just VerifyHeader in libconsensus
+>> and leave VerifyTx and VerifyBlock for later #5995
+>> Again, this was "too big" and "a moving target". In the meantime I
+>> always had smaller one-little-step PRs that were part of a longer
+>> branch:
+>>
+>> ** [8/8] MERGED Consensus
+>> - [X] Consensus: Decouple pow from chainparams #5812 [consensuspow]
+>> - [X] MOVEONLY: Move constants and globals to consensus.h #5696
+>> [consensus_policy0]
+>> - [X] Chainparams: Refactor: Decouple IsSuperMajority from Params()
+>> #5968 [params_consensus]
+>> - [X] Remove redundant getter CChainParams::SubsidyHalvingInterval()
+>> #5996 [params_subsidy]
+>> - [X] Separate CValidationState from main #5669 [consensus]
+>> - [X] Consensus: Decouple ContextualCheckBlockHeader from checkpoints
+>> #5975 [consensus_checkpoints]
+>> - [X] Separate Consensus::CheckTxInputs and GetSpendHeight in
+>> CheckInputs #6061 [consensus_inputs]
+>> - [X] Bugfix: Don't check the genesis block header before accepting it
+>> #6299 [5975-quick-fix]
+>> ** [5/5] DELETED
+>> *** DELETED Refactor: Create CCoinsViewEfficient interface for
+>> CCoinsViewCache #5747 [coins]
+>> *** DELETED Chainparams: Explicit Consensus::Params arg in consensus
+>> functions #6024 [params_consensus2]
+>> *** DELETED MOVEONLY: Move most of consensus functions (pre-block)
+>> #6051 [consensus_moveonly] (depends on consensus-blocksize-0.12.99)
+>> *** DELETED Consensus: Refactor: Separate CheckFinalTx from
+>> main::IsFinalTx #6063 [consensus_finaltx]
+>> *** DELETED Consensus: Refactor: Turn CBlockIndex::GetMedianTimePast
+>> into independent function #6009 [consensus_mediantime]
+>> *** DELETED Consensus: Adapt declarations of most obviously consensus
+>> functions #6591 [consensus-params-0.12.99]
+>> *** DELETED Consensus: Move blocksize and related parameters to
+>> consensusparams ...without removing consensus/consensus.h [#6526
+>> alternative] #6625 [consensus-blocksize-0.12.99]
+>>
+>> After a while I stop rebasing the longer branches and just maintained
+>> a few small consensus-related PRs at a time.
+>>
+>> Now I consolidated 3 of them in
+>>
+>> *** REVIEW Optimizations: Consensus: In AcceptToMemoryPool,
+>> ConnectBlock, and CreateNewBlock #6445 [consensus-txinputs-0.12.99]
+>>
+>> with the hope that it would be merged relatively fast.
+>> After that it will be much simpler to start talking about potential C
+>> APIs for VerifyHeader, VerifyTx and VerifyBlock; as well as separating
+>> the library to a subtree.
+>>
+>> I'm more than happy to answer any questions anyone may have about any
+>> of the PRs or commits, until everybody interested is convinced that
+>> there's nothing random in the proposed changes.
+>> I'm also more than happy to get advice on how to better communicate my
+>> plans and structure my PRs.
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+>
+>
+> --
+> --
+> Gavin Andresen
