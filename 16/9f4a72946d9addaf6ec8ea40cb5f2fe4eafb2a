@@ -1,0 +1,75 @@
+From: j@toom.im (Jonathan Toomim (Toomim Bros))
+Date: Wed, 23 Sep 2015 16:12:14 -0700
+Subject: [bitcoin-dev] Torrent-style new-block propagation on Merkle trees
+Message-ID: <36CE1B0F-3BE5-4DC3-8488-A57667256059@toom.im>
+
+
+
+As I understand it, the current block propagation algorithm is this:
+
+1. A node mines a block.
+2. It notifies its peers that it has a new block with an inv. Typical nodes have 8 peers.
+3. The peers respond that they have not seen it, and request the block with getdata [hash].
+4. The node sends out the block in parallel to all 8 peers simultaneously. If the node's upstream bandwidth is limiting, then all peers will receive most of the block before any peer receives all of the block. The block is sent out as the small header followed by a list of transactions.
+5. Once a peer completes the download, it verifies the block, then enters step 2.
+
+(If I'm missing anything, please let me know.)
+
+The main problem with this algorithm is that it requires a peer to have the full block before it does any uploading to other peers in the p2p mesh. This slows down block propagation to O( p ? log_p(n) ), where n is the number of peers in the mesh, and p is the number of peers transmitted to simultaneously.
+
+It's like the Napster era of file-sharing. We can do much better than this. Bittorrent can be an example for us. Bittorrent splits the file to be shared into a bunch of chunks, and hashes each chunk. Downloaders (leeches) grab the list of hashes, then start requesting their peers for the chunks out-of-order. As each leech completes a chunk and verifies it against the hash, it begins to share those chunks with other leeches. Total propagation time for large files can be approximately equal to the transmission time for an FTP upload. Sometimes it's significantly slower, but often it's actually faster due to less bottlenecking on a single connection and better resistance to packet/connection loss. (This could be relevant for crossing the Chinese border, since the Great Firewall tends to produce random packet loss, especially on encrypted connections.)
+
+Bitcoin uses a data structure for transactions with hashes built-in. We can use that in lieu of Bittorrent's file chunks.
+
+A Bittorrent-inspired algorithm might be something like this:
+
+0. (Optional steps to build a Merkle cache; described later)
+1. A seed node mines a block.
+2. It notifies its peers that it has a new block with an extended version of inv.
+3. The leech peers request the block header.
+4. The seed sends the block header. The leech code path splits into two.
+5(a). The leeches verify the block header, including the PoW. If the header is valid,
+6(a). They notify their peers that they have a header for an unverified new block with an extended version of inv, looping back to 2. above. If it is invalid, they abort thread (b).
+5(b). The leeches request the Nth row (from the root) of the transaction Merkle tree, where N might typically be between 2 and 10. That corresponds to about 1/4th to 1/1024th of the transactions. The leeches also request a bitfield indicating which of the Merkle nodes the seed has leaves for. The seed supplies this (0xFFFF...).
+6(b). The leeches calculate all parent node hashes in the Merkle tree, and verify that the root hash is as described in the header.
+7. The leeches search their Merkle hash cache to see if they have the leaves (transaction hashes and/or transactions) for that node already.
+8. The leeches send a bitfield request to the node indicating which Merkle nodes they want the leaves for.
+9. The seed responds by sending leaves (either txn hashes or full transactions, depending on benchmark results) to the leeches in whatever order it decides is optimal for the network.
+10. The leeches verify that the leaves hash into the ancestor node hashes that they already have.
+11. The leeches begin sharing leaves with each other.
+12. If the leaves are txn hashes, they check their cache for the actual transactions. If they are missing it, they request the txns with a getdata, or all of the txns they're missing (as a list) with a few batch getdatas.
+
+The main feature of this algorithm is that a leech will begin to upload chunks of data as soon as it gets them and confirms both PoW and hash/data integrity instead of waiting for a fully copy with full verification.
+
+This algorithm is more complicated than the existing algorithm, and won't always be better in performance. Because more round trip messages are required for negotiating the Merkle tree transfers, it will perform worse in situations where the bandwidth to ping latency ratio is high relative to the blocksize. Specifically, the minimum per-hop latency will likely be higher. This might be mitigated by reducing the number of round-trip messages needed to set up the blocktorrent by using larger and more complex inv-like and getdata-like messages that preemptively send some data (e.g. block headers). This would trade off latency for bandwidth overhead from larger duplicated inv messages. Depending on implementation quality, the latency for the smallest block size might be the same between algorithms, or it might be 300% higher for the torrent algorithm. For small blocks (perhaps < 100 kB), the blocktorrent algorithm will likely be slightly slower. For large blocks (e.g. 8 MB over 20 Mbps), I expect the blocktorrent algo will likely be around an order of magnitude faster in the worst case (adversarial) scenarios, in which none of the block's transactions are in the caches.
+
+One of the big benefits of the blocktorrent algorithm is that it provides several obvious and straightforward points for bandwidth saving and optimization by caching transactions and reconstructing the transaction order. A cooperating miner can pre-announce Merkle subtrees with some of the transactions they are planning on including in the final block. Other miners who see those subtrees can compare the transactions in those subtrees to the transaction sets they are mining with, and can rearrange their block prototypes to use the same subtrees as much as possible. In the case of public pools supporting the getblocktemplate protocol, it might be possible to build Merkle subtree caches without the pool's help by having one or more nodes just scraping their getblocktemplate results. Even if some transactions are inserted or deleted, it may be possible to guess a lot of the tree based on the previous ordering.
+
+Once a block header and the first few rows of the Merkle tree have been published, they will propagate through the whole network, at which time full nodes might even be able to guess parts of the tree by searching through their txn and Merkle node/subtree caches. That might be fun to think about, but probably not effective due to O(n^2) or worse scaling with transaction count. Might be able to make it work if the whole network cooperates on it, but there are probably more important things to do.
+
+There are also a few other features of Bittorrent that would be useful here, like prioritizing uploads to different peers based on their upload capacity, and banning peers that submit data that doesn't hash to the right value. (It might be good if we could get Bram Cohen to help with the implementation.)
+
+Another option is just to treat the block as a file and literally Bittorrent it, but I think that there should be enough benefits to integrating it with the existing bitcoin p2p connections and also with using bitcoind's transaction caches and Merkle tree caches to make a native implementation worthwhile. Also, Bittorrent itself was designed to optimize more for bandwidth than for latency, so we will have slightly different goals and tradeoffs during implementation.
+
+One of the concerns that I initially had about this idea was that it would involve nodes forwarding unverified block data to other nodes. At first, I thought this might be useful for a rogue miner or node who wanted to quickly waste the whole network's bandwidth. However, in order to perform this attack, the rogue needs to construct a valid header with a valid PoW, but use a set of transactions that renders the block as a whole invalid in a manner that is difficult to detect without full verification. However, it will be difficult to design such an attack so that the damage in bandwidth used has a greater value than the 240 exahashes (and 25.1 BTC opportunity cost) associated with creating a valid header.
+
+As I understand it, the O(1) IBLT approach requires that blocks follow strict rules (yet to be fully defined) about the transaction ordering. If these are not followed, then it turns into sending a list of txn hashes, and separately ensuring that all of the txns in the new block are already in the recipient's mempool. When mempools are very dissimilar, the IBLT approach performance degrades heavily and performance becomes worse than simply sending the raw block. This could occur if a node just joined the network, during chain reorgs, or due to malicious selfish miners. Also, if the mempool has a lot more transactions than are included in the block, the false positive rate for detecting whether a transaction already exists in another node's mempool might get high for otherwise reasonable bucket counts/sizes.
+
+With the blocktorrent approach, the focus is on transmitting the list of hashes in a manner that propagates as quickly as possible while still allowing methods for reducing the total bandwidth needed. The blocktorrent algorithm does not really address how the actual transaction data will be obtained because, once the leech has the list of txn hashes, the standard Bitcoin p2p protocol can supply them in a parallelized and decentralized manner.
+
+
+
+Thoughts?
+
+-jtoomim
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150923/8e6e7243/attachment-0001.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 496 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150923/8e6e7243/attachment-0001.sig>
