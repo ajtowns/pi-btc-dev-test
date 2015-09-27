@@ -1,0 +1,243 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Sun, 27 Sep 2015 13:27:57 -0700
+Subject: [bitcoin-dev] Let's deploy BIP65 CHECKLOCKTIMEVERIFY!
+In-Reply-To: <20150927185031.GA20599@savin.petertodd.org>
+References: <20150927185031.GA20599@savin.petertodd.org>
+Message-ID: <CAOG=w-ssCBOceBz-kMdFLhu5-nqssHic5yAbvMN1kq-nZTGfJQ@mail.gmail.com>
+
+Agree with all CLTV and nVersionBits points. We should deploy a lock-time
+soft-fork ASAP, using the tried and true IsSuperMajoirty test.
+
+However your information regarding BIPs 68 (sequence numbers), 112
+(checksequenceverify) and 113 (median time past) is outdated. Debate
+regarding semantics has been settled, and there are working implementations
+ready for merge on github. See pull requests #6312, #6564, and #6566. I
+don?t know what the hold up has been regarding further reviews and merging,
+but it is ready.
+
+If you believe there are reasons #6312, #6564, or #6566 should not be
+merged, please speak up. Otherwise it appears there is consensus on these
+changes. They are related, and there is no reason not to include them in
+the soft-fork, delaying applications using these features by 6-12 months.
+
+On Sun, Sep 27, 2015 at 11:50 AM, Peter Todd via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Summary
+> -------
+>
+> It's time to deploy BIP65 CHECKLOCKTIMEVERIFY.
+>
+> I've backported the CLTV op-code and a IsSuperMajority() soft-fork to
+> the v0.10 and v0.11 branches, pull-reqs #6706 and #6707 respectively. A
+> pull-req for git HEAD for the soft-fork deployment has been open since
+> June 28th, #6351 - the opcode implementation itself was merged two
+> months ago.
+>
+> We should release a v0.10.3 and v0.11.1 with CLTV and get the ball
+> rolling on miner adoption. We have consensus that we need CLTV, we have
+> a well tested implementation, and we have a well-tested deployment
+> mechanism. We also don't need to wait for other soft-fork proposals to
+> catch up - starting the CLTV deployment process isn't going to delay
+> future soft-forks, or for that matter, hard-forks.
+>
+> I think it's possible to safely get CLTV live on mainnet before the end
+> of the year. It's time we get this over with and done.
+>
+>
+> Detailed Rational
+> -----------------
+>
+> 1) There is a clear need for CLTV
+>
+> Escrow and payment channels both benefit greatly from CLTV. In
+> particular, payment channel implementations are made significantly
+> simpler with CLTV, as well as more secure by removing the malleability
+> vulnerability.
+>
+> Why are payment channels important? There's a lot of BTC out there
+> vulnerable to theft that doesn't have to be. For example, just the other
+> day I was talking with Nick Sullivan about ChangeTip's vulnerability to
+> theft, as well as regulatory uncertainty about whether or not they're a
+> custodian of their users' funds. With payment channels ChangeTip would
+> only be able to spend as much of a deposit as a user had spent, keeping
+> the rest safe from theft. Similarly, in the other direction - ChangeTip
+> to their users - in many cases it is feasible to also use payment
+> channels to immediately give users control of their funds as they
+> receive them, again protecting users and helping make the case that
+> they're not a custodian. In the future I'm sure we'll see fancy
+> bi-directional payment channels serving this role, but lets not let
+> perfect be the enemy of good.
+>
+>
+> 2) We have consensus on the semantics of the CLTV opcode
+>
+> Pull-req #6124 - the implementation of the opcode itself - was merged
+> nearly three months ago after significant peer review and discussion.
+> Part of that review process included myself(1) and mruddy(2) writing
+> actual demos of CLTV. The chance of the CLTV semantics changing now is
+> near-zero.
+>
+>
+> 3) We have consensus that Bitcoin should adopt CLTV
+>
+> The broad peer review and discussion that got #6124 merged is a clear
+> sign that we expect CLTV to be eventually adopted. The question isn't if
+> CLTV should be added to the Bitcoin protocol, but rather when.
+>
+>
+> 4) The CLTV opcode and IsSuperMajority() deployment code has been
+>    thoroughly tested and reviewed
+>
+> The opcode implementation is very simple, yet got significant review,
+> and it has solid test coverage by a suite of tx-(in)valid.json tests.
+> The tests themselves have been reviewed by others, resulting in Esteban
+> Ordano's pull-req #6368 by Esteban Ordano which added a few more cases.
+>
+> As for the deployment code, both the actual IsSuperMajority() deployment
+> code and associated unit-tests tests were copied nearly line-by-line
+> from the succesful BIP66. I did this deliberately to make all the peer
+> review and testing of the deployment mechanism used in BIP66 be equally
+> valid for CLTV.
+>
+>
+> 5) We can safely deploy CLTV with IsSuperMajority()
+>
+> We've done two soft-forks so far with the IsSuperMajority() mechanism,
+> BIP34 and BIP66. In both cases the IsSuperMajority() mechanism itself
+> worked flawlessly. As is well-known BIP66 in combination with a large %
+> of the hashing power running non-validating "SPV" mining operations did
+> lead to a temporary fork, however the root cause of this issue is
+> unavoidable and not unique to IsSuperMajority() soft-forks.
+>
+> Pragmatically speaking, now that miners are well aware of the issue it
+> will be easy for them to avoid a repeat of that fork by simply adding
+> IsSuperMajority() rules to their "SPV" mining code. Equally turning off
+> SPV mining (temporarily) is perfectly feasable.
+>
+>
+> 6) We have the necessary consensus to deploy CLTV via IsSuperMajority()
+>
+> The various "nVersion bits" proposals - which I am a co-author of - have
+> the primary advantage of being able to cleanly deal with the case where
+> a soft-fork fails to get adopted. However, we do have broad consensus,
+> including across all sides of the blocksize debate, that CLTV should be
+> adopted. The risk of CLTV failing to get miner adoption, and thus
+> blocking other soft-forks, is very low.
+>
+>
+> 7) Using IsSuperMajority() to deploy CLTV doesn't limit or delay other
+> upgrades
+>
+> It _is_ possible for multiple IsSuperMajority() soft-forks to coexist,
+> in the sense that if one soft-fork is "in flight" that doesn't prevent
+> another soft-fork from also being deployed simultaneously.
+>
+> In particular, if we deploy CLTV via IsSuperMajority() that does _not_
+> impact the adoption schedule for other future soft-forks, including
+> soft-forks using a future nVersion bits deployment mechanism.
+>
+> For instance, suppose we start deployment of CLTV right now with
+> nVersion=4 blocks. In three months we have 25% miner support, and start
+> deploying CHECKSEQUENCEVERIFY with nVersion=5 blocks. For miners
+> supporting only OP_CLTV, the nVersion=5 blocks still trigger OP_CLTV;
+> miners creating nVersion=5 blocks are simply stating that they support
+> both soft-forks. Equally, if in three months we finish a nVersion bits
+> proposal, those miners will be advertising nVersion=(1 << 29) blocks,
+> which also advertise OP_CLTV support.
+>
+>
+> 8) BIP101 miners have not proved to be a problem for CLTV deployment
+>
+> While there was concern that BIP101's use of nVersion would cause
+> issues with a IsSuperMajority() softfork, the % of blocks with BIP101
+> nVersion's never reached more than 1%, and currently is hovering at
+> around 0.1%
+>
+> As Gavin Andresen has stated that he is happy to add CLTV to BIP101, and
+> thus Bitcoin XT, I believe we can expect those miners to safely support
+> CLTV well before soft-fork enforcement happens. Secondly, the 95%
+> enforcement threshold means we can tolerate a fairly high % of miners
+> running pre-CLTV BIP101 implementations without fatal effects in the
+> unlikely event that those miners don't upgrade.
+>
+>
+> 9) Doing another IsSuperMajority() soft-fork doesn't "burn a bit"
+>
+> This is a common myth! All nVersion bits proposals involve permanently
+> setting a high-order bit to 1, which results in nVersion >= all prior
+> IsSuperMajority() soft-forks. In short, we can do a nearly unlimited
+> number of IsSuperMajority() soft-forks without affecting future nVersion
+> bits soft-forks at all.
+>
+>
+> 10) Waiting for nVersion bits and CHECKSEQUENCEVERIFY will significantly
+>     delay deployment of CLTV
+>
+> It's been proposed multiple times that we wait until we can do a single
+> soft-fork with CSV using the nVersion bits mechanism.
+>
+> nVersion bits doesn't even have an implementation yet, nor has solid
+> consensus been reached on the exact semantics of how nVersion bits
+> should work. The stateful nature of nVersion bits soft-forks requires a
+> significant amount of new code compared to IsSuperMajority() soft-forks,
+> which in turn will require a significant amount of testing. (again I'll
+> point out I'm a co-author to all the nVersion bits proposals)
+>
+> CSV has an implementation, but there is still debate going on about what
+> the exact semantics of it should be. Getting the semantics right is
+> especially important as part of CSV includes changing the meaning of
+> nSequence, restricting future uses of that field. There have been many
+> proposals to use nSequence, e.g. for proof-of-stake blocksize voting,
+> and it has the unique capability of being a field that is both unused,
+> and signed by scriptSigs. We shouldn't take potentially restricting
+> future uses of it lightly.
+>
+> CSV is also significantly more complex and invasive than CLTV in terms
+> of code changes. A large % of the mining power is running forks
+> of Bitcoin Core with custom changes - modifying these forks with new
+> features is a labor intensive and slow process.
+>
+> If CLTV is ready now, why delay it - potentially for 6-12 months - for
+> other proposals to catch up? Equally if they do catch up, great! As
+> explained above an in-flight CLTV soft-fork won't delay future upgrades.
+>
+>
+> 11) Even if CLTV is broken/obsoleted there is very little carrying cost
+>     to having it
+>
+> Suppose we decide in two years that CLTV was botched and we need to fix
+> it. What's the "carrying cost" of having implemented CLTV in the first
+> place?
+>
+> We'll have used up one of our ten soft-forkable NOPs, but if we ever
+> "run out" it's easy to use extension NOPs(3). Similarly, future script
+> improvements like OP_MAST - or even a hard-fork - can easily expand the
+> range of NOPs to the point where this is a non-issue.
+>
+> If you don't use OP_CLTV in your scripts there is zero effect on your
+> transactions; we're not limiting future improvements to Bitcoin in any
+> way other than using up a NOP by implementing CLTV.
+>
+>
+> References
+> ----------
+>
+> 1) https://github.com/petertodd/checklocktimeverify-demos
+> 2) https://github.com/mruddy/bip65-demos
+> 3) https://github.com/bitcoin/bitcoin/pull/5496#issuecomment-101293403
+> 4) https://github.com/bitcoin/bips/blob/master/bip-0112.mediawiki
+>
+> --
+> 'peter'[:-1]@petertodd.org
+> 000000000000000006a257845da185433cbde54a74be889b1c046a267dcf4ab2
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150927/7fbbbfa6/attachment-0001.html>
