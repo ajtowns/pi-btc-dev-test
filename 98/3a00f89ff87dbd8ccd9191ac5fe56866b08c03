@@ -1,0 +1,46 @@
+From: j@toom.im (Jonathan Toomim (Toomim Bros))
+Date: Tue, 29 Sep 2015 06:30:41 -0700
+Subject: [bitcoin-dev] Let's deploy BIP65 CHECKLOCKTIMEVERIFY!
+In-Reply-To: <20150928144318.GA28939@savin.petertodd.org>
+References: <20150927185031.GA20599@savin.petertodd.org>
+	<CA+w+GKRCVr-9TVk66utp7xLRgTxNpxYoj3XQE-6y_N8JS6eO6Q@mail.gmail.com>
+	<20150928132127.GA4829@savin.petertodd.org>
+	<CA+w+GKTCZDNVJ-XEmsCAWGXUV3xOzVYmqMQYm0x+ihyYWQN0Gg@mail.gmail.com>
+	<20150928142953.GC21815@savin.petertodd.org>
+	<CA+w+GKTUz2eVJOpixSebWiQ59ovoELNhsZWSsbLHXWqk2eCn0A@mail.gmail.com>
+	<20150928144318.GA28939@savin.petertodd.org>
+Message-ID: <40B097BA-A389-4C46-B5DE-2EC4738086BA@toom.im>
+
+
+On Sep 28, 2015, at 7:43 AM, Peter Todd via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> 
+> Ok, so again, if that's your security criteria, what's the issue with
+> soft-forks? With soft-forks, the result of a SPV wallet following the
+> highest work chain is the same: eventually invalid blocks are reorged
+> out.
+> 
+> However, because soft-forks make it less likely that a long invalid
+> chain will be generated, an attacker sybil attacking your SPV wallet has
+> a much harder time tricking it into accepting a transaction. (they might
+> get one or two confirmations, rather than dozens)
+> 
+> What's the scenario where soft-forks are worse than hard-forks from a
+> SPV wallet's perspective?
+
+
+I don't think this was addressed clearly, so here's my attempt.
+
+With a soft fork, miners who have not upgraded append their blocks to the longest block chain. To SPV clients and to old fully-validating clients, it appears to be a valid block that inevitably gets orphaned. SPV clients will be tricked to follow these blocks every time they appear, since every time they appear they will have a PoW advantage for a few minutes. SPV clients will appear to behave normally, and will continue to show new transactions and get confirmations in a timely fashion. However, they will be systematically susceptible to attack from double-spends that attempt to spend funds in a way that the upgraded nodes will reject. These transactions will appear to get 1 confirmation, then regress to zero conf, every single time. These attacks can be performed for as long as someone mines with the old version. If an attacker thinks he could get more than 25 BTC of double-spends per block, he might even choose to mine with the obsolete version in order to get predictable orphans and to trick SPV clients and fully verifying wallets on the old version.
+
+With a hard fork, miners who have not upgraded will append their blocks on the shorter fork. SPV clients will ignore this fork unless Sybil attacked. If an SPV node only connects to one full node server, that's equivalent to a Sybil attack.  In that case, transactions on the long chain will often not be present on the short chain due to its shortness. Confirmations will be slow, and will be shown to be very different from what's shown on block explorers. Displayed transaction dates and times will be off, when they show up at all. Any transactions that have been contaminated by recent mining revenue will not show up at all. SPV client users will probably notice something is wrong. If the SPV client connects to several full nodes, then this should rarely happen. For example, if 5% of full nodes are still on the old version, and an SPV wallet connects to 2 nodes at a time, there is a 0.05**2 = 0.25% chance. If the SPV client has headers cached on disk from a previous connection to the longer chain, then that chance effectively drops to zero. As a further benefit to hard forks, anybody who is ideologically opposed to the change can continue to use the old version successfully, as long as there are enough miners to keep the fork alive.
+
+In short: soft forks mean frequent predictable and manipulable orphan blocks that SPV clients will always follow, with transactions that get confirmed once and then perma-orphaned. Hard forks mean that SPV clients will almost always work flawlessly, and will occasionally give very strange and noticeably wrong results. For fully-verifying nodes, soft forks make old versions insecure, but hard forks allow new and old versions to operate in parallel.
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 496 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20150929/22615768/attachment.sig>
