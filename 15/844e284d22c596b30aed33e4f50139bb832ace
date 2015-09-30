@@ -1,0 +1,74 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Wed, 30 Sep 2015 23:25:03 +0000
+Subject: [bitcoin-dev] Let's deploy BIP65 CHECKLOCKTIMEVERIFY!
+In-Reply-To: <CADm_WcZpdpnov5Tiz3_3gpUyDz=rTkKKvYexBzcFLcHKDUdxJQ@mail.gmail.com>
+References: <20150927185031.GA20599@savin.petertodd.org>
+	<CA+w+GKRCVr-9TVk66utp7xLRgTxNpxYoj3XQE-6y_N8JS6eO6Q@mail.gmail.com>
+	<CAAS2fgSEDGBd67m7i8zCgNRqtmQrZyZMj7a5TsYo41Dh=tdhHQ@mail.gmail.com>
+	<CA+w+GKRKGS=KZrLtiW8Zbn4EQH_TELfQR+TfrADCMXLR22Q+tw@mail.gmail.com>
+	<CADm_WcbJoH27H9ckr5sfmE0gh7YbSjKr1uLse0s3b4GTT+jEAA@mail.gmail.com>
+	<CA+w+GKS01sVXqNY6a39EjqL8NVO6k1Vq6sd0VZjeqF_tsx7OAA@mail.gmail.com>
+	<CADm_WcZpdpnov5Tiz3_3gpUyDz=rTkKKvYexBzcFLcHKDUdxJQ@mail.gmail.com>
+Message-ID: <CAAS2fgTOSiTeY3=qprRGdQUVvr60JjJjP2SPvVFtRGrQGHL8Vw@mail.gmail.com>
+
+On Wed, Sep 30, 2015 at 10:17 PM, Jeff Garzik <jgarzik at gmail.com> wrote:
+> It is correct that security is slightly reduced for full nodes that have not
+> upgraded.  It is not correct that the choice is binary, full node or SPV.
+>
+> Any user running a not-upgraded full node still retains protection against
+> many attacks outside the subset related to the feature being introduced.
+
+An extra way to look at this is that even absent any rule changes--
+users who are asleep at the switch may lose effective security over
+time because attackers learn new tricks against existing
+vulnerabilities. Security requires a bit of vigilance, inherently.
+
+In many specific cases I think it's hard-to-impossible to articulate a
+concrete way that security is lost by users at all, excluding some
+small amplification of orphan blocks.
+
+
+On Wed, Sep 30, 2015 at 9:06 PM, Mike Hearn via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> and is trying to mine it, will keep producing invalid blocks forever until
+> the owner shuts it down and upgrades.
+
+This is the outcome guaranteed for absentee miners with a hard fork,
+but it is not guaranteed for a soft fork.
+
+> For instance, any miner that has modified/bypassed IsStandard() can do this,
+
+Miners who have changed their code in inadvisable ways can produce
+invalid blocks as a result. There are many seemingly innocuous ways
+one can produce invalid blocks, and miners have stumbled on a few of
+them over the years.
+
+Pedantically, modifying IsStandard() will not have this effect:
+Unknown NOPs are now handled via a script validation flag--
+SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS.  Experience (e.g. with
+STRICTDER) has show that script validation flags are much more robust
+to casual twiddling than IsStandard is.
+
+The only way that script validation flags have been observed getting
+bypassed in the field was a miner that had disabled all signature
+validation completely (and whom had a not-completely-negligible amount
+of hashpower. :( )... as it's a lot more clear that you might be
+exposing yourself to trouble if you mess with the validation flags.
+
+> runs an old node from before OP_NOPs were made non-standard.
+
+IIRC; There is no released version of Bitcoin that has IsStandard
+which has failed failed to treat the NOPs as non-standard.
+
+There was a brief time in git master between when IsStandardness was
+relaxed and NOPs were addressed via a validation flag but I am
+reasonably confident that didn't make it into a release.
+
+Regardless, anyone actually running that code of that vintage would
+already be incompatible with the current network already due to prior
+soft forks.
+
+And as a matter of fact, invalid CLTVs don't currently appear to get
+mined. Checking this again pre-release would be a good checklist item.
+For prior soft-forks we've monitored and tested for this (with the
+goal of going and yelling at any broken miners to fix their behavior).
