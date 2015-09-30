@@ -1,0 +1,162 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Wed, 30 Sep 2015 20:15:31 +0000
+Subject: [bitcoin-dev] Let's deploy BIP65 CHECKLOCKTIMEVERIFY!
+In-Reply-To: <CA+w+GKRKGS=KZrLtiW8Zbn4EQH_TELfQR+TfrADCMXLR22Q+tw@mail.gmail.com>
+References: <20150927185031.GA20599@savin.petertodd.org>
+	<CA+w+GKRCVr-9TVk66utp7xLRgTxNpxYoj3XQE-6y_N8JS6eO6Q@mail.gmail.com>
+	<CAAS2fgSEDGBd67m7i8zCgNRqtmQrZyZMj7a5TsYo41Dh=tdhHQ@mail.gmail.com>
+	<CA+w+GKRKGS=KZrLtiW8Zbn4EQH_TELfQR+TfrADCMXLR22Q+tw@mail.gmail.com>
+Message-ID: <CAAS2fgR_-x4kUkiMTCi+YdpV-6MXaEp+b2ZzrVc9Dqt3rnfAyA@mail.gmail.com>
+
+On Wed, Sep 30, 2015 at 5:11 PM, Mike Hearn <hearn at vinumeris.com> wrote:
+> Hi Gregory,
+>
+>>
+>> I'm surprised to see this response
+>
+>
+> Why? I have objected to the idea of soft forks many times. I wrote an entire
+> article about it in August.
+
+Yes, your article contained numerous factual and logical inaccuracies
+which I corrected (many of which you had been previously corrected on
+as well by others). (For example:
+https://www.reddit.com/r/Bitcoin/comments/3griiv/on_consensus_and_forks_by_mike_hearn/cu0yv0r
+)
+
+I would have hoped that after so many corrections you would have
+updated your beliefs.
+
+> There's no such thing as a "real" hard fork - don't try and move the goal
+> posts. SPV clients do not need any changes to do the right thing with BIP
+> 101, they will follow the new chain automatically, so it needs no changes.
+
+Yes, because what 101 does is not a hard-fork from the perspective of
+BitcoinJ clients. Please do not conflate BitcoinJ with all of SPV; a
+SPV client could validate the information received more extensively or
+respond to alerts in reject rule violating blocks--  BitcoinJ does
+not, but this is BitcoinJ's design decision to lack security in this
+respect and not something inherent to SPV).
+
+Directly fixing the time-warp attack, for example, would be a hard
+fork from the perspective of BitcoinJ clients.  Recovering the fixed 0
+bits in the header for use as extra-nonce would be a hard fork from
+the perspective of BitcoinJ clients. Changing the transaction format
+to include an explicit nonce for ECDH (e.g. stealth addresses) would
+be a hard fork from the perspective of BitcoinJ clients. Increasing
+the precision of Bitcoin by 1000 would be a hard fork from the
+perspective of BitcoinJ. As would adjusting the hashtree to commit to
+fees, including fees under OP_CHECKSIGs hash, or switching to the
+segregated witness commitment structure from elements alpha that
+allows syncing the chain without fetching signatures... all that would
+be hardforks from the perspective of BitcoinJ.
+
+Because of an cheaply avoidable the lack of validation in BitcoinJ no
+increase of the blocksize is a hard-fork from its perspective. Nor
+would increasing the subsidy to miners, or allowing third parties to
+confiscate coins. But other SPV clients could, if they wanted to,
+reject blocks the violated most of these criteria.
+
+The argument you are presenting against BIP65 is that it is bad
+because it is silently accepted. But this applies no less to 101 for
+SPV clients, and in 101's case it's a failure to enforce pre-existing
+rules which the users might care a great deal about. Worse, counting
+on this kind of behavior can build a dependence on weak security forms
+of SPV and inhibits the use of full security SPV.
+
+In truth, both of BIP101 and BIP65 are detectable even by the most
+simplistic and pre-change clients due to the voluntarily use of block
+version signaling. Any participant in the network is free to take
+whatever action they choose to take in response to such an event.
+Bitcoin Core's behavior is to issue alerts to the user when unexpected
+block versions show up on the network.  Users and implementer are free
+to turn changes like BIP65 into hardforks from the perspective of
+their own system, necessitating manual intervention, by simply forcing
+the block version to be a particular value (or shutting down when
+there are many blocks of a new version; until manually authorized to
+continue).
+
+> Several people have asked several times now: given the very real and widely
+> acknowledged downsides that come with a soft fork, what is the specific
+> benefit to end users of doing them?
+
+For many changes, including CLTV the actual soft fork change is by far
+the most natural way of implementing the change itself. One simply
+takes an existing non-standard placeholder op code sequence and
+assigns it the new VERIFY style meaning. It is clean, tidy, and the
+result is nearly as if the system has had it all along. The only
+complexity is around the activation and can be dropped in future code.
+
+Beyond that, the primary upside is no forced industry wide "flag day"
+where everyone is _forced_ to modify their software arises, taking
+considerable cost.  People who care about the new rule can use it,
+people who don't don't. All the rules that you care about enforcing
+remain in force-- you still prevent inflation, you still will not
+tolerate the theft of your own coins (or those of most other people),
+etc.. No one is necessarily caught by surprise since the block
+versions communicate that something is happening, allowing network
+participants to choose to act (or not).
+
+For example, for years you stonewalled P2SH and multi-signature.  You
+didn't care about it. You didn't think it was valuable. You didn't add
+it to your software, even after it was well specified and deployed in
+production. Could it have been done as a hard-fork?  Likely not: you
+would have prevented it. But as a soft-fork you were free to ignore it
+with no ill-effect for a long time existing for those who cared about
+it, and not for you, until widespread use resulted in demand enough to
+justify accepting a patch that permitted sending to it.
+
+What if we'd needed a hard fork to enable CoinJoin or other privacy
+features?  I think would have blocked that too.
+
+The relative ease of handling soft-forks which you are indifferent to
+means that there is little reason to object to a compatible change
+that gives other people flexibility they care about greatly but which
+you are indifferent to; and it forces people who would oppose a
+functionality because they don't want others to have some piece of
+freedom to try to frame justifications in language other than "I don't
+think it's worth the cost" since they have the nearly free option of
+ignoring the change-- they're forced to actually argue against other
+people having that freedom.
+
+Soft-forks also allows us to deploy fixes to the Bitcoin protocol
+which are more important-to-have but not urgently critical (like
+height in coinbase),  or sometimes to deploy fixes to critical
+vulnerabilities without first handing everyone excruciatingly detailed
+instructions on exploiting them, simply by closing off an pattern of
+protocol which is obviously bad and risky.
+
+The primary cost of a soft-fork for non-participants is simply some
+risk of increased network instability around the change-- but short
+lived forks happen every day, and longer lived ones happen from time
+to time. Larger amounts of instability occur from time to time due to
+network partitioning, misconfiguration, and software bugs-- and client
+software must be prepared to cope with it; this is a fact of bitcoin
+and decenteralized systems in general. Upgraded, change enforcing,
+client software is not exposed to the this instability, and
+non-upgraded software could choose to mitigate any exposure by
+monitoring the block versions. This is a far better situation that the
+natural instability that will happen from time to time in a
+decentralized system.
+
+By contrast, the programmed activation point of BIP101 at 75% almost
+guarantees activation among considerable controversy, promising
+network instability which BitcoinJ clients would experience upgraded
+or not, even if the larger block side was ultimately the losing side
+in the switch. I find it more than a little strange that you think the
+instability of a 75%-version-hashpower cut is acceptable but the a
+95%-version-hashpower compatible change is not.
+
+Finally, there is the demonstrated track record: They work; they
+deliver new features to people. Our experience in the half dozen or
+more soft-forks in the system so far is that in practice do not cause
+significant problems, including financial losses for SPV wallet users.
+Even with that complete success there has been room for improvement,
+which is why the process has evolved over time to feature things like
+preemptive non-standardness, high switchover thresholds, etc.  and
+these will continue to evolve over time.
+
+I hope that you can put aside your effort to force a blocksize
+increase on others for a moment and add functionality, of the kind the
+Bitcoin Core has had for years, to BitcoinJ to improve the experience
+with soft-forks if you think it isn't good enough as is...
