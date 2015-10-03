@@ -1,0 +1,184 @@
+From: root@haskoin.com (Jean-Pierre Rupp)
+Date: Sat, 3 Oct 2015 13:42:24 +0100
+Subject: [bitcoin-dev] [Bitcoin-development] New BIP32 structure for
+ P2SH multisig wallets [BIP-45]
+In-Reply-To: <CABQSq2Q98K5zbUbQAqSE4OYez2QuOaWTt+9n5iZmSR2boynf_Q@mail.gmail.com>
+References: <CABQSq2Q98K5zbUbQAqSE4OYez2QuOaWTt+9n5iZmSR2boynf_Q@mail.gmail.com>
+Message-ID: <560FCD30.9020902@haskoin.com>
+
+Hello,
+
+I have been reviewing BIP-45 today.  There is a privacy problem with it
+that should at least be mentioned in the document.
+
+When using the same extended public key for all multisig activity, and
+dealing with different cosigners in separate multisig accounts, reuse of
+the same set of public keys means that all cosigners from all accounts
+will be able to monitor multisig activity from every other cosigner, in
+every other account.
+
+Besides privacy considerations, HD wallet's non-reuse of public keys
+provide some defence against wallets that do not implement deterministic
+signing, and use poor entropy for signature nonces.
+
+Unless users are expected to establish a single cosigning account, this
+scheme will result in reuse of public keys, and degradation of privacy.
+
+I understand that for convenience it is useful to have a single extended
+public key that can be handed to every cosigner.  This makes setting up
+accounts or recovering from data loss a easier.
+
+I suggest that privacy & potential security degradation due to increased
+public key reuse in the case of users with multiple multisig accounts
+should get a mention in the BIP-45 document.
+
+Greetings
+
+
+On 25/04/14 23:27, Manuel Araoz wrote:
+> Hi, I'm part of the team building copay
+> <https://github.com/bitpay/copay>, a multisignature P2SH HD
+> wallet. We've been following the discussion regarding standardizing the
+> structure for branches both on this list and on github (1
+> <https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki>, 2
+> <https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki>, 3
+> <https://github.com/bitcoin/bips/blob/master/bip-0043.mediawiki>, 4
+> <https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki>, 5
+> <https://github.com/bitcoin/bips/pull/52>). Soon, we realized the
+> assumptions in the discussions were not true for a multisig hd wallet,
+> so we wanted to share our current approach to that, to get feedback and
+> see if we can arrive to a new standard (and possibly a new BIP)
+> 
+> These are our assumptions: 
+>  - N parties want to share an m-of-n wallet.
+>  - Each party must generate their master private keys independently.
+>  - Use multisig P2SH for all addresses.
+>  - Use BIP32 to derive public keys, then create a multisig script, and
+> use the P2SH address for that.
+>  - The address generation process should not require communicating with
+> other parties. (Thus, all parties must be able to generate all public keys)
+>  - Transaction creation + signing requires communication between
+> parties, of course.
+> 
+> -------------------------------------------------
+> 
+> Following BIP43, we're be using:
+> 
+> 
+> m / purpose' / *
+> 
+> where /purpose/ is the hardened derivation scheme based on the new BIP
+> number.
+> We then define the following levels:
+> 
+> 
+> m / purpose' / cosigner_index / change / address_index
+> 
+> Each level has a special meaning detailed below:
+> 
+> /cosigner_index/ <http://en.wikipedia.org/wiki/Co-signing>: the index of
+> the party creating this address. The indices can be determined
+> independently by lexicographically sorting the master public keys of
+> each cosigner.
+> 
+> /change/: 0 for change, 1 for receive address.
+> 
+> /address_index/: Addresses are numbered from index 0 in sequentially
+> increasing manner. We're currently syncing the max used index for each
+> branch between all parties when they connect, but we're open to
+> considering removing the index sync and doing the more elegant
+> used-address discovery via a gap limit, as discussed in BIP44
+> <https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki#address-gap-limit>.
+> We feel 20 might be too low though. 
+> 
+> *Wallet high-level description:*
+> Each party generates their own extended master keypair and shares the
+> extended purpose' public key with the others, which is stored encrypted.
+> Each party can generate any of the other's derived public keys, but only
+> his own private keys. 
+> 
+> *General address generation procedure:*
+> When generating an address, each party can independently generate the N
+> needed public keys. They do this by deriving the public key in each of
+> the different trees, but using the same path. They can then generate the
+> multisig script and the corresponding p2sh address. In this way, each
+> path corresponds to an address, but the public keys for that address
+> come from different trees.
+> 
+> *Receive address case:*
+> Each cosigner generates addresses only on his own branch. One of the n
+> cosigners wants to receive a payment, and the others are offline. He
+> knows the last used index in his own branch, because only he generates
+> addresses there. Thus, he can generate the public keys for all of the
+> others using the next index, and calculate the needed script for the
+> address. 
+> 
+> /Example: /Cosigner #2 wants to receive a payment to the shared wallet.
+> His last used index on his own branch is 4. Then, the path for the next
+> receive address is m/$purpose/2/1/5. He uses this same path in all of
+> the cosigners trees to generate a public key for each one, and from that
+> he gets the new p2sh address.
+> 
+> *Change address case:*
+> Again, each cosigner generates addresses only on his own branch. One of
+> the n cosigners wants to create an outgoing payment, for which he'll
+> need a change address. He generates a new address using the same
+> procedure as above, but using a separate index to track the used change
+> addresses. 
+> /
+> Example: /Cosigner #5 wants to send a payment from the shared wallet,
+> for which he'll need a change address. His last used change index on his
+> own branch is 11. Then, the path for the next change address is
+> m/$purpose/5/0/12. He uses this same path in all of the cosigners trees
+> to generate a public key for each one, and from that he gets the new
+> p2sh address.
+> 
+> 
+> *Transaction creation and signing:*
+> When creating a transaction, first one of the parties creates a
+> Transaction Proposal. This is a transaction that spends some output
+> stored in any of the p2sh multisig addresses (corresponding to any of
+> the copayers' branches). This proposal is sent to the other parties, who
+> decide if they want to sign. If they approve the proposal, they can
+> generate their needed private key for that specific address (using the
+> same path that generated the public key in that address, but deriving
+> the private key instead), and sign it. Once the proposal reaches m
+> signatures, any cosigner can broadcast it to the network, becoming
+> final. The specifics of how this proposal is structured, and the
+> protocol to accept or reject it, belong to another BIP, in my opinion. 
+> 
+> *Final comments:*
+> - We're currently lexicographically sorting the public keys for each
+> address separately. We've read Mike Belshe's comments about sorting the
+> master public keys and then using the same order for all derived
+> addresses, but we couldn't think of any benefits of doing that (I mean,
+> the benefits of knowing whose public key is which).
+> - We originally thought we would need a non-hardened version of purpose
+> for the path, because we needed every party to be able to generate all
+> the public keys of the others. With the proposed path, is it true that
+> the cosigners will be able to generate them, by knowing the extended
+> purpose public key for each copayer? (m/purpose')
+> - The reason for using separate branches for each cosigner is we don't
+> want two of them generating the same address and receiving simultaneous
+> payments to it. The ideal case is that each address receives at most one
+> payment, requested by the corresponding cosigner. 
+> 
+> 
+> Thoughts?
+> Manuel
+> 
+> 
+> ------------------------------------------------------------------------------
+> Start Your Social Network Today - Download eXo Platform
+> Build your Enterprise Intranet with eXo Platform Software
+> Java Based Open Source Intranet - Social, Extensible, Cloud Ready
+> Get Started Now And Turn Your Intranet Into A Collaboration Platform
+> http://p.sf.net/sfu/ExoPlatform
+> 
+> 
+> 
+> _______________________________________________
+> Bitcoin-development mailing list
+> Bitcoin-development at lists.sourceforge.net
+> https://lists.sourceforge.net/lists/listinfo/bitcoin-development
+> 
