@@ -1,0 +1,102 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Sun, 4 Oct 2015 18:35:25 +1000
+Subject: [bitcoin-dev] CHECKSEQUENCEVERIFY - We need more usecases to
+ motivate the change
+In-Reply-To: <20151003143056.GA27942@muck>
+References: <20151003143056.GA27942@muck>
+Message-ID: <20151004083525.GA18291@navy>
+
+On Sat, Oct 03, 2015 at 04:30:56PM +0200, Peter Todd via bitcoin-dev wrote:
+> So we need to make the case for two main things:
+> 1) We have applications that need a relative (instead of absolute CLTV)
+> 2) Additionally to RCLTV, we need to implement this via nSequence
+
+> However I don't think we've done a good job showing why we need to
+> implement this feature via nSequence. BIP68 describes the new nSequence
+> semantics, and gives the rational for them as being a
+> "Consensus-enforced tx replacement" mechanism, with a bidirectional
+> payment channel as an example of this in action. However, the
+> bidirectional payment channel concept itself can be easily implemented
+> with CLTV alone.
+
+Do you mean "with RCLTV alone" here?
+
+RCLTV/OP_CSV is used in lightning commitment transactions to enforce a
+delay between publishing the commitment transaction, and spending the
+output -- that delay is needed so that the counterparty has time to
+prove the commitment was revoked and claim the outputs as a penalty.
+
+Using absolute CLTV instead would mean that once the effective delay a
+commitment transaction has decreases over time -- initially it will be
+longer than desirable, causing unwanted delays in claiming funds when no
+cheating is going on; but over time it will become too short, which
+means there is not enough time to prove cheating (and the channel has to
+be closed prematurely). You can trade those things off and pick
+something that works, but it's always going to be bad.
+
+> There is a small drawback in that the initial
+> transaction could be delayed, reducing the overall time the channel
+> exists, but the protocol already assumes that transactions can be
+> reliably confirmed within a day - significantly less than the proposed
+> 30 days duration of the channel.
+
+Compared to using a CLTV with 30 days duration, With RCLTV a channel
+could be available for years (ie 20x longer), but in the case of problems
+funds could be reclaimed within hours or days (ie 30x faster).
+
+But that's all about RCLTV vs CLTV, not about RCLTV vs nSequence/OP_CSV.
+ie, it needs BIP 112 (OP_CSV) but not necessarily BIP 68 (nSequence
+relative locktime), if they could be disentangled.
+
+You could do all that with "<n> OP_CHECK_HEIGHT_DELTA_VERIFY"
+that ignores nSequence, and directly compares the height of the current
+block versus the input tx's block (or the diff of their timestamps?)
+though, I think?
+
+I think the disadvantage is that (a) you have to look into the input
+transaction's block height when processing the script; and (b) you don't
+have an easy lookup to check whether the transaction can be included in
+the next block.
+
+You could maybe avoid (b) by using locktime though. Have "<n>
+OP_CHECK_RELATIVE_LOCKTIME_VERIFY" compare the transactions locktime
+against the input's block height or time; if the locktime is 0 or too low,
+the transaction is invalid. (So if nLockTime is in blockheight, you can
+only spend inputs with blockheight based OP_CRLTV tests; and if it's in
+blocktime, you can only spend inputs with blocktime based OP_CRLTV. "n"
+does need to encode whether it's time/block height though).
+
+That way, when you see a txn:
+
+ - run the script. if you see <n> RCLTV, then
+    + if the tx's locktime isn't set, it's invalid; drop it
+    + if the input txn is unconfirmed, it's invalid; try again later
+    + workout "locktime - n" if that's >= the input tx's block
+      height/time, it's good; keep it in mempool, forward it, etc
+
+ - if you're mining, include the tx when locktime hits, just like you
+   would any other valid tx with a locktime
+
+I think the use cases for BIP68 (nSequence) are of the form:
+
+ 1) published input; here's a signed tx that spends it to you, usable
+    after a delay. might as well just use absolute locktime here, though.
+
+ 2) here's an unpublished input, you can build your own transaction to
+    spend it, just not immediately after it's published. BIP112 is
+    required, and OP_RCLTV as defined above works fine, just include it
+    in the published input's script.
+
+ 3) here's an unpublished input, and a signed transaction spending it,
+    that you can use to spend it after a delay. BIP68 is enough; but
+    OP_RCLTV in the second transaction works here. however without
+    normalised tx ids, the input could be malleated before publication,
+    so maybe this use case isn't actually important anyway.
+
+So I think OP_CRLTV alone works fine for them too...
+
+(Does that make sense, or am I missing something obvious?)
+
+Cheers,
+aj
+
