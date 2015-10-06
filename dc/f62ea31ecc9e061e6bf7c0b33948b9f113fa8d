@@ -1,0 +1,90 @@
+From: joseph@lightning.network (Joseph Poon)
+Date: Tue, 6 Oct 2015 13:00:31 -0700
+Subject: [bitcoin-dev] CHECKSEQUENCEVERIFY - We need more usecases to
+ motivate the change
+In-Reply-To: <20151003143056.GA27942@muck>
+References: <20151003143056.GA27942@muck>
+Message-ID: <20151006200031.GA4076@lightning.network>
+
+Hi Peter,
+
+On Sat, Oct 03, 2015 at 04:30:56PM +0200, Peter Todd via bitcoin-dev wrote:
+> So we need to make the case for two main things:
+> 
+> 1) We have applications that need a relative (instead of absolute CLTV)
+
+Lightning network needs RCLTV for bidireciontal payment channels without
+an explicit expiration date. Without a relative locktime, there is an
+economic tradeoff between longer channel expiry dates due to lower fees,
+and the time-value delay for non-cooperation. Due to this tradeoff,
+there is a risk that people may create channels with entities which they
+believe will be around in the future and act in a particular way. In
+other words, it is possible that people will attach reputation as part
+of their decision-making for channel creation.
+
+> 2) Additionally to RCLTV, we need to implement this via nSequence
+> 
+> However I don't think we've done a good job showing why we need to
+> implement this feature via nSequence. BIP68 describes the new nSequence
+> semantics, and gives the rational for them as being a
+> "Consensus-enforced tx replacement" mechanism, with a bidirectional
+> payment channel as an example of this in action. However, the
+> bidirectional payment channel concept itself can be easily implemented
+> with CLTV alone. There is a small drawback in that the initial
+> transaction could be delayed, reducing the overall time the channel
+> exists, but the protocol already assumes that transactions can be
+> reliably confirmed within a day - significantly less than the proposed
+> 30 days duration of the channel. That example alone I don't think
+> justifies a fairly complex soft-fork that limits future upgrades; we
+> need more justification.
+
+The examples (including for Lightning Network) in BIP 112 provides a
+rationale for using a relative locktime which cannot be achieved using
+CLTV/hard-nLocktime alone. Without BIP 112, I agree the example in BIP
+68 can also be done with nLocktime, but I think they sort of go
+together?
+
+However, there are some advantages to using some kind of relative
+locktime field such as nSequence over purely a script opcode. This is
+especially useful if one presumes some kind of long-term malleability
+fix which does not include directly signing the TXID of the parent
+transaction. It allows one to update dependent spending transactions
+after-the-fact; after transactions are signed. If there are
+unbroadcasted 2-of-2 multisig output transactions, where Tx1 is
+confirmed on-chain and off-chain Tx2 spends from Tx1, they can elect to
+spend Tx3a from the output of Tx2. Tx3a can have an nSequence value
+which requires a minimum of 100 block confirmations of Tx2 to elapse
+before Tx3a can be broadcast. As neither Tx2 or Tx3a have yet broadcast,
+they can elect to double-spend Tx2 with a new transaction with a lower
+nSequence value, e.g. Tx3b. This is important, as Tx2 will *always* be
+spendable so creating new revocation rules is useful for Tx2.
+
+I think Mark had once described the general idea is to have a similar
+separation of the opcode and the actual validation of block height in
+the codebase as nLockTime/OP_CLTV, as having pure validation in the
+script which may make things a bit ugly.
+
+> So, what else can the community come up with? nSequence itself exists
+> because of a failed feature that turned out to not work as intended;
+> it'd be a shame to make that kind of mistake again, so let's get our
+> semantics and use-cases in the BIPs and documented before we deploy.
+
+I agree. There may be some impact for future changes in Bitcoin, wrt BIP
+68. For BIP 112, I think the impact could be minimal, but there may be
+future interpretations of nSequence. In particular, in the long term
+there may be some kind of need for some kind of "timestop" bit (to
+define whether to count relative blockheight or timestopped
+blockheight), which already consumes unreserved space. To account for
+more than one upgrade, the next future upgrade after BIP 68 may be
+implemented by taking the unused most significant bit in nSequence as
+defined in BIP 68 in combination with using up a version field bit.
+jl1202 had previously suggested doing this for BIP 68 itself:
+e7b394187fd96bd77a1c49f7c9b7a9b2 at xbt.hk
+http://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-October/011358.html
+
+As-is, the only actual tradeoff made by BIP 68 is reducing range by
+half. I think BIP 68 works as-is or with burning an nVersion bit today,
+as it should allow for future (necessary) upgrades.
+
+-- 
+Joseph Poon
