@@ -1,0 +1,46 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Thu, 8 Oct 2015 02:38:37 +1000
+Subject: [bitcoin-dev] Let's deploy BIP65 CHECKLOCKTIMEVERIFY!
+In-Reply-To: <A763EBF7-4FA5-4FE4-9595-01317B264B0A@toom.im>
+References: <20150927185031.GA20599@savin.petertodd.org>
+	<CA+w+GKRCVr-9TVk66utp7xLRgTxNpxYoj3XQE-6y_N8JS6eO6Q@mail.gmail.com>
+	<CAAS2fgSEDGBd67m7i8zCgNRqtmQrZyZMj7a5TsYo41Dh=tdhHQ@mail.gmail.com>
+	<20151007150014.GA21849@navy>
+	<A763EBF7-4FA5-4FE4-9595-01317B264B0A@toom.im>
+Message-ID: <20151007163837.GA28855@navy>
+
+On Wed, Oct 07, 2015 at 08:46:08AM -0700, Jonathan Toomim (Toomim Bros) via bitcoin-dev wrote:
+> On Oct 7, 2015, at 8:00 AM, Anthony Towns via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > *But* a soft fork that only forbids transactions that would previously
+> > not have been mined anyway should be the best of both worlds, ...
+> I agree with pretty much everything you wrote except the above paragraph.
+> An attacker can create a transaction that [...] A miner on the old version 
+> includes this transaction into a block, [...]
+
+The point of that case is that there aren't such miners, so that exploit
+doesn't apply.
+
+In particular, AIUI, you'll have a hard job right now finding someone to
+mine an OP_NOP2 transaction -- eligius might do it, but I don't think many
+others will. And you also need your currently OP_NOP2-friendly miner not
+to upgrade to an OP_CLTV-validating codebase, so I don't think eligius
+will qualify there.
+
+> Those of you who know Script better than me: would this be an example of a transaction that would be spendable with a valid sig XOR with (far future date OR old code)?
+> 
+> OP_DUP OP_HASH160 <pubkeyhash> OP_EQUALVERIFY OP_CHECKSIGVERIFY OP_PUSHDATA <locktime far in the future> OP_CLTV
+
+If you want XOR, you'd need something more like:
+
+ OP_IF OP_DUP OP_HASH160 <pubkeyhash> OP_EQUALVERIFY OP_CHECKSIGVERIFY
+ OP_ELSE <locktime> OP_CLTV
+ OP_ENDIF
+
+But that' still fail IsStandard and DISCOURAGE_UPGRADABLE_NOPS checks
+if you tried spending without a valid sig, so wouldn't be mined by
+current nodes. (Not having a sig would also allow anyone to spend it to
+themselves, so that might make it hard to use as a basis for double
+spends anyway...)
+
+Cheers,
+aj
