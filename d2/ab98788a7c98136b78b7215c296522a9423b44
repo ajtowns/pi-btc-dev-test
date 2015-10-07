@@ -1,0 +1,39 @@
+From: j@toom.im (Jonathan Toomim (Toomim Bros))
+Date: Wed, 7 Oct 2015 08:46:08 -0700
+Subject: [bitcoin-dev] Let's deploy BIP65 CHECKLOCKTIMEVERIFY!
+In-Reply-To: <20151007150014.GA21849@navy>
+References: <20150927185031.GA20599@savin.petertodd.org>
+	<CA+w+GKRCVr-9TVk66utp7xLRgTxNpxYoj3XQE-6y_N8JS6eO6Q@mail.gmail.com>
+	<CAAS2fgSEDGBd67m7i8zCgNRqtmQrZyZMj7a5TsYo41Dh=tdhHQ@mail.gmail.com>
+	<20151007150014.GA21849@navy>
+Message-ID: <A763EBF7-4FA5-4FE4-9595-01317B264B0A@toom.im>
+
+
+On Oct 7, 2015, at 8:00 AM, Anthony Towns via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> *But* a soft fork that only forbids transactions that would previously
+> not have been mined anyway should be the best of both worlds, as it
+> automatically reduces the liklihood of old miners building newly invalid
+> blocks to a vanishingly small probability; which means that upgraded
+> bitcoin nodes, non-upgraded bitcoin nodes, /and/ SPV clients *all*
+> continuing to work fine during the upgrade.
+
+I agree with pretty much everything you wrote except the above paragraph.
+
+An attacker can create a transaction that would be valid if it were an OP_NOP, but not valid if it were any more restrictive transaction. For example, an attacker might send 1 BTC to an address with  . An old node would consider that OP_CLTV to be OP_NOP, so no signature is necessary for old nodes. Then the attacker buys something from a merchant running old node code or an SPV client, and spends the 1 BTC in that address in a way that is invalid according to OP_CLTV but valid according to OP_NOP, and includes a hefty fee. A miner on the old version includes this transaction into a block, thereby making the block invalid according to the new rules, and rejected by new-client miners. The merchant sees the 1-conf, and maybe even 2-conf, rejoices, and ships. The attacker then has until the OP_CLTV matures to double-spend the coin with new nodes using a valid signature.
+
+Basically, it's trivial to create transactions that exploit the difference in validation rules as long as miners are still on the old version to mine them. Transactions can be created that are guaranteed to be orphaned and trivially double-spendable. Attackers never have to risk actual losses. This can be done as long as miners continue to mine old-version blocks, regardless of their frequency.
+
+Those of you who know Script better than me: would this be an example of a transaction that would be spendable with a valid sig XOR with (far future date OR old code)?
+
+OP_DUP OP_HASH160 <pubkeyhash> OP_EQUALVERIFY OP_CHECKSIGVERIFY OP_PUSHDATA <locktime far in the future> OP_CLTV
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151007/c701783e/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 496 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151007/c701783e/attachment.sig>
