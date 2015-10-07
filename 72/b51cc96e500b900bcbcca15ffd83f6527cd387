@@ -1,0 +1,130 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Thu, 8 Oct 2015 01:00:14 +1000
+Subject: [bitcoin-dev] Let's deploy BIP65 CHECKLOCKTIMEVERIFY!
+In-Reply-To: <CAAS2fgSEDGBd67m7i8zCgNRqtmQrZyZMj7a5TsYo41Dh=tdhHQ@mail.gmail.com>
+References: <20150927185031.GA20599@savin.petertodd.org>
+	<CA+w+GKRCVr-9TVk66utp7xLRgTxNpxYoj3XQE-6y_N8JS6eO6Q@mail.gmail.com>
+	<CAAS2fgSEDGBd67m7i8zCgNRqtmQrZyZMj7a5TsYo41Dh=tdhHQ@mail.gmail.com>
+Message-ID: <20151007150014.GA21849@navy>
+
+On Tue, Sep 29, 2015 at 06:31:28PM +0000, Gregory Maxwell via bitcoin-dev wrote:
+> On Mon, Sep 28, 2015 at 10:48 AM, Mike Hearn via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > There is no consensus on using a soft fork to deploy this feature. It will
+> > result in the same problems as all the other soft forks - SPV wallets will
+> > become less reliable during the rollout period. I am against that, as it's
+> > entirely avoidable.
+> > Make it a hard fork and my objection will be dropped.
+> I'm surprised to see this response-- [...]
+> I am having a little difficulty making sense of this complaint. [...]
+
+I think I finally understand this objection.
+
+For a hard fork, activated by a majority of nodes/hashpower upgrading
+to a new bitcoin release, the behaviour is:
+
+ - upgraded bitcoin nodes: everything works fine
+
+ - non-upgraded bitcoin nodes: total breakage. there will be a push
+   alert telling you to upgrade. anyone who doesn't will think they're
+   tracking "bitcoin" but will actually be tracking a new "bitcoin-old"
+   altcoin. most non-upgraded miners will presumably realise they're
+   wasting hashpower and stop doing this pretty quick; and remaining
+   miners will only create blocks very slowly due to sudden reduced
+   hashpower, without possibility of difficulty adjustment. users who
+   don't uprade will try to do transactions, but won't see them confirm
+   for hours or days due to lack of hashpower.
+
+ - SPV nodes: they track the upgraded majority, everything works fine
+   even if they don't upgrade
+
+For a soft fork, again activated by the majority of upgraded hashpower,
+the behaviour is:
+
+ - upgraded bitcoin nodes: everything works fine
+
+ - non-upgraded bitcoin miners willing to mine newly unacceptable txs:
+   may produce orphaned blocks; may be able to be forced into producing
+   blocks that will be orphaned
+
+ - other non-upgraded bitcoin nodes: everything works fine
+
+ - SPV nodes: partial breakage -- may track invalid blocks for 1-2
+   confirmations until the set of "non-upgraded bitcoin miners willing
+   to produce newly unacceptable txs" becomes vanishingly few.
+
+In the hard fork case, all non-upgraded nodes get a DoS attack, but
+aren't likey to be hit by doublespends. That's inconvenient, but it's
+not too bad.
+
+In the soft fork case, if there's likely to be old nodes mining
+previously invalid transactions, SPV clients become very unreliable,
+to the point of possibly seeing semi-regular double-spends with 1 or
+2 confirmation, until miners that aren't paying attention notice their
+blocks are getting orphaned and upgrade. That is pretty bad IMHO; and
+there are a lot more *people* running SPV clients than bitcoin nodes,
+so its impact is potentially worse in both ways.
+
+Comparing generic hard forks versus generic soft forks, the above says
+to me that a hard fork would be less harmful to users in general, and
+thus a better approach.
+
+*But* a soft fork that only forbids transactions that would previously
+not have been mined anyway should be the best of both worlds, as it
+automatically reduces the liklihood of old miners building newly invalid
+blocks to a vanishingly small probability; which means that upgraded
+bitcoin nodes, non-upgraded bitcoin nodes, /and/ SPV clients *all*
+continuing to work fine during the upgrade.
+
+AFAICS, that's what BIP65 achieves, as will similar OP_NOP* replacements
+like BIP112.
+
+But that only applies to a subset of potential soft forks, not every
+soft fork.
+
+Maybe a good way to think about it is something like this.  Consensus
+(IsValid) is always less restrictive than (default) policy (previously
+IsStandard, not sure how to summarise it now, maybe it's just OP_NOP
+redefinition?).  So choosing a new consensus rule will be one of:
+
+  * even less restrictive than consensus (hard fork)
+
+  * more restrictive than consensus, but less restrictive than policy
+    (safe soft fork)
+
+  * more restrictive than IsStandard etc (damaging soft fork)
+
+Hmm, in particular, following this line of thinking it's not clear to
+me that BIP68 is actually less restrictive than current policy? At
+least, I can't see anything that prevents txs with nSequence set to
+something other than 0 or ~0 from being relayed?
+
+If it's not, and nodes currently happily mine and relay transactions
+with nSequence set without caring what it's set to, doesn't this mean
+BIP68 is of the "damaging soft fork" variety? That is, if it activated
+as a soft-fork with a majority of miners using it, but a minority of ~5%
+not upgraded, then
+
+ - someone could construct an tx with nSequence set to sometime in
+   the future, but not using OP_CSV
+
+ - this tx would get relayed by old nodes (but not upgraded nodes
+   due to CheckLockTime)
+
+ - non-upgraded miners would mine it into a block immediately, which
+   would then get orphaned by majority hashpower
+
+ - before it got orphaned, non-upgraded nodes and SPV clients would
+   be misled and vulnerable to double spend attacks of txs with 0, 1 or
+   maybe 2 confirmations
+
+(BIP65 with OP_CLTV and BIP112 with OP_CSV don't have that problem as
+they both redefine a non-standard opcode and would not get relayed or
+mined by old, non-upgraded nodes, and are thus "safe soft forks" per
+above terminology. This is just BIP68)
+
+Can anyone confirm or refute the above?
+
+Cheers,
+aj
+
