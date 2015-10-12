@@ -1,0 +1,234 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Tue, 13 Oct 2015 02:33:47 +1000
+Subject: [bitcoin-dev] Let's deploy BIP65 CHECKLOCKTIMEVERIFY!
+In-Reply-To: <1444633370859.8a298e9c@Nodemailer>
+References: <20151007150014.GA21849@navy> <1444633370859.8a298e9c@Nodemailer>
+Message-ID: <20151012163347.GA11122@navy>
+
+On Mon, Oct 12, 2015 at 12:02:51AM -0700, digitsu412 via bitcoin-dev wrote:
+> Thanks for that great breakdown Anthony. I think it helps a lot of us
+> get a better handle on the matter without getting too technical.
+
+Glad you found it useful; there's a lot of subtleties in how this
+stuff works, and I'm certainly still figuring it out.
+
+> A couple of questions on some of the points you made I'd like to put
+> out there:
+>
+> First I think your unsaid assumption about the fragility of a soft
+> fork showing incorrect confirmations is dependent on the percentage
+> of hash power that didn't upgrade. ?If using your same numbers this
+> was only 5% of the hash power, the attack is effectively not effective
+> (u less the attacker knew an exact merchant that was unfortunately on
+> the minority of the network.?
+
+Absolutely. So I think there are three scenarios where SPV clients get
+affected by orphans, where full nodes wouldn't be worried:
+
+ 1. Independent of any soft/hard fork, someone just mines a completely
+    invalid block containing invalid transactions (eg, spending a
+    non-existant transaction) based of the best current valid block,
+    and presents it to SPV clients.
+
+    An SPV client will accept this as valid until it's orphaned by the
+    rest of the network building two valid blocks.
+
+    This is expensive since you could have mined a valid block and
+    got 25+ bitcoin legitimately, and it also doesn't last very long
+    (around 20m on average, but less if you're unlucky), and the timing
+    is unpredictable. It also won't get relayed by nodes, so you have
+    to do a Sybil attack against the SPV client as well. It's also only
+    good for places that accept 1-confirmation transactions; so you're
+    probably better off finding somewhere that accepts 0-confirmation
+    transactions and doing a Finney attack, where you at least get to keep
+    the 25+ bitcoin from the subsidy/fees.
+
+    So it's possible in theory, but seems pretty unlikely to be worth
+    the hassle in practice.
+
+
+ 2. There's a "damaging soft-fork", with lock-in occurring immediately
+    after 95% of blocks claim to support the soft-fork.
+
+    In this case upgraded miners will only build on blocks from other
+    upgraded miners, but non-upgraded miners will build on blocks from
+    upgraded miners or non-upgraded miners. But with a ratio of 95:5,
+    upgraded miners will tend to find a block every 10.5 minutes, while
+    non-upgraded miners will only find one every 3h20m. SPV clients will
+    accept the latest block from whichever miner most recently found a
+    block, upgraded or not.
+
+    If one of the blocks mined by a non-upgraded node includes a
+    transaction that was valid under the old rules, but is not under the
+    new rules (which is entirely likely in the damaging soft-fork case),
+    that transaction will be trivially vulnerable to double-spends. So
+    until the remaining 5% of hashpower upgrades, SPV clients will
+    easily be able to be spoofed roughly once every 3h20m (when a
+    non-upgraded miner finds a block) for about 20m (until two upgraded
+    blocks are found, and the non-upgraded block is orphaned).
+
+    The cost of this attack is borne entirely by the non-upgraded
+    miners, who are mining blocks that will always be orphaned -- ie,
+    they're still spending electricity on maintaining 5% of hashpower,
+    but their "blocks" are all orphaned so they're getting a return of
+    0 BTC per day, instead of roughly 180 BTC per day. So presumably
+    they won't continue wasting power too long, and this will only be a
+    problem for a few days at most, but during that time SPV clients are
+    quite vulnerable.
+
+    Also, that assumes that the soft-fork activates immediately on
+    hitting 95%. The versionbits proposal will add two weeks' delay
+    between seeing 95% of nodes supporting the soft-fork, and enforcing
+    the rules, which gives the 5% additional time to upgrade, which
+    probably means there won't be much of a window left at all.
+
+
+ 3. AIUI, without versionbits soft-forks are done by bumping the
+    block nVersion field (ie, from "2" currently to "3"); then enforcing
+    the new rules on blocks with a bumped version; and finally orphaning
+    blocks with the old version once 95% of the last 1000 blocks use
+    the bumped version. (See BIP 34)
+
+    This means that even with a "safe soft-fork", non-upgraded miners
+    will have their blocks orphaned by upgraded miners immediately after
+    the soft-fork is activated, and SPV clients will see a similar orphan
+    rate (up to 1 in 20 blocks, seeing an block that will get orphaned
+    for about ~20 minutes every 3h20m).
+
+    However, in the "safe soft-fork" case, all the transactions included
+    in the invalid blocks will also be acceptable to upgraded miners,
+    and will likely be included in the replacement blocks anyway. So
+    this should be an annoyance, rather than an actual problem. (In
+    a safe soft-fork, any transaction you attempt to get only mined
+    by non-upgraded nodes will be picked up by upgraded nodes anyway;
+    and any transaction you attempt to get mined only be new nodes will
+    be mined very quickly so non-upgraded nodes won't have a chance to
+    mine a block that double-spends)
+
+    Further while I don't think they actually do it currently, SPV
+    clients *could* monitor the block version (they download it anyway),
+    and simply decline to accept new version "2" blocks once version "3"
+    is seen for 95% of the last 1000 blocks. Then they would not see any
+    blocks that will get orphaned, in either safe or damaging soft-forks.
+
+    They couldn't do something similar with versionbits in place, since
+    the corresponding bit is cleared once the soft-fork activates. However
+    this also means that with versionbits in use, upgraded miners have
+    no reason to orphan blocks built by non-upgraded miners; so this
+    isn't a problem in the first place...
+
+> -- snip --
+> ?- non-upgraded bitcoin nodes: total breakage. there will be a push
+> ? ?alert telling you to upgrade. anyone who doesn't will think they're
+> ? ?tracking "bitcoin" but will actually be tracking a new "bitcoin-old"
+> ? ?altcoin.
+
+This might have been confusing. A hard fork creates two separate
+blockchains both starting from the genesis block. The old one that
+obeys the old rules, call it "bitcoin-old" and the new one obeying the
+new rules, call it "bitcoin-new". The first block making use of the new
+features will be unacceptablee on "bitcoin-old", and will be the point
+of divergence. At that point, with 95% of hashpower on bitcoin-new,
+it will see new blocks every 10.5 minutes, while with 5% of hashpower
+bitcoin-old will only see new blocks every 3h20m. (With 75% hashpower,
+bitcoin-new would see new blocks every 13m20s, while bitcoin-old would
+see new blocks every 40m)
+
+I'm assuming that as far as almost everyone is concerned, the blockchain
+with the most hashpower (bitcoin-new in this case) would be called
+"bitcoin", but I'm sure people would argue over it.
+
+>             most non-upgraded miners will presumably realise they're
+> ? ?wasting hashpower and stop doing this pretty quick; and remaining
+> ? ?miners will only create blocks very slowly due to sudden reduced
+> ? ?hashpower, without possibility of difficulty adjustment.?
+> ----
+> Is this true? I thought that un-upgraded nodes would just dump the new
+> blocks from the upgraded miner majority as invalid. This how would they
+> even know (besides the PSA) that they were on the wrong side??
+
+Since a majority of hashpower switched to a different chain, anyone
+running non-upgraded nodes after a hard fork was activated would see far
+fewer blocks being found (ie, with 5% of hashpower, that would be every 3
+hours, rather than every 10 minutes). This would resolve itself when the
+difficulty next reset, but that would be after 2016 blocks, which at 3h20m
+per block would take about 9 months rather than the standard 2 weeks.
+(With 25% of hashpower, bitcoin-old would see new blocks every 40
+minutes, and difficulty would be reset after about 8 weeks)
+
+Until the difficulty reset, if they were mining, they'd also see more
+blocks being found by them (eg, if they had 2% of hashpower previously,
+instead of finding 2% of blocks, they'd now be finding 40% of blocks,
+ie 2/5 instead of 2/100).
+
+Because a hard fork doesn't invalidate any transactions, non-upgraded
+nodes would still see almost all the transactions intended for bitcoin-new
+(excepting those from miners working on the fork or that explicitly use
+new features enabled by the fork) so the mempool would grow pretty large,
+given the low rate at which blocks are mined. (If the new feature is
+something like a bigger blocksize, which then increases the rate of
+transactions in bitcoin-new, then that's even worse for bitcoin-old
+nodes!)
+
+And, of course, those numbers get worse if the 5% of hashpower mining
+bitcoin-old reduces as miners write it off as not-profitable.
+
+(Maybe full bitcoin nodes should emit a warning that you've probably
+been hard-forked off the main chain if they see, say, 4 or fewer blocks
+in 5 hours -- with normal hashpower, I think that should only happen
+once in something like 6000 years, but if you've got less than about
+13% of hashpower left on your chain will happen about 50% of the time.
+I don't know if that would actually be helpful compared to a pushed GPG
+signed announcement of the hard-fork though)
+
+> ----snip---
+>    users who
+> ? ?don't uprade will try to do transactions, but won't see them confirm
+> ? ?for hours or days due to lack of hashpower.
+>
+> But only for txns for users who are using the new OP code right? Regular
+> transactions will get relayed by both upgraded and in-upgraded nodes
+> and miners alike.?
+
+Hmm. Depends what you mean by "users". If the user is running an
+SPV wallet, they'll be following the most hashpower and will see
+bitcoin-new. With 12 random connections (bitcoinj's default), I think
+you'd just need ~1350 of 6000 nodes to have upgraded to have a 95%
+chance of seeing bitcoin-new somewhere. So I don't see SPV users having
+any problems.
+
+But in the quote above I was talking about users who are running bitcoin
+core rather than an SPV client. *They* would have the same problems
+mentioned above, because non-upgraded bitcoin core would just totally
+ignore the bitcoin-new blockchain.
+
+So if they published a transaction, it would get confirmed quickly on
+bitcoin-new, sure, but they wouldn't see that confirmation because their
+software is deliberately ignoring bitcoin-new. They'd instead see it as
+unconfirmed until it was included in a bitcoin-old block, but those only
+come every 40m (25% hashpower) or every 3h20m (5% hashpower).
+
+Worse, most of the bitcoin-new transactions are still valid for
+bitcoin-old, so those transactions might get included by the remaining
+miners in bitcoin-old -- so you'd have to pay higher fees to get
+confirmed in 3h40m in bitcoin-old than you would to get confirmed in
+13m in bitcoin-new...
+
+
+TL;DR: I think my conclusions are:
+
+ - gads this stuff is complicated
+
+ - "safe soft-forks" really are safe (this covers BIP 65 (OP_CLTV) and
+   BIPs 68 and 112 (OP_CSV))
+
+ - as currently proposed, versionbits will actually make "damaging
+   soft-forks" pretty safe too
+
+ - if there's a hard fork in the wind, and you're running a full node,
+   make sure you're on the latest version. maybe run an SPV client as well
+   and check you're getting the same answers from both, just to be safe.
+
+Cheers,
+aj
+
