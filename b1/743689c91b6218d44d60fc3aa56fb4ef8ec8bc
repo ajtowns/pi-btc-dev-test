@@ -1,0 +1,74 @@
+From: j@toom.im (Jonathan Toomim (Toomim Bros))
+Date: Tue, 13 Oct 2015 14:56:08 -0700
+Subject: [bitcoin-dev] Memory leaks?
+Message-ID: <99C42DE7-814A-48F8-AB28-A5ADD77A9FD9@toom.im>
+
+I just noticed that several of my running bitcoind processes were using around 3+ GB of RAM, even though the mempool itself seemed to be under control.
+
+XXXX at prime:~/bin$ ./bitcoin-cli getmempoolinfo
+{
+    "size" : 1896,
+    "bytes" : 37341328
+}
+
+[total memory usage not shown -- I restarted bitcoind as soon as I noticed, and didn't copy it down from top]
+
+37 MB mempool, >3 GB RAM usage. Normally, when there aren't a lot of unconfirmed txns floating around the network, memory usage is around 600 MB, so this is quite unusual.
+
+After restarting the process and letting it run for a few minutes, I get:
+
+  PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command
+[###] [XXXX]     20   0 1402M  317M 49836 S  1.0  8.2  0:41.71 ./bitcoind -daemon
+
+XXXX at prime:~/bin$ ./bitcoin-cli getmempoolinfo
+{
+    "size" : 1072,
+    "bytes" : 670000
+}
+
+0.67 MB mempool, 317 MB RAM usage. Much more reasonable.
+
+
+Here's another node I'm running that has been online longer, before restarting:
+
+  PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command
+[###] [XXXX]     20   0 4961M 3540M 11080 S  2.8 45.3  8h20:11 bin/bitcoind -daemon
+
+XXXX at feather:~$ bin/bitcoin-cli getmempoolinfo
+{
+    "size" : 3045,
+    "bytes" : 39656126
+}
+
+39 MB mempool, 3540 MB total memory usage. After restarting bitcoind, I see:
+
+[XXXX]@feather:~$ bin/bitcoin-cli stop
+Bitcoin server stopping
+[XXXX]@feather:~$ bin/bitcoind -daemon
+Bitcoin server starting
+[XXXX]@feather:~$ sleep 10; bin/bitcoin-cli getmempoolinfo
+{
+    "size" : 39,
+    "bytes" : 47037
+}
+
+
+  PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command
+[###] [XXXX]     20   0 1640M  247M 67960 S  0.0  3.2  0:05.17 bin/bitcoind -daemon
+
+
+
+
+Does anybody have any guesses where we might be leaking memory, or what is using the additional 2.4 GB? I've been using minrelaytxfee=0.00003 or similar on my nodes. Maybe there's a leak in the minrelaytxfee code path? Has anyone else seen something similar?
+
+This issue appears to happen both with Bitcoin Core 0.10.1 and with Bitcoin XT 0.11B.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151013/dc82ee16/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 496 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151013/dc82ee16/attachment.sig>
