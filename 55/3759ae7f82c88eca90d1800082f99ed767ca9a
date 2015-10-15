@@ -1,0 +1,189 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Thu, 15 Oct 2015 11:31:17 -0700
+Subject: [bitcoin-dev] CHECKSEQUENCEVERIFY - We need more usecases to
+ motivate the change
+In-Reply-To: <CALqxMTEG-LVRA9VtYOzNMBUCK_M78Fx6ivVY9NZ8B2rfom5oKA@mail.gmail.com>
+References: <20151003143056.GA27942@muck> <87lhbgn4fa.fsf@rustcorp.com.au>
+	<20151008174120.GA9291@muck> <87pp0okeip.fsf@rustcorp.com.au>
+	<CAPWm=eUR1fo4iVX=-J7mO34LvT6akRy5=Cxjn7j64PBn+A_oGQ@mail.gmail.com>
+	<CADJgMzsvdG2iE=FhYrgKve_JxtMjFVOS4Gx-0Q8GnqDYF_-qOw@mail.gmail.com>
+	<CALqxMTEG-LVRA9VtYOzNMBUCK_M78Fx6ivVY9NZ8B2rfom5oKA@mail.gmail.com>
+Message-ID: <CAOG=w-uhA+2EduF5rAHJwv7aHXd3VBAJrcxEsHh-+EF2x-u=CA@mail.gmail.com>
+
+Adam, there is really no justification I can see to lower the interblock
+interval on the Bitcoin blockchain, primarily due to the effects of network
+latency. Lowering the interblock interval and raising the block size are
+not equal alternatives - you can always get more throughput in bitcoin by
+raising the block size than by lowering the interblock time. And that's
+without considering the effect shorter intervals would have on e.g. SPV
+client bandwidth or sidechain connectivity proofs. So I find it very
+unlikely that such granularity would ever be needed on the Bitcoin block
+chain, although if were to happen then extra bits from nSequence could be
+used in a soft-fork compatible way.
+
+However it is true that various sidechains such as Liquid will have a much
+shorter interblock interval than 10min, as well as customer demand for
+protocols with shorter timeouts. It would be nice if such systems did not
+HAVE to resort to complex bit shifting to support more precision, and if
+protocols written for bitcoin could be reused on such systems with minimal
+or no modification.
+
+To that end, it might be preferable to move the flag bit indicating use of
+seconds from bit 16 to bit 23 and (by convention only) reserve bits 17..22
+to provide higher granularity in a sidechain environment. This keeps the
+size of a stack push to 3 bytes while also keeping sufficient room for
+high-order bits of relative lock-time in a sidechain that supports shorter
+block intervals.
+
+Another alternative is to put the units flag in the least significant bit,
+which has the advantage of allowing both units of lock-time to make use of
+1-2 byte pushes, but the disadvantage of making lock times of 64..127
+2-bytes instead of 1-byte.
+
+Thoughts?
+
+On Thu, Oct 15, 2015 at 9:37 AM, Adam Back via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Does that pre-judge that block interval would never change from
+> 10mins?  Eg say with IBLT or fountain codes etc and security arguments
+> for the current limitations of them are found, such that orphan rates
+> can remain low in a decentralised way with 1min blocks, then the
+> locktime granularity would be coarse relative to the block interval
+> (with 512s locktime granularity.
+>
+> Adam
+>
+> On 15 October 2015 at 18:27, Btc Drak via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > Alex,
+> >
+> > I am sorry for not communicating more clearly. Mark and I discussed your
+> > concerns from the last meeting and he made the change. The BIP text still
+> > needs to be updated, but the discussed change was added to the PR, albeit
+> > squashed making it more non-obvious. BIP68 now explicitly uses 16 bits
+> with
+> > a bitmask. Please see the use of SEQUENCE_LOCKTIME_MASK and
+> > SEQUENCE_LOCKTIME_GRANULARITY in the PR
+> > https://github.com/bitcoin/bitcoin/pull/6312.
+> >
+> >     /* If CTxIn::nSequence encodes a relative lock-time, this mask is
+> >      * applied to extract that lock-time from the sequence field. */
+> >     static const uint32_t SEQUENCE_LOCKTIME_MASK = 0x0000ffff;
+> >
+> >     /* In order to use the same number of bits to encode roughly the
+> >      * same wall-clock duration, and because blocks are naturally
+> >      * limited to occur every 600s on average, the minimum granularity
+> >      * for time-based relative lock-time is fixed at 512 seconds.
+> >      * Converting from CTxIn::nSequence to seconds is performed by
+> >      * multiplying by 512 = 2^9, or equivalently shifting up by
+> >      * 9 bits. */
+> >     static const int SEQUENCE_LOCKTIME_GRANULARITY = 9;
+> >
+> > I am also much happier with this last tightening up of the specification
+> > because it removes ambiguity. 512s granularity makes sense within the
+> > context of the 10 minute block target.
+> >
+> > Thank you for spending so much time carefully considering this BIP and
+> > reference implementation and please let me know if there there are any
+> > remaining nits so we can get those addressed.
+> >
+> >
+> >
+> >
+> >
+> > On Thu, Oct 15, 2015 at 2:47 PM, Alex Morcos via bitcoin-dev
+> > <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> >>
+> >> Mark,
+> >>
+> >> You seemed interested in changing BIP 68 to use 16 bits for sequence
+> >> number in both the block and time versions, making time based sequence
+> >> numbers have a resolution of 512 seconds.
+> >>
+> >> I'm in favor of this approach because it leaves aside 14 bits for
+> further
+> >> soft forks within the semantics of BIP 68.
+> >>
+> >> It would be nice to know if you're planning this change, and perhaps
+> >> people can hold off on review until things are finalized.
+> >>
+> >> I'd cast my "vote" against BIP 68 without this change, but am also open
+> to
+> >> being convinced otherwise.
+> >>
+> >> What are other peoples opinions on this?
+> >>
+> >> On Thu, Oct 8, 2015 at 9:38 PM, Rusty Russell via bitcoin-dev
+> >> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> >>>
+> >>> Peter Todd <pete at petertodd.org> writes:
+> >>> > On Tue, Oct 06, 2015 at 12:28:49PM +1030, Rusty Russell wrote:
+> >>> >> Peter Todd via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+> >>> >> writes:
+> >>> >> > However I don't think we've done a good job showing why we need to
+> >>> >> > implement this feature via nSequence.
+> >>> >>
+> >>> >> It could be implemented in other ways, but nSequence is the neatest
+> >>> >> and
+> >>> >> most straightforward I've seen.
+> >>> >>
+> >>> >> - I'm not aware of any other (even vague) proposal for its use?
+> >>> >> Enlighten?
+> >>> >
+> >>> > There's three that immediately come to mind:
+> >>> >
+> >>> > Gregory Maxwell has proposed it as a way of discouraging miners from
+> >>> > reorging chains, by including some of the low-order bits of a
+> previous
+> >>> > block header in nSequence.
+> >>> >
+> >>> > A few people have proposed implementing proof-of-stake blocksize
+> voting
+> >>> > with nSequence.
+> >>>
+> >>> Excellent, thanks!  It's good to have such ideas as a compass.  PoS
+> >>> voting seems like it won't be a problem in 5 bits.
+> >>>
+> >>> The "prevbits" idea would want more bits; naively 64 would be good, but
+> >>> I think there are some tricks we can use to make 32 work OK.  We would
+> >>> have to then split between nLocktime (if available) and multiple
+> >>> nSequence fields, and it would weaken it for some txs.
+> >>>
+> >>> There is one easy solution: change the BIP wording from:
+> >>>
+> >>> -For transactions with an nVersion of 2 or greater,
+> >>> +For transactions with an nVersion of 2,
+> >>>
+> >>> And on every tx bump, we decide whether to keep this scheme (mempool
+> >>> would enforce it always).
+> >>>
+> >>> Cheers,
+> >>> Rusty.
+> >>> _______________________________________________
+> >>> bitcoin-dev mailing list
+> >>> bitcoin-dev at lists.linuxfoundation.org
+> >>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >>
+> >>
+> >>
+> >> _______________________________________________
+> >> bitcoin-dev mailing list
+> >> bitcoin-dev at lists.linuxfoundation.org
+> >> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >>
+> >
+> >
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151015/d0e24a27/attachment.html>
