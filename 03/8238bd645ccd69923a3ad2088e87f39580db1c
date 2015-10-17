@@ -1,0 +1,112 @@
+From: admin@multipool.us (admin at multipool.us)
+Date: Fri, 16 Oct 2015 21:37:30 -0700 (PDT)
+Subject: [bitcoin-dev] Memory leaks?
+In-Reply-To: <99C42DE7-814A-48F8-AB28-A5ADD77A9FD9@toom.im>
+References: <99C42DE7-814A-48F8-AB28-A5ADD77A9FD9@toom.im>
+Message-ID: <1206de5a-e807-406e-9584-305a503d78ec@googlegroups.com>
+
+I can do better than that:
+
+  PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND 
+                                                                            
+                            
+10625 ********  20   0 41.310g 0.035t  51172 S   1.0 57.6  47:11.17 
+bitcoind     
+
+Any idea what's going on here?
+
+$ cat /proc/10625/status|grep -i VM
+VmPeak: 43647420 kB
+VmSize: 43319932 kB
+VmLck:        60 kB
+VmPin:         0 kB
+VmHWM:  38286252 kB
+VmRSS:  38014300 kB
+VmData: 43103812 kB
+VmStk:       236 kB
+VmExe:      8844 kB
+VmLib:    194656 kB
+VmPTE:     79932 kB
+VmSwap:        0 kB
+
+
+On Tuesday, October 13, 2015 at 2:56:15 PM UTC-7, Jonathan Toomim (Toomim 
+Bros) wrote:
+>
+> I just noticed that several of my running bitcoind processes were using 
+> around 3+ GB of RAM, even though the mempool itself seemed to be under 
+> control.
+>
+> XXXX at prime:~/bin$ ./bitcoin-cli getmempoolinfo
+> {
+>     "size" : 1896,
+>     "bytes" : 37341328
+> }
+>
+> [total memory usage not shown -- I restarted bitcoind as soon as I 
+> noticed, and didn't copy it down from top]
+>
+> 37 MB mempool, >3 GB RAM usage. Normally, when there aren't a lot of 
+> unconfirmed txns floating around the network, memory usage is around 600 
+> MB, so this is quite unusual.
+>
+> After restarting the process and letting it run for a few minutes, I get:
+>
+>   PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command
+> [###] [XXXX]     20   0 1402M  317M 49836 S  1.0  8.2  0:41.71 ./bitcoind 
+> -daemon
+>
+> XXXX at prime:~/bin$ ./bitcoin-cli getmempoolinfo
+> {
+>     "size" : 1072,
+>     "bytes" : 670000
+> }
+>
+> 0.67 MB mempool, 317 MB RAM usage. Much more reasonable.
+>
+>
+> Here's another node I'm running that has been online longer, before 
+> restarting:
+>
+>   PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command
+> [###] [XXXX]     20   0 4961M 3540M 11080 S  2.8 45.3  8h20:11 
+> bin/bitcoind -daemon
+>
+> XXXX at feather:~$ bin/bitcoin-cli getmempoolinfo
+> {
+>     "size" : 3045,
+>     "bytes" : 39656126
+> }
+>
+> 39 MB mempool, 3540 MB total memory usage. After restarting bitcoind, I 
+> see:
+>
+> [XXXX]@feather:~$ bin/bitcoin-cli stop
+> Bitcoin server stopping
+> [XXXX]@feather:~$ bin/bitcoind -daemon
+> Bitcoin server starting
+> [XXXX]@feather:~$ sleep 10; bin/bitcoin-cli getmempoolinfo
+> {
+>     "size" : 39,
+>     "bytes" : 47037
+> }
+>
+>
+>   PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command
+> [###] [XXXX]     20   0 1640M  247M 67960 S  0.0  3.2  0:05.17 
+> bin/bitcoind -daemon
+>
+>
+>
+>
+> Does anybody have any guesses where we might be leaking memory, or what is 
+> using the additional 2.4 GB? I've been using minrelaytxfee=0.00003 or 
+> similar on my nodes. Maybe there's a leak in the minrelaytxfee code path? 
+> Has anyone else seen something similar?
+>
+> This issue appears to happen both with Bitcoin Core 0.10.1 and with 
+> Bitcoin XT 0.11B.
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151016/4137feab/attachment.html>
