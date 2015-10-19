@@ -1,0 +1,264 @@
+From: g1liusbitcoin@gmail.com (G1lius Caesar)
+Date: Mon, 19 Oct 2015 15:20:15 +0200
+Subject: [bitcoin-dev] Bitcoin dev IRC meeting in layman's terms (2015-10-15)
+Message-ID: <CAHK+0KQP8WrqOWW2Dn7GWSXpXke+85bdUh+qvKHceohhQpwz5g@mail.gmail.com>
+
+Once again my attempt to summerize and explain the weekly bitcoin developer
+meeting in layman's terms.
+Link to last weeks summerization (
+https://www.reddit.com/r/Bitcoin/comments/3o7bi6/bitcoin_dev_meeting_in_laymans_terms_2015108/
+)
+Link to this weeks on reddit:
+https://www.reddit.com/r/Bitcoin/comments/3pcinz/bitcoin_dev_irc_meeting_in_laymans_terms_20151015/
+
+*Disclaimer*
+
+Please bear in mind I'm not a developer and I'd have problems coding "hello
+world!", so some things might be incorrect or plain wrong.
+Like any other write-up it likely contains personal biases, although I try
+to stay as neutral as I can.
+There are no decisions being made in these meetings, so if I say "everyone
+agrees" this means everyone present in the meeting, that's not consensus,
+but since a fair amount of devs are present it's a good representation.
+The dev IRC and mailinglist are for bitcoin development purposes. If you
+have not contributed actual code to a bitcoin-implementation, this is
+probably not the place you want to reach out to. There are many places to
+discuss things that the developers read, including this sub-reddit.
+
+
+link to this week logs
+http://bitcoinstats.com/irc/bitcoin-dev/logs/2015/10/15#l1444935660.0
+Meeting minutes by meetbot
+http://www.erisian.com.au/meetbot/bitcoin-dev/2015/bitcoin-dev.2015-10-15-19.01.html
+
+
+Main topics discussed where:
+Mempool limiting
+sendheaders BIP
+versionbits
+dev/discuss list policy
+CHECKSEQUENCEVERIFY
+
+
+**Mempool limiting**
+
+- background
+
+When a transaction is relayed across the network it is held by the nodes in
+memory, until it gets into a block. All these transactions that sit in
+memory are called the memorypool or mempool for short.
+Like we could see during the spam-attack if there's a big back-log of
+transactions that couldn't make it in the blockchain this mempool can get
+pretty big resulting in nodes crashing.
+
+To stop this from happening devs are trying to find a way to limit this
+mempool, so a mechanism to reject and/or remove transactions from the
+mempool. The hard part here is to make it so nodes can't be attacked by
+abusing this mechanism.
+So far the devs are going with TheBlueMatt's proposal of throwing away the
+cheapest txn and setting the min relay fee to it
+https://github.com/bitcoin/bitcoin/pull/6722
+
+
+- meeting comments
+
+While testing, sipa encountered transactions that took 200ms to be accepted
+into the mempool.
+As it's the first time he has benchmarked this and the pull-request
+shouldn't make an impact on these times it likely doesn't have anything to
+do with this. However, such times are bad either way.
+The average time in sipa's tests is 4ms. (After the meeting Morcos did some
+benchmarking (
+https://github.com/bitcoin/bitcoin/pull/6722#issuecomment-148874040 ) and
+confirmed it was not specific to this PR, and pointed out the outliers come
+from CheckInputs and HaveInputs (as you might guess, having to do with
+checking the inputs)
+Question on why we should revert the minrelay (minimum fee for nodes to
+relay a transaction) back to 1000 (it has been set to 5000 to quick-fix the
+mempool issues), sipa thinks it should be floating as well or the dust
+limit becomes ineffective.
+
+
+- meeting conclusion
+
+Review PR 6722 Limit mempool by throwing away the cheapest txn and setting
+min relay fee to it https://github.com/bitcoin/bitcoin/pull/6722
+Morcos/sipa will do some more benchmarks and comment on the PR ( morcos'
+benchmark results
+https://github.com/bitcoin/bitcoin/pull/6722#issuecomment-148874040 )
+
+
+**sendheaders BIP**
+
+- background
+
+send headers BIP
+https://github.com/sdaftuar/bips/blob/add-sendheaders/bip-sendheaders.mediawiki
+Copy/paste from the BIP:
+Since the introduction of "headers-first" downloading of blocks in 0.10,
+blocks will not be processed unless they are able to connect to a (valid)
+headers chain. Consequently, block relay generally works as follows:
+
+1. A node (N) announces the new tip with an "inv" message, containing the
+block hash
+2. A peer (P) responds to the "inv" with a "getheaders" message (to request
+headers up to the new tip) and a "getdata" message for the new tip itself
+3. N responds with a "headers" message (with the header for the new block
+along with any preceding headers unknown to P) and a "block" message
+containing the new block
+However, in the case where a new block is being announced that builds on
+the tip, it would be generally more efficient if the node N just announced
+the block header for the new block, rather than just the block hash, and
+saved the peer from generating and transmitting the getheaders message (and
+the required block locator).
+
+
+
+- meeting comments
+
+Question on how to move forward. How to let the nodes know you want the
+blockheader instead of the blockhash.
+Options:
+Extend the version message.
+Have an "options" message that can send flags.
+Send a "sendheaders" message early when connecting so the way peers want
+their block announcement is immediately known.
+Send a "sendheaders" message at any time, changing the way peers want their
+block announcement from hashes to headers.
+
+No one likes to extend the version message further.
+There's no strong advantage to have an "options" message over a
+"sendheaders" message.
+Having the message being sent early on might be too constraining. Possible
+usecase from morcos: "its entirely possible some future optimization may
+say, i want to send sendheaders to these peers b/c they announce a lot of
+new stuff to me and not these others b/c they don't".
+Most people like this to be enable-only, so no message to get back to
+receiving blockhashes. Which is how the BIP was drafted.
+
+
+-meeting conclusion
+
+sdaftuar does a pull-request for the BIP to get a number assigned and
+proceeds with the BIP as drafted.
+
+
+
+**versionbits**
+
+- background
+
+BIP 9 https://github.com/bitcoin/bips/blob/master/bip-0009.mediawiki
+Currently softforks have been done by the isSuperMajority mechanism,
+meaning when 95% of the last X blocks has a version number higher than Y
+the fork is deployed.
+A new way of doing this is currently being worked on and that uses all bits
+of the version number, appropriately being called versionbits. So instead
+of a fork happening when the version is larger than (for example)
+00000000011 (3), a fork happens when (for example) the 3rd bit is up (so
+00100000011).
+This way softforks can be deployed simultaneous and independant of each
+other.
+
+- meeting comments
+
+copy/paste from IRC, since I don't know what this specifically means:
+CodeShark: so right now it's just a unit that implements the versionbits
+logic but does not demonstrate its usage
+I thought it would be better to actually integrate in a separate PR, but I
+can add a demonstration
+sipa: separate commit, same PR - i think we need something that's mergable
+as a whole, to be able to see whether the whole thing easily backports
+
+Codeshark (who's implementing versionbits) had some more remarks but no one
+present had seemed to reviewed it, so not much use in discussing things
+further.
+
+
+- meeting conclusion
+
+review versionbits implementation
+https://github.com/bitcoin/bitcoin/pull/6816
+
+
+**dev/discuss list policy**
+
+- background
+
+The bitcoin-dev mailing list is intented for technical discussions only.
+There's things that don't belong there but need to be discussed anyway.
+Now this is done in bitcoin-dev, but the volume of this is getting too big.
+
+There's recently also an influx of really inappropriate posts, level
+kindergarden
+https://www.mail-archive.com/bitcoin-dev at lists.linuxfoundation.org/msg02539.html.
+
+For the things that don't belong on bitcoin-dev, but need to be discussed
+anyway there's a new list being created namely bitcoin-discuss as well as
+clear policies and moderation for both.
+
+- meeting comments
+
+Bitcoin-discuss was created, but the admin password wasn't distributed to
+jgarzik who's willing to guide the moderatation.
+Separate moderation-proposals have been done meanwhile.
+People just want it to move on.
+
+- meeting conclusion
+
+Since none of the people who proposed a moderation-scheme are present we'll
+let them discuss it among each other and post their decisions publicly.
+
+
+**CHECKSEQUENCEVERIFY**
+
+- background
+
+CheckLockTimeVerify (CLTV) repurposes the nSequence field (nSequence are 4
+bytes intended for sequencing time-locked transactions, but this never got
+used). However, there's no way use these values in a bitcoin script.
+CheckSequenceVerify (CSV) makes this field accessible to bitcoin scripts.
+
+- meeting comments
+
+CLTV is pretty much done.
+Check to see maaku moving one of the bits to allow for other
+implementations to have better granularity has any objections.
+As long as we're using as few bits as possible the exact semantics are less
+important for most people.
+sipa points out a possible bug (
+https://github.com/bitcoin/bitcoin/pull/6312#discussion_r41899674 ) that
+influences the wallet.
+CSV is not on target for the end of of the month, although a lot of work
+and progress has been made.
+
+
+
+- meeting conclusion
+
+Review and ACK/NACK of 6312 BIP-68: Mempool-only sequence number constraint
+verification https://github.com/bitcoin/bitcoin/pull/6312
+Review and ACK/NACK of 6566 BIP-113: Mempool-only median time-past as
+endpoint for lock-time calculations
+https://github.com/bitcoin/bitcoin/pull/6566
+
+
+**Participants**
+
+wumpus     Wladimir J. van der Laan
+sipa       Pieter Wuille
+btcdrak    btcdrak
+gmaxwell   Gregory Maxwell
+morcos     Alex Morcos
+maaku      Mark Friedenbach
+CodeShark  Eric Lombrozo
+BlueMatt   Matt Corallo
+sdaftuar   Suhas Daftuar
+warren     Warren Togami
+GreenIsMyPepper  Joseph Poon
+davec      Dave Collins
+cfields    Cory Fields
+jonasschnelli   Jonas Schnelli
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151019/c7575389/attachment.html>
