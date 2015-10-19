@@ -1,0 +1,54 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Mon, 19 Oct 2015 14:01:04 +0000
+Subject: [bitcoin-dev] [BIP] Normalized transaction IDs
+Message-ID: <CALxbBHU+kdEAh_4+B663vknAAr8OKZpUzVTACORPZi47E=Ehkw@mail.gmail.com>
+
+After spending some more time on the normalized transaction ID proposal and
+reworking it to be a soft-fork (thanks sipa for helping me figuring out
+how), I'd like to propose the BIP again.
+
+As with the previous version, which was using a hard-fork, the normalized
+transaction ID is computed only considering the non-malleable parts of a
+transaction, i.e., stripping the signatures before computing the hash of
+the transaction. This ensures that if a transaction is modified, either by
+a third party fishing transactions from the network and re-injecting
+modified versions or by one of the signers re-signing it, any transaction
+that builds on top of it still remains valid. Furthermore it allows the use
+of template transactions, unsigned transactions upon which further
+transaction can be built before signing the template transaction and
+locking the contract.
+
+Unlike the previous proposal, this is a softfork proposal that redefines
+OP_NOP4 with an extensible and parameterized version of the signature
+checking opcodes, called OP_CHECKSIGEX. Among other things the parameters
+allow to specify that an output with an OP_CHECKSIGEX is to be referenced
+by the normalized transaction ID that created it, instead of the instance
+transaction ID containing malleable signatures. This BIP uses the
+normalized transaction IDs exclusively while signing or checking
+signatures, they are not used in any network level message as the previous
+version would have done, hence there is no change at network level and old
+clients should be able to exchange transactions as before and blocks still
+reference the transaction instances.
+
+The proposal is implemented (see below), by computing the normalized
+transaction ID when adding them to the UTXO and storing them along with the
+coin state. OP_CHECKSIGEX mostly duplicates OP_CHECKSIG and
+OP_CHECKMULTISIG, but I'm hoping somebody can give me some pointers into
+how to best refactor the common functionality into reusable blocks. And the
+annotating incoming transactions with their normalized inputs is a bit
+cumbersome, maye somebody has some pointers here as well?
+
+BIP Pull request: https://github.com/bitcoin/bips/pull/224
+Implementation: https://github.com/cdecker/bitcoin/commits/normtx
+
+I think in the discussion of my previous proposal, most of you welcomed the
+introduction of normalized transaction IDs, were it not for the hardfork. I
+hope this proposal adresses the previous concerns and that we can move
+forward in adding the normalized transaction IDs to the bitcoin protocol.
+That being said, I'm always open to suggestions :-)
+
+Regards,
+Christian
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151019/2ed7395d/attachment-0001.html>
