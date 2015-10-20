@@ -1,0 +1,95 @@
+From: j@toom.im (Jonathan Toomim)
+Date: Tue, 20 Oct 2015 05:39:01 -0700
+Subject: [bitcoin-dev] Memory leaks?
+In-Reply-To: <CA+w+GKTU6C7KKFx9dDd_--s1DQCO15n=034Lku2-kTYKf96XYw@mail.gmail.com>
+References: <99C42DE7-814A-48F8-AB28-A5ADD77A9FD9@toom.im>
+	<20151014093913.GB19607@amethyst.visucore.com>
+	<F938BD02-3D80-4E99-BD1C-490543187895@toom.im>
+	<CAP3QyGJNBdsBtxYjOprRJ=YW2v-N_CopVQeSgDs6J4J8LMWuxA@mail.gmail.com>
+	<CA+w+GKTU6C7KKFx9dDd_--s1DQCO15n=034Lku2-kTYKf96XYw@mail.gmail.com>
+Message-ID: <1FE17DEB-8F77-4A60-A644-46A4F97D0E24@toom.im>
+
+I did that Sunday twice. I'll report the results soon. Short version is that it looks like valgrind is just finding 200 kB to 600 kB of pblocktemplate, which is declared as a static pointer. Not exactly the multi-GB leak I'm looking for, but possibly related.
+
+I've also got two bitcoind processes running on the same machine that I started at the same time, running on different ports, all with the same settings, but one of which is serving getblocktemplate every 5-6 seconds and the other is not, while logging RSS on both every 6 seconds. RSS for the non-serving node is now 734 MB, and for the serving node 1997 MB. Graphs coming soon.
+
+
+On Oct 20, 2015, at 3:12 AM, Mike Hearn <hearn at vinumeris.com> wrote:
+
+> OK, then running under Valgrind whilst sending gbt RPCs would be the next step.
+> 
+> On Mon, Oct 19, 2015 at 9:17 PM, Multipool Admin <admin at multipool.us> wrote:
+> My nodes are continuously running getblocktemplate and getinfo, and I also suspected the issue is in either gbt or the rpc server.
+> 
+> The instance only takes a few hours to get up to that memory usage.
+> 
+> On Oct 18, 2015 8:59 AM, "Jonathan Toomim via bitcoin-dev" <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> On Oct 14, 2015, at 2:39 AM, Wladimir J. van der Laan <laanwj at gmail.com> wrote:
+>> This is *most likely* the mempool, but is just not reported correctly.
+> 
+> I did some testing with PR #6410's better mempool reporting. The improved reporting suggests that actual in-memory usage ("usage":) by CTxMemPool is about 2.5x to 3x higher than the serialized transaction sizes ("bytes":). The excess memory usage that I'm seeing is on the order of 100x higher than the mempool "bytes": value. As such, I think it's unlikely that this is the mempool, or at least not normal/correct mempool behavior.
+> 
+> Another user (admin at multipool.us) reported 35 GB of RSS usage. I'm guessing his bitcoind has been running longer than any of mine. His server definitely has more RAM. I don't know which email list he is subscribed to (probably XT), so I'm sharing it with both lists to make sure you're all aware of how big an issue this can be.
+> 
+>> In the meantime you can mitigate the mempool growth by setting `-mintxfee`, see
+>> https://github.com/bitcoin/bitcoin/blob/v0.11.0/doc/release-notes.md#transaction-flooding
+> 
+> I have mintxfee and minrelaytxfee set to about 0.00003, which is high enough to exclude essentially all of the of the 14700-14800 byte flood transactions. My nodes' mempools only contain about one or two blocks' worth of transactions. So I don't think this is correct either.
+> 
+> 
+> 
+> Some additional notes on this issue:
+> 
+> 1. I think it's related to CreateNewBlock() and getblocktemplate. I ran a Core bitcoind process (commit d78a880) overnight with no mining connected to it, and (IIRC -- my memory is fuzzy) when I woke up it was using around 400 MB of RSS and the mempool was at around "bytes":10MB, "usage": 25MB. I ran ./bitcoin-cli getblocktemplate once, and IIRC the RSS shot up to around 800 MB. I then ran getblocktemplate every 5 seconds for about 30 minutes, and RSS climbed to 1180 MB. An hour after that with more getblocktemplates, and now RSS is at 1350 MB. [Edit: 1490 MB about 30 minutes later.] getmempoolinfo is still showing "usage" around 25MB or less.
+> 
+> I'll do some more testing with this and see if I can make it repeatable, and record the results more carefully. Expect a follow-up from me in a day or two.
+> 
+> 2. valgrind did not show anything super promising. It did report this:
+> 
+> ==6880== LEAK SUMMARY:
+> ==6880==    definitely lost: 0 bytes in 0 blocks
+> ==6880==    indirectly lost: 0 bytes in 0 blocks
+> ==6880==      possibly lost: 288 bytes in 1 blocks
+> ==6880==    still reachable: 10,552 bytes in 39 blocks
+> ==6880==         suppressed: 0 bytes in 0 blocks
+> (Bitcoin Core commit d78a880)
+> 
+> and this:
+> ==6778== LEAK SUMMARY:
+> ==6778==    definitely lost: 0 bytes in 0 blocks
+> ==6778==    indirectly lost: 0 bytes in 0 blocks
+> ==6778==      possibly lost: 320 bytes in 1 blocks
+> ==6778==    still reachable: 10,080 bytes in 32 blocks
+> ==6778==         suppressed: 0 bytes in 0 blocks
+> (Bitcoin XT commit fe446d)
+> 
+> I haven't found anything in there yet that I think would produce the multi-GB memory usage after running for a few days, but I could be missing it. Email me if you want the full log.
+> 
+> I did not try running getblocktemplate while valgrind was running. I'll have to try that. I also have not let valgrind run for more than an hour.
+> 
+> 
+> 
+> P.S.: Sorry for all the cross-post confusion and consequent flamewar fallout. While it's probably too late for this thread, I'll make sure to post in a manner that keeps the threads clearly separate in the future (e.g. different subject lines).
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
+> 
+> --
+> You received this message because you are subscribed to the Google Groups "bitcoin-xt" group.
+> To unsubscribe from this group and stop receiving emails from it, send an email to bitcoin-xt+unsubscribe at googlegroups.com.
+> For more options, visit https://groups.google.com/d/optout.
+> 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151020/0f37ce9f/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 496 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151020/0f37ce9f/attachment.sig>
