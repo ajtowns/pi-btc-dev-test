@@ -1,0 +1,24 @@
+From: j@toom.im (Jonathan Toomim)
+Date: Tue, 27 Oct 2015 21:26:52 -0700
+Subject: [bitcoin-dev] Composite priority: combining fees and bitcoin-days
+	into one number
+Message-ID: <291B85A6-D8D4-443B-B03B-C675CBEEC662@toom.im>
+
+Assigning 5% of block space based on bitcoin-days destroyed (BDD) and the other 95% based on fees seems like a rather awkward approach to me. For one thing, it means two code paths in pretty much every procedure dealing with a constrained resource (e.g. mempool, CNB). This makes code harder two write, harder to maintain, and slower to execute. As a result, some people have proposed eliminating BDD priority altogether. I have another idea.
+
+We can create and maintain a conversion rate between BDD and fees to create a composite priority metric. Then we just do compPrio = BDD * conversionRate + txFee.
+
+How do we calculate conversionRate? We want the following equation to be true:
+
+sum(fees) = sum(BDD) * conversionRate * BDDweight
+
+So we sum up the mempool fees, and we sum up the mempool BDD. We get a policy statement from the command line for a relative weight of BDD vs fees (default 0.05), and then conversionRate = (summedFees / summedBDD) * BDDWeight.
+
+As an optimization, rather than scanning over the whole mempool to calculate this, we can just store the sum and add or subtract from it each time a tx enters or leaves the mempool. In order to minimize drift (the BDD for a transaction changes over time), we recalculate the whole thing each time a new block is found.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 496 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151027/bb663efd/attachment.sig>
