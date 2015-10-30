@@ -1,0 +1,72 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Fri, 30 Oct 2015 04:28:47 +0000
+Subject: [bitcoin-dev] [patch] Switching Bitcoin Core to sqlite db
+In-Reply-To: <3CB90C47-293E-4C18-A381-E5203483D68F@gmx.com>
+References: <5631C363.5060705@neomailbox.net>
+	<201510290803.52734.luke@dashjr.org>
+	<5632DE33.7030600@bitcartel.com>
+	<CAAS2fgTga_vTfOKrFu_hEzXSfTfg9FRfJ6aL6ginuGFqnbm7=w@mail.gmail.com>
+	<3CB90C47-293E-4C18-A381-E5203483D68F@gmx.com>
+Message-ID: <CAAS2fgRdK4bDr3x_y9UpdH234PQSfD7U539HBLA==+hLQJ_7Fw@mail.gmail.com>
+
+On Fri, Oct 30, 2015 at 4:04 AM, Peter R <peter_r at gmx.com> wrote:
+> Can you give a specific example of how nodes that used different database technologies might determine different answers to whether a given transaction is valid or invalid?  I?m not a database expert, but to me it would seem that if all the unspent outputs can be found in the database, and if the relevant information about each output can be retrieved without corruption, then that?s all that really matters as far as the database is concerned.
+
+If you add to those set of assumptions the handling of write ordering
+is the same (e.g. multiple updates in an change end up with the same
+entry surviving) and read/write interleave returning the same results
+then it wouldn't.
+
+But databases sometimes have errors which cause them to fail to return
+records, or to return stale data. And if those exist consistency must
+be maintained; and "fixing" the bug can cause a divergence in
+consensus state that could open users up to theft.
+
+Case in point, prior to leveldb's use in Bitcoin Core it had a bug
+that, under rare conditions, could cause it to consistently return not
+found on records that were really there (I'm running from memory so I
+don't recall the specific cause).  Leveldb fixed this serious bug in a
+minor update.  But deploying a fix like this in an uncontrolled manner
+in the bitcoin network would potentially cause a fork in the consensus
+state; so any such fix would need to be rolled out in an orderly
+manner.
+
+> I?d like a concrete example to help me understand why more than one implementation of something like the UTXO database would be unreasonable.
+
+It's not unreasonable, but great care is required around the specifics.
+
+Bitcoin consensus implements a mathematical function that defines the
+operation of the system and above all else all systems must agree (or
+else the state can diverge and permit double-spends);  if you could
+prove that a component behaves identically under all inputs to another
+function then it can be replaced without concern but this is something
+that cannot be done generally for all software, and proving
+equivalence even in special cases it is an open area of research.  The
+case where the software itself is identical or nearly so is much
+easier to gain confidence in the equivalence of a change through
+testing and review.
+
+With that cost in mind one must then consider the other side of the
+equation-- utxo database is an opaque compressed representation,
+several of the posts here have been about desirability of blockchain
+analysis interfaces, and I agree they're sometimes desirable but
+access to the consensus utxo database is not helpful for that.
+Similarly, other things suggested are so phenomenally slow that it's
+unlikely that a node would catch up and stay synced even on powerful
+hardware.  Regardless, in Bitcoin core the storage engine for this is
+fully internally abstracted and so it is relatively straight forward
+for someone to drop something else in to experiment with; whatever the
+motivation.
+
+I think people are falling into a trap of thinking "It's a <database>,
+I know a <black box> for that!"; but the application and needs are
+very specialized here; no less than, say-- the table of pre-computed
+EC points used for signing in the ECDSA application. It just so
+happens that on the back of the very bitcoin specific cryptographic
+consensus algorithim there was a slot where a pre-existing high
+performance key-value store fit; and so we're using one and saving
+ourselves some effort.  If, in the future, Bitcoin Core adopts a
+merkelized commitment for the UTXO it would probably need to stop
+using any off-the-shelf key value store entirely, in order to avoid a
+20+ fold write inflation from updating hash tree paths (And Bram Cohen
+has been working on just such a thing, in fact).
