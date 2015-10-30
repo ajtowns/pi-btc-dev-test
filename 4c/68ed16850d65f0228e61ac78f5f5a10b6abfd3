@@ -1,0 +1,61 @@
+From: bob_bitcoin@mcelrath.org (Bob McElrath)
+Date: Fri, 30 Oct 2015 16:36:04 +0000
+Subject: [bitcoin-dev] UTXO set commitment hash
+Message-ID: <20151030163604.GA29303@mcelrath.org>
+
+The state of bitcoin transactions can be committed to in blocks by keeping two
+running hashes, one of unspent transaction outputs and one of spent transaction
+outputs.  A "running hash" $R$ I define as being computed by taking the previous
+value of the hash $r$, concatenating it with the new data $x$, and hashing it:
+\[
+    R = hash(r|x).
+\]
+In the case of the UTXO set, the data $x$ can be taken to be the concatenation
+(txid|vout|amount) for all outputs, let's call this running hash hTXO.  Because
+data cannot be "removed" from this set commitment, a second hash can be computed
+consisting of the spent outputs, let's call this hSTXO.  Thus the pair of hashes
+(hTXO, hSTXO) is equivalent to a hash of all unspent outputs.  These hashes can
+be placed into a block's Merkle tree by miners with a soft fork.  It can be
+reduced to a single hash hUXTO = hash(hTXO|hSXTO) if desired.
+
+By defining *how* to compute (hTXO, hSXTO) we can define an implementation
+independent definition of consensus that is extremely cheap to compute.  The
+order in which outputs are hashed is clearly important, but bitcoin has a well
+defined ordering already in terms of the order in which transactions appear in
+blocks, and the sequential order of outputs.
+
+In the recent discussion surrounding leveldb and jgarzik's new sqlite branch, it
+has been brought up repeatedly by gmaxwell that this db is "consensus critical".
+As a data structure storing the state of transactions, of course it's consensus
+critical.  However there's only one right answer to what the set of UTXOs is.
+Any other result reported by the db is simply wrong.  By creating and publishing
+(hTXO, hSXTO), miners can publish their view of the transaction state, and any
+implementation can be validated against it.
+
+As I understand it, leveldb is in the bitcoin core source tree because it could
+have bugs and give the wrong answer for a given UTXO (see BIP50).  This is worse
+than a consensus failure, it's just wrong, and the argument that we have to keep
+leveldb around and maintain it because it could be wrong is pretty ugly, and I
+don't think anyone actually wants to do this.  Let's not be wrong in the first
+place, and let's choose databases based on performance and other considerations.
+"Not being wrong" should go without saying, regardless of implementation
+details.
+
+It should be noted that (hTXO, hSXTO) can be computed twice, once without the
+database (while processing a new block) and once by requesting the same data
+from the database.  So bad database behavior can be detected and prevented from
+causing consensus failures.  And then we can remove leveldb from the core.
+
+--
+Cheers, Bob McElrath
+
+"For every complex problem, there is a solution that is simple, neat, and wrong."
+    -- H. L. Mencken 
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151030/387372b6/attachment.sig>
