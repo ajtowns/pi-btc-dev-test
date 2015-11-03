@@ -1,0 +1,102 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Tue, 03 Nov 2015 21:44:02 +0000
+Subject: [bitcoin-dev] [BIP] Normalized transaction IDs
+In-Reply-To: <201511032048.18680.luke@dashjr.org>
+References: <CALxbBHU+kdEAh_4+B663vknAAr8OKZpUzVTACORPZi47E=Ehkw@mail.gmail.com>
+	<201510220905.27124.luke@dashjr.org>
+	<CALxbBHV4JU7TG8QutkX7m9V4n_ANgKAgWO8ZA2KxQk8jP=kF0g@mail.gmail.com>
+	<201511032048.18680.luke@dashjr.org>
+Message-ID: <CALxbBHVwv_T4=DTUdmbgG2y7QmjETCKbQ6_oKKNjsCS=HDrJ+A@mail.gmail.com>
+
+On Tue, Nov 3, 2015 at 9:49 PM Luke Dashjr <luke at dashjr.org> wrote:
+
+> On Tuesday, November 03, 2015 8:37:44 PM Christian Decker wrote:
+> > I am still very much intrigued by Luke's idea of having empty scriptsigs
+> > and ship the signatures in external scripts, however the proposal uses
+> the
+> > on-the-fly normalization because we have no good way of relaying the
+> > external scripts. Since we are still in the drafting phase I am open to
+> > suggestions and if there is a good/working solution I can amend/withdraw
+> > the proposal.
+>
+> Changing the network protocol is trivial in comparison to making a
+> permanent
+> increase in UTXO set costs.
+>
+
+Ok, so assuming we can get a connected component of upgraded nodes that
+relay both the transaction and the associated external scripts then we
+could just piggyback the external scripts on top of the normal messages.
+Non-upgraded nodes will read the entire two-part message but only parse the
+classical transaction, dropping the external script. Validation rules for
+upgraded nodes are the same as before: if the attached signatures are
+invalid the entire TX is dropped. We have to commit to the external scripts
+used during the creation of a block. I think the easiest way to add this
+commitment is the coinbase input I guess, and following the transaction
+list a new list of signature lists is shipped with the rest of the block.
+Non-upgraded will ignore it as before.
+
+Would that work? It all hinges on having upgraded miners in a connected
+component otherwise non-upgraded nodes will drop the external scripts on
+the way (since they parse and then reconstruct the messages along the
+path). But if it works this could be a much nicer solution.
+
+
+>
+> > As for open venues for malleability, I'm not sure we can fix them at all,
+> > after all the ability of a single signer to doublespend by
+> > appending/replacing inputs/outputs in an arbitrary fashion is not fixable
+> > IMHO and will cause any future transaction building on its outputs to be
+> > orphaned. What would the perfect properties for such a fix be?
+>
+> The problem isn't changing inputs/outputs, but that such changes invalidate
+> later spends. In particular, note that wallets *should ideally* be actively
+> trying to make transfers using multiple malleated versions of the same
+> payment.
+>
+
+So this is indeed a form of desired malleability we will likely not be able
+to fix. I'd argue that this goes more into the direction of double-spending
+than a form of malleability, and is mostly out of scope for this BIP. As
+the abstract mentions this BIP attempts to eliminate damage incurred by
+malleability in the third party modification scenario and in the multisig
+scenario, with the added benefit of enabling transaction templating. If we
+can get the segregated witnesses approach working all the better, we don't
+even have the penalty of increased UTXO size. The problem of singlesig
+users doublespending their outputs to update transactions remains a problem
+even then.
+
+
+>
+> So the way to make an anti-malleable wallet, would be to strictly enforce
+> the
+> no-address-reuse rule on payments received (note this has no effect on
+> other/current wallets) and rely only on the hash of that scriptPubKey+value
+> for the input in subsequent transactions. This way, no matter what inputs
+> or
+> other outputs the transaction paying the address/invoice uses, the
+> subsequent
+> transaction ignores them and remains valid. (I am not suggesting this as a
+> mandatory change that all wallets must adopt to receive the current semi-
+> malleability protection you propose - only that it be *possible* for
+> wallets
+> to upgrade to or offer in the future.)
+>
+
+Sounds very interesting. That would then be a new signature checking opcode
+I guess that would allow the transaction hash in the input be replaced by
+the hash of the serialized output it is spending? That way the transaction
+would not be detached from the coins unless the amount or the scriptpubkey
+(containing the address) is modified. So a user may add new outputs and
+inputs to an existing transaction like you mentioned. This does not help
+someone receiving funds from a sender to build new transactions on top
+since the sender may simply doublespend its output before it is confirmed.
+I think this is probably best addressed in a separate proposal.
+
+
+>
+> Luke
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151103/63439a8f/attachment.html>
