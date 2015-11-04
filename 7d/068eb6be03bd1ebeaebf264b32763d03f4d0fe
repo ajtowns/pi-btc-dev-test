@@ -1,0 +1,74 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Wed, 4 Nov 2015 14:47:35 -0800
+Subject: [bitcoin-dev] A validation-cost metric for aggregate limits and fee
+	determination
+Message-ID: <CAOG=w-tR89zm_VDCR-MR_+F9bRNvm4TCZSQcTmYGKRW1JQhkUg@mail.gmail.com>
+
+At the first Scaling Bitcoin workshop in Montreal I presented on the topic
+of "bad blocks" that take an excessive amount of time to validate. You can
+read a transcript of this talk here:
+
+http://diyhpl.us/wiki/transcripts/scalingbitcoin/alternatives-to-block-size-as-aggregate-resource-limits/
+
+The core message was that the assumption made by the design parameters of
+the system, namely that validation costs scale linearly with transaction or
+block size, is wrong. In particular, in certain kinds of transactions there
+are validation costs which scale quadraticly with size. For example, the
+construction of SIGHASH_ALL results in each input signing a different
+message digest, meaning that the entire transaction (minus the scriptSigs)
+is rehashed for each input. As another example, the number of signature
+operation performed during block validation is unlimited if the validations
+are contained within the scriptPubKey (this scales linearly but with a very
+large constant factor). The severity of these issues increase as the
+aggregate limits in place on maximum transaction and block size increase.
+
+There have been various solutions suggested, and I would like to start a
+public discussion to see if consensus can be reached over a viable approach.
+
+Gavin, for example, has written code that tracks the number of bytes hashed
+and enforces a separate limit for a block over this aggregate value. Other
+costs could be constrained in a similar whack-a-mole way. I have two
+concerns with this approach:
+
+1. There would still exist a gap between the average-case validation cost
+of a full block and the worst case validation cost of a block that was
+specifically constructed to hit every limit.
+
+2. Transaction selection and by extension fee determination would become
+much more complicated multi-dimensional optimization problems. Since fee
+management in particular is code replicated in a lot of infrastructure, I
+would be very concerned over making optimal behavior greatly more difficult.
+
+My own suggestion, which I submit for consideration, is to use a linear
+function of the various costs involved (signatures verified, bytes hashed,
+inputs consumed, script opcodes executed, etc.). The various algorithms
+used for transaction selection and fee determination can then be reused,
+using the output of this new linear function as the "size" of the
+transaction.
+
+Separately, many others including Greg Maxwell have advocated for a
+"net-UTXO" metric instead of, or in combination with a validation-cost
+metric. In the pure form the block size limit would be replaced with a
+maximum UTXO set increase, thereby applying a cost in extra fee required to
+create unspent outputs. This has the distinct advantage of making dust
+outputs considerably more expensive than regular spend outputs.
+
+For myself, I remain open to the possibility of adding a UTXO set size
+corrective factor to a chiefly validation-cost metric. It would be nice to
+reward users for cleaning up scattered small output, reward miners for
+including dust-be-gone outputs, and make spam attacks more costly. But
+doing so requires setting aside some unused validation resources in order
+to reward miners who clean up the UTXO, which means it widens the gap
+between average and worst case block validation times. Also, worry over the
+size of the UTXO database is only a concern for how Bitcoin Core is
+currently structured -- with e.g. UTXO or STXO commitments it could be the
+case that in the future full nodes do not store the UTXO and instead carry
+proofs of their inputs as prunable witness data. If we choose a net-UTXO
+metric however, we will be stuck with it for some time.
+
+I will be submitting a talk proposal for Scaling Bitcoin on this topic, but
+I would like to get some feedback from the developer community first.
+Anyone have any thoughts to add?
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151104/036ee438/attachment.html>
