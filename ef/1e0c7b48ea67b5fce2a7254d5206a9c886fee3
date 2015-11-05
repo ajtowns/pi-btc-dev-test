@@ -1,0 +1,88 @@
+From: gavinandresen@gmail.com (Gavin Andresen)
+Date: Thu, 5 Nov 2015 09:23:44 +0000
+Subject: [bitcoin-dev] A validation-cost metric for aggregate limits and
+ fee determination
+In-Reply-To: <CAOG=w-tR89zm_VDCR-MR_+F9bRNvm4TCZSQcTmYGKRW1JQhkUg@mail.gmail.com>
+References: <CAOG=w-tR89zm_VDCR-MR_+F9bRNvm4TCZSQcTmYGKRW1JQhkUg@mail.gmail.com>
+Message-ID: <CABsx9T3K+YfZpD4aiSxfZHpRMGfOjvdPm4fkgD067G6mRyYWbg@mail.gmail.com>
+
+I have several thoughts:
+
+Weighing CPU validation cost should be reasonably straightforward-- just
+pick some arbitrary, commonly-available, recent hardware and then benchmark
+the two things that take the bulk of validation time (hashing to create the
+signature hash, then ECDSA validation), and weigh the terms in the
+validation cost equation appropriately (e.g. hashing X GB of data takes the
+same amount of CPU time as one libsecp256k1 validation, so count cpu cost
+of an OP_CHECKSIG as 1 + X/actual_bytes_hashed).
+
+But how should bandwidth cost be counted? There isn't an obvious "Y GB of
+bandwidth-per-month equals 1 ECDSA validation. We need to find common units
+for the terms in the validation cost equation for it to make sense,
+otherwise we're adding apples and oranges.
+
+I think the only units that will work is "percentage of maximum validation
+ability for some reference hardware running with a network connection
+capable of some reference bandwidth."
+
+For example, imagine the reference was the typical home computer being sold
+today running with some multiple or fraction of the average global
+broadband connection speed of 5Mbps. CPU cost to validate a block can then
+be expressed as a percentage of maximum capacity, as can bandwidth--
+hooray, two metrics with the same units, so they can be added up.  If the
+result is less than 100%, then the block is valid-- it can be received and
+validated in a reasonable amount of time.
+
+
+Rolling in UTXO growth is harder, for two reasons:
+1) UTXO changes per block can be negative or positive, as opposed to
+bandwidth/CPU costs.
+2) It is not clear how to choose or benchmark "reference UTXO growth"
+
+(1) could be finessed to just treat UTXO shrinkage as zero.
+(2) could just be decided by picking a reasonable growth number. Since we
+want the UTXO set to fit into main memory, something a bit below the
+long-ish term price/performance trend of main memory would be a good target.
+
+So, starting with that growth rate and an initial UTXO size in bytes,
+divide by the number of blocks in a year to get a maximum UTXO growth in
+bytes per block.
+
+When validating a block, take the actual UTXO growth, express it as a
+percentage of the maximum allowed (make it zero if it is negative), and
+combine with the CPU and bandwidth percentages.
+
+If the total is less than 100%, block is valid. Otherwise, invalid.
+
+----------------
+
+Now.... all of that worked through, I'm not 100% sure it solves the "do
+miners or wallet have to solve a bin-packing problem to determine which
+transactions to put into their blocks or what fees to attach."
+
+I think it mostly works out-- instead of fee-per-kilobyte, it would be
+fee-per-validation-cost (which is in the weird units "fraction of 100%
+validation cost").
+
+But the UTXO term might be a problem-- transactions that create more UTXOs
+than they spend might end up being costly. I'm traveling right now, perhaps
+somebody could pick some arbitrary reference points and try to get a rough
+idea of what different transactions might pay in fees (e.g. if a
+one-input-two-output had a cost of X, two-output-one-input would have a
+cost of X/something).
+
+I'm not convinced that a single validation cost metric is the best
+approach-- it might be better to break the cost into three (UTXO growth,
+CPU, and bandwidth) and just let miners set reasonable transaction
+selection policies that keep each of the three under whatever caps are
+imposed on each. If a miner comes up with a clever algorithm that lets them
+pack in more transactions and get more fees, good for them!
+
+But I do like the simplicity of a single validation cost metric.
+
+-- 
+--
+Gavin Andresen
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151105/541ff3fc/attachment.html>
