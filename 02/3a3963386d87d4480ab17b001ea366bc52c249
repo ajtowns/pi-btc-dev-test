@@ -1,0 +1,252 @@
+From: bram@bittorrent.com (Bram Cohen)
+Date: Fri, 6 Nov 2015 17:25:53 -0800
+Subject: [bitcoin-dev] How wallets can handle real transaction fees
+Message-ID: <CA+KqGkq7L_gfaCRobSdaL4paEbhYcGO-j_Gmh_q_=P7CKPVPwQ@mail.gmail.com>
+
+(My apologies for a 'drive-by' posting. I'm not subscribed to this mailing
+list but this post may be of interest here. If you'd like to make sure I
+see a response send it to me directly. This post was originally posted to
+the web at
+https://medium.com/@bramcohen/how-wallets-can-handle-transaction-fees-ff5d020d14fb
+ )
+
+Since transaction fees are a good thing (see
+https://medium.com/@bramcohen/bitcoin-s-ironic-crisis-32226a85e39f ), that
+brings up the question: How should wallets handle them? This essay is an
+expansion of my talk at the bitcoin scaling conference (see
+https://www.youtube.com/watch?v=iKDC2DpzNbw&t=13m17s and
+https://scalingbitcoin.org/montreal2015/presentations/Day1/11-bram_wallet_fees.pdf
+ ).
+
+Ground Rules
+
+To answer this question we first need to lay down some ground rules of what
+we?re trying to solve. We?ll focus on trying to solve the problem for
+consumer wallets only. We?ll be ignoring microchannels, which dramatically
+reduce the number of transactions used but still have to put some on the
+blockchain. We?ll also be assuming that full replace by fee is in effect
+(see
+https://medium.com/@bramcohen/the-inevitable-demise-of-unconfirmed-bitcoin-transactions-8b5f66a44a35
+)
+because the best solution uses that fairly aggressively.
+
+What should transaction fees be?
+
+Before figuring out how wallets should calculate transaction fees, we first
+need to know what transaction fees should be. The obvious solution to that
+question is straightforward: It should be determined by supply and demand.
+The price is set at the point where the supply and demand curves meet. But
+supply and demand curves, while mostly accurate, are a little too simple of
+a model to use, because they don?t take into account time. In the real
+world, the supply of space for transactions is extremely noisy, because
+more becomes available (and has to be immediately consumed or it?s lost
+forever) every time a block is minted, and block minting is an
+intentionally random process, that randomness being essential for
+consensus. Demand is random and cyclical. Random because each transaction
+is generated individually so the total amount is noisy (although that
+averages out to be somewhat smooth at scale) and has both daily and weekly
+cycles, with more transactions done during the day than at night.
+
+What all these result in is that there should be a reward for patience. If
+you want or need to get your transaction in quicker you should have to pay
+on average a higher fee, and if you?re willing to wait longer it should on
+average cost less. Inevitably this will result in transactions taking on
+average longer than one block to go through, but it doesn?t require it of
+everyone. Those who wish to offer high fees to be sure of getting into the
+very next block are free to do so, but if everyone were to do that the
+system would fall apart.
+
+What should the wallet user interface be?
+
+Ideally transaction fees would be handled in a way which didn?t require
+changes to a wallet?s user interface at all. Unfortunately that isn?t
+possible. At a minimum it?s necessary to have a maximum fee which the user
+is willing to spend in order to make a transaction go through, which of
+course means that some transactions will fail because they aren?t willing
+to pay enough, which is the whole point of having transaction fees in the
+first place.
+
+Because transaction fees should be lower for people willing to wait longer,
+there should be some kind of patience parameter as well. The simplest form
+of this is an amount of time which the wallet will spend trying to make the
+transaction go through before giving up (Technically it may make sense to
+specify block height instead of wall clock time, but that?s close enough to
+not change anything meaningful). This results in fairly understandable
+concepts of a transaction being ?pending? and ?failed? which happen at
+predictable times.
+
+Transactions eventually getting into a ?failed? state instead of going into
+permanent limbo is an important part of the wallet fee user experience.
+Unfortunately right now the only way to make sure that a transaction is
+permanently failed is to spend its input on something else, but that
+requires spending a transaction fee on the canceling transaction, which of
+course would be just as big as the fee you weren?t willing to spend to make
+the real transaction go through in the first place.
+
+What?s needed is a protocol extension so a transaction can make it
+impossible for it to be committed once a certain block height has been
+reached. The current lack of such an extension is somewhat intentional
+because there are significant potential problems with transactions going
+bad because a block reorganization happened and some previously accepted
+transactions can?t ever be recommitted because their max block height got
+surpassed. To combat this, when a transaction with a max block height gets
+committed near its cutoff it?s necessary to wait a longer than usual number
+of blocks to be sure that it?s safe (I?m intentionally not giving specific
+numbers here, some developers have suggested extremely conservative
+values). This waiting is annoying but should only apply in the edge case of
+failed transactions and is straightforward to implement. The really big
+problem is that given the way Bitcoin works today it?s very hard to add
+this sort of extension. If any backwards-incompatible change to Bitcoin is
+done, it would be a very good idea to use that opportunity to improve
+Bitcoin?s extension mechanisms in general and this one in particular.
+
+What information to use
+
+The most obvious piece of information to use for setting transaction fees
+is past transaction fees from the last few blocks. This has a number of
+problems. If the fee rate goes high, it can get stuck there and take a
+while to come down, if ever, even though the equilibrium price should be
+lower. A telltale sign of this is high fee blocks which aren?t full, but
+it?s trivial for miners to get around that by padding their blocks with
+self-paying transactions. To some extent this sort of monopoly pricing is
+inherent, but normally it would require a cabal of most miners to pull it
+off, because any one miner can make more money in the short term by
+accepting every transaction they can instead of restricting the supply of
+available transaction space. If transaction fees are sticky, a large but
+still minority miner can make money for themselves even in the short term
+by artificially pumping fees in one of their blocks because fees will
+probably still be high by the time of their next block.
+
+Past fees also create problems for SPV clients, who have to trust the full
+nodes they connect to to report past fees accurately. That could be
+mitigated by making an extension to the block format to, for example,
+report what the minimum fee per bytes paid in this block is in the headers.
+It isn?t clear exactly what that extension should do though. Maybe you want
+to know the minimum, or the median, or the 25th percentile, or all of the
+above. It?s also possible for miners to game the system by making a bunch
+of full nodes which only report blocks which are a few back when fees have
+recently dropped. There are already some incentives to do that sort of bad
+behavior, and it can be mitigated by having SPV clients connect to more
+full nodes than they currently do and always go with the max work, but SPV
+clients don?t currently do that properly, and it?s unfortunate to create
+more incentives for bad behavior.
+
+Another potential source of information for transaction fees is currently
+pending transactions in the network. This has a whole lot of problems. It?s
+extremely noisy, much more so than regular transaction fees, because (a)
+sometimes a backlog of transactions builds up if no blocks happen to have
+happened in a while (b) sometimes there aren?t many transactions if a bunch
+of blocks went through quickly, and (c) in the future full nodes can and
+should have a policy of only forwarding transactions which are likely to
+get accepted sometime soon given the other transactions in their pools.
+Mempool is also trivially gameable, in exactly the same way as the last few
+blocks are gameable, but worse: A miner who wishes to increase fees can run
+a whole lot of full nodes and report much higher fees than are really
+happening. Unlike with fee reporting in blocks, there?s no way for SPV
+clients to audit this properly, even with a protocol extension, and it?s
+possible for full nodes to lie in a much more precise and targetted manner.
+Creating such a strong incentive for such a trivial and potentially
+lucrative attack seems like a very bad idea.
+
+A wallet?s best information to use when setting price are the things which
+can be absolutely verified locally: The amount it?s hand to pay in the
+past, the current time, how much it?s willing to pay by when. All of these
+have unambiguous meanings, precise mathematical values, and no way for
+anybody else to game them. A wallet can start at a minimum value, and every
+time a new block is minted which doesn?t accept its transaction increase
+its fee a little, until finally reaching its maximum value at the very end.
+Full nodes can then follow the behavior of storing and forwarding along
+several blocks?s worth of transactions, ten times sounds reasonable,
+ignoring transactions which pay less per byte than the ones they have
+stored, and further requiring that a new block be minted between times when
+a single transaction gets replaced by fee. That policy both has the
+property of being extremely denial-of-service resistant and minimizing the
+damage to zeroconf. (Zeroconf is a bad idea, but if something is a good
+idea to do for other reasons reducing the pain to those stuck with zeroconf
+is a nice bonus.)
+
+An actual formula
+
+At long last, here is the formula I advocate using:
+
+Pick a starting point which is de minimis for your first transaction or 1/2
+(or less, configurable) your last fee paid if you?ve sent coin before
+
+Let B = max number of blocks from start before giving up, S = starting fee,
+M = max fee
+
+For each new block at height H from the start, post a new transaction with
+fee e^(lg(S) + (lg(M) ? lg(S)) * H/B)
+
+To avoid artifacts when multiple wallets use the same magic numbers, do
+this before the first block: pick V uniformly in [0, 1], let S = e^(lg(S) +
+(lg(M) ? lg(S)) * (V/(V+B)))
+
+The very first time you send coin it makes sense to give it a longer time
+to do the transaction because it?s starting from a very low value and you
+don?t want to way overshoot the amount necessary. But if you start from the
+standard absolute minimum fee in Bitcoin and put the maximum time at
+several hours it will increase by less than 10% per block, so exponential
+growth is on your side.
+
+It might be reasonable to, for example, start at a value which is a
+discount to the minimum paid in the last block if that value is less than
+what you would start with otherwise and if there?s a protocol extension to
+put that information in the block headers. Such possibilities should be
+studied and discussed more, but the formula I gave above should be the
+default starting point if you simply want something which works and is
+conservative and reliable.
+
+Sidebar: Handling utxo combining
+
+Whenever a wallet makes a payment, it needs to decide how to structure the
+inputs and outputs of the new transaction. Generally the output consists of
+two utxos, one of them going to the recipient and one of them going back
+into the original wallet. Which input or inputs to use is less clear.
+Usually an attempt is made to optimize for anonymity, or at least leaking
+as little information as possible, and there?s usually a comment in the
+code saying what amounts to ?I can?t clearly justify any particular
+strategy here but this is what I?m doing?.
+
+When there are real transaction fees, one might consider trying to optimize
+utxo combining for fees. The strategy used turns out to matter surprisingly
+little for fees in the long run. For every separate utxo in your wallet,
+you?ll eventually have to pay the fee to combine it with something else,
+and the amount of increase in fee will be the same regardless of whether
+you do it in the current transaction or a later transaction. It does make
+sense to include more inputs in earlier versions of a payment though,
+because the fees at that time are lower, and drop them in later versions
+once the fees have gone up, in the hopes that the utxo consolidation can be
+done for cheaper in some later transaction. It may also make sense to do
+completely separate purely consolidation transactions with no external
+output during off-peak times. That puts more bytes on the blockchain
+because of the unnecessary intermediary value it generates though, so there
+needs to be a significant difference in fees between peak and off-peak
+times for it to make sense. Both of those techniques have significant and
+unclear privacy implications and should be studied more.
+
+There are also signing tricks which could potentially save significant
+amounts of bytes on the blockchain, thus lowering fees. The most elegant
+would be to create a new extension so that when there are multiple inputs
+to a transaction which all use Schnorr the signature can be a single
+combination signature instead of separate signatures for each of them. This
+has very little downside and I?m strongly in favor of it being done.
+
+A simpler, less elegant trick which saves more bytes would be to allow
+multiple inputs to the same transaction which use the same key to only
+result in a single signature. This lowers privacy, because it gives away
+the association between utxos before they?re consolidated, but if used
+properly would only push back that reveal a little bit. The danger is that
+wallets would instead use it improperly and use the same key all the time,
+which would always save as many bytes as possible but be a privacy disaster.
+
+A trick which is a just plain bad idea, although it would save even more
+bytes, would be not count the bytes of the reveal of a p2sh script to count
+if that exact same script has ever been used before. This is clearly a bad
+idea, because it directly encourages extremely privacy-averse behavior, and
+because it necessitates a data structure of all p2sh scripts which have
+ever been done before for validation, which is quite large and costly to
+maintain.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151106/f9ea4b51/attachment-0001.html>
