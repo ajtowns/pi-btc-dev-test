@@ -1,0 +1,152 @@
+From: david.vorick@gmail.com (David Vorick)
+Date: Tue, 10 Nov 2015 15:37:21 -0500
+Subject: [bitcoin-dev] Proposal - Mandatory Weak Blocks
+Message-ID: <CAFVRnyoFgZmwU9DRkaStcAo=K3Txv4PbG=jM5EK5_vUT7YrGCg@mail.gmail.com>
+
+Prior discussion: http://gnusha.org/bitcoin-wizards/2015-11-09.log
+
+Goal: Increase transaction throughput without increasing miner
+centralization pressure, and without putting undue burden on full
+validating nodes.
+
+'Weak Block': a block which meets a target with a lower difficulty,
+typically some fraction such as 5%.
+
+'Strong Block': a block that meets the full target. Also called a block.
+
+---
+
+Introduction:
+
+One of the key sources of miner centralization is the orphan rate. Miners
+with 33% hash power are guaranteed to instantly validate 33% of the blocks,
+while miners with only 1% hashrate only get this advantage for 1% of the
+blocks. If the average orphan rate on the network is high, miners with
+significantly more hashpower will have a substantial advantage over smaller
+miners.
+
+One of the strongest reasons to keep the block size small is to keep the
+orphan rate low. This is to protect smaller miners. Numerous pre-consensus
+schemes have been discussed which attempt to drive the orphan rate down.
+When considering these schemes, the adversarial case must be considered as
+well as the average case.
+
+The circulation of weak blocks has been discussed as a form of
+preconsensus. Upon finding a weak block, miners circulate the block to the
+other miners, and then when a full block is found, a diff between the weak
+block and full block can be circulated instead of just the full block. This
+diff is both quicker to validate and quicker to circulate, resulting in
+substantially improved block propagation times and a reduced orphan rate,
+thus reduced miner centralization pressure.
+
+The adversarial case is not addressed by this scheme. It is still possible
+to find and circulate a large, difficult-to-verify block that slowly
+propagates through the network and drives up the orphan rate for smaller
+miners. A new construction (below) introduces a set of new consensus rules
+which protect small miners even from the adversarial case.
+
+---
+
+Construction:
+
+After a block is found, pre-consensus for the next block begins.
+Pre-consensus consists of building a chain of weak blocks which meet a
+target that has 5% the difficulty of a full block. Each weak block can
+introduce at most 200kb of new transactions to the weak-block chain. On
+average, a new weak block will appear every 30 seconds. When the next
+strong block is found, it must be at the head of a weak block chain and it
+must itself introduce a maximum of 200kb in transactions new to the
+weak-block chain. The maximum size of a strong block is 16mb, but can be
+composed of any number of weak blocks.
+
+Example:
+
+[strong block] -> [weak block - 200kb] -> [weak block - 400kb] -> [strong
+block - 600kb] -> [weak block - 200kb]...
+
+---
+
+Analysis:
+
+On average, weak blocks will be found every 30 seconds and each block will
+build on top of 20 weak blocks. The average block size will be 4mb. 80 weak
+blocks are required to construct a block of the maximum size of 16mb, which
+will probably happen 3 out of every 1000 blocks. The race-size for blocks
+is kept low, and as explained later, adversarial mining is inherently
+decentivized.
+
+This construction establishes a 'pre-consensus' that allows miners to do
+faster validation when a new block is found. Assuming that the miner has
+seen most of the precursor weak blocks, only a few hundred kilobytes of
+validation must be performed even when the blocks are multiple megabytes in
+size. In the usual case, only 100kb of validation needs to be performed.
+
+More consistent transaction throughput is achieved. Strong blocks that are
+found in rapid succession are likely to each be small, due to having a
+small number of weak blocks that they build on top of. Strong blocks that
+are found a long time after the previous strong block are likely to have
+many weak blocks that they build on top of.
+
+Better censorship resistance is achieved. Creating large blocks requires
+building on top of weak blocks. A miner actively trying to censor certain
+transactions will have to ignore all weak-block chains that contain the
+offensive transaction, and thus will be at a disadvantage due to
+consistently producing smaller (and less fee-rich) blocks.
+
+An attacker that is trying to flood the network with intentionally
+slow-validating blocks can no longer easily construct blocks at the maximum
+size, and instead must create and hide weak blocks which build up to a
+strong block that has many unseen transactions. Hiding weak blocks has an
+opportunity cost, because in building a chain of weak block is exclusive to
+the attacker, the attacker is missing out on the opportunity of building on
+top of the other weak blocks being produced.
+
+Compared to Bitcoin-NG, this construction lacks the vulnerability where a
+single, more easily-targeted leader is elected and placed in charge of the
+next round of consensus.
+
+Everyone has incentive to build on top of the most recent weak block. In
+the event that the next weak block discovered is also a strong block, the
+fees reaped by the miner will be maximized.
+
+Larger miners appear to have an incentive to withhold weak blocks in an
+attempt to drive smaller miners off of the network. Large miners
+withholding weak blocks will gain an advantage that amounts to (% chance of
+finding a weak block) * (% chance of finding the full block) * (average fee
+addition of a weak block) / (average total block reward). Assuming that
+fees make up entire block reward, the advantage for a miner performing a
+withholding attack is (hashrate^2 * weak block difficulty). For a 50%
+miner, that advantage comes to 1.25%. For a 20% miner, this advantage is
+just 0.2%. There are probably multiple ways to decentivize this behavior,
+the simplest of which involves directly rewarding miners for announcing
+weak blocks.
+
+The orphan rate for weak blocks is going to be substantially higher for
+smaller miner, due to the increased rate of appearance. I do not think that
+this is going to create any issues, because small miners are still going to
+have high visibility of the longest weak-block chain, and are still going
+to be able to create blocks that are nearly as full as the blocks created
+by larger miners.
+
+The more time that passes between mining blocks, the more a block is worth
+(because it will have more weak-blocks, and therefore more transactions).
+Hashrate is therefore more valuable when a block has not been found for a
+while, and may result in hashrate hopping, where hashrate is disabled or
+clocked-down immediately after a block is found and then clocked-up if a
+block is not found for a while. This is only a problem while fees from new
+transactions make up a significant portion of the block reward.
+
+---
+
+Conclusion:
+
+A forced-weak-blocks scheme potentially provides a powerful way to reduce
+the orphan rate, increasing the safety margins on miner centralization
+pressure and allowing the overall transaction throughput to be increased as
+a result.
+
+Additional analysis is needed to be certain that there are not new attack
+vectors or mal-aligned incentives that have been introduced.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151110/cb13678f/attachment-0001.html>
