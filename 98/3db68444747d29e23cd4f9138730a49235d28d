@@ -1,0 +1,134 @@
+From: peter.tschipper@gmail.com (Peter Tschipper)
+Date: Tue, 10 Nov 2015 08:17:40 -0800
+Subject: [bitcoin-dev] request BIP number for: "Support for Datastream
+ Compression"
+In-Reply-To: <5642172C.701@gmail.com>
+References: <5640F172.3010004@gmail.com> <20151109210449.GE5886@mcelrath.org>
+	<CAL7-sS0Apm4O_Qi0FmY7=H580rEVD6DYjk2y+ACpZmKqUJTQwA@mail.gmail.com>
+	<CALOxbZtTUrZwDfy_jTbs60n=K8RKDGg5X0gkLsh-OX3ikLf1FQ@mail.gmail.com>
+	<CAE-z3OUB-se_HUvW2NLjWt=0d5sgMiPEciu0hLzr_HQN0m9fqQ@mail.gmail.com>
+	<5642172C.701@gmail.com>
+Message-ID: <564218A4.8070102@gmail.com>
+
+On 10/11/2015 8:11 AM, Peter Tschipper wrote:
+> On 10/11/2015 1:44 AM, Tier Nolan via bitcoin-dev wrote:
+>> The network protocol is not quite consensus critical, but it is
+>> important.
+>>
+>> Two implementations of the decompressor might not be bug for bug
+>> compatible.  This (potentially) means that a block could be designed
+>> that won't decode properly for some version of the client but would
+>> work for another.  This would fork the network.
+>>
+>> A "raw" network library is unlikely to have the same problem.
+>>
+>> Rather than just compress the stream, you could compress only block
+>> messages only.  A new "cblock" message could be created that is a
+>> compressed block.  This shouldn't reduce efficiency by much.
+>>
+> I chose the more generic datastream compression so we could in the
+> future apply to possibly to transactions but currently all that is
+> planned, is to compress blocks, and that was really my only original
+> intent until I saw that there might be some bandwidth savings for
+> transactions as well. 
+>
+> The compression  however could be applied to any datastream but is not
+> *forced* .  Basically it would just be a method call in CDatastream so
+> we could do ss.compress and ss.decompress and apply that to blocks and
+> possibly transactions if worthwhile and only IF compression is turned
+> on.  But there is no intend to apply this to every type of message
+> since most would be too small to benefit from compression.
+>
+> Here are some results of using the code in the PR to
+> compress/decompress blocks using zlib compression level = 6.  This
+> data was taken from the first 275K blocks in the mainnet blockchain. 
+> Clearly once we get past 10KB we get pretty decent compression but
+> even below that there is some benefit.  I'm still collecting data and
+> will get the same for the whole blockchain.
+>
+> range = block size range
+> ubytes = average size of uncompressed blocks
+> cbytes = average size of compressed blocks
+> ctime = average time to compress
+> dtime = average time to decompress
+> cmp_ratio% = compression ratio
+> datapoints = number of datapoints taken
+>
+> range       ubytes    cbytes    ctime    dtime    cmp_ratio%    datapoints
+> 0-250b      215         189    0.001    0.000    12.41            79498
+> 250-500b    440         405    0.001    0.000    7.82            11903
+> 500-1KB     762         702    0.001    0.000    7.83            10448
+> 1KB-10KB    4166    3561    0.001    0.000    14.51            50572
+> 10KB-100KB  40820    31597    0.005    0.001    22.59            75555
+> 100KB-200KB 146238    106320    0.015    0.001    27.30            25024
+> 200KB-300KB 242913    175482    0.025    0.002    27.76            20450
+> 300KB-400KB 343430    251760    0.034    0.003    26.69            2069
+> 400KB-500KB 457448    343495    0.045    0.004    24.91            1889
+> 500KB-600KB 540736    424255    0.056    0.007    21.54            90
+> 600KB-700KB 647851    506888    0.063    0.007    21.76            59
+> 700KB-800KB 749513    586551    0.073    0.007    21.74            48
+> 800KB-900KB 859439    652166    0.086    0.008    24.12            39
+> 900KB-1MB   952333    725191    0.089    0.009    23.85            78
+>
+>> If a client fails to decode a cblock, then it can ask for the block
+>> to be re-sent as a standard "block" message. 
+> interesting idea.
+>>
+>> This means that it is a pure performance improvement.  If problems
+>> occur, then the client can just switch back to uncompressed mode for
+>> that block.
+>>
+>> You should look into the block relay system.  This gives a larger
+>> improvement than simply compressing the stream.  The main benefit is
+>> latency but it means that actual blocks don't have to be sent, so
+>> gives a potential 50% compression ratio.  Normally, a node receives
+>> all the transactions and then those transactions are included later
+>> in the block.
+>>
+> There are better ways of sending new blocks, that's certainly true but
+> for sending historical blocks and seding transactions I don't think
+> so.  This PR is really designed to save bandwidth and not intended to
+> be a huge performance improvement in terms of time spent sending.
+>>
+>> On Tue, Nov 10, 2015 at 5:40 AM, Johnathan Corgan via bitcoin-dev
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>
+>>     On Mon, Nov 9, 2015 at 5:58 PM, gladoscc via bitcoin-dev
+>>     <bitcoin-dev at lists.linuxfoundation.org
+>>     <mailto:bitcoin-dev at lists.linuxfoundation.org>> wrote:
+>>      
+>>
+>>         I think 25% bandwidth savings is certainly considerable,
+>>         especially for people running full nodes in countries like
+>>         Australia where internet bandwidth is lower and there are
+>>         data caps.
+>>
+>>
+>>     ?This reinforces the idea that such trade-off decisions should be
+>>     be local and negotiated between peers, not a required feature of
+>>     the network P2P.?
+>>      
+>>
+>>     -- 
+>>     Johnathan Corgan
+>>     Corgan Labs - SDR Training and Development Services
+>>     http://corganlabs.com
+>>
+>>     _______________________________________________
+>>     bitcoin-dev mailing list
+>>     bitcoin-dev at lists.linuxfoundation.org
+>>     <mailto:bitcoin-dev at lists.linuxfoundation.org>
+>>     https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>>
+>>
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151110/a9fefde7/attachment.html>
