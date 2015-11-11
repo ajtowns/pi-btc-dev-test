@@ -1,0 +1,205 @@
+From: marcopon@gmail.com (Marco Pontello)
+Date: Wed, 11 Nov 2015 19:49:49 +0100
+Subject: [bitcoin-dev] request BIP number for: "Support for Datastream
+	Compression"
+In-Reply-To: <56438A55.2010604@gmail.com>
+References: <5640F172.3010004@gmail.com> <20151109210449.GE5886@mcelrath.org>
+	<CAL7-sS0Apm4O_Qi0FmY7=H580rEVD6DYjk2y+ACpZmKqUJTQwA@mail.gmail.com>
+	<CALOxbZtTUrZwDfy_jTbs60n=K8RKDGg5X0gkLsh-OX3ikLf1FQ@mail.gmail.com>
+	<CAE-z3OUB-se_HUvW2NLjWt=0d5sgMiPEciu0hLzr_HQN0m9fqQ@mail.gmail.com>
+	<5642172C.701@gmail.com>
+	<CAE-z3OXgWCHL_3CDR-ACc7ojbLi7EavyObNa3s7hPUMGj_V2+A@mail.gmail.com>
+	<CADm_WcYAj9_r6tu8Be-U81LDwWvnv04PZJMmc-S4cY7+jxfzGw@mail.gmail.com>
+	<56438A55.2010604@gmail.com>
+Message-ID: <CAE0pACK1-xQC4MsdbM46_Z0TQvZTrZKw4e8xFt3X=PmW7pmGJQ@mail.gmail.com>
+
+A random thought: aren't most communication over a data link already
+compressed, at some point?
+When I used a modem, we had the V.42bis protocol. Now, nearly all ADSL
+connections using PPPoE, surely are. And so on.
+I'm not sure another level of generic, data agnostic kind of compression
+will really give us some real-life practical advantage over that.
+
+Something that could take advantage of of special knowledge of the specific
+data, instead, would be an entirely different matter.
+
+Just my 2c.
+
+On Wed, Nov 11, 2015 at 7:35 PM, Peter Tschipper via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Here are the latest results on compression ratios for the first 295,000
+> blocks, compressionlevel=6.  I think there are more than enough datapoints
+> for statistical significance.
+>
+> Results are very much similar to the previous test.   I'll work on getting
+> a comparison between how much time savings/loss in time there is when
+> syncing the blockchains: compressed vs uncompressed.  Still, I think it's
+> clear that serving up compressed blocks, at least historical blocks, will
+> be of benefit for those that have bandwidth caps on their internet
+> connections.
+>
+> The proposal, so far is fairly simple:
+> 1) compress blocks with some compression library: currently zlib but I can
+> investigate other possiblities
+> 2) As a fall back we need to advertise compression as a service.  That way
+> we can turn off compression AND decompression completely if needed.
+> 3) Do the compression at the datastream level in the code.  CDataStream is
+> the obvious place.
+>
+>
+> Test Results:
+>
+> range = block size range
+> ubytes = average size of uncompressed blocks
+> cbytes = average size of compressed blocks
+> ctime = average time to compress
+> dtime = average time to decompress
+> cmp_ratio% = compression ratio
+> datapoints = number of datapoints taken
+>
+> range       ubytes    cbytes    ctime    dtime    cmp_ratio%    datapoints
+> 0-250b      215            189    0.001    0.000    12.40             91280
+> 250-500b    438            404    0.001    0.000    7.85             13217
+> 500-1KB     761            701    0.001    0.000    7.86
+> 11434
+> 1KB-10KB    4149    3547    0.001    0.000      14.51             52180
+> 10KB-100KB  41934    32604    0.005    0.001    22.25         82890
+> 100KB-200KB 146303    108080    0.016    0.001    26.13    29886
+> 200KB-300KB 243299    179281    0.025    0.002    26.31    25066
+> 300KB-400KB 344636    266177    0.036    0.003    22.77    4956
+> 400KB-500KB 463201    356862    0.046    0.004    22.96    3167
+> 500KB-600KB 545123    429854    0.056    0.005    21.15    366
+> 600KB-700KB 647736    510931    0.065    0.006    21.12    254
+> 700KB-800KB 746540    587287    0.073    0.008    21.33    294
+> 800KB-900KB 868121    682650    0.087    0.008    21.36    199
+> 900KB-1MB   945747    726307    0.091    0.010    23.20    304
+>
+> On 10/11/2015 8:46 AM, Jeff Garzik via bitcoin-dev wrote:
+>
+> Comments:
+>
+> 1) cblock seems a reasonable way to extend the protocol.  Further wrapping
+> should probably be done at the stream level.
+>
+> 2) zlib has crappy security track record.
+>
+> 3) A fallback path to non-compressed is required, should compression fail
+> or crash.
+>
+> 4) Most blocks and transactions have runs of zeroes and/or highly common
+> bit-patterns, which contributes to useful compression even at smaller
+> sizes.  Peter Ts's most recent numbers bear this out.  zlib has a
+> dictionary (32K?) which works well with repeated patterns such as those you
+> see with concatenated runs of transactions.
+>
+> 5) LZO should provide much better compression, at a cost of CPU
+> performance and using a less-reviewed, less-field-tested library.
+>
+>
+>
+>
+>
+> On Tue, Nov 10, 2015 at 11:30 AM, Tier Nolan via bitcoin-dev <
+> <bitcoin-dev at lists.linuxfoundation.org>
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>>
+>>
+>> On Tue, Nov 10, 2015 at 4:11 PM, Peter Tschipper <
+>> <peter.tschipper at gmail.com>peter.tschipper at gmail.com> wrote:
+>>
+>>> There are better ways of sending new blocks, that's certainly true but
+>>> for sending historical blocks and seding transactions I don't think so.
+>>> This PR is really designed to save bandwidth and not intended to be a huge
+>>> performance improvement in terms of time spent sending.
+>>>
+>>
+>> If the main point is for historical data, then sticking to just blocks is
+>> the best plan.
+>>
+>> Since small blocks don't compress well, you could define a "cblocks"
+>> message that handles multiple blocks (just concatenate the block messages
+>> as payload before compression).
+>>
+>> The sending peer could combine blocks so that each cblock is compressing
+>> at least 10kB of block data (or whatever is optimal).  It is probably worth
+>> specifying a maximum size for network buffer reasons (either 1MB or 1 block
+>> maximum).
+>>
+>> Similarly, transactions could be combined together and compressed
+>> "ctxs".  The inv messages could be modified so that you can request groups
+>> of 10-20 transactions.  That would depend on how much of an improvement
+>> compressed transactions would represent.
+>>
+>> More generally, you could define a message which is a compressed message
+>> holder.  That is probably to complex to be worth the effort though.
+>>
+>>
+>>
+>>>
+>>> On Tue, Nov 10, 2015 at 5:40 AM, Johnathan Corgan via bitcoin-dev <
+>>> <bitcoin-dev at lists.linuxfoundation.org>
+>>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>>
+>>>> On Mon, Nov 9, 2015 at 5:58 PM, gladoscc via bitcoin-dev <
+>>>> <bitcoin-dev at lists.linuxfoundation.org>
+>>>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>>>
+>>>>
+>>>>> I think 25% bandwidth savings is certainly considerable, especially
+>>>>> for people running full nodes in countries like Australia where internet
+>>>>> bandwidth is lower and there are data caps.
+>>>>>
+>>>>
+>>>> ? This reinforces the idea that such trade-off decisions should be be
+>>>> local and negotiated between peers, not a required feature of the network
+>>>> P2P.?
+>>>>
+>>>>
+>>>> --
+>>>> Johnathan Corgan
+>>>> Corgan Labs - SDR Training and Development Services
+>>>> <http://corganlabs.com>http://corganlabs.com
+>>>>
+>>>> _______________________________________________
+>>>> bitcoin-dev mailing list
+>>>> bitcoin-dev at lists.linuxfoundation.org
+>>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>>
+>>>>
+>>>
+>>>
+>>> _______________________________________________
+>>> bitcoin-dev mailing listbitcoin-dev at lists.linuxfoundation.orghttps://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>
+>>>
+>>>
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>>
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing listbitcoin-dev at lists.linuxfoundation.orghttps://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+
+
+-- 
+Try the Online TrID File Identifier
+http://mark0.net/onlinetrid.aspx
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151111/0430cab2/attachment-0001.html>
