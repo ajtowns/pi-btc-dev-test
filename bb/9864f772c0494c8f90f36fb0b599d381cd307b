@@ -1,0 +1,48 @@
+From: gmaxwell@gmail.com (Gregory Maxwell)
+Date: Sun, 15 Nov 2015 02:10:43 +0000
+Subject: [bitcoin-dev] [patch] Switching Bitcoin Core to sqlite db
+In-Reply-To: <6DAD1D38-A156-4507-B506-BF66F26E6594@gmx.com>
+References: <5631C363.5060705@neomailbox.net>
+	<201510290803.52734.luke@dashjr.org>
+	<5632DE33.7030600@bitcartel.com>
+	<CAAS2fgTga_vTfOKrFu_hEzXSfTfg9FRfJ6aL6ginuGFqnbm7=w@mail.gmail.com>
+	<3CB90C47-293E-4C18-A381-E5203483D68F@gmx.com>
+	<CAAS2fgRdK4bDr3x_y9UpdH234PQSfD7U539HBLA==+hLQJ_7Fw@mail.gmail.com>
+	<571D9B7F-077D-4B80-B577-1C18FF2ECF31@gmx.com>
+	<CAAS2fgTLE1cpDqKTiy0r1VMex7zTAB8tgUC=Y0WXmbNBJL42xQ@mail.gmail.com>
+	<6DAD1D38-A156-4507-B506-BF66F26E6594@gmx.com>
+Message-ID: <CAAS2fgT+r4aRPe7Qjww6wgbAzkwafN+340pUaVO9F7MZEVY-zA@mail.gmail.com>
+
+On Sun, Nov 15, 2015 at 1:45 AM, Peter R <peter_r at gmx.com> wrote:
+> My previous email described how Type 1 consensus failures can be safely dealt with.  These include many kinds of database exceptions (e.g., the LevelDB fork at block #225,430), or consensus mismatches regarding the max size of a block.
+
+The size of a block is not a type 1 failure. There is a clear, known,
+unambiguous, and easily measured rule in the system that a block is
+not permitted to have a size over a threshold. A block that violates
+this threshold is invalid.   The only way I can see to classify that
+as a type 1 failure is to call the violation of any known system rule
+a type 1 failure.  "Spends a coin that was already spent" "provides a
+signature that doesn't verify with the pubkey" "creates bitcoins out
+of thin air" -- these are not logically different than "if size>x
+return false".
+
+> Type 2 consensus failures are more severe but also less likely (I?m not aware of a Type 2 consensus failure besides the 92 million bitcoin bug from August 2010).  If Core was to accept a rogue TX that created another 92 million bitcoins, I think it would be a good thing if the other implementations forked away from it (we don?t want bug-for-bug compatibility here).
+
+The only consensus consistency error we've ever that I would have
+classified as potentially type 1 had has been the BDB locks issue.
+Every other one, including the most recently fixed one (eliminated by
+BIP66) was a type 2, by your description. They are _much_ more common;
+because if the author understood the possible cases well enough to
+create an "I don't know" case, they could have gone one step further
+and fully defined it in a consistent way. The fact that an
+inconsistency was possible was due to a lack of complete knowledge.
+
+Even in the BDB locks case, I don't know that the type 1 distinction
+completely applies, a lower layer piece of software threw an error
+that higher layer software didn't know was possible, and so it
+interpreted "I don't know" as "no"-- it's not that it chose to treat I
+don't know as no, its that it wasn't authored with the possibility of
+I don't know in mind, and that exceptions were used to handle general
+failures (which should have been treated as no). Once you step back to
+the boundary of the calling code (much less the whole application) the
+"I don't know" doesn't exist anymore; there.
