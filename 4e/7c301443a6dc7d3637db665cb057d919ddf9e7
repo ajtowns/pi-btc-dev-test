@@ -1,0 +1,90 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 16 Nov 2015 19:42:18 -0500
+Subject: [bitcoin-dev] Opt-in Full Replace-By-Fee (Full-RBF)
+Message-ID: <20151117004218.GB6302@savin.petertodd.org>
+
+Summary
+-------
+
+Opt-In Full-RBF allows senders to opt-into full-RBF semantics for their
+transactions in a way that allows receivers to detect if the sender has
+done so. Existing "first-seen" mempool semantics are left unchanged for
+transactions that do not opt-in.
+
+At last week's IRC meeting(1) we decided to merge the opt-in Full-RBF
+pull-req(2), pending code review and this post, so this feature will
+likely make it into Bitcoin Core v0.12.0
+
+
+Specification
+-------------
+
+A transaction is considered to have opted into full-RBF semantics if
+nSequence < 0xFFFFFFFF-1 on at least one input. Nodes that respect the
+opt-in will allow such opt-in transactions (and their descendents) to be
+replaced in the mempool if they meet the economic replacement criteria.
+Transactions in blocks are of course unaffected.
+
+To detect if a transaction may be replaced check if it or any
+unconfirmed ancestors have set nSequence < 0xFFFFFFFF-1 on any inputs.
+
+
+Rational
+--------
+
+nSequence is used for opting in as it is the only "free-form" field
+available for that purpose. Opt-in per output was proposed as well by
+Luke-Jr, however the CTxOut data structure simply doesn't contain any
+extra fields to use for that purpose. nSequence-based opt-in is also
+compatible with the consensus-enforced transaction replacement semantics
+in BIP68.
+
+Allowing replacement if any input opts in vs. all inputs opting in is
+chosen to ensure that transactions authored by multiple parties aren't
+held up by the actions of a single party. Additionally, in the
+multi-party scenario the value of any zeroconf guarantees are especially
+dubious.
+
+Replacement is allowed even if unconfirmed children did not opt-in to
+ensure receivers can't maliciously prevent a replacement by spending the
+funds. Additionally, any reasonable attempt at determining if a
+transaction can be double-spent has to look at all unconfirmed parents
+anyway.
+
+Feedback from wallet authors indicates that first-seen-safe RBF isn't
+very useful in practice due to the limitations inherent in FSS rules;
+opt-in full-RBF doesn't preclude FSS-RBF from also being implemented.
+
+
+Compatibility
+-------------
+
+Opt-in RBF transactions are currently mined by 100% of the hashing
+power. Bitcoin Core has been producing transactions with non-maxint
+nSequence since v0.11.0 to discourage fee sniping(3), and currently no
+wallets are known that display such transactions yet do not display
+opt-in RBF transactions.
+
+
+Demonstrations
+--------------
+
+https://github.com/petertodd/replace-by-fee-tools#incremental-send-many
+
+
+1) http://lists.linuxfoundation.org/pipermail/bitcoin-discuss/2015-November/000010.html
+
+2) https://github.com/bitcoin/bitcoin/pull/6871
+
+3) https://github.com/bitcoin/bitcoin/pull/2340
+
+-- 
+'peter'[:-1]@petertodd.org
+00000000000000000f30567c63f8f4f079a8ecc2ab3d380bc7dc370e792b0a3a
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151116/d33dde25/attachment.sig>
