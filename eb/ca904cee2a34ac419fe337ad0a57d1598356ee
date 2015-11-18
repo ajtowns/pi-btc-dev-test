@@ -1,0 +1,145 @@
+From: peter.tschipper@gmail.com (Peter Tschipper)
+Date: Wed, 18 Nov 2015 06:00:35 -0800
+Subject: [bitcoin-dev] More findings: Block Compression (Datastream
+ Compression) test results using the PR#6973 compression prototype
+In-Reply-To: <56465CEE.6010109@gmail.com>
+References: <5640F172.3010004@gmail.com> <20151109210449.GE5886@mcelrath.org>
+	<CAL7-sS0Apm4O_Qi0FmY7=H580rEVD6DYjk2y+ACpZmKqUJTQwA@mail.gmail.com>
+	<CALOxbZtTUrZwDfy_jTbs60n=K8RKDGg5X0gkLsh-OX3ikLf1FQ@mail.gmail.com>
+	<CAE-z3OUB-se_HUvW2NLjWt=0d5sgMiPEciu0hLzr_HQN0m9fqQ@mail.gmail.com>
+	<5642172C.701@gmail.com>
+	<CAE-z3OXgWCHL_3CDR-ACc7ojbLi7EavyObNa3s7hPUMGj_V2+A@mail.gmail.com>
+	<CADm_WcYAj9_r6tu8Be-U81LDwWvnv04PZJMmc-S4cY7+jxfzGw@mail.gmail.com>
+	<56438A55.2010604@gmail.com>
+	<CAE0pACK1-xQC4MsdbM46_Z0TQvZTrZKw4e8xFt3X=PmW7pmGJQ@mail.gmail.com>
+	<27BB52F9-3E3F-443D-93BC-B6843EB992F5@toom.im>
+	<56465CEE.6010109@gmail.com>
+Message-ID: <564C8483.1000901@gmail.com>
+
+Hi all,
+
+I'm still doing a little more investigation before opening up a formal
+bip PR, but getting close.  Here are some more findings.
+
+After moving the compression from main.cpp to streams.h (CDataStream) it
+was a simple matter to add compression to transactions as well. Results
+as follows:
+
+range = block size range
+ubytes = average size of uncompressed transactions
+cbytes = average size of compressed transactions
+cmp_ratio% = compression ratio
+datapoints = number of datapoints taken
+
+range 	ubytes 	cbytes 	cmp_ratio% 	datapoints
+0-250b 	220 	227 	-3.16 	23780
+250-500b 	356 	354 	0.68 	20882
+500-600 	534 	505 	5.29 	2772
+600-700 	653 	608 	6.95 	1853
+700-800 	757 	649 	14.22 	578
+800-900  	822 	758 	7.77 	661
+900-1KB 	954 	862 	9.69 	906
+1KB-10KB  	2698 	2222 	17.64 	3370
+10KB-100KB 	15463 	12092 	21.8 	15429
+
+
+A couple of obvious observations.  Transactions don't compress well
+below 500 bytes but do very well beyond 1KB where there are a great deal
+of those large spam type transactions.   However, most transactions
+happen to be in the < 500 byte range.  So the next step was to appy
+bundling, or the creating of a "blob" for those smaller transactions, if
+and only if there are multiple tx's in the getdata receive queue for a
+peer.  Doing that yields some very good compression ratios.  Some
+examples as follows:
+
+The best one I've seen so far was the following where 175 transactions
+were bundled into one blob before being compressed.  That yielded a 20%
+compression ratio, but that doesn't take into account the savings from
+the unneeded 174 message headers (24 bytes each) as well as 174 TCP
+ACK's of 52 bytes each which yields and additional 76*174=13224 bytes,
+making the overall bandwidth savings 32%, in this particular case.
+
+*2015-11-18 01:09:09.002061 compressed blob from 79890 to 67426 txcount:175*
+
+To be sure, this was an extreme example.  Most transaction blobs were in
+the 2 to 10 transaction range.  Such as the following:
+
+*2015-11-17 21:08:28.469313 compressed blob from 3199 to 2876 txcount:10*
+
+But even here the savings are 10%, far better than the "nothing" we
+would get without bundling, but add to that the 76 byte * 9 transaction
+savings and we have a total 20% savings in bandwidth for transactions
+that otherwise would not be compressible.
+
+The same bundling was applied to blocks and very good compression ratios
+are seen when sync'ing the blockchain.
+
+Overall the bundling or blobbing of tx's and blocks seems to be a good
+idea for improving bandwith use but also there is a scalability factor
+here, when the system is busy, transactions are bundled more often,
+compressed, sent faster, keeping message queue and network chatter to a
+minimum.
+
+I think I have enough information to put together a formal BIP with the
+exception of which compression library to implement.  These tests were
+done using ZLib but I'll also be running tests in the coming days with
+LZO (Jeff Garzik's suggestion) and perhaps Snappy.  If there are any
+other libraries that people would like me to get results for please let
+me know and I'll pick maybe the top 2 or 3 and get results back to the
+group.
+
+
+
+On 13/11/2015 1:58 PM, Peter Tschipper wrote:
+> Some further Block Compression tests results that compare performance
+> when network latency is added to the mix.
+>
+> Running two nodes, windows 7, compressionlevel=6, syncing the first
+> 200000 blocks from one node to another.  Running on a highspeed
+> wireless LAN with no connections to the outside world.
+> Network latency was added by using Netbalancer to induce the 30ms and
+> 60ms latencies.
+>
+> From the data not only are bandwidth savings seen but also a small
+> performance savings as well.  However, the overall the value in
+> compressing blocks appears to be in terms of saving bandwidth.  
+>
+> I was also surprised to see that there was no real difference in
+> performance when no latency was present; apparently the time it takes
+> to compress is about equal to the performance savings in such a situation.
+>
+>
+> The following results compare the tests in terms of how long it takes
+> to sync the blockchain, compressed vs uncompressed and with varying
+> latencies.
+> uncmp = uncompressed
+> cmp = compressed
+>
+> num blocks sync'd 	uncmp (secs) 	cmp (secs) 	uncmp 30ms (secs) 	cmp
+> 30ms (secs) 	uncmp 60ms (secs) 	cmp 60ms (secs)
+> 10000 	264 	269 	265 	257 	274 	275
+> 20000 	482 	492 	479 	467 	499 	497
+> 30000 	703 	717 	693 	676 	724 	724
+> 40000 	918 	939 	902 	886 	947 	944
+> 50000 	1140 	1157 	1114 	1094 	1171 	1167
+> 60000 	1362 	1380 	1329 	1310 	1400 	1395
+> 70000 	1583 	1597 	1547 	1526 	1637 	1627
+> 80000 	1810 	1817 	1767 	1745 	1872 	1862
+> 90000 	2031 	2036 	1985 	1958 	2109 	2098
+> 100000 	2257 	2260 	2223 	2184 	2385 	2355
+> 110000 	2553 	2486 	2478 	2422 	2755 	2696
+> 120000 	2800 	2724 	2849 	2771 	3345 	3254
+> 130000 	3078 	2994 	3356 	3257 	4125 	4006
+> 140000 	3442 	3365 	3979 	3870 	5032 	4904
+> 150000 	3803 	3729 	4586 	4464 	5928 	5797
+> 160000 	4148 	4075 	5168 	5034 	6801 	6661
+> 170000 	4509 	4479 	5768 	5619 	7711 	7557
+> 180000 	4947 	4924 	6389 	6227 	8653 	8479
+> 190000 	5858 	5855 	7302 	7107 	9768 	9566
+> 200000 	6980 	6969 	8469 	8220 	10944 	10724
+>
+>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151118/7d8123e1/attachment.html>
