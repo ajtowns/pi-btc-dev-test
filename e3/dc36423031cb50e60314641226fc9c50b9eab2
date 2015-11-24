@@ -1,0 +1,72 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 23 Nov 2015 23:36:18 -0500
+Subject: [bitcoin-dev] BIP68: Second-level granularity doesn't make sense
+Message-ID: <20151124043618.GA7999@muck>
+
+BIP68 currently represents by-height locks as a simple 16-bit integer of
+the number of blocks - effectively giving a granularity of 600 seconds
+on average - but for for by-time locks the representation is a 25-bit
+integer with granularity of 1 second. However this granularity doesn't
+make sense with BIP113, median time-past as endpoint for lock-time
+calcualtions, and poses potential problems for future upgrades.
+
+
+There's two cases to consider here:
+
+1) No competing transactions
+
+By this we mean that the nSequence field is being used simply to delay
+when an output can be spent; there aren't competing transactions trying
+to spend that output and thus we're not concerned about one transaction
+getting mined before another "out of order". For instance, an 2-factor
+escrow service like GreenAddress could use nSequence with
+CHECKSEQUENCEVERIFY (CSV) to guarantee that users will eventually get
+their funds back after some timeout.
+
+In this use-case exact miner behavior is irrelevant. Equally given the
+large tolerances allowed on block times, as well as the poisson
+distribution of blocks generated, granularity below an hour or two
+doesn't have much practical significance.
+
+
+2) Competing transactions
+
+Here we are relying on miners prefering lower sequence numbers. For
+instance a bidirectional payment channel can decrement nSequence for
+each change of direction; BIP68 suggests such a decrement might happen
+in increments of one day.
+
+BIP113 makes lock-time calculations use the median time-past as the
+threshold for by-time locks. The median time past is calculated by
+taking median time of the 11 previous blocks, which means when a miner
+creates a block they have absolutely no control over what the median
+time-past is; it's purely a function of the block tip they're building
+upon.
+
+This means that granularity below a block interval will, on average,
+have absolutely no effect at all on what transaction the miner includes
+even in the hypothetical case. In practice of course, users will want to
+use significantly larger than 1 block interval granularity in protocols.
+
+
+The downside of BIP68 as written is users of by-height locktimes have 14
+bits unused in nSequence, but by-time locktimes have just 5 bits unused.
+This presents an awkward situation if we add new meanings to nSequence
+if we ever need more than 5 bits. Yet as shown above, the extra
+granularity doesn't have a practical benefit.
+
+
+Recommendation: Change BIP68 to make by-time locks have the same number
+of bits as by-height locks, and multiply the by-time lock field by the
+block interval.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000001a06d85a46abce495fd793f89fe342e6da18b235ade373f
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151123/4e2a25bf/attachment.sig>
