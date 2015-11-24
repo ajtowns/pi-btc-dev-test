@@ -1,0 +1,82 @@
+From: cp368202@ohiou.edu (Chris Priest)
+Date: Tue, 24 Nov 2015 13:01:26 -0800
+Subject: [bitcoin-dev] OP_CHECKWILDCARDSIGVERIFY or "Wildcard Inputs" or
+ "Coalescing Transactions"
+In-Reply-To: <CABsx9T0A8EczcsE8f3D4WGk-0xsPadupBVgH5_kTs=GEhOq_9g@mail.gmail.com>
+References: <CAAcC9yuM+dG+mJn_0vPqZuig5cHqeF-xgszw-zzD3D9UKRsyrQ@mail.gmail.com>
+	<CABsx9T0A8EczcsE8f3D4WGk-0xsPadupBVgH5_kTs=GEhOq_9g@mail.gmail.com>
+Message-ID: <CAAcC9yvX2QRQvjtnO_Uiv5i=PUfAcNVJAazr_qR0Uz+uThxL6Q@mail.gmail.com>
+
+A coalescing transaction in my scheme is the same size as a normal
+transaction. You only include one UTXO, the rest are implied based on
+the presence of the OP_CHECKWILDCARDSIGVERIFY opcode.
+
+The code that determines if a UTXO is spent or not will need to be
+modified to include a check to see if any matching coalescing
+transactions exist in any later block. Maybe there should be a
+"coalescing pool" containing all coalescing transactions that make
+such a check faster.
+
+The part I'm not too sure about is the "wildcard signature". I'm not
+too versed in cryptography to know how exactly to pull this off, but I
+think it should be simple.
+You'd just have to some way inject a flag into the signing process
+that can be verified later.
+
+I originally wanted the "wildcardness" of the transaction expressed by
+the transaction version number.
+Basically any input that exists within a "version 2 transaction" is
+viewed as a wildcard input. Then I realized whats to stop someone from
+modifying the transaction from version 1 to version 2 and stealing
+someones funds. The "wildcardness" must be expressed in the signature
+so you know that the private key holder intended all inputs to be
+included. Hence the need for a new opcode.
+
+btw, this scheme is definitely in the 10x or higher gain. You could
+potentially spend an unlimited number of UTXOs this way.
+
+On 11/24/15, Gavin Andresen <gavinandresen at gmail.com> wrote:
+> On Tue, Nov 24, 2015 at 12:34 PM, Chris Priest via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> The technical reason for this is that you have to explicitly list each
+>> UTXO individually when making bitcoin transactions. There is no way to
+>> say "all the utxos". This post describes a way to achieve this. I'm
+>> not yet a bitcoin master, so there are parts of this proposal that I
+>> have not yet figured out entirely, but I'm sure other people who know
+>> more could help out.
+>>
+>
+> So every input has:
+>  32-byte hash (transaction being spent)
+>  4-byte output (output being spent)
+>  4-byte sequence number
+> ... plus the scriptSig. Which is as small as about 73 bytes if you're
+> spending a raw OP_CHECKSIG (which you can't do as a bitcoin address, but
+> could via the BIP70 payment protocol), and which is at least two serialized
+> bytes.
+>
+> Best case for any scheme to coalesce scriptSigs would to somehow make
+> all-but-the-first scriptSig zero-length, so the inputs would be 42 bytes
+> instead of 40+73 bytes -- the coalesce transaction would be about one-third
+> the size, so instead of paying (say) $1 in transaction fees you'd pay 37
+> cents.
+>
+> That's in the gray are of the "worth doing" threshold-- if it was a 10x
+> improvement (pay 10 cents instead of $1) it'd be in my personal "definitely
+> worth the trouble of doing" category.
+>
+> RE: the scheme:  an OP_RINGSIGVERIFY is probably the right way to do this:
+>   https://en.wikipedia.org/wiki/Ring_signature
+>
+> The funding transactions would be:  <public key> OP_RINGSIGVERIFY
+> ... which might could be redeemed with <ring signature> for one input and
+> then... uhh... maybe just <index_to_input_with_signature> for the other
+> inputs that are part of the same ring signature group (OP_0 if the first
+> input has the signature that is good for all the other public keys, which
+> would be the common case).
+>
+> --
+> --
+> Gavin Andresen
+>
