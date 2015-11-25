@@ -1,0 +1,291 @@
+From: dscotese@litmocracy.com (Dave Scotese)
+Date: Wed, 25 Nov 2015 09:03:32 -0800
+Subject: [bitcoin-dev] OP_CHECKWILDCARDSIGVERIFY or "Wildcard Inputs" or
+ "Coalescing Transactions"
+In-Reply-To: <5655C2AE.6040404@startmail.com>
+References: <CAAcC9yuM+dG+mJn_0vPqZuig5cHqeF-xgszw-zzD3D9UKRsyrQ@mail.gmail.com>
+	<CABaSBaxKJjEd2e9hrnzyS57-YHspqCv9PiSH4XccqSZJMQG6qg@mail.gmail.com>
+	<CAGLBAhd-6NbxppFdqNVSQ5ot_GX12eL8P2-qVe7_dZcUfHYv6w@mail.gmail.com>
+	<CAAcC9yubb-Ajig+ZLrGVe3a7ON5MTzuLARP1_HCj2ngStJAGGg@mail.gmail.com>
+	<CABeL=0hm=6S6YRQP45pNVv42b1kHZrH1TFuz3xguN+YNW5o=ww@mail.gmail.com>
+	<CAAcC9yuUYx5o50ocTiFp2keYUuew8aT5fuCnx-huHUgeGK5r1g@mail.gmail.com>
+	<5655C2AE.6040404@startmail.com>
+Message-ID: <CAGLBAhdeejxXJqTFo5-Sch0dFbX8DNfsZ3eg7i80pDyH6juuHg@mail.gmail.com>
+
+The message could specify:
+{ stib: 0x01,
+  TxnCount: (# of entries in the Indexes array)
+  Indexes: [{BLK: Block#,Txns:[TxIndex,TxIndex,...]},{BLK:
+Block#,Txns:[...]}],
+  NewUTXO: (The script that will spend these coins)
+}
+*stib *is a Script Template Index Bitfield: Must (currently) be the byte
+0x01, to indicate the "vanilla" script Chris identified.  If other scripts
+appear to fit the bill in the future, they can be assigned to other bits.
+*Indexes *is a list of pairs that identify a block by its height and a list
+of indexes into the block.  This puts the onus on the transactor to
+identify all the inputs instead of requiring the miner to scan for them.
+
+If block heights and transaction indexes are 32-bit integers, this reduces
+the per-input size cost by at least 100 bytes, if I did my math right.
+
+
+On Wed, Nov 25, 2015 at 6:16 AM, Erik via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+>
+> -----BEGIN PGP SIGNED MESSAGE-----
+> Hash: SHA1
+>
+>
+> Nice idea. I see it as an important feature because of several reasons:
+>
+> Considering the website example, where most websites uses static
+> content, a bitcoin address could accumulate a dozen of transactions
+> before the webmaster changes the address to a new one.
+>
+> Also consider a QR-code address printed on paper. That address is also
+> prone to multiple payments, which could be several small ones.
+>
+> You ask someone to pay an amount of BTC. That person would be someone
+> that want you to actually don't get any money at all, so instead of
+> sending one payment, the person sends a lot of small TXes. It costs a
+> lot more to achieve this, but that doesn't bother the person sending the
+> transactions. What you see is the transactions to the address you've
+> agreed sum up to the amount you asked for. When you later try to spend
+> it, you can't because of that the size of all UXTOs is too high to even
+> overcome the tx fee.
+>
+> If you use a wildcard transaction to bake them together into one UXTO,
+> you will not need to pay more than just one tx fee to solve the problem
+> you've got. Also the network will benefit from this because the
+> alternative is to not spend those UXTOs at all because it costs more
+> than it earns, leaving lots of UXTOs in the databases.
+>
+> Some problems to consider is:
+> * Which addresses should be involved in a wildcard TX.
+> * How to not make it repeatable or delayed so that UXTOs not intended to
+> be in that TX wouldn't be included.
+> * How to make it impossible to sign an wildcard TX with a future date.
+> * How to limit outputs so they not are in risk being double-spent.
+> * How to guarantee that the output is actually calculated from all the
+> inputs involved and not less, making insane TX fees available.
+>
+> I could see possible solutions to this problems:
+> * Using the highest block height number of transactions to include or
+> maybe better, the UXTO of one transaction destined to that address
+> involved in that block - that implies collecting all UXTOs in that block.
+> * Using a signature that includes the date. To let it be present more
+> times in the blockchain requires another timestamp that is newer than a
+> wildcard TX already existing in the blockchain. Also make the
+> transaction invalid to put in a block if the timestamp is behind a
+> certain time or in the future.
+> * Using the coinbase UXTO or the block hash from the latest block as
+> proof that the transaction isn't created earlier than that. Also makes
+> the wildcard TX invalid if that block isn't part of the blockchain
+> anymore. This also have a secondary effect of certifying the blockchain
+> itself making it more difficult to fork it from far behind because it
+> will effectively remove all transactions depending on a UXTO including
+> this type of certification.
+> * Either using a priority like way to determine what are being left to
+> wildcard in a block - all transactions spending UXTOs of that address is
+> removed before the wildcard TX if they occurs in the same block. Either
+> it is possible to set a rule that if a wildcard TX exists in one block,
+> it is invalid to include other UXTOs that is to be be included in the
+> wildcard from the same address in the same block. (Classic
+> double-spending rule)
+> * Using a special form of output specifying only one destination
+> address/script and the amount of fees to pay. If the amount of fees
+> could be payed, then the rest will be sent to the destination address.
+> This covers intentional delaying and also discourage forking the
+> blockchain by miners to making the signature UXTO appear later than more
+> recent transaction in a new fork to collect the later txes as fee.
+>
+> This transaction type would in fact look like a time-limited offer to
+> the network to reduce the UXTO set of an address. I guess some miners
+> will then use a logic that prefers this types of TXes even if they are
+> low-fee because, if they removes lots of UXTOs, they benefits the network.
+>
+> Sincerely,
+> Erik.
+>
+> Den 2015-11-25 kl. 02:26, skrev Chris Priest via bitcoin-dev:
+> > 1. Technically is it promoting address reuse, but in this case, I
+> > think it's OK. The primary purpose of a coalescing transaction is to
+> > clear out *all* funds associated with one address and send them to
+> > another address (belonging to the same owner). If you coalesce the
+> > inputs to the same address over and over again, you an do that, but
+> > you'll run the risk of leaking your private key.
+> >
+> > 2. I see these transactions being broadcast in the background when the
+> > user is not planning on sending or receiving any payments. By the time
+> > the wallet user wants to spend funds from the address, the coalescing
+> > transaction should be sufficiently deep enough in the blockchain to
+> > avoid re-org tomfoolery. Exchanges and payment processors who take in
+> > payments around the clock will probably never use these transactions,
+> > at least not on "live" addresses.
+> >
+> > 3. I never thought of that, but thats a benefit too!
+> >
+> > On 11/24/15, Jannes Faber via bitcoin-dev
+> > <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> >> Few issues I can think of:
+> >>
+> >> 1. In its basic form this encourages address reuse. Unless the
+> wildcard can
+> >> be constructed such that it can match a whole branch of an HD  wallet.
+> >> Although I guess that would tie all those addresses together making
+> HD moot
+> >> to begin with.
+> >>
+> >> 2. Sounds pretty dangerous during reorgs. Maybe such a transaction
+> should
+> >> include a block height which indicates the maximum block that any
+> utxo can
+> >> match. With the requirement that the specified block height is at
+> least 100
+> >> blocks in the past. Maybe add a minimum block height as well to prevent
+> >> unnecessary scanning (with the requirement that at least one utxo must
+> be
+> >> in that minimum block).
+> >>
+> >> 3. Seems like a nice way to the reduce utxo set. But hard to say how
+> >> effective it would really be.
+> >> On 25 Nov 2015 12:48 a.m., "Chris Priest via bitcoin-dev" <
+> >> bitcoin-dev at lists.linuxfoundation.org> wrote:
+> >>
+> >>>> This idea could be applied by having the wildcard signature apply to
+> >>>> all
+> >>>> UTXOs that are of a standard form and paid to a particular address,
+> and
+> >>> be
+> >>>> a signature of some kind of message to that effect.
+> >>>
+> >>> I think this is true. Not *all* transactions will be able to match the
+> >>> wildcard. For instance if someone sent some crazy smart contract tx to
+> >>> your address, the script associated with that tx will be such that it
+> >>> will not apply to the wildcard. Most "vanilla" utxos that I've seen
+> >>> have the formula: OP_DUP OP_HASH160 [a hash corresponding to your
+> >>> address] OP_EQUALVERIFY OP_CHECKSIG". Just UTXOs in that form could
+> >>> apply to the wildcard.
+> >>>
+> >>> On 11/24/15, Dave Scotese via bitcoin-dev
+> >>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> >>>> What is required to spend bitcoin is that input be provided to the
+> UTXO
+> >>>> script that causes it to return true.  What Chris is proposing breaks
+> >>>> the
+> >>>> programmatic nature of the requirement, replacing it with a
+> requirement
+> >>>> that the secret be known.  Granted, the secret is the only requirement
+> >>>> in
+> >>>> most cases, but there is no built-in assumption that the script always
+> >>>> requires only that secret.
+> >>>>
+> >>>> This idea could be applied by having the wildcard signature apply to
+> >>>> all
+> >>>> UTXOs that are of a standard form and paid to a particular address,
+> and
+> >>> be
+> >>>> a signature of some kind of message to that effect.  I imagine the
+> cost
+> >>> of
+> >>>> re-scanning the UTXO set to find them all would justify a special
+> extra
+> >>>> mining fee for any transaction that used this opcode.
+> >>>>
+> >>>> Please be blunt about any of my own misunderstandings that this email
+> >>> makes
+> >>>> clear.
+> >>>>
+> >>>> On Tue, Nov 24, 2015 at 1:51 PM, Bryan Bishop via bitcoin-dev <
+> >>>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+> >>>>
+> >>>>> On Tue, Nov 24, 2015 at 11:34 AM, Chris Priest via bitcoin-dev <
+> >>>>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+> >>>>>
+> >>>>>> **OP_CHECKWILDCARDSIGVERIFY**
+> >>>>>
+> >>>>>
+> >>>>> Some (minor) discussion of this idea in -wizards earlier today
+> >>>>> starting
+> >>>>> near near "09:50" (apologies for having no anchor links):
+> >>>>> http://gnusha.org/bitcoin-wizards/2015-11-24.log
+> >>>>>
+> >>>>> - Bryan
+> >>>>> http://heybryan.org/
+> >>>>> 1 512 203 0507
+> >>>>>
+> >>>>> _______________________________________________
+> >>>>> bitcoin-dev mailing list
+> >>>>> bitcoin-dev at lists.linuxfoundation.org
+> >>>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >>>>>
+> >>>>>
+> >>>>
+> >>>>
+> >>>> --
+> >>>> I like to provide some work at no charge to prove my value. Do you
+> need
+> >>>> a
+> >>>> techie?
+> >>>> I own Litmocracy <http://www.litmocracy.com> and Meme Racing
+> >>>> <http://www.memeracing.net> (in alpha).
+> >>>> I'm the webmaster for The Voluntaryist <http://www.voluntaryist.com>
+> >>> which
+> >>>> now accepts Bitcoin.
+> >>>> I also code for The Dollar Vigilante <http://dollarvigilante.com/>.
+> >>>> "He ought to find it more profitable to play by the rules" - Satoshi
+> >>>> Nakamoto
+> >>>>
+> >>> _______________________________________________
+> >>> bitcoin-dev mailing list
+> >>> bitcoin-dev at lists.linuxfoundation.org
+> >>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >>>
+> >>
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+> -----BEGIN PGP SIGNATURE-----
+> Version: GnuPG v2.0.22 (GNU/Linux)
+>
+> iQIcBAEBAgAGBQJWVcKuAAoJEJ51csApon2ofiYP/15DXthFvNg9pBPOaaboGOh1
+> DhN7R3SXnt4PTLygQGO3AkTRcDinQrZ0Q4GDLIgrOkaKJ4yr6FtnoEYGORQSfFkx
+> 946eWtqkR4+IJi7gYIIn1yOfFjWKUp9l4OOWBA8Rxsn0tZUAQPXzf2f+dxAaj0Gd
+> fLrftYvK1XJ8BolhwNfonJ193RJGFynQfWqZ+XeQQMS5LW23RpQLyI26f495MPHG
+> Wug7M/Aq50JrJDe1OyhjnnjYxNV6Gdbg9o3YIdj2gaOsBKHzsPK+LjcLCdRqD/OI
+> TBwmwiI4vrOl3HzvtucHxQqnaP43wubydVhPfmjG97tDaj2cVLjadc17e77PzCVI
+> 8N21oVIWDzyW6y14REoo1Zs4A9ALpHjXAGWdls71eP1NIFcfdFAJWhk2/giisw8o
+> ZsQTgq2mUHS+n4q3NjFEwGxS011yADE3Uf3ryjuTjp3HVQf3lZxn4E4Z7z/4gkXm
+> /h/3Ln7PkjEmOqp9htgHcYW7q5goeJzV0xNDBoY9wvOlJQcAh6nTiS4SJEiFJvXU
+> xVZIGZsisrdW/1CfcszOi7KFGaaV1VlAXQnuJHj1I3dJ2r68yi5TQk6voMNFprEz
+> 2R4zuZKjIoH79rOjDV8l6XBIU1Kh92GEzCFlTicfvnAoa853fGZt+V/77ralftJW
+> E6sERK8uG8S3KdBSVQ7K
+> =1xdi
+> -----END PGP SIGNATURE-----
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+
+
+
+-- 
+I like to provide some work at no charge to prove my value. Do you need a
+techie?
+I own Litmocracy <http://www.litmocracy.com> and Meme Racing
+<http://www.memeracing.net> (in alpha).
+I'm the webmaster for The Voluntaryist <http://www.voluntaryist.com> which
+now accepts Bitcoin.
+I also code for The Dollar Vigilante <http://dollarvigilante.com/>.
+"He ought to find it more profitable to play by the rules" - Satoshi
+Nakamoto
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151125/b0a18f46/attachment-0001.html>
