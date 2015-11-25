@@ -1,0 +1,157 @@
+From: elombrozo@gmail.com (Eric Lombrozo)
+Date: Wed, 25 Nov 2015 23:41:03 +0000
+Subject: [bitcoin-dev] Alternative name for CHECKSEQUENCEVERIFY (BIP112)
+In-Reply-To: <CAOG=w-v0_dfZS2=XfKQzRZ9Vq2Z2YqUO2_cuvOheuUrD4dbYtw@mail.gmail.com>
+Message-ID: <eme59eddfb-c410-4af4-b496-e3301ac9db85@platinum>
+
+As I said in an earlier post, a systems developer and an application 
+developer have very different perspectives on this. From the former's 
+perspective, it is entirely sensible to name things based on basic 
+features of the system's design (i.e. a field in the txin or tx that 
+gets checked) - but from an app developer's perspective, what matters is 
+how they will use a particular feature in an actual app.
+
+I think that part of what systems developers should strive to do is to 
+abstract out the inner minutiae of the system's guts and expose to app 
+developers the clearest interface with which to develop apps. This is 
+even more the case when the details of the inner workings are completely 
+irrelevant to the application logic and there's no real gains to be had 
+from attempting to optimize for the inner workings when designing an 
+application.
+
+>From an app developer's perspective, I think it is pretty blatantly 
+clear that relative timelock is *the* critical exposed functionality 
+intended here. Now, one could argue that the satoshi script is still a 
+systems level component of the system...but with the advent of overlay 
+protocols such as payment channels and the Lightning Network, it is 
+clear that we now require a new abstraction layer for reasoning about 
+the higher level logic of the system that doesn't burden the protocol 
+designer with having to know the intimate and esoteric details of the 
+lower system levels. Of course, many of those who work on these higher 
+level protocols will also be experts in the underlying system design. 
+However, it greatly increases the learning curve and can easily 
+frustrate people looking to work on these ideas...and ultimately, 
+knowing the inner details of how the nSequence field is structured and 
+what the bits actually mean is irrelevant to someone trying to design 
+scripts for such applications.
+
+We've already deployed another opcode, CHECKLOCKTIMEVERIFY, which does 
+refer to the field name. However, in this particular situation, the 
+field name reflects *far* more closely what the app developer actually 
+cares about than nSequence, which to the app developer might as well be 
+called foo. As such, I stick with my original vote - we should call the 
+opcode RCHECKLOCKTIMEVERIFY, which has the advantage of communicating 
+fairly directly to developers and protocol designers the semantics they 
+actually care about and also makes clear the relationship between 
+absolute and relative timelock...that's to say, the ability for the 
+script designer to lock specific coins until either a specific moment in 
+time or until a certain delay has passed since the coin output was 
+created (added to blockchain).
+
+Let's face it - the entire motivation behind BIP68/BIP112 is relative 
+timelock. Explicitly calling the opcode RCHECKLOCKTIMEVERIFY will make 
+life easier for everyone and will help sell the idea and help it gain 
+greater acceptance more quickly; while stubbornly adhering to an 
+esoteric detail that is only there for historical reasons will only 
+continue to delay the idea's acceptance and adoptance.
+
+- Eric
+
+------ Original Message ------
+From: "Mark Friedenbach via bitcoin-dev" 
+<bitcoin-dev at lists.linuxfoundation.org>
+To: "Btc Drak" <btcdrak at gmail.com>
+Cc: "Bitcoin Dev" <bitcoin-dev at lists.linuxfoundation.org>
+Sent: 11/25/2015 3:05:50 PM
+Subject: Re: [bitcoin-dev] Alternative name for CHECKSEQUENCEVERIFY 
+(BIP112)
+
+>Looks like I'm the long dissenting voice here? As the originator of the 
+>name CHECKSEQUENCEVERIFY, perhaps I can explain why the name was 
+>appropriately chosen and why the proposed alternatives don't stand up.
+>
+>First, the names are purposefully chosen to illustrate what they do:
+>
+>What does CHECKLOCKTIMEVERIFY do? It verifies the range of 
+>tx.nLockTime.
+>What does CHECKSEQUENCEVERIFY do? It verifies the range of 
+>txin.nSequence.
+>
+>Second, the semantics are not limited to relative lock-time / maturity 
+>only. They both leave open ranges with possible, but currently 
+>undefined future consensus-enforced behavior. We don't know what sort 
+>of future behavior these values might trigger, but the associated 
+>opcodes are generic enough to handle them:
+>
+>CHECKLOCKTIMEVERIFY will pass an nSequence between 1985 and 2009, even 
+>though such constraints have no meaning in Bitcoin.
+>CHECKSEQUENCEVERIFY is explicitly written to permit a 5-byte push 
+>operand, while checking only 17 of the available 39 bits of both the 
+>operand and the nSequence. Indeed the most recent semantic change of 
+>CSV was justified in part because it relaxes all constraints over the 
+>values of these bits freeing them for other purposes in transaction 
+>validation and/or future extensions of the opcode semantics.
+>
+>Third, single-byte opcode space is limited. There are less than 10 such 
+>opcodes left. Maybe space won't be so precious in a post-segwitness 
+>world, but I don't want to presume that just yet.
+>
+>
+>As for the alternatives, they capture only the initial use case of 
+>nSequence. My objection would relax if nSequence were renamed, but I 
+>think that would be too disruptive and unnecessary. In any case, the 
+>imagined use cases for CHECKSEQUENCEVERIFY has to do with sequencing 
+>execution pathways of script, so it's not a stretch in meaning. 
+>Previously CHECKMATURITYVERIFY was a hypothicated opcode that directly 
+>checked the minimum age of inputs of a transaction. The indirect naming 
+>of CHECKSEQUENCEVERIFY on the other hand is due to its indirect 
+>behavior. RELATIVELOCKTIMEVERIFY was also a hypothicated opcode that 
+>would check a ficticious nRelativeLockTime field, which does not exist. 
+>Again my objection would go away if we renamed nSequence, but I 
+>actually think the nSequence name is better...
+>
+>On Tue, Nov 24, 2015 at 2:30 AM, Btc Drak via bitcoin-dev 
+><bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>BIP68 introduces relative lock-time semantics to part of the nSequence 
+>>field leaving the majority of bits undefined for other future 
+>>applications.
+>>
+>>BIP112 introduces opcode CHECKSEQUENCEVERIFY (OP_CSV) that is 
+>>specifically limited to verifying transaction inputs according to 
+>>BIP68's relative lock-time[1], yet the _name_ OP_CSV is much boarder 
+>>than that. We spent months limiting the number of bits used in BIP68 
+>>so they would be available for future use cases, thus we have 
+>>acknowledged there will be completely different usecases that take 
+>>advantage of unused nSequence bits.
+>>
+>>For this reason I believe the BIP112 should be renamed specifically 
+>>for it's usecase, which is verifying the time/maturity of transaction 
+>>inputs relative to their inclusion in a block.
+>>
+>>Suggestions:-
+>>
+>>CHECKMATURITYVERIFY
+>>RELATIVELOCKTIMEVERIFY
+>>RCHECKLOCKTIMEVERIFY
+>>RCLTV
+>>
+>>We could of course softfork additional meaning into OP_CSV each time 
+>>we add new sequence number usecases, but that would become obscure and 
+>>confusing. We have already shown there is no shortage of opcodes so it 
+>>makes no sense to cram everything into one generic opcode.
+>>
+>>TL;DR: let's give BIP112 opcode a name that reflects it's actual 
+>>usecase rather than focusing on the bitcoin internals.
+>>
+>>[1] 
+>>https://github.com/bitcoin/bitcoin/pull/6564/files#diff-be2905e2f5218ecdbe4e55637dac75f3R1223
+>>
+>>_______________________________________________
+>>bitcoin-dev mailing list
+>>bitcoin-dev at lists.linuxfoundation.org
+>>https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151125/180fa442/attachment.html>
