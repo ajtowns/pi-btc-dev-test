@@ -1,0 +1,142 @@
+From: dscotese@litmocracy.com (Dave Scotese)
+Date: Thu, 26 Nov 2015 20:08:35 -0800
+Subject: [bitcoin-dev] Alternative name for CHECKSEQUENCEVERIFY (BIP112)
+In-Reply-To: <CAOG=w-v0_dfZS2=XfKQzRZ9Vq2Z2YqUO2_cuvOheuUrD4dbYtw@mail.gmail.com>
+References: <CADJgMzs0w4L7ma42RCzT5dYDcG2aY1_04G1khcFPFPE6mmB=-A@mail.gmail.com>
+	<CAOG=w-v0_dfZS2=XfKQzRZ9Vq2Z2YqUO2_cuvOheuUrD4dbYtw@mail.gmail.com>
+Message-ID: <CAGLBAhev1jZ6i0aW3B_bnLfrjJanHr_Qu6rtkEQL8fDfyF4yYQ@mail.gmail.com>
+
+I was curious about there being only 10 single-byte opcodes left.  There
+are ten single-byte OP_NOPx opcodes defined, but there are 15 opcodes that
+"simply *do not exist anymore* in the protocol" because they are scary (had
+bugs that "could crash any Bitcoin node if exploited" or "allowed anyone to
+spend anyone's bitcoins").  There are also 66 single-byte values that are
+currently reserved, 186 - 252 (0xba - 0xfc).
+
+If the name OP_CHECKSEQUENCEVERIFY should not be changed, each of us has a
+single best reason not to change it.  Finding other reasons suggests that
+one's top reason isn't good enough.  See Nassim Taleb's book, Antifragile,
+if that claim makes you curious.  The same goes for changing it.  In any
+case, it is 178 (0xb2) and app developers can call it whatever they want.
+
+It seems trivial to me since the following, in script.h, would neither slow
+compilation nor confuse anyone, but could lead the curious to explore the
+history and expand their knowledge:
+OP_NOP3 = 0xb2,
+OP_CHECKSEQUENCEVERIFY = OP_NOP3,
+OP_CHECKMATURITYVERIFY = OP_NOP3, // A comment defending the alternative
+name
+
+I don't know the consensus here on leaving breadcrumbs in code comments
+(and enum/variable names) for curious coders to use as inspiration for
+studying the history, but I advocate it, since modern IDEs are fairly
+well-equipped to make skipping or hiding comments easy.
+
+
+On Wed, Nov 25, 2015 at 3:05 PM, Mark Friedenbach via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Looks like I'm the long dissenting voice here? As the originator of the
+> name CHECKSEQUENCEVERIFY, perhaps I can explain why the name was
+> appropriately chosen and why the proposed alternatives don't stand up.
+>
+> First, the names are purposefully chosen to illustrate what they do:
+>
+> What does CHECKLOCKTIMEVERIFY do? It verifies the range of tx.nLockTime.
+> What does CHECKSEQUENCEVERIFY do? It verifies the range of txin.nSequence.
+>
+> Second, the semantics are not limited to relative lock-time / maturity
+> only. They both leave open ranges with possible, but currently undefined
+> future consensus-enforced behavior. We don't know what sort of future
+> behavior these values might trigger, but the associated opcodes are generic
+> enough to handle them:
+>
+> CHECKLOCKTIMEVERIFY will pass an nSequence between 1985 and 2009, even
+> though such constraints have no meaning in Bitcoin.
+> CHECKSEQUENCEVERIFY is explicitly written to permit a 5-byte push operand,
+> while checking only 17 of the available 39 bits of both the operand and the
+> nSequence. Indeed the most recent semantic change of CSV was justified in
+> part because it relaxes all constraints over the values of these bits
+> freeing them for other purposes in transaction validation and/or future
+> extensions of the opcode semantics.
+>
+> Third, single-byte opcode space is limited. There are less than 10 such
+> opcodes left. Maybe space won't be so precious in a post-segwitness world,
+> but I don't want to presume that just yet.
+>
+>
+> As for the alternatives, they capture only the initial use case of
+> nSequence. My objection would relax if nSequence were renamed, but I think
+> that would be too disruptive and unnecessary. In any case, the imagined use
+> cases for CHECKSEQUENCEVERIFY has to do with sequencing execution pathways
+> of script, so it's not a stretch in meaning. Previously CHECKMATURITYVERIFY
+> was a hypothicated opcode that directly checked the minimum age of inputs
+> of a transaction. The indirect naming of CHECKSEQUENCEVERIFY on the other
+> hand is due to its indirect behavior. RELATIVELOCKTIMEVERIFY was also a
+> hypothicated opcode that would check a ficticious nRelativeLockTime field,
+> which does not exist. Again my objection would go away if we renamed
+> nSequence, but I actually think the nSequence name is better...
+>
+> On Tue, Nov 24, 2015 at 2:30 AM, Btc Drak via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> BIP68 introduces relative lock-time semantics to part of the nSequence
+>> field leaving the majority of bits undefined for other future applications.
+>>
+>> BIP112 introduces opcode CHECKSEQUENCEVERIFY (OP_CSV) that is
+>> specifically limited to verifying transaction inputs according to BIP68's
+>> relative lock-time[1], yet the _name_ OP_CSV is much boarder than that. We
+>> spent months limiting the number of bits used in BIP68 so they would be
+>> available for future use cases, thus we have acknowledged there will be
+>> completely different usecases that take advantage of unused nSequence bits.
+>>
+>> For this reason I believe the BIP112 should be renamed specifically for
+>> it's usecase, which is verifying the time/maturity of transaction inputs
+>> relative to their inclusion in a block.
+>>
+>> Suggestions:-
+>>
+>> CHECKMATURITYVERIFY
+>> RELATIVELOCKTIMEVERIFY
+>> RCHECKLOCKTIMEVERIFY
+>> RCLTV
+>>
+>> We could of course softfork additional meaning into OP_CSV each time we
+>> add new sequence number usecases, but that would become obscure and
+>> confusing. We have already shown there is no shortage of opcodes so it
+>> makes no sense to cram everything into one generic opcode.
+>>
+>> TL;DR: let's give BIP112 opcode a name that reflects it's actual usecase
+>> rather than focusing on the bitcoin internals.
+>>
+>> [1]
+>> https://github.com/bitcoin/bitcoin/pull/6564/files#diff-be2905e2f5218ecdbe4e55637dac75f3R1223
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+
+
+-- 
+I like to provide some work at no charge to prove my value. Do you need a
+techie?
+I own Litmocracy <http://www.litmocracy.com> and Meme Racing
+<http://www.memeracing.net> (in alpha).
+I'm the webmaster for The Voluntaryist <http://www.voluntaryist.com> which
+now accepts Bitcoin.
+I also code for The Dollar Vigilante <http://dollarvigilante.com/>.
+"He ought to find it more profitable to play by the rules" - Satoshi
+Nakamoto
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151126/53c45125/attachment.html>
