@@ -1,0 +1,50 @@
+From: elombrozo@gmail.com (Eric Lombrozo)
+Date: Fri, 27 Nov 2015 00:10:49 -0800
+Subject: [bitcoin-dev] Alternative name for CHECKSEQUENCEVERIFY (BIP112)
+In-Reply-To: <87ziy0qeca.fsf@rustcorp.com.au>
+References: <eme59eddfb-c410-4af4-b496-e3301ac9db85@platinum>
+	<87ziy0qeca.fsf@rustcorp.com.au>
+Message-ID: <B412CC14-0FD7-47E3-8A34-EB73198ED041@gmail.com>
+
+After reading Rusty's post, I admit there's something to be said for the fact that both the script and the nSequence field play a combined role, and thus, making the interaction between the two more clear in the naming make sense.
+
+It is somewhat unfortunate that currently, we can't just have a dedicated field for the purpose of relative locktime (or minimum age) without having to repurpose the only unused 32 bits in the txin.
+
+HOWEVER...there might be ways around this issue using segwit.
+
+I've been pondering the possibility of adding an extra input vector to the prunable extra data that  comprises the witness. Witness structures can provide additional data that is used in transaction validation but does not contribute to the tx hash.
+
+Currently, the signature checking opcodes in the script already do this implicitly for computing the hash that is signed (but not the tx hash used in block merkletrees)...and this is the principal cause of undesirable malleability issues. Clearly the signatures themselves cannot contribute to the hash they are signing. So segwit makes this separation explicit by moving the signatures to a structure external to the script. Pieter Wuille's implementation (https://github.com/sipa/bitcoin/tree/segwit) generalizes this idea using a script witness structure that is a vector of arbitrary inputs. Clearly moving the signatures into such structure is an important feature...but other types of input to the script could be placed here as well.
+
+I had considered the possibility of placing a minimum age (relative locktime) field in the input vector that could be checked for mempool acceptance without having to evaluate the script. Of course, the location of such a field would have to be known by the mempool and cannot be an arbitrary element of a generic input vector, which adds some minor but surmountable complications.
+
+Greg Maxwell pointed out, however, that signing opcodes that sign hashes discarding this data would make it trivial for anyone to change this field without signing anything. The nSequence fields of txins, being part of the tx serialization that gets hashed, is therefore always signed.
+
+This led me to consider the possibility of adding extra opcodes to the script that can incorporate additional data in the hash that gets signed. This data would go in another structure that does not contribute to the tx hash but is outside the witness. Then we could add extra prunable data fields that the signer can commit to.
+
+If I've missed something critical in the above analysis, someone please correct me...but it seems that such a mechanism would allow adding extra prunable signed data fields to transactions, which might ultimately remove scarcity of tx data that we can repurpose via soft forks. If this is the case, I would suggest turning the nSequence field into a dedicated min age/rlt field to simplify the semantics and avoid ugliness in trying to reclaim unused bits.
+
+I may be overlooking something important here, but unless there's a reason such data cannot be made prunable, I haven't been able to poke a hole yet.
+
+- Eric
+
+
+
+On November 26, 2015 8:02:45 PM PST, Rusty Russell <rusty at rustcorp.com.au> wrote:
+>Eric Lombrozo via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+>writes:
+>>>From an app developer's perspective, I think it is pretty blatantly 
+>> clear that relative timelock is *the* critical exposed functionality 
+>> intended here.
+>
+>As someone who actually developed scripts using CSV, I agree with Mark
+>(and Matt).  The relative locktime stuff isn't in this opcode, it's in
+>the nSequence calculation.
+>
+>So, I vote to keep CSV called as it is.
+>
+>Thanks,
+>Rusty.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151127/73b49c65/attachment-0001.html>
