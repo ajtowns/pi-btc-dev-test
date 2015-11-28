@@ -1,0 +1,137 @@
+From: peter.tschipper@gmail.com (Peter Tschipper)
+Date: Sat, 28 Nov 2015 13:41:51 -0800
+Subject: [bitcoin-dev] Test Results for : Datasstream Compression of Blocks
+	and Tx's
+Message-ID: <565A1F9F.1090005@gmail.com>
+
+Hi All,
+
+Here are some final results of testing with the reference implementation
+for compressing blocks and transactions. This implementation also
+concatenates blocks and transactions when possible so you'll see data
+sizes in the 1-2MB ranges.
+
+Results below show the time it takes to sync the first part of the
+blockchain, comparing Zlib to the LZOx library.  (LZOf was also tried
+but wasn't found to be as good as LZOx).  The following shows tests run
+with and without latency.  With latency on the network, all compression
+libraries performed much better than without compression.
+
+I don't think it's entirely obvious which is better, Zlib or LZO. 
+Although I prefer the higher compression of Zlib, overall I would have
+to give the edge to LZO.  With LZO we have the fastest most scalable
+option when at the lowest compression setting which will be a boost in
+performance for users that want peformance over compression, and then at
+the high end LZO provides decent compression which approaches Zlib,
+(although at a higher cost) but good for those that want to save more
+bandwidth.
+
+Uncompressed 60ms 	Zlib-1 (60ms) 	Zlib-6 (60ms) 	LZOx-1 (60ms) 	LZOx-999
+(60ms)
+219 	299 	296 	294 	291
+432 	568 	565 	558 	548
+652 	835 	836 	819 	811
+866 	1106 	1107 	1081 	1071
+1082 	1372 	1381 	1341 	1333
+1309 	1644 	1654 	1605 	1600
+1535 	1917 	1936 	1873 	1875
+1762 	2191 	2210 	2141 	2141
+1992 	2463 	2486 	2411 	2411
+2257 	2748 	2780 	2694 	2697
+2627 	3034 	3076 	2970 	2983
+3226 	3416 	3397 	3266 	3302
+4010 	3983 	3773 	3625 	3703
+4914 	4503 	4292 	4127 	4287
+5806 	4928 	4719 	4529 	4821
+6674 	5249 	5164 	4840 	5314
+7563 	5603 	5669 	5289 	6002
+8477 	6054 	6268 	5858 	6638
+9843 	7085 	7278 	6868 	7679
+11338 	8215 	8433 	8044 	8795
+
+
+
+These results from testing on a highspeed wireless LAN (very small latency)
+
+Results in seconds 	
+	
+	
+	
+	
+Num blocks sync'd 	Uncompressed 	Zlib-1 	Zlib-6 	LZOx-1 	LZOx-999
+10000 	255 	232 	233 	231 	257
+20000 	464 	414 	420 	407 	453
+30000 	677 	594 	611 	585 	650
+40000 	887 	782 	795 	760 	849
+50000 	1099 	961 	977 	933 	1048
+60000 	1310 	1145 	1167 	1110 	1259
+70000 	1512 	1330 	1362 	1291 	1470
+80000 	1714 	1519 	1552 	1469 	1679
+90000 	1917 	1707 	1747 	1650 	1882
+100000 	2122 	1905 	1950 	1843 	2111
+110000 	2333 	2107 	2151 	2038 	2329
+120000 	2560 	2333 	2376 	2256 	2580
+130000 	2835 	2656 	2679 	2558 	2921
+140000 	3274 	3259 	3161 	3051 	3466
+150000 	3662 	3793 	3547 	3440 	3919
+160000 	4040 	4172 	3937 	3767 	4416
+170000 	4425 	4625 	4379 	4215 	4958
+180000 	4860 	5149 	4895 	4781 	5560
+190000 	5855 	6160 	5898 	5805 	6557
+200000 	7004 	7234 	7051 	6983 	7770
+
+
+
+The following show the compression ratio acheived for various sizes of
+data.  Zlib is the clear
+winner for compressibility, with LZOx-999 coming close but at a cost.
+
+range 	Zlib-1 cmp%
+	Zlib-6 cmp% 	LZOx-1 cmp% 	LZOx-999 cmp%
+0-250b 	12.44 	12.86 	10.79 	14.34
+250-500b  	19.33 	12.97 	10.34 	11.11
+600-700 	16.72 	n/a 	12.91 	17.25
+700-800 	6.37 	7.65 	4.83 	8.07
+900-1KB 	6.54 	6.95 	5.64 	7.9
+1KB-10KB 	25.08 	25.65 	21.21 	22.65
+10KB-100KB 	19.77 	21.57 	14.37 	19.02
+100KB-200KB 	21.49 	23.56 	15.37 	21.55
+200KB-300KB 	23.66 	24.18 	16.91 	22.76
+300KB-400KB 	23.4 	23.7 	16.5 	21.38
+400KB-500KB 	24.6 	24.85 	17.56 	22.43
+500KB-600KB 	25.51 	26.55 	18.51 	23.4
+600KB-700KB 	27.25 	28.41 	19.91 	25.46
+700KB-800KB 	27.58 	29.18 	20.26 	27.17
+800KB-900KB 	27 	29.11 	20 	27.4
+900KB-1MB 	28.19 	29.38 	21.15 	26.43
+1MB -2MB 	27.41 	29.46 	21.33 	27.73
+
+
+The following shows the time in seconds to compress data of various
+sizes.  LZO1x is the
+fastest and as file sizes increase, LZO1x time hardly increases at all. 
+It's interesing
+to note as compression ratios increase LZOx-999 performs much worse than
+Zlib.  So LZO is faster
+on the low end and slower (5 to 6 times slower) on the high end.
+
+range 	Zlib-1 	Zlib-6 	LZOx-1 	LZOx-999 cmp%
+0-250b    	0.001 	0 	0 	0
+250-500b   	0 	0 	0 	0.001
+500-1KB     	0 	0 	0 	0.001
+1KB-10KB    	0.001 	0.001 	0 	0.002
+10KB-100KB   	0.004 	0.006 	0.001 	0.017
+100KB-200KB  	0.012 	0.017 	0.002 	0.054
+200KB-300KB  	0.018 	0.024 	0.003 	0.087
+300KB-400KB  	0.022 	0.03 	0.003 	0.121
+400KB-500KB  	0.027 	0.037 	0.004 	0.151
+500KB-600KB  	0.031 	0.044 	0.004 	0.184
+600KB-700KB  	0.035 	0.051 	0.006 	0.211
+700KB-800KB  	0.039 	0.057 	0.006 	0.243
+800KB-900KB  	0.045 	0.064 	0.006 	0.27
+900KB-1MB   	0.049 	0.072 	0.006 	0.307
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151128/33ab8097/attachment-0001.html>
