@@ -1,0 +1,62 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Mon, 30 Nov 2015 09:41:43 +1000
+Subject: [bitcoin-dev] [BIP] OP_CHECKPRIVPUBPAIR
+In-Reply-To: <CAE8CtVmqT0L74+xyEh-fn9vDcudBuMvgSr39DBVFopXbKyvNcA@mail.gmail.com>
+References: <CAE8CtVmqT0L74+xyEh-fn9vDcudBuMvgSr39DBVFopXbKyvNcA@mail.gmail.com>
+Message-ID: <20151129234143.GA21152@sapphire.erisian.com.au>
+
+On Fri, Nov 27, 2015 at 09:02:37AM +0100, Mats Jerratsch via bitcoin-dev wrote:
+> <private key> <public key> OP_CHECKPRIVPUBPAIR
+> As there are requests for all sort of general crypto operations in
+> script, we can also introduce a new general OP_CRYPTO and prepend one
+> byte for the operation, so
+> 0x01 OP_CRYPTO = OP_CHECKPRIVPUBPAIR
+> 0x02-0xff OP_CRYPTO = OP_NOP
+> to allow for extension at some later point.
+
+This wouldn't be a softfork -- a single prefixed 0x01 byte would just
+push "OP_CRYPTO" onto the stack... If you had OP_CRYPTO look at the top
+item on the stack to determine what to do, you could have:
+
+  OP_[0-16] OP_CRYPTO
+  OP_PUSHDATA1 [0x11-0xFF] OP_CRYPTO
+  OP_PUSHDATA2 [0x00-0xFF] [0x01-0xFF] OP_CRYPTO
+  ...
+
+to get 17 different crypto ops in two bytes, and the next 238 in three,
+and be arbitrarily expandable from there with multibyte pushes.
+
+> Alternatives:
+> In the attached discussion there are some constructions that would
+> allow breaking the signature scheme, but they are either very large in
+> script language or expensive to calculate.
+
+I think that's good enough to try them out in prototypes though -- and
+presumably if they're demonstrably useful in prototypes that's a good
+argument for adding a dedicated op code to script?
+
+Are there any other crypto ops that might be worth adding into a BIP for
+a check-verify crypto toolkit op like this? The only ones that come to mind
+as having practical uses in the near term are:
+
+ Base-point multiply on secp256k1 (ie, CHECKPUBPRIVPAIR)
+ Schnorr-signature of transaction with secp256k1 curve (smaller,
+   faster, more-anonymous N-of-N multisig)
+
+But perhaps there's also uses for some of:
+
+ General point addition on secp256k1
+ General point multiply on secp256k1
+ SHA3-256 / SHA2-512 / SHA3-512
+ ECDSA/Schnorr signature of value from stack
+ ...?
+
+Then again, I gather that if the segregated witness soft-fork turns out
+to be plausible, re-enabling/changing/adding *any* sort of opcode could
+be done as a soft-fork, not just turning a NOP into CHECK_foo_VERIFY...
+So it might be better to wait and see how that goes before putting too
+much time into drafting a BIP or similar?
+
+Cheers,
+aj
+
