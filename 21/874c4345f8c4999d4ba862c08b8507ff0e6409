@@ -1,0 +1,369 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Tue, 01 Dec 2015 05:28:42 +0000
+Subject: [bitcoin-dev] [BIP Draft] Datastream compression of Blocks
+	and	Transactions
+In-Reply-To: <565CD7D8.3070102@gmail.com>
+References: <565CD7D8.3070102@gmail.com>
+Message-ID: <90EF4E6C-9A71-4A35-A938-EAFC1A24DD24@mattcorallo.com>
+
+I'm really not a fan of this at all. To start with, adding a compression library that is directly accessible to the network on financial software is a really, really scary idea. If there were a massive improvement, I'd find it acceptable, but the improvement you've shown really isn't all that much. The numbers you recently posted show it improving the very beginning of IBD somewhat over high-latency connections, but if we're throughput-limited after the very beginning of IBD, we should fix that, not compress the blocks. Additionally, I'd be very surprised if this had any significant effect on the speed at which new blocks traverse the network (do you have any simulations or other thoughts on this?).
+
+All that said, I'd love a proposal that allows clients to download compressed blocks via an external daemon, especially during IBD. This could help people with very restrictive data caps do IBD instead of being pushed to revert to SPV. Additionally, I think we need more chain sync protocols so that the current P2P protocol isn't consensus-critical anymore.
+
+On November 30, 2015 4:12:24 PM MST, Peter Tschipper via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>@gmaxwell Bip Editor, and the Bitcoin Dev Community,
+>
+>After several weeks of experimenting and testing with various
+>compression libraries I think there is enough evidence to show that
+>compressing blocks and transactions is not only beneficial in reducing
+>network bandwidth but is also provides a small performance boost when
+>there is latency on the network.
+>
+>The following is a BIP Draft document for your review. 
+>(The alignment of the columns in the tables doesn't come out looking
+>right in this email but if you cut and paste into a text document they
+>are just fine)
+>
+>
+><pre>
+>  BIP: ?
+>  Title: Datastream compression of Blocks and Tx's
+>  Author: Peter Tschipper <peter.tschipper at gmail.com>
+>  Status: Draft
+>  Type: Standards Track
+>  Created: 2015-11-30
+></pre>
+>
+>==Abstract==
+>
+>To compress blocks and transactions, and to concatenate them together
+>when possible, before sending.
+>
+>==Motivation==
+>
+>Bandwidth is an issue for users that run nodes in regions where
+>bandwidth is expensive and subject to caps, in addition network latency
+>in some regions can also be quite high. By compressing data we can
+>reduce daily bandwidth used in a significant way while at the same time
+>speed up the transmission of data throughout the network. This should
+>encourage users to keep their nodes running longer and allow for more
+>peer connections with less need for bandwidth throttling and in
+>addition, may also encourage users in areas of marginal internet
+>connectivity to run nodes where in the past they would not have been
+>able to.
+>
+>==Specification==
+>
+>Advertise compression using a service bit.  Both peers must have
+>compression turned on in order for data to be compressed, sent, and
+>decompressed.
+>
+>Blocks will be sent compressed.
+>
+>Transactions will be sent compressed with the exception of those less
+>than 500 bytes.
+>
+>Blocks will be concatenated when possible.
+>
+>Transactions will be concatenated when possible or when a
+>MSG_FILTERED_BLOCK is requested.
+>
+>Compression levels to be specified in "bitcoin.conf".
+>
+>Compression and decompression can be completely turned off.
+>
+>Although unlikely, if compression should fail then data will be sent
+>uncompressed.
+>
+>The code for compressing and decompressing will be located in class
+>CDataStream.
+>
+>Compression library LZO1x will be used.
+>
+>==Rationale==
+>
+>By using a service bit, compression and decompression can be turned
+>on/off completely at both ends with a simple configuration setting. It
+>is important to be able to easily turn off compression/decompression as
+>a fall back mechanism.  Using a service bit also makes the code fully
+>compatible with any node that does not currently support compression. A
+>node that do not present the correct service bit will simply receive
+>data in standard uncompressed format.
+>
+>All blocks will be compressed. Even small blocks have been found to
+>benefit from compression.
+> 
+>Multiple block requests that are in queue will be concatenated together
+>when possible to increase compressibility of smaller blocks.
+>Concatenation will happen only if there are multiple block requests
+>from
+>the same remote peer.  For example, if peer1 is requesting two blocks
+>and they are both in queue then those two blocks will be concatenated.
+>However, if peer1 is requesting 1 block and peer2 also one block, and
+>they are both in queue, then each peer is sent only its block and no
+>concatenation will occur. Up to 16 blocks (the max blocks in flight)
+>can
+>be concatenated but not exceeding the MAX_PROTOCOL_MESSAGE_LENGTH.
+>Concatenated blocks compress better and further reduce bandwidth.
+>
+>Transactions below 500 bytes do not compress well and will be sent
+>uncompressed unless they can be concatenated (see Table 3).
+>
+>Multiple transaction requests that are in queue will be concatenated
+>when possible.  This further reduces bandwidth needs and speeds the
+>transfer of large requests for many transactions, such as with
+>MSG_FILTERED_BLOCK requests, or when the system gets busy and is
+>flooded
+>with transactions.  Concatenation happens in the same way as for
+>blocks,
+>described above.
+>
+>By allowing for differing compression levels which can be specified in
+>the bitcoin.conf file, a node operator can tailor their compression to
+>a
+>level suitable for their system.
+>
+>Although unlikely, if compression fails for any reason then blocks and
+>transactions will be sent uncompressed.  Therefore, even with
+>compression turned on, a node will be able to handle both compressed
+>and
+>uncompressed data from another peer.
+>
+>By Abstracting the compression/decompression code into class
+>"CDataStream", compression can be easily applied to any datastream.
+>
+>The compression library LZO1x-1 does not compress to the extent that
+>Zlib does but it is clearly the better performer (particularly as file
+>sizes get larger), while at the same time providing very good
+>compression (see Tables 1 and 2).  Furthermore, LZO1x-999 can provide
+>and almost Zlib like compression for those who wish to have more
+>compression, although at a cost.
+>
+>==Test Results==
+>
+>With the LZO library, current test results show up to a 20% compression
+>using LZO1x-1 and up to 27% when using LZO1x-999.  In addition there is
+>a marked performance improvement when there is latency on the network.
+>From the test results, with a latency of 60ms there is an almost 30%
+>improvement in performance when comparing LZO1x-1 compressed blocks
+>with
+>uncompressed blocks (see Table 5).
+>
+>The following table shows the percentage that blocks were compressed,
+>using two different Zlib and LZO1x compression level settings.
+>
+>TABLE 1:
+>range = data size range
+>range           Zlib-1  Zlib-6  LZO1x-1 LZO1x-999
+>-----------     ------  ------  ------- --------
+>0-250           12.44   12.86   10.79   14.34
+>250-500         19.33   12.97   10.34   11.11   
+>600-700         16.72   n/a     12.91   17.25
+>700-800         6.37    7.65    4.83    8.07
+>900-1KB         6.54    6.95    5.64    7.9
+>1KB-10KB        25.08   25.65   21.21   22.65
+>10KB-100KB      19.77   21.57   4.37    19.02
+>100KB-200KB     21.49   23.56   15.37   21.55
+>200KB-300KB     23.66   24.18   16.91   22.76
+>300KB-400KB     23.4    23.7    16.5    21.38
+>400KB-500KB     24.6    24.85   17.56   22.43
+>500KB-600KB     25.51   26.55   18.51   23.4
+>600KB-700KB     27.25   28.41   19.91   25.46
+>700KB-800KB     27.58   29.18   20.26   27.17
+>800KB-900KB     27      29.11   20      27.4
+>900KB-1MB       28.19   29.38   21.15   26.43
+>1MB -2MB        27.41   29.46   21.33   27.73
+>
+>The following table shows the time in seconds that a block of data
+>takes
+>to compress using different compression levels.  One can clearly see
+>that LZO1x-1 is the fastest and is not as affected when data sizes get
+>larger.
+>
+>TABLE 2:
+>range = data size range
+>range           Zlib-1  Zlib-6  LZO1x-1 LZO1x-999
+>-----------     ------  ------  ------- ---------
+>0-250           0.001   0       0       0
+>250-500         0       0       0       0.001
+>500-1KB         0       0       0       0.001
+>1KB-10KB        0.001   0.001   0       0.002
+>10KB-100KB      0.004   0.006   0.001   0.017
+>100KB-200KB     0.012   0.017   0.002   0.054
+>200KB-300KB     0.018   0.024   0.003   0.087
+>300KB-400KB     0.022   0.03    0.003   0.121
+>400KB-500KB     0.027   0.037   0.004   0.151
+>500KB-600KB     0.031   0.044   0.004   0.184
+>600KB-700KB     0.035   0.051   0.006   0.211
+>700KB-800KB     0.039   0.057   0.006   0.243
+>800KB-900KB     0.045   0.064   0.006   0.27
+>900KB-1MB       0.049   0.072   0.006   0.307
+>
+>TABLE 3:
+>Compression of Transactions (without concatenation)
+>range = block size range
+>ubytes = average size of uncompressed transactions
+>cbytes = average size of compressed transactions
+>cmp% = the percentage amount that the transaction was compressed
+>datapoints = number of datapoints taken
+>
+>range       ubytes    cbytes    cmp%    datapoints
+>----------  ------    ------    ------  ----------    
+>0-250       220       227       -3.16   23780
+>250-500     356       354       0.68    20882
+>500-600     534       505       5.29    2772
+>600-700     653       608       6.95    1853
+>700-800     757       649       14.22   578
+>800-900     822       758       7.77    661
+>900-1KB     954       862       9.69    906
+>1KB-10KB    2698      2222      17.64   3370
+>10KB-100KB  15463     12092     21.80   15429
+>
+>The above table shows that transactions don't compress well below 500
+>bytes but do very well beyond 1KB where there are a great deal of those
+>large spam type transactions.   However, most transactions happen to be
+>in the < 500 byte range.  So the next step was to appy concatenation
+>for
+>those smaller transactions.  Doing that yielded some very good
+>compression results.  Some examples as follows:
+>
+>The best one that was seen was when 175 transactions were concatenated
+>before being compressed.  That yielded a 20% compression ratio, but
+>that
+>doesn't take into account the savings from the unneeded 174 message
+>headers (24 bytes each) as well as 174 TCP ACKs of 52 bytes each which
+>yields and additional 76*174 = 13224 byte savings, making for an
+>overall
+>bandwidth savings of 32%:
+>
+>     2015-11-18 01:09:09.002061 compressed data from 79890 to 67426
+>txcount:175
+>
+>However, that was an extreme example.  Most transaction aggregates were
+>in the 2 to 10 transaction range.  Such as the following:
+>
+>2015-11-17 21:08:28.469313 compressed data from 3199 to 2876 txcount:10
+>
+>But even here the savings of 10% was far better than the "nothing" we
+>would get without concatenation, but add to that the 76 byte * 9
+>transaction savings and we have a total 20% savings in bandwidth for
+>transactions that otherwise would not be compressible.  Therefore the
+>concatenation of small transactions can also save bandwidth and speed
+>up
+>the transmission of those transactions through the network while
+>keeping
+>network and message queue chatter to a minimum.
+>
+>==Choice of Compression library==
+>
+>LZO was chosen over Zlib.  LZO is the fastest most scalable option when
+>used at the lowest compression setting which will be a performance
+>boost
+>for users that prefer performance over bandwidth savings. And at the
+>higher end, LZO provides good compression (although at a higher cost)
+>which approaches that of Zlib.
+>
+>Other compression libraries investigated were Snappy, LZOf, fastZlib
+>and
+>LZ4 however none of these were found to be suitable, either because
+>they
+>were not portable, lacked the flexibility to set compression levels or
+>did not provide a useful compression ratio.
+>
+>The following two tables show results in seconds for syncing the first
+>200,000 blocks. Tests were run on a high-speed wireless LAN with very
+>little latency, and also run with a 60ms latency which was induced with
+>"Netbalancer".
+>               
+>TABLE 4:
+>Results shown in seconds on highspeed wireless LAN (no induced latency)
+>Num blks sync'd  Uncmp  Zlib-1  Zlib-6  LZO1x-1  LZO1x-999
+>---------------  -----  ------  ------  -------  ---------
+>10000            255    232     233     231      257      
+>20000            464    414     420     407      453      
+>30000            677    594     611     585      650      
+>40000            887    787     795     760      849     
+>50000            1099   961     977     933      1048   
+>60000            1310   1145    1167    1110     1259  
+>70000            1512   1330    1362    1291     1470  
+>80000            1714   1519    1552    1469     1679   
+>90000            1917   1707    1747    1650     1882  
+>100000           2122   1905    1950    1843     2111    
+>110000           2333   2107    2151    2038     2329  
+>120000           2560   2333    2376    2256     2580   
+>130000           2835   2656    2679    2558     2921 
+>140000           3274   3259    3161    3051     3466   
+>150000           3662   3793    3547    3440     3919   
+>160000           4040   4172    3937    3767     4416   
+>170000           4425   4625    4379    4215     4958   
+>180000           4860   5149    4895    4781     5560    
+>190000           5855   6160    5898    5805     6557    
+>200000           7004   7234    7051    6983     7770   
+>
+>TABLE 5:
+>Results shown in seconds with 60ms of induced latency
+>Num blks sync'd  Uncmp  Zlib-1  Zlib-6  LZO1x-1  LZO1x-999
+>---------------  -----  ------  ------  -------  ---------
+>10000            219    299     296     294      291
+>20000            432    568     565     558      548
+>30000            652    835     836     819      811
+>40000            866    1106    1107    1081     1071
+>50000            1082   1372    1381    1341     1333
+>60000            1309   1644    1654    1605     1600
+>70000            1535   1917    1936    1873     1875
+>80000            1762   2191    2210    2141     2141
+>90000            1992   2463    2486    2411     2411
+>100000           2257   2748    2780    2694     2697
+>110000           2627   3034    3076    2970     2983
+>120000           3226   3416    3397    3266     3302
+>130000           4010   3983    3773    3625     3703
+>140000           4914   4503    4292    4127     4287
+>150000           5806   4928    4719    4529     4821
+>160000           6674   5249    5164    4840     5314
+>170000           7563   5603    5669    5289     6002
+>180000           8477   6054    6268    5858     6638
+>190000           9843   7085    7278    6868     7679
+>200000           11338  8215    8433    8044     8795
+>
+>==Backward compatibility==
+>
+>Being unable to present the correct service bit, older clients will
+>continue to receive standard uncompressed data and will be fully
+>compatible with this change.
+>
+>==Fallback==
+>
+>It is important to be able to entirely and easily turn off compression
+>and decompression as a fall back mechanism. This can be done with a
+>simple bitcoin.conf setting of "compressionlevel=0". Only one of the
+>two
+>connected peers need to set compressionlevel=0 in order to turn off
+>compression and decompression completely.
+>
+>==Deployment==
+>
+>This enhancement does not require a hard or soft fork.
+>
+>==Service Bit==
+>
+>During the testing of this implementation, service bit 28 was used,
+>however this enhancement will require a permanently assigned service
+>bit.
+>
+>==Implementation==
+>
+>This implementation depends on the LZO compression library: lzo-2.09
+>
+>     https://github.com/ptschip/bitcoin/tree/compress
+>
+>==Copyright==
+>
+>This document is placed in the public domain.
+>
+>
+>_______________________________________________
+>bitcoin-dev mailing list
+>bitcoin-dev at lists.linuxfoundation.org
+>https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
