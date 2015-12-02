@@ -1,0 +1,121 @@
+From: peter.tschipper@gmail.com (Peter Tschipper)
+Date: Wed, 2 Dec 2015 12:16:19 -0800
+Subject: [bitcoin-dev] [BIP Draft] Datastream compression of Blocks and
+ Transactions
+In-Reply-To: <CAPkFh0t9SwVOLrPnL7z80s-Rriezhqxn_3vXKYRxr6JVGNiUZQ@mail.gmail.com>
+References: <565CD7D8.3070102@gmail.com>
+	<90EF4E6C-9A71-4A35-A938-EAFC1A24DD24@mattcorallo.com>
+	<CAPkFh0t9SwVOLrPnL7z80s-Rriezhqxn_3vXKYRxr6JVGNiUZQ@mail.gmail.com>
+Message-ID: <565F5193.1070802@gmail.com>
+
+Building a compressor from scratch may yeild some better compression
+ratios, or not, but having trust and faith in whether it will stand up
+against attack vectors another matter.  LZO has been around for 20 years
+with very few problems and no current issues.  Maybe something better
+can be built, but when and how much testing will need to be done before
+it can be trusted?  Right now there is something that provides a benefit
+and in the future if something better is found it's not that difficult
+to add it.  We could easily support multiple compression libraries.
+
+
+On 02/12/2015 10:57 AM, Emin G?n Sirer wrote:
+> Thanks Peter for the careful, quantitative work.
+>
+> I want to bring one additional issue to everyone's consideration,
+> related to the choice of the Lempel-Ziv family of compressors. 
+>
+> While I'm not familiar with every single compression engine tested,
+> the Lempel-Ziv family of compressors are generally based on
+> "compression tables." Essentially, they assign a short unique number
+> to every new subsequence they encounter, and when they re-encounter a
+> sequence like "ab" in "abcdfdcdabcdfabcdf" they replace it with that
+> short integer (say, in this case, 9-bit constant 256). So this example
+> sequence may turn into "abcdfd<258 for cd><256 for ab><258 for
+> cd>f<261 for abc><259 for df>" which is slightly shorter than the
+> original (I'm doing this off the top of my head so the counts may be
+> off, but it's meant to be illustrative). Note that the sequence "abc"
+> got added into the table only after it was encountered twice in the
+> input. 
+>
+> This is nice and generic and works well for English text where certain
+> letter sequences (e.g. "it" "th" "the" "this" "are" "there" etc) are
+> repeated often, but it is nowhere as compact as it could possibly be
+> for mostly binary data -- there are opportunities for much better
+> compression, made possible by the structured reuse of certain byte
+> sequences in the Bitcoin wire protocol.
+>
+> On a Bitcoin wire connection, we might see several related
+> transactions reorganizing cash in a set of addresses, and therefore,
+> several reuses of a 20-byte address. Or we might see a 200-byte
+> transaction get transmitted, followed by the same transaction,
+> repeated in a block. Ideally, we'd learn the sequence that may be
+> repeated later on, all at once (e.g. a Bitcoin address or a
+> transaction), and replace it with a short number, referring back to
+> the long sequence. In the example above, if we knew that "abcdf" was a
+> UNIT that would likely be repeated, we would put it into the
+> compression table as a whole, instead of relying on repetition to get
+> it into the table one extra byte at a time. That may let us compress
+> the original sequence down to "abcdfd<257 for cd><256 for abcdf><256
+> for abcdf>" from the get go.
+>
+> Yet the LZ variants I know of will need to see a 200-byte sequence
+> repeated **199 times** in order to develop a single, reusable,
+> 200-byte long subsequence in the compression table. 
+>
+> So, a Bitcoin-specific compressor can perhaps do significantly better,
+> but is it a good idea? Let's argue both sides.
+>
+> Cons:
+>
+> On the one hand, Bitcoin-specific compressors will be closely tied to
+> the contents of messages, which might make it difficult to change the
+> wire format later on -- changes to the wire format may need
+> corresponding changes to the compressor.  If the compressor cannot be
+> implemented cleanly, then the protocol-agnostic, off-the-shelf
+> compressors have a maintainability edge, which comes at the expense of
+> the compression ratio. 
+>
+> Another argument is that compression algorithms of any kind should be
+> tested thoroughly before inclusion, and brand new code may lack the
+> maturity required. While this argument has some merit, all outputs are
+> verified separately later on during processing, so
+> compression/decompression errors can potentially be detected. If the
+> compressor/decompressor can be structured in a way that isolates
+> bitcoind from failure (e.g. as a separate process for starters), this
+> concern can be remedied.
+>
+> Pros:
+>
+> The nature of LZ compressors leads me to believe that much higher
+> compression ratios are possible by building a custom, Bitcoin-aware
+> compressor. If I had to guess, I would venture that compression ratios
+> of 2X or more are possible in some cases. In some sense, the "O(1)
+> block propagation" idea that Gavin proposed a while ago can be seen as
+> extreme example of a Bitcoin-specific compressor, albeit one that
+> constrains the order of transactions in a block.
+>
+> Compression can buy us some additional throughput at zero cost, modulo
+> code complexity. 
+> Given the amount of acrimonious debate over the block size we have all
+> had to endure, it seems 
+> criminal to leave potentially free improvements on the table. Even if
+> the resulting code is
+> deemed too complex to include in the production client right now, it
+> would be good to understand
+> the potential for improvement.
+>
+> How to Do It
+>
+> If we want to compress Bitcoin, a programming challenge/contest would
+> be one of the best ways to find the best possible, Bitcoin-specific
+> compressor. This is the kind of self-contained exercise that bright
+> young hackers love to tackle. It'd bring in new programmers into the
+> ecosystem, and many of us would love to discover the limits of
+> compressibility for Bitcoin bits on a wire. And the results would be
+> interesting even if the final compression engine is not enabled by
+> default, or not even merged.
+>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151202/ddbc5702/attachment-0001.html>
