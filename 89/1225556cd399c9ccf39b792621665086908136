@@ -1,0 +1,157 @@
+From: dscotese@litmocracy.com (Dave Scotese)
+Date: Wed, 2 Dec 2015 21:52:20 -0800
+Subject: [bitcoin-dev] [BIP Draft] Datastream compression of Blocks and
+	Transactions
+In-Reply-To: <565F7926.103@gmail.com>
+References: <565CD7D8.3070102@gmail.com>
+	<90EF4E6C-9A71-4A35-A938-EAFC1A24DD24@mattcorallo.com>
+	<565F7926.103@gmail.com>
+Message-ID: <CAGLBAhef0mGKP9iJC-z+qFk4YQSm2kd9Dm2_MyZ3ZjY-ZgeEcQ@mail.gmail.com>
+
+Emin's email presents to me the idea of dictionaries that already contain
+the data we'd want to compress.  With 8 bytes of indexing data, we can
+refer to a TxID or a Public Key or any existing part of the blockchain.
+There are also data sequences like scripts that contain a few variable
+chunks and are otherwise identical.  Often, the receiver has the
+blockchain, which contains a lot of the data that is in the message being
+transmitted.
+
+First, the receiver must indicate that compressed data is preferred and the
+height of latest valid block it holds, and the sender must express the
+ability to send compressed data.  From this state, the sender sends
+messages that are compressed.  Compressed messages are the same as
+uncompressed messages except that:
+
+   1. Data read is copied into the decompressed message until the first
+   occurrence of 0x00, which is discarded and is followed by compressed data.
+   2. Compressed data can use as a dictionary the first 16,777,215 blocks,
+   or the last 4,244,635,647 ending with the block at the tip of the
+   receiver's chain, or it can specify a run of zero bytes.  The sender and
+   receiver must agree on the *receiver's* current block height in order to
+   use the last 4B blocks as the dictionary.
+   3. Within compressed data, the first byte identifies how to decompress:
+      1. 0xFF indicates that the following three bytes are a block height
+      with most significant byte 0x00 in network byte order.
+      2. 0xFE indicates that the following byte indicates how many zero
+      bytes to add to the decompressed data.
+      3. 0xFD is an error, so compressed messages are turned off and the
+      recipient fails the decompression process.
+      4. 0x00 indicates that the zero byte by itself should be added to the
+      decompressed data, and the data following is not compressed
+(return to step
+      1).
+      5. All other values represent the most significant byte of a number
+      to be subtracted from the receiver's current block height to identify a
+      block height (not available until there are least 16,777,216
+blocks so that
+      this byte can be at least 0x01, since 0x00 would indicate a single zero
+      byte, end compressed data, and return to step 1).
+   4. If decompression has identified a block height (previous byte was not
+   0xFD, 0x00, or 0xFE), then the next four bytes identify a *size *(one
+   byte) and a byte index into the block's data (three bytes), and *size *bytes
+   from that block are added to the decompressed data.
+   5. Steps 3 and 4 process a chunk of compressed data.  If the next byte
+   is 0xFD, then decompression goes back to step 1 (add raw bytes until it
+   hits a 0x00).  Otherwise, it proceeds through steps 3 (and maybe 4) again.
+
+In Step 3.3, 0xFD causes an error, but it could be used to indicate a
+parameterized dictionary entry, for example 0xFD, 0x01 followed by eight
+more bytes to be interpreted according to steps 3.1 or 3.5 could mean
+OP_DUP OP_HASH160 (20 bytes from the blockchain dictionary) OP_EQUALVERIFY
+OP_CHECKSIG, replacing that very common occurrence of 24 bytes with 10
+bytes.  Well, 11 if you include the 0x00 required by step5.  But that only
+works on addresses that have spent inputs.  Or 0xFD, 0x02 could be
+shorthand for the four zeroes of lock_time, followed by Version (1),
+followed by 0x01 (for one-input transactions), turning nine bytes into two
+for the data at the end of a normal (lock_time = 0) Txn and the beginning
+of a single-input Txn.  But I left 0xFD as an error because those gains
+didn't seem as frequent as the others.
+
+Dave.
+
+On Wed, Dec 2, 2015 at 3:05 PM, Peter Tschipper via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+>
+> On 30/11/2015 9:28 PM, Matt Corallo wrote:
+>
+> I'm really not a fan of this at all. To start with, adding a compression library that is directly accessible to the network on financial software is a really, really scary idea.
+>
+> Why scary?  LZO has no current security issues, and it will be
+> configureable by each node operator so it can be turned off completely if
+> needed or desired.
+>
+> If there were a massive improvement, I'd find it acceptable, but the improvement you've shown really isn't all that much.
+>
+> Why is 15% at the low end, to 27% at the high end not good?  It sounds
+> like a very good boost.
+>
+>  The numbers you recently posted show it improving the very beginning of IBD somewhat over high-latency connections, but if we're throughput-limited after the very beginning of IBD, we should fix that, not compress the blocks.
+>
+> I only did the compression up to the 200,000 block to better isolate the
+> transmission of data from the post processing of blocks and determine
+> whether the compressing of data was adding to much to the total
+> transmission time.
+>
+> I think it's clear from the data that as the data (blocks, transactions)
+> increase in size that (1) they compress better and (2) they have a bigger
+> and positive impact on improving performance when compressed.
+>
+> Additionally, I'd be very surprised if this had any significant effect on the speed at which new blocks traverse the network (do you have any simulations or other thoughts on this?).
+>
+> From the table below, at 120000 blocks the time to sync the chain was
+> roughly the same for compressed vs. uncompressed however after that point
+> as block sizes start increasing, all compression libraries peformed much
+> faster than uncompressed. The data provided in this testing clearly shows
+> that as block size increases, the performance improvement by compressing
+> data also increases.
+>
+> TABLE 5:
+> Results shown in seconds with 60ms of induced latency
+> Num blks sync'd  Uncmp  Zlib-1  Zlib-6  LZO1x-1  LZO1x-999
+> ---------------  -----  ------  ------  -------  ---------
+> 120000           3226   3416    3397    3266     3302
+> 130000           4010   3983    3773    3625     3703
+> 140000           4914   4503    4292    4127     4287
+> 150000           5806   4928    4719    4529     4821
+> 160000           6674   5249    5164    4840     5314
+> 170000           7563   5603    5669    5289     6002
+> 180000           8477   6054    6268    5858     6638
+> 190000           9843   7085    7278    6868     7679
+> 200000           11338  8215    8433    8044     8795
+>
+>
+> As far as, what happens after the block is received, then obviously
+> compression isn't going to help in post processing and validating the
+> block, but in the pure transmission of the object it most certainly and
+> logically does and in a fairly direct proportion to the file size (a file
+> that is 20% smaller will be transmited "at least" 20% faster, you can use
+> any data transfer time calculator
+> <http://www.calctool.org/CALC/prof/computing/transfer_time> for that).
+> The only issue, that I can see that required testing was to show how much
+> compression there would be, and how much time the compression of the data
+> would add to the sending of the data.
+>
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+
+
+-- 
+I like to provide some work at no charge to prove my value. Do you need a
+techie?
+I own Litmocracy <http://www.litmocracy.com> and Meme Racing
+<http://www.memeracing.net> (in alpha).
+I'm the webmaster for The Voluntaryist <http://www.voluntaryist.com> which
+now accepts Bitcoin.
+I also code for The Dollar Vigilante <http://dollarvigilante.com/>.
+"He ought to find it more profitable to play by the rules" - Satoshi
+Nakamoto
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151202/c8405e2f/attachment.html>
