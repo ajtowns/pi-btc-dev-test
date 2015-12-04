@@ -1,0 +1,175 @@
+From: jannes.faber@gmail.com (Jannes Faber)
+Date: Fri, 4 Dec 2015 13:44:52 +0100
+Subject: [bitcoin-dev] Blockchain verification flag (BIP draft)
+In-Reply-To: <CAAS2fgRwfQNYxCmDPAnVudyAti9v8PPXQjxe9M13pmrFxKcSCQ@mail.gmail.com>
+References: <CAAS2fgRwfQNYxCmDPAnVudyAti9v8PPXQjxe9M13pmrFxKcSCQ@mail.gmail.com>
+Message-ID: <CABeL=0gWD8Nvp=j7OWKMVeVYH5NA-TBox1UTbyWxmVBf2nSJfQ@mail.gmail.com>
+
+1) (I would assume this is already current default behaviour, but just in
+case.) Would it not make sense to *never* send a blockheader to an SPV
+client unless the node itself fully validated that block? Regardless of who
+mined the block and whether this verification flag has been set or not.
+
+2) Besides having your verification flag in the block, would it not also
+make sense to have such a flag in the P2P protocol when blocks (or headers)
+are communicated? That way a node could simply do some quick sanity checks
+(difficulty as anti-DOS) on an incoming block and then immediately
+propagate it to the next (non-SPV) node, but with a flag "Looks good, but I
+haven't fully validated it myself, so please don't blame me". And if the
+block does turn out to be invalid, the node does not get banned if it was
+honest about it.
+
+3) With the above implemented, I can imagine miners running 2 (or more)
+nodes side by side, one of them doesn't validate in order to reduce latency
+and orphan rates, but the other one does validate and quickly signals the
+first one if there's a problem. Both nodes don't necessarily need to be in
+the same network or even on the same side of the Great Firewall. Of course
+they would be whitelisting each other for trust, or the signal would need
+to include some sort of proof.
+
+This probably has been suggested many times already, sorry if this is a
+dumb idea.
+
+--
+Jannes
+
+On 4 December 2015 at 09:26, Gregory Maxwell via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> For discussion,
+>
+> A significant fraction of hashrate currently mines blocks without
+> verifying them for a span of time after a new block shows up on the
+> network for economically rational reasons. This otherwise harmful
+> behavior can be made a beneficial to the whole network; but only if it
+> is communicated.
+>
+> This BIP proposal suggests a communication channel and describes its
+> use and the motivations for it.  I wrote it in response to suggestions
+> that Bitcoin Core add explicit support for this kind of mining, which
+> could also implement best in class risk mitigations. I believe
+> signaling the behavior is a necessary component for risk mitigation
+> here.
+>
+> -----------------------------------------------------------------
+>
+> <pre>
+>   BIP: draft-maxwell-flagverify
+>   Title: Blockchain verification flag
+>   Author: Greg Maxwell <greg at xiph.org>
+>   Status: Draft
+>   Type: Standards Track
+>   Created: 2015-12-02
+> </pre>
+>
+> ==Abstract==
+>
+> This BIP describes a flag that the authors of blocks can use to voluntarily
+> signal that they have completely validated the content of their
+> block and the blocks before it.
+>
+> Correct use of this signaling is not enforced internally to the network
+> but if used it can act as a hint allowing more intelligent risk analysis.
+>
+> If deployed and adhered to, this mechanism turns otherwise harmful
+> validation skipping by miners into a behavior which benefits the public.
+>
+> ==Summary==
+>
+> The version field in a Bitcoin block header is a 32-bit signed integer.
+>
+> The most significant bit (30) of the block version is defined to signal
+> that
+> the author of the block has validated the whole chain up to and including
+> the
+> content of the block.
+>
+> Conforming miners MUST NOT set this flag when they have not completely
+> validated the prior block(s) or the content of their own block.  Miners
+> should continue to try to minimize the amount of time spent mining
+> on a non-validated chain.  Blocks which extend an invalid chain will
+> continue to be rejected and ultimately orphaned as validation catches up.
+>
+> It is recommended, but not required, that miners also not set the flag on
+> blocks
+> created by the same device which created the block immediately prior.  This
+> will reduce the incorrect implication of independent validation when the
+> two
+> most recent blocks are both the product of the same, single, faulty system.
+>
+> The set state for the bit is defined as verified so that that
+> un(der)maintained systems do not falsely signal validation.
+>
+> Non-verifying clients of the network may check this bit (e.g. checking
+> that the version is >= 1073741824) and use it as an input to their risk
+> modeling.  It is recommended that once this BIP is widely accepted by the
+> network that non-full-node wallets refrain from counting confirmations on
+> blocks where the bit is not set.
+>
+> The authors of non-verifying clients should keep in mind that this flag
+> is only correct with the cooperation of the block author, and even then
+> a validating miner may still accidentally accept or produce an invalid
+> block due to faulty hardware or software.  Additionally, any miner which
+> correctly uses this flag could stop doing so at any time, and might
+> do so intentionally in order to increase the effectiveness of an attack.
+> As a result of misunderstanding, misconfiguration, laziness, or other
+> human factors some miners may falsely set the flag.  Because invalid
+> blocks are rare it may take a long time to detect misuse of the flag.
+>
+> As such, the accuracy of this field MUST NOT be strongly relied upon.
+>
+> Especially due to the non-enforceability of the flag, the user community
+> should keep in mind that both setting the flag correctly and mining
+> without verification (for brief periods of time) are healthy for the
+> network.  If participants are punished for following this specification
+> they will simply lie, and its utility will be diminished.
+>
+> ==Motivation==
+>
+> Some applications of the Bitcoin system such as thin-client wallets make
+> a strong assumption that all the authors of the blocks have faithfully
+> verified the blockchain.  Because many of these applications also take
+> irreversible actions based on only one or two confirmations and the time
+> between blocks is often very short, these clients are vulnerable to
+> even small and short-duration violations of this assumption.
+>
+> Processing and propagation delays resulting from increased transaction
+> load contribute to block orphaning when multiple blocks are found at
+> close to the same time. This has caused some miners to work on extending
+> the chain with the most proof-of-work prior to validating the latest
+> block(s).
+>
+> Although this validation skipping undermines the security assumptions
+> of thin clients, it also has a beneficial effect: these delays also
+> make the mining process unfair and cause increased rewards for the
+> largest miners relative to other miners, resulting in a centralization
+> pressure.  Deferring validation can reduce this pressure and improve
+> the security of the Bitcoin system long term.
+>
+> This BIP seeks to mitigate the harm of breaking the thin client
+> assumption by allowing miners to efficiently provide additional
+> information on their level of validation.  By doing so the
+> network can take advantage of the benefits of bypassed
+> validation with minimal collateral damage.
+>
+> ==Deployment==
+>
+> Because there is no consensus enforced behavior there is no special
+> deployment strategy required.  [BIP 9 will need to be updated.]
+>
+> ==Credits==
+>
+> Thanks goes to Jeremy Rubin for his two-phase mining suggestion
+> which inspired this simplified proposal.
+>
+> ==Copyright==
+>
+> This document is placed in the public domain.
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151204/bbdcc1da/attachment.html>
