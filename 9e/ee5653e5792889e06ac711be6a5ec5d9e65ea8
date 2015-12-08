@@ -1,0 +1,84 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Tue, 8 Dec 2015 16:54:48 +1000
+Subject: [bitcoin-dev] Capacity increases for the Bitcoin system.
+In-Reply-To: <CAAS2fgQUJBZqj7Y_k9cUv+dmqnL-aZG6ySKAr=WFWcO4iGUL_w@mail.gmail.com>
+References: <CAAS2fgQyVs1fAEj+vqp8E2=FRnqsgs7VUKqALNBHNxRMDsHdVg@mail.gmail.com>
+	<20151208024224.GA32631@sapphire.erisian.com.au>
+	<20151208045803.GA1042@sapphire.erisian.com.au>
+	<CAAS2fgQUJBZqj7Y_k9cUv+dmqnL-aZG6ySKAr=WFWcO4iGUL_w@mail.gmail.com>
+Message-ID: <20151208065448.GB1042@sapphire.erisian.com.au>
+
+On Tue, Dec 08, 2015 at 05:21:18AM +0000, Gregory Maxwell via bitcoin-dev wrote:
+> On Tue, Dec 8, 2015 at 4:58 AM, Anthony Towns via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > Having a cost function rather than separate limits does make it easier to
+> > build blocks (approximately) optimally, though (ie, just divide the fee by
+> > (base_bytes+witness_bytes/4) and sort). Are there any other benefits?
+> Actually being able to compute fees for your transaction: If there are
+> multiple limits that are "at play" then how you need to pay would
+> depend on the entire set of other candidate transactions, which is
+> unknown to you.
+
+Isn't that solvable in the short term, if miners just agree to order
+transactions via a cost function, without enforcing it at consensus
+level until a later hard fork that can also change the existing limits
+to enforce that balance?
+
+(1MB base + 3MB witness + 20k sigops) with segwit initially, to something
+like (B + W + 200*U + 40*S < 5e6) where B is base bytes, W is witness
+bytes, U is number of UTXOs added (or removed) and S is number of sigops,
+or whatever factors actually make sense.
+
+I guess segwit does allow soft-forking more sigops immediately -- segwit
+transactions only add sigops into the segregated witness, which doesn't
+get counted for existing consensus. So it would be possible to take the
+opposite approach, and make the rule immediately be something like:
+
+  50*S < 1M
+  B + W/4 + 25*S' < 1M
+
+(where S is sigops in base data, and S' is sigops in witness) and
+just rely on S trending to zero (or soft-fork in a requirement that
+non-segregated witness transactions have fewer than B/50 sigops) so that
+there's only one (linear) equation to optimise, when deciding fees or
+creating a block. (I don't see how you could safely set the coefficient
+for S' too much smaller though)
+
+B+W/4+25*S' for a 2-in/2-out p2pkh would still be 178+206/4+25*2=280
+though, which would allow 3570 transactions per block, versus 2700 now,
+which would only be a 32% increase...
+
+> These don't, however, apply all that strongly if only one limit is
+> likely to be the limiting limit... though I am unsure about counting
+> on that; after all if the other limits wouldn't be limiting, why have
+> them?
+
+Sure, but, at least for now, there's already two limits that are being
+hit. Having one is *much* better than two, but I don't think two is a
+lot better than three?
+
+(Also, the ratio between the parameters doesn't necessary seem like a
+constant; it's not clear to me that hardcoding a formula with a single
+limit is actually better than hardcoding separate limits, and letting
+miners/the market work out coefficients that match the sort of contracts
+that are actually being used)
+
+> > That seems kinda backwards.
+> It can seem that way, but all limiting schemes have pathological cases
+> where someone runs up against the limit in the most costly way. Keep
+> in mind that casual pathological behavior can be suppressed via
+> IsStandard like rules without baking them into consensus; so long as
+> the candidate attacker isn't miners themselves. Doing so where
+> possible can help avoid cases like the current sigops limiting which
+> is just ... pretty broken.
+
+Sure; it just seems to be halving the increase in block space (60% versus
+100% extra for p2pkh, 100% versus 200% for 2/2 multisig p2sh) for what
+doesn't actually look like that much of a benefit in fee comparisons?
+
+I mean, as far as I'm concerned, segwit is great even if it doesn't buy
+any improvement in transactions/block, so even a 1% gain is brilliant.
+I'd just rather the 100%-200% gain I was expecting. :)
+
+Cheers,
+aj
