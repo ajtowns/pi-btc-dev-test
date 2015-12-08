@@ -1,0 +1,56 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Tue, 8 Dec 2015 14:58:03 +1000
+Subject: [bitcoin-dev] Capacity increases for the Bitcoin system.
+In-Reply-To: <20151208024224.GA32631@sapphire.erisian.com.au>
+References: <CAAS2fgQyVs1fAEj+vqp8E2=FRnqsgs7VUKqALNBHNxRMDsHdVg@mail.gmail.com>
+	<20151208024224.GA32631@sapphire.erisian.com.au>
+Message-ID: <20151208045803.GA1042@sapphire.erisian.com.au>
+
+> On Mon, Dec 07, 2015 at 10:02:17PM +0000, Gregory Maxwell wrote:
+> > If widely used this proposal gives a 2x capacity increase
+> > (more if multisig is widely used),
+
+So from IRC, this doesn't seem quite right -- capacity is constrained as
+
+  base_size + witness_size/4 <= 1MB
+
+rather than
+
+  base_size <= 1MB and base_size + witness_size <= 4MB
+
+or similar. So if you have a 500B transaction and move 250B into the
+witness, you're still using up 250B+250B/4 of the 1MB limit, rather than
+just 250B of the 1MB limit.
+
+In particular, if you use as many p2pkh transactions as possible, you'd
+have 800kB of base data plus 800kB of witness data, and for a block
+filled with 2-of-2 multisig p2sh transactions, you'd hit the limit at
+670kB of base data and 1.33MB of witness data.
+
+That would be 1.6MB and 2MB of total actual data if you hit the limits
+with real transactions, so it's more like a 1.8x increase for real
+transactions afaics, even with substantial use of multisig addresses.
+
+The 4MB consensus limit could only be hit by having a single trivial
+transaction using as little base data as possible, then a single huge
+4MB witness. So people trying to abuse the system have 4x the blocksize
+for 1 block's worth of fees, while people using it as intended only get
+1.6x or 2x the blocksize... That seems kinda backwards.
+
+Having a cost function rather than separate limits does make it easier to
+build blocks (approximately) optimally, though (ie, just divide the fee by
+(base_bytes+witness_bytes/4) and sort). Are there any other benefits?
+
+But afaics, you could just have fixed consensus limits and use the cost
+function for building blocks, though? ie sort txs by fee divided by [B +
+S*50 + W/3] (where B is base bytes, S is sigops and W is witness bytes)
+then just fill up the block until one of the three limits (1MB base,
+20k sigops, 3MB witness) is hit?
+
+(Doing a hard fork to make *all* the limits -- base data, witness data,
+and sigop count -- part of a single cost function might be a win; I'm
+just not seeing the gain in forcing witness data to trade off against
+block data when filling blocks is already a 2D knapsack problem)
+
+Cheers,
+aj
