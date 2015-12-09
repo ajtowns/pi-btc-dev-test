@@ -1,0 +1,89 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Wed, 9 Dec 2015 14:51:39 +1000
+Subject: [bitcoin-dev] Capacity increases for the Bitcoin system.
+In-Reply-To: <CAAS2fgSxpSat3VOje3-C4zgaRUVJVx-eRJbSYJqhvfR5SvCDwA@mail.gmail.com>
+References: <CAAS2fgQyVs1fAEj+vqp8E2=FRnqsgs7VUKqALNBHNxRMDsHdVg@mail.gmail.com>
+	<20151208110752.GA31180@amethyst.visucore.com>
+	<CABm2gDpcek=u=Rpe68EMOq6M7Bji9J=s5VvoQWKRqaQDAP5kTw@mail.gmail.com>
+	<CABsx9T1wga3Tandoe2mVGSKdHJytHoc9Ko7HRm2SvJXABEFk9w@mail.gmail.com>
+	<CAAS2fgTGYSiAJHZq80rD4UieV8XetS=W0b45b5onWAS9gF-F7g@mail.gmail.com>
+	<CABsx9T1i50Gvxj18W=n2mYGNpsMrSkDT26CdA3aQqT5FFN86yw@mail.gmail.com>
+	<CAAS2fgSxpSat3VOje3-C4zgaRUVJVx-eRJbSYJqhvfR5SvCDwA@mail.gmail.com>
+Message-ID: <20151209045139.GA18566@sapphire.erisian.com.au>
+
+On Wed, Dec 09, 2015 at 01:31:51AM +0000, Gregory Maxwell via bitcoin-dev wrote:
+> On Wed, Dec 9, 2015 at 1:09 AM, Gavin Andresen <gavinandresen at gmail.com> wrote:
+> > Create a 1-megabyte transaction, with all of it's inputs spending
+> > segwitness-spending SIGHASH_ALL inputs.
+> > Because the segwitness inputs are smaller in the block, you can fit more of
+> > them into 1 megabyte. Each will hash very close to one megabyte of data.
+> Witness size comes out of the 1MB at a factor of 0.25. It is not
+> possible to make a block which has signatures with the full 1MB of
+> data under the sighash while also having signatures externally.  So
+> every byte moved into the witness and thus only counted as 25% comes
+> out of the data being hashed and is hashed nInputs (*checksigs) less
+> times.
+
+So the worst case script I can come up with is:
+
+      <pubkey> 1 0 {2OVER CHECKSIG ADD CODESEP} OP_EQUAL
+
+which (if I didn't mess it up) would give you a redeem script of about
+36B plus 4B per sigop, redeemable via a single signature that's valid
+for precisely one of the checksigs.
+
+Maxing out 20k sigops gives 80kB of redeemscript in that case; so you
+could have to hash 19.9GB of data to fully verify the script with
+current bitcoin rules.
+
+Segwit with the 75% factor and the same sigop limit would make that very
+slightly worse -- it'd up the hashed data by maybe 1MB in total. Without
+a sigop limit at all it'd be severely worse of course -- you could fit
+almost 500k sigops in 2MB of witness data, leaving 500kB of base data,
+for a total of 250GB of data to hash to verify your 3MB block...
+
+Segwit without the 75% factor, but with a 3MB of witness data limit,
+makes that up to three times worse (750k sigops in 3MB of witness data,
+with 1MB of base data for 750GB of data to hash), but with any reasonable
+sigop limit, afaics it's pretty much the same.
+
+However I think you could add some fairly straightforward (maybe
+soft-forking) optimisations to just rule out that sort of (deliberate)
+abuse; eg disallowing more than a dozen sigops per input, or just failing
+checksigs with the same key in a single input, maybe. So maybe that's
+not sufficiently realistic?
+
+I think the only realistic transactions that would cause lots of sigs and
+hashing are ones that have lots of inputs that each require a signature
+or two, so might happen if a miner is cleaning up dust. In that case,
+your 1MB transaction is a single output with a bunch of 41B inputs. If you
+have 10k such inputs, that's only 410kB. If each input is a legitimate
+2 of 2 multisig, that's about 210 bytes of witness data per input, or
+2.1MB, leaving 475kB of base data free, which matches up. 20k sigops by
+475kB of data is 9.5GB of hashing.
+
+Switching from 2-of-2 multisig to just a single public key would prevent
+you from hitting the sigop limit; I think you could hit 14900 signatures
+with about 626kB of base data and 1488kB of witness data, for about
+9.3GB of hashed data.
+
+That's a factor of 2x improvement over the deliberately malicious exploit
+case above, but it's /only/ a factor of 2x.
+
+I think Rusty's calculation http://rusty.ozlabs.org/?p=522 was that
+the worst case for now is hashing about 406kB, 3300 times for 1.34GB of
+hashed data [0].
+
+So that's still almost a factor of 4 or 5 worse than what's possible now?
+Unless I messed up the maths somewhere?
+
+Cheers,
+aj
+
+[0] Though I'm not sure that's correct? Seems like with a 1MB
+    transaction with i inputs, each with s bytes of scriptsig, that you're
+    hashing (1MB-s*i), and the scriptsig for a p2pkh should only be about
+    105B, not 180B.  So maximising i*(1MB-s*i) = 1e6*i - 105*i^2 gives i =
+    1e6/210, so 4762 inputs, and hashing 500kB of data each time,
+    for about 2.4GB of hashed data total.
+
