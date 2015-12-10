@@ -1,0 +1,219 @@
+From: dscotese@litmocracy.com (Dave Scotese)
+Date: Wed, 9 Dec 2015 20:14:17 -0800
+Subject: [bitcoin-dev] Scaling by Partitioning
+In-Reply-To: <CAGLBAhebzN9FZ0TQO+Xr1SmKH5YFptbQ=M09+c511siAq9dmNQ@mail.gmail.com>
+References: <CABCnA7Wqz76m8qo5BYT41Z=hBH+fUfOc4xsFAGg=Niv7Jgkqsg@mail.gmail.com>
+	<CAJmQggC1X5Lgt4xGoMtBZ_v3hC2GXcYaj2FngV2_7A=TDfSuEg@mail.gmail.com>
+	<CAL8tG=mxYE97iMO05mPq4_f8VcmFBYqAmyPqTs439bPRGhaVqA@mail.gmail.com>
+	<CAGLBAhebzN9FZ0TQO+Xr1SmKH5YFptbQ=M09+c511siAq9dmNQ@mail.gmail.com>
+Message-ID: <CAGLBAhcWfjkhbxU-qxxEbBbpZ9jrbgLUVODth+jYT6t+Ocgyrg@mail.gmail.com>
+
+Edit:
+"... as well as those blocks with hashes for which the last B bits match
+any of the next N bit patterns where *N is largest* integer for which the
+claimed output is not *greater* than (subsidy+fees)*(N/(2^B)).
+
+On Wed, Dec 9, 2015 at 8:08 PM, Dave Scotese <dscotese at litmocracy.com>
+wrote:
+
+> If we partition the work using bits from the TxID (once it is no longer
+> malleable) or even bits from whatever definition we use for "coin," then
+> every transaction may have to use all the other partitions to verify that
+> the incoming coin is good.
+>
+> If all partitions are involved in validating and storing every
+> transaction, then we may be doing more work in total, but any one node will
+> only have to do (and store) a fraction of what it is now.  We would want
+> the current situation to be identical to one in which all the participants
+> are handling all the partitions.  So how can we break up the work so that
+> any participant can handle whatever fraction of the work he or she wants?
+> One idea is to use the last bits of the address that will receive the
+> subsidy and fees.  You solve the block for your partition by determining
+> that all transactions in the block are valid against the subset of blocks
+> whose hashes end with the same bits.
+>
+> This solution is broadcast in the hope that others will start attempting
+> to validate that same block on their own partition. If they are mining the
+> same partition, they simply change their subsidy address to work on a
+> different partition.  Each time a new-but-not-last partition is solved,
+> everyone working on the block adds the new solver's output address to their
+> generation transaction with the appropriate fraction of the
+> reward-plus-subsidy.  In this way, several miners contribute to the
+> solution of a single block and need only store those blocks that match the
+> partitions they want to work on.
+>
+> Suppose we use eight bits so that there are 256 partitions and a miner
+> wishes to do about 1/5 of the work. That would be 51 partitions.  This is
+> signaled in the generation transaction, where the bit-pattern of the last
+> byte of the public key identifies the first partition, and the proportion
+> of the total reward for the block (51/256) indicates how many partitions a
+> solution will cover.
+>
+> Suppose that the last byte of the subsidy address is 0xF0.  This means
+> there are only 16 partitions left, so we define partition selection to wrap
+> around.  This 51/256 miner must cover partitions 0xF0 - 0xFF and 0x00 -
+> 0x23. In this way, all mining to date has covered all partitions.
+>
+> The number of bits to be used might be able to be abstracted out to a
+> certain level.  Perhaps a miner can indicate how many bits B the
+> partitioning should use in the CoinBase. The blocks for which a partition
+> miner claims responsibility are all those with a bit pattern of length B at
+> the end of their hash matching the the bits at the end of the first
+> output's public key in the generation transaction, as well as those blocks
+> with hashes for which the last B bits match any of the next N bit patterns
+> where for the largest integer N for which the claimed output is not less
+> than (subsidy+fees)*(N/(2^B)).
+>
+> If you only store and validate against one partition, and that partition
+> has a solution already, then you would start working on the next block
+> (once you've validated the current one against your subset of the
+> blockchain).  You could even broadcast a solution for that next block
+> before the previous block is fully solved, thus claiming a piece of the
+> next block reward (assuming the current block is valid on all partitions).
+>
+> It seems that a miner who covers only one partition will be at a serious
+> disadvantage, but as the rate of incoming transactions increases, the
+> fraction of time he must spend validating (being about half of all other
+> miners who cover just one more partition) makes up for this disadvantage
+> somewhat.  He is a "spry" miner and therefore wins more rewards during
+> times of very dense transaction volume.  If we wish to encourage miners to
+> work on smaller partitions, we can provide a difficulty break for smaller
+> fractions of the work.  In fact, the difficulty can be adjusted down for
+> the first solution, and then slowly back up to full for the last
+> partition(s).
+>
+> This proposal has the added benefit of encouraging the assembly of blocks
+> by miners who work on single partitions to get them out there with a
+> one-partition solution.
+>
+> On Wed, Dec 9, 2015 at 2:35 PM, Andrew via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> Hi Akiva
+>>
+>> I sketched out a similar proposal here:
+>> https://bitcointalk.org/index.php?topic=1083345.0
+>>
+>> It's good to see people talking about this :). I'm not quite convinced
+>> with segregated witness, as it might mess up some things, but will take a
+>> closer look.
+>> On Dec 9, 2015 7:32 AM, "Loi Luu via bitcoin-dev" <
+>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>
+>>> Dear Akiva,
+>>>
+>>> Its Loi Luu, one of the authors of the SCP protocol (
+>>> http://eprint.iacr.org/2015/1168.pdf ).
+>>>
+>>> Before SCP, we had been thinking hard about how to do sharding
+>>> efficiently without degrading any security guarantee. A simple solution
+>>> which splits the coins, or TXs in to several partitions will just not work.
+>>> You have to answer more questions to have a good solutions. For example, I
+>>> wonder in your proposal, if a transaction spends a "coin" that ends in "1"
+>>> and creates a new coin that ends in "1", which partition should process the
+>>> transaction? What is the prior data needed to validate that kind of TXs?
+>>>
+>>> The problem with other proposals, and probably yours as well,  that we
+>>> see is that the amount of data that you need to broadcast immediately to
+>>> the network increases linearly with the number of TXs that the network can
+>>> process. Thus, sharding does not bring any advantage than simply using
+>>> other techniques to publish more blocks in one epoch (like Bitcoin-NG,
+>>> Ghost). The whole point of using sharding/ partition is to localize
+>>> the bandwidth used, and only broadcast only a minimal data to the network.
+>>>
+>>> Clearly we are able to localize the bandwidth used with our SCP
+>>> protocol. The cost is that now recipients need to  themselves verify
+>>> whether a transaction is double spending. However, we think that it is a
+>>> reasonable tradeoff, given the potential scalability that SCP can provides.
+>>>
+>>> Thanks,
+>>> Loi Luu.
+>>>
+>>> On Wed, Dec 9, 2015 at 12:27 AM, Akiva Lichtner via bitcoin-dev <
+>>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>>
+>>>> Hello,
+>>>>
+>>>> I am seeking some expert feedback on an idea for scaling Bitcoin. As a
+>>>> brief introduction: I work in the payment industry and I have twenty years'
+>>>> experience in development. I have some experience with process groups and
+>>>> ordering protocols too. I think I understand Satoshi's paper but I admit I
+>>>> have not read the source code.
+>>>>
+>>>> The idea is to run more than one simultaneous chain, each chain
+>>>> defeating double spending on only part of the coin. The coin would be
+>>>> partitioned by radix (or modulus, not sure what to call it.) For example in
+>>>> order to multiply throughput by a factor of ten you could run ten parallel
+>>>> chains, one would work on coin that ends in "0", one on coin that ends in
+>>>> "1", and so on up to "9".
+>>>>
+>>>> The number of chains could increase automatically over time based on
+>>>> the moving average of transaction volume.
+>>>>
+>>>> Blocks would have to contain the number of the partition they belong
+>>>> to, and miners would have to round-robin through partitions so that an
+>>>> attacker would not have an unfair advantage working on just one partition.
+>>>>
+>>>> I don't think there is much impact to miners, but clients would have to
+>>>> send more than one message in order to spend money. Client messages will
+>>>> need to enumerate coin using some sort of compression, to save space. This
+>>>> seems okay to me since often in computing client software does have to
+>>>> break things up in equal parts (e.g. memory pages, file system blocks,) and
+>>>> the client software could hide the details.
+>>>>
+>>>> Best wishes for continued success to the project.
+>>>>
+>>>> Regards,
+>>>> Akiva
+>>>>
+>>>> P.S. I found a funny anagram for SATOSHI NAKAMOTO: "NSA IS OOOK AT MATH"
+>>>>
+>>>>
+>>>> _______________________________________________
+>>>> bitcoin-dev mailing list
+>>>> bitcoin-dev at lists.linuxfoundation.org
+>>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>>
+>>>>
+>>>
+>>> _______________________________________________
+>>> bitcoin-dev mailing list
+>>> bitcoin-dev at lists.linuxfoundation.org
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>
+>>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>>
+>
+>
+> --
+> I like to provide some work at no charge to prove my value. Do you need a
+> techie?
+> I own Litmocracy <http://www.litmocracy.com> and Meme Racing
+> <http://www.memeracing.net> (in alpha).
+> I'm the webmaster for The Voluntaryist <http://www.voluntaryist.com>
+> which now accepts Bitcoin.
+> I also code for The Dollar Vigilante <http://dollarvigilante.com/>.
+> "He ought to find it more profitable to play by the rules" - Satoshi
+> Nakamoto
+>
+
+
+
+-- 
+I like to provide some work at no charge to prove my value. Do you need a
+techie?
+I own Litmocracy <http://www.litmocracy.com> and Meme Racing
+<http://www.memeracing.net> (in alpha).
+I'm the webmaster for The Voluntaryist <http://www.voluntaryist.com> which
+now accepts Bitcoin.
+I also code for The Dollar Vigilante <http://dollarvigilante.com/>.
+"He ought to find it more profitable to play by the rules" - Satoshi
+Nakamoto
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151209/45701a43/attachment.html>
