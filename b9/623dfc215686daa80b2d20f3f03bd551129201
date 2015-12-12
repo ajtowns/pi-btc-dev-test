@@ -1,0 +1,45 @@
+From: jl2012@xbt.hk (jl2012 at xbt.hk)
+Date: Sat, 12 Dec 2015 15:09:03 -0500
+Subject: [bitcoin-dev] Forget dormant UTXOs without confiscating bitcoin
+Message-ID: <50e629572d8de852eb789d50b34da308@xbt.hk>
+
+It is a common practice in commercial banks that a dormant account might 
+be confiscated. Confiscating or deleting dormant UTXOs might be too 
+controversial, but allowing the UTXOs set growing without any limit 
+might not be a sustainable option. People lose their private keys. 
+People do stupid things like sending bitcoin to 1BitcoinEater. We 
+shouldn?t be obliged to store everything permanently. This is my 
+proposal:
+
+Dormant UTXOs are those UTXOs with 420000 confirmations. In every block 
+X after 420000, it will commit to a hash for all UTXOs generated in 
+block X-420000. The UTXOs are first serialized into the form: 
+txid|index|value|scriptPubKey, then a sorted Merkle hash is calculated. 
+After some confirmations, nodes may safely delete the UTXO records of 
+block X permanently.
+
+If a user is trying to redeem a dormant UTXO, in addition the signature, 
+they have to provide the scriptPubKey, height (X), and UTXO value as 
+part of the witness. They also need to provide the Merkle path to the 
+dormant UTXO commitment.
+
+To confirm this tx, the miner will calculate a new Merkle hash for the 
+block X, with the hash of the spent UTXO replaced by 1, and commit the 
+hash to the current block. All full nodes will keep an index of latest 
+dormant UTXO commitments so double spending is not possible. (a 
+"meta-UTXO set")
+
+If all dormant UTXOs under a Merkle branch are spent, hash of the branch 
+will become 1. If all dormant UTXOs in a block are spent, the record for 
+this block could be forgotten. Full nodes do not need to remember which 
+particular UTXO is spent or not, since any person trying to redeem a 
+dormant UTXO has to provide such information.
+
+It becomes the responsibility of dormant coin holders to scan the 
+blockchain for the current status of the UTXO commitment for their coin. 
+They may also need to pay extra fee for the increased tx size.
+
+This is a softfork if there is no hash collision but this is a 
+fundamental assumption in Bitcoin anyway. The proposal also works 
+without segregated witness, just by replacing "witness" with "scriptSig"
+
