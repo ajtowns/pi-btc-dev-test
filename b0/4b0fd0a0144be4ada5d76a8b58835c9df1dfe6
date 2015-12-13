@@ -1,0 +1,104 @@
+From: jl2012@xbt.hk (jl2012 at xbt.hk)
+Date: Sun, 13 Dec 2015 10:25:10 -0500
+Subject: [bitcoin-dev] Segregated Witness features wish list
+In-Reply-To: <CAAS2fgT09Tk+5dBQ4YJA_pwK56xX2mEQe9TkJqgcB0j2BZZJ1g@mail.gmail.com>
+References: <b13f6152767473dcf44a1d8965fdd32c@xbt.hk>
+	<CAAS2fgT09Tk+5dBQ4YJA_pwK56xX2mEQe9TkJqgcB0j2BZZJ1g@mail.gmail.com>
+Message-ID: <2498d6a0691fde6f62453294da6118d0@xbt.hk>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+I'm trying to list the minimal consensus rule changes needed for segwit 
+softfork. The list does not cover the changes in non-consensus critical 
+behaviors, such as relay of witness data.
+
+1. OP_NOP4 is renamed as OP_SEGWIT
+2. A script with OP_SEGWIT must fail if the scriptSig is not completely 
+empty
+3. If OP_SEGWIT is used in the scriptPubKey, it must be the only and the 
+last OP code in the scriptPubKey, or the script must fail
+4. The OP_SEGWIT must be preceded by exactly one data push (the 
+"serialized script") with at least one byte, or the script must fail
+5. The most significant byte of serialized script is the version byte, 
+an unsigned number
+6. If the version byte is 0x00, the script must fail
+7. If the version byte is 0x02 to 0xff, the rest of the serialized 
+script is ignored and the output is spendable with any form of witness 
+(even if the witness contains something invalid in the current script 
+system, e.g. OP_RETURN)
+8. If the version byte is 0x01,
+8a. rest of the serialized script is deserialized, and be interpreted as 
+the scriptPubKey.
+8b. the witness is interpreted as the scriptSig.
+8c. the script runs with existing rules (including P2SH)
+9. If the script fails when OP_SEGWIT is interpreted as a NOP, the 
+script must fail. However, this is guaranteed by the rules 2, 3, 4, 6 so 
+no additional check is needed.
+10. The calculation of Merkle root in the block header remains unchanged
+11. The witness commitment is placed somewhere in the block, either in 
+coinbase or an OP_RETURN output in a specific tx
+
+Format of the witness commitment:
+The witness commitment could be as simple as a hash tree of all witness 
+in a block. However, this is bad for further development of sum tree for 
+compact SPV fraud proof as we have to maintain one more tree in the 
+future. Even if we are not going to implement any sum checking in first 
+version of segwit, it's better to make it easier for future softforks. 
+(credit: gmaxwell)
+12. The block should indicate how many sum criteria there are by 
+committing the number following the witness commitment
+13. The witness commitment is a hash-sum tree with the number of sum 
+criteria committed in rule 12
+14. Each sum criterion is a fixed 8 byte signed number (Negative value 
+is allowed for use like counting delta-UTXO. 8 bytes is needed for fee 
+commitment. Multiple smaller criteria may share a 8 byte slot, as long 
+as they do not allow negative value)
+15. Nodes will ignore the sum criteria that they do not understand, as 
+long as the sum is correctly calculated
+
+Size limit:
+16. We need to determine the size limit of witness
+17. We also need to have an upper limit for the number of sum criteria, 
+or a malicious miner may find a block with many unknown sum criteria and 
+feed unlimited amount of garbage to other nodes.
+
+All other functions I mentioned in my wish list could be softforked 
+later to this system
+
+To mitigate the risk described in rule 17, we may ask miners to vote for 
+an increase (but not decrease) in the number of sum criteria. Initially 
+there should be 0 sum criteria. If we would like to introduce a new 
+criteria, miners will support the proposal by setting the number of sum 
+criteria as 1. However, until 95% of miners support the increase, all 
+values of the extra sum criteria must be 0. Therefore, even a malicious 
+miner may declare any amount of sum criteria, those criteria unknown to 
+the network must be 0, and no extra data is needed to construct the 
+block. This voting mechanism could be a softfork over rule 12 and 13, 
+and is not necessary in the initial segwit deployment.
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2
+
+iQGcBAEBCAAGBQJWbY0jAAoJEO6eVSA0viTSU1oMAJIrYWerwk84poZBL/ezEsIp
+9fCLnFZ4lyO2ijAm5UmwLXGijY03kqp29b0zmyIWV2WuoeW2lN64tLHQRilT0+5R
+n5/viQOMv0C0MYs525+/dpNkk2q2MiFmyyozdbU6zcyfdkrkYdChCFOQ9GsxzQHk
+n4lL4/RSKdqJZg4x2yEGgdyKA6XrQHaFirdr/K2bhhbk4Q0SOuYjy8Wxa2oCHFCC
+WG4K2NBnKCI7DuVXQK+ZC8dYXMwbemeFfPHY6dZVti7j/OFsllyxno/CFKO3rsCs
++uko4XJk6pH0Ncjrc1n0l0v9xIKF5hTqSxFs+GVvhkiBdTDZVe7CdedO9qJWf1hE
+bbmLXTURCDQUFe9F3uKsnYfMoD5eniWHx2OQcJcNPlLMJd9zObB3HdgFMW6N53KN
+QXLmxobU/xFhmFknz1ShGEIdGSaH0gqnb+WEkO5v5vBO4L6Cikc+lcp7zXqQzWpW
+uqm3QSrbKcbR6JEwDFoGQpDkcqpwpTIrOAk4B1jJRg==
+=J2KF
+-----END PGP SIGNATURE-----
+
+
+Gregory Maxwell ? 2015-12-10 04:51 ??:
+> On Thu, Dec 10, 2015 at 6:47 AM, jl2012--- via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> 4. Sum of fee, sigopcount, size etc as part of the witness hash tree: 
+>> for
+> 
+> I should have also commented on this: the block can indicate how many
+> sum criteria there are; and then additional ones could be soft-forked
+> in. Haven't tried implementing it yet, but there you go. :)
+
