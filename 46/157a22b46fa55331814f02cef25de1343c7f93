@@ -1,0 +1,95 @@
+From: jl2012@xbt.hk (jl2012 at xbt.hk)
+Date: Sun, 13 Dec 2015 13:41:44 -0500
+Subject: [bitcoin-dev] Segregated Witness features wish list
+In-Reply-To: <CAPg+sBia_rCNkPfKhKxDiOaun5zRKj9LVRkGf_YqVvYWiTox1A@mail.gmail.com>
+References: <b13f6152767473dcf44a1d8965fdd32c@xbt.hk>
+	<CAAS2fgT09Tk+5dBQ4YJA_pwK56xX2mEQe9TkJqgcB0j2BZZJ1g@mail.gmail.com>
+	<2498d6a0691fde6f62453294da6118d0@xbt.hk>
+	<CAPg+sBia_rCNkPfKhKxDiOaun5zRKj9LVRkGf_YqVvYWiTox1A@mail.gmail.com>
+Message-ID: <a46f4277e8859affba4e5cfe5474d53a@xbt.hk>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Pieter Wuille 2015-12-13 13:07 :
+
+> The use of a NOP opcode to indicate a witness script was something I
+> considered at first too, but it's not really needed. You wouldn't be
+> able to use that opcode in any place a normal opcode could occur, as
+> it needs to be able to inspect the full scriptSig (rather than just
+> its resulting stack) anyway. So both in practice and conceptually it
+> is only really working as a template that gets assigned a special
+> meaning (like P2SH did). We don't need an opcode for that, and instead
+> we could say that any scriptPubKey (or redeemscript) that consists of
+> a single push is a witness program.
+> 
+>> 5. The most significant byte of serialized script is the version byte, 
+>> an
+>> unsigned number
+>> 6. If the version byte is 0x00, the script must fail
+> 
+> What is that good for?
+
+Just to make sure a script like OP_0 OP_SEGWIT will fail.
+
+Anyway, your design may be better so forget it
+
+>> 7. If the version byte is 0x02 to 0xff, the rest of the serialized 
+>> script is
+>> ignored and the output is spendable with any form of witness (even if 
+>> the
+>> witness contains something invalid in the current script system, e.g.
+>> OP_RETURN)
+> 
+> Do you mean the scriptPubKey itself, or the script that follows after
+> the version byte?
+> * The scriptPubKey itself: that's in contradiction with your rule 4,
+> as segwit scripts are by definition only a push (+ opcode), so they
+> can't be an OP_RETURN.
+> * The script after the version byte: agree - though it doesn't
+> actually need to be a script at all even (see further).
+
+I am not referring to the serialized script, but the witness. Basically,
+it doesn't care what the content look like.
+
+
+> It is useful however to allow segwit inside P2SH
+
+Agree
+
+> So let me summarize by giving an equivalent to your list above,
+> reflecting how my current prototype works:
+> A) A scriptPubKey or P2SH redeemscript that consists of a single push
+> of 2 to 41 bytes gets a new special meaning, and the byte vector
+> pushed by it is called the witness program.
+
+Why 41 bytes? Do you expect all witness program to be P2SH-like?
+
+> The program
+> must not fail and result in a single TRUE on the stack, and nothing
+> else (to prevent stuffing the witness with pointless data during relay
+> of transactions).
+
+Could we just implement this as standardness rule? It is always possible
+to stuff the scriptSig with pointless data so I don't think it's a new
+attack vector. What if we want to include the height and tx index of
+the input for compact fraud proof? Such fraud proof should not be an
+opt-in function and not be dependent on the version byte
+
+For the same reason, we should also allow traditional tx to have data
+in the witness field, for any potential softfork upgrade
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2
+
+iQGcBAEBCAAGBQJWbbugAAoJEO6eVSA0viTSD8oMAKFvd/+KZgH13tErEA+iXzF5
+pwT4/eoQWSTvxIDVrFN+9wV79ogO4/aiCDEdmNF2IZD3QqmhKl7iOPw2SEseRTbe
+e1r5z67yuudXyEQocZvy5+NOUp3N978b8weuRsHWG1HXgxTRmgZTrEeNtbEUs0X2
+n5l6e0scnZAu70svBXr8X9HnOm2P/QLxtAqyNW19caCi+Dg/4Curx48tXQ/I9IxT
+SYFVzB++FIoua49Cf1RJN+dUfywg67wT5l9NX4uWAX0qNB+p6BPP8df/72G/u564
+NIaJs3IFiUaNktXz9aDM4s7pSzR6PlCK6LFKjE52sBY5uREHGU4PnfX9YqtwiEXA
+Hr3YoFiepxAwl6icJi3wHKa6i0NGvj1fR1h6xuJ7ulzNv5mwuzXPOgvTDK4wpejl
+ee8wsQZwmzchAfgyfPsgSaPh/jjBwm2S+WDMbL4HDmnWqVDl8dG3I/b3XP0aegY9
+4RxPhLOA1qToNDGhnm+JNqT60OKgatpDN/4bRgRscA==
+=4B1D
+-----END PGP SIGNATURE-----
+
