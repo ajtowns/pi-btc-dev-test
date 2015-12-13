@@ -1,0 +1,117 @@
+From: jl2012@xbt.hk (jl2012 at xbt.hk)
+Date: Sun, 13 Dec 2015 13:11:41 -0500
+Subject: [bitcoin-dev] Forget dormant UTXOs without confiscating bitcoin
+In-Reply-To: <CAAcC9ysovzcm1SD_4XyxxofmwdXrcQqs0ckQBw626vYsdPftKw@mail.gmail.com>
+References: <50e629572d8de852eb789d50b34da308@xbt.hk>
+	<1449961269.2210.5.camel@yahoo.com>
+	<CACrzPenXGQZBrx8QC+1QE2oCE3N=qmfgc_OWrowtjtLjGkZrRA@mail.gmail.com>
+	<CAAS2fgQi7aiwyOaVBiMbp6t9D58aFAmDdKPzFiscB6ouGzBK6A@mail.gmail.com>
+	<CAAcC9yuSX67ckhBUCsvTk+7PB6vzufuuBsJikSqqqU_4LXoCfA@mail.gmail.com>
+	<CAAS2fgSchJFk1Ejd8ZfMSzxEO-1TWYR6ag-seQNH_QHrc9Cn3w@mail.gmail.com>
+	<CAAcC9ysovzcm1SD_4XyxxofmwdXrcQqs0ckQBw626vYsdPftKw@mail.gmail.com>
+Message-ID: <3b28f994d75070ab1fd2d312f29bb706@xbt.hk>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+On Mon, Dec 14, 2015 at 12:14 AM, Danny Thorpe <danny.thorpe at gmail.com> 
+wrote:
+> What is the current behavior / cost that this proposal is trying to 
+> avoid? Are ancient utxos required to be kept in memory always in a 
+> fully validating node, or can ancient utxos get pushed out of memory 
+> like a normal LRU caching db?
+
+I don't see why it must be kept in memory. But storage is still a 
+problem. With the 8 year limit and a fixed max block size, it indirectly 
+sets an upper limit for UTXO set.
+
+
+Chris Priest via bitcoin-dev :
+> This isn't going to kill bitcoin, but it won't make it any better.
+
+Do you believe that thousands of volunteer full nodes are obliged to 
+store an UTXO record, just because one paid US$0.01 to an anonymous 
+miner 100 years ago? It sounds insanely cheap, isn't it? My proposal (or 
+similar proposal by Peter Todd) is to solve this problem. Many 
+commercial banks have a dormant threshold less than 8 years so I believe 
+it is a balanced choice.
+
+Back to the topic, I would like to further elaborate my proposal.
+
+We have 3 types of full nodes:
+
+Archive nodes: full nodes that store the whole blockchain
+Full UTXO nodes: full nodes that fully store the latest UTXO state, but 
+not the raw blockchain
+Lite UTXO nodes: full nodes that store only UTXO created in that past 
+420000 blocks
+
+Currently, if one holds nothing but a private key, he must consult 
+either an archive node or a full UTXO node for the latest UTXO state to 
+spend his coin. We currently do not have any lite UTXO node, and such 
+node would not work properly beyond block 420000.
+
+With the softfork I described in my original post, if the UTXO is 
+created within the last 420000 blocks, the key holder may consult any 
+type of full node, including a lite UTXO node, to create the 
+transaction.
+
+If the UTXO has been confirmed by more than 420000 blocks, a lite UTXO 
+node obviously can't provide the necessary information to spend the 
+coin. However, not even a full UTXO node may do so. A full UTXO node 
+could tell the position of the UTXO in the blockchain, but can't provide 
+all the information required by my specification. Only an archive node 
+may do so.
+
+What extra information is needed?
+
+(1) If your UTXO was generated in block Y, you first need to know the 
+TXO state (spent / unspent) of all outputs in block Y at block (Y + 
+420000). Only UTXOs at that time are relevant.
+
+(2) You also need to know if there was any spending of any block Y UTXOs 
+after block (Y + 420000).
+
+It is not possible to construct the membership prove I require without 
+these information. It is designed this way, so that lite UTXO nodes 
+won't need to store any dormant UTXO records: not even the hash of 
+individual dormant UTXO records. If the blockchain grows to insanely 
+big, it may take days or weeks to retrieve to records. However, I don't 
+think this is relevant as one has already left his coins dormant for >8 
+years. Actually, you don't even need the full blockchain. For (1), all 
+you need is the 420000 blocks from Y to Y+420000 minus any witness data, 
+as you don't need to do any validation. For (2), you just need the 
+coinbase of Y+420001 to present, where any spending would have been 
+committed, and retrieve the full block only if a spending is found.
+
+So the Bitcoin Bank (miners) is not going to shred your record and 
+confiscate your money. Instead, the Bank throws your record to the 
+garage (raw blockchain). You can search for your record by yourself, or 
+employ someone (archive node) to search it for you. In any case it 
+incurs costs. But as thousands of bankers have kept your record on their 
+limited desk space for 8 years for free (though one of them might 
+receive a fraction of a penny from you), you shouldn't complain with any 
+moral, technical, or legal reason. And no matter what users say, I 
+believe something like this will happen when miners and full nodes can't 
+handle the UTXO set.
+
+I'd like to see more efficient proposals that archive the same goals.
+
+p.s. there were some typos in my original. The second sentence of the 
+second paragraph should be read as "For every block X+420000, it will 
+commit to a hash for all UTXOs generated in block X."
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2
+
+iQGcBAEBCAAGBQJWbbR2AAoJEO6eVSA0viTScEoL/RPlsxr0A5wTtgdi+9i4AFlV
+Sw/He89+YPGe5VCG74YNAPLEUF1/rICzUJ4DulvNTOo/5xtmkv5ok4bD7v1JZnH3
+DE2PExMQYs2X4Qm6mkcwi8IWlMR2U5j5ebUq21Kj4AqVFj9UcQmYGhPehB2f+cM9
+Wki/TDwNj5fV8AZ4uR9pPgaf+bvVQQ9BOOLiIMiTbphNCx1hfGfYcsqmXlCbGk9A
+PatGR88aQTxpa7PhbCZwwf76cKuOaYYZeHr9jRR9RL5rZVXgE1SI/niBytJhXaP8
+lwYtk4Bpz0IGd23v1dArNQQoOp5Xycbeq1l1qyv/qtxju65No+dhqiEcFBZVI1AS
+VcndMQ+yvNuxVgib2Ifh9YjXelWAqqLzzoVcz2RxXh6HJ0tVKxBokwdAcsclZb93
+zQ1JhDR4vBpLquytZA8lDIxJraNCdB/KEAOAey6ljP3zL7fBLBp1oZw4DDDtFy8V
+EMjrOSVnjyuyfey2YXsGnnHuQS0mpwmSroV2400uGQ==
+=2xRy
+-----END PGP SIGNATURE-----
+
