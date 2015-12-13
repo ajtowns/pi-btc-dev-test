@@ -1,0 +1,103 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Sun, 13 Dec 2015 19:07:01 +0100
+Subject: [bitcoin-dev] Segregated Witness features wish list
+In-Reply-To: <2498d6a0691fde6f62453294da6118d0@xbt.hk>
+References: <b13f6152767473dcf44a1d8965fdd32c@xbt.hk>
+	<CAAS2fgT09Tk+5dBQ4YJA_pwK56xX2mEQe9TkJqgcB0j2BZZJ1g@mail.gmail.com>
+	<2498d6a0691fde6f62453294da6118d0@xbt.hk>
+Message-ID: <CAPg+sBia_rCNkPfKhKxDiOaun5zRKj9LVRkGf_YqVvYWiTox1A@mail.gmail.com>
+
+On Sun, Dec 13, 2015 at 4:25 PM, jl2012--- via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> I'm trying to list the minimal consensus rule changes needed for segwit
+> softfork. The list does not cover the changes in non-consensus critical
+> behaviors, such as relay of witness data.
+>
+> 1. OP_NOP4 is renamed as OP_SEGWIT
+> 2. A script with OP_SEGWIT must fail if the scriptSig is not completely
+> empty
+> 3. If OP_SEGWIT is used in the scriptPubKey, it must be the only and the
+> last OP code in the scriptPubKey, or the script must fail
+> 4. The OP_SEGWIT must be preceded by exactly one data push (the "serialized
+> script") with at least one byte, or the script must fail
+
+The use of a NOP opcode to indicate a witness script was something I
+considered at first too, but it's not really needed. You wouldn't be
+able to use that opcode in any place a normal opcode could occur, as
+it needs to be able to inspect the full scriptSig (rather than just
+its resulting stack) anyway. So both in practice and conceptually it
+is only really working as a template that gets assigned a special
+meaning (like P2SH did). We don't need an opcode for that, and instead
+we could say that any scriptPubKey (or redeemscript) that consists of
+a single push is a witness program.
+
+> 5. The most significant byte of serialized script is the version byte, an
+> unsigned number
+> 6. If the version byte is 0x00, the script must fail
+
+What is that good for?
+
+> 7. If the version byte is 0x02 to 0xff, the rest of the serialized script is
+> ignored and the output is spendable with any form of witness (even if the
+> witness contains something invalid in the current script system, e.g.
+> OP_RETURN)
+
+Do you mean the scriptPubKey itself, or the script that follows after
+the version byte?
+* The scriptPubKey itself: that's in contradiction with your rule 4,
+as segwit scripts are by definition only a push (+ opcode), so they
+can't be an OP_RETURN.
+* The script after the version byte: agree - though it doesn't
+actually need to be a script at all even (see further).
+
+> 8. If the version byte is 0x01,
+> 8a. rest of the serialized script is deserialized, and be interpreted as the
+> scriptPubKey.
+> 8b. the witness is interpreted as the scriptSig.
+> 8c. the script runs with existing rules (including P2SH)
+
+I don't think it's very useful to allow P2SH inside segwit, as we can
+actually do better and allow segwit scripts to push the (perhaps 256
+bit) hash of the redeemscript in the scriptPubKey, and have the full
+redeemscript in the witness. See further for details. The numbers I
+showed in the presentation were created using a simulation that used
+that model already.
+
+It is useful however to allow segwit inside P2SH (so the witness
+program including version byte goes into the redeemscript, inside the
+scriptSig). This allows old clients to send to new wallets without any
+modifications (at slightly lower efficiency). The rules in this case
+must say that the scriptSig is exactly a push of the redeemscript
+(which itself contains the witness program), to provide both
+compatibility with old consensus rules and malleability protection.
+
+So let me summarize by giving an equivalent to your list above,
+reflecting how my current prototype works:
+A) A scriptPubKey or P2SH redeemscript that consists of a single push
+of 2 to 41 bytes gets a new special meaning, and the byte vector
+pushed by it is called the witness program.
+A.1) In case the scriptPubKey pushes a witness program directly, the
+scriptSig must be exactly empty.
+A.2) In case the redeemscript pushes a witness program, the scriptSig
+must be exactly the single push of the redeemscript.
+B) The first byte of a witness program is the version byte.
+B.1) If the witness version byte is 0, the rest of the witness program
+is the actual script, which is executed after normal script evaluation
+but with data from the witness rather than the scriptSig. The program
+must not fail and result in a single TRUE on the stack, and nothing
+else (to prevent stuffing the witness with pointless data during relay
+of transactions).
+B.2) if the witness version byte is 1, the rest of the witness program
+must be 32 bytes, and a SHA256 hash of the actual script. The witness
+must consist of an input stack to feed to the program, followed by the
+serialized program itself (whose hash must match the hash pushed in
+the witness program). It is executed after normal script evluation,
+and must not fail and result in a single TRUE on the stack, and
+nothing else.
+B.3) if the witness version byte is 2 or higher, no further
+interpretation of the data happens, but can be softforked in.
+
+I'll write a separate mail on the block commitment structure.
+
+-- 
+Pieter
