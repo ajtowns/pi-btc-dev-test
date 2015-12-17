@@ -1,0 +1,175 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Thu, 17 Dec 2015 20:57:13 +1000
+Subject: [bitcoin-dev] Segregated Witness in the context of Scaling
+ Bitcoin
+In-Reply-To: <9869fe48a4fc53fc355a35cead73fca2@xbt.hk>
+References: <CADm_WcYWh5EnBCzQQVc04sf-0seh2zrmc+5dH8Z-Bo78jhPnfA@mail.gmail.com>
+	<49257841-66C8-4EF7-980B-73DC604CA591@mattcorallo.com>
+	<9869fe48a4fc53fc355a35cead73fca2@xbt.hk>
+Message-ID: <20151217105713.GA16561@sapphire.erisian.com.au>
+
+On Thu, Dec 17, 2015 at 12:32:11AM -0500, jl2012 via bitcoin-dev wrote:
+> There are at least 2 proposals on the table:
+> 1. SWSF (segwit soft fork) with 1MB virtual block limit, approximately
+>    equals to 2MB actual limit
+> 2. BIP102: 2MB actual limit
+
+I think there's a few variants of (2) -- there's "just 2MB", "2MB now,
+4MB in a while, 8MB after that", "1MB for a while longer, then 2MB,
+then 4MB" (halved from 2/4/8 since segwit gives 1.6x-2x benefit), and
+variations of those with different dates, whether or not to smooth out
+the increases to avoid economic shocks, and how to determine activation
+(flag day? miner consensus? combination?).
+
+> Since the actual limits for both proposals are approximately the same, it is
+> not a determining factor in this discussion
+
+That's true on the benefit side (both give about double the number of
+ordinary transactions per block; though segregated witness has other
+benefits). On the cost side, the limits are different:
+
+ * worst case block data size is 2x for BIP102, 4x for segwit (affecting
+   bandwidth, latency and storage costs for nodes)
+
+ * worst case sigops is 2x for BIP102, but the same as today for segwit
+   (affecting block validation time)
+
+ * worst case bytes to hash a block is 4x for BIP102 (doubling block
+   size and sigops), but the same as today for segwit (again affecting
+   block validation time)
+
+ * worst case UTXO bloat is 2x for BIP102, but the same as today for
+   segwit (affecting memory usage, and validation time)
+
+In the "expected" case (where people aren't attacking the blockchain)
+I think they're the same on all these metrics. But increasing the
+limits could easily make attacks more common, especially if it makes
+them more effective.
+
+I think the main attack vector of these is that increasing block
+validation time via too many (active) sigops or too many bytes hashed
+allows a selfish mining attack, but I'm not clear enough on how that
+would work exactly to estimate where the boundary between acceptable and
+unacceptable risk is (and how feasible non-consensus-level countermeasures
+might be).
+
+But at 1x sigops, you can already (accidently!) construct blocks that
+take minutes to verify; and at 4x you can probably already construct a
+block that takes 10 minutes to verify, which would probably be pretty
+bad... But I'm not sure this isn't already exploitable, so maybe we're
+already assuming a certain level of altruism and making things worse
+doesn't actually make them worse?
+
+I think it would be good for BIP102 or similar to include an evaluation
+of that risk before being deployed [0].
+
+> The major criticism for a hardfork is requiring everyone to upgrade. Is that
+> really a big problem?
+
+Yes. That doesn't mean it's not worth it, though.
+
+(The 2-month timeline for the BIP50 accidental hardfork to be accepted
+on the network seems persuasive to me that it's possible to roll out a
+deliberate, SPV-compatible, hardfork on today's network in 3-6 months)
+
+> My primary proposal:
+> 1 Jun 2016: the first day a 2MB block may be allowed
+> 
+> My secondary proposal:
+> 1 Jun 2016: release SWSF
+
+I think it makes sense to just do both of these independently; ie:
+
+ * release segwit via softfork ASAP (perhaps targetting March or April
+   to get it included in bitcoin, activation a month or three
+   afterwards?), with virtual block size calculated as proposed and
+   capped by MAX_BLOCK_SIZE [1]
+
+ * increase MAX_BLOCK_SIZE via hardfork to 2MB after block 420,000
+   (phased in gradually? with future scheduled increases to 4MB or 8MB?)
+
+If segwit gets delayed because it's complicated, that's okay; if
+it comes out earlier, that's okay too. If the hardfork gets delayed
+because miners aren't ready or because it's better to introduce it in a
+staggered fashion, or because there's no clear evaluation of the risks,
+that's okay too.
+
+But more importantly, it allows evaluate the pros and cons of each
+implementation separately and on its own merits, rather than arguing
+against working on one just because you're in favour of doing the
+other ASAP.
+
+
+They have benefits if you combine them too; for instance, if the
+MAX_BLOCK_SIZE increase is phased in rather than done as a step increase
+(ie block x's limit is 1MB, block x+1's limit is 1.005MB or similar,
+and block x+2's limit is 1.01MB, etc) having segwit available in parallel
+could provide a helpful escape valve: if an individual bitcoin user has
+been dying for more capacity, they can spend the time/effort to update
+their software for segwit and get it immediately without having to wait
+as the consensus limits rise.
+
+Conversely, having both segwit and a phased increase to MAX_BLOCK_SIZE
+means that miners generally won't be immediately mining 2MB (or 4MB)
+blocks halfway through the year, which should avoid both technological
+shocks (bandwidth just doubled!) or economic shocks (supply has increased
+so fees have plummeted), which could be good.
+
+
+FWIW, the worst case scenarios are:
+
+ * block data size:
+     BIP102:  2x   (worst/avg)
+     segwit:  4x   (worst, ~2x avg)
+     both:    8x   (worst, ~4x avg)
+     BIP101:  8x   (worst/avg)
+
+ * sigops per block:
+     BIP102:  2x
+     segwit:  1x
+     both:    2x
+     BIP101:  8x
+
+ * bytes hashed per block:
+     BIP102:  4x
+     segwit:  1x
+     both:    4x
+     BIP101:  64x
+
+ * UTXO rate of increase:
+     BIP102:  2x
+     segwit:  1x
+     both:    2x
+     BIP101:  8x
+
+Compared to the (expected, eventual, near-term) benefits:
+
+ * transactions per block:
+     BIP102:  2x
+     segwit:  1.6x-2x
+     both:    3.2x-4x
+     BIP101:  8x
+
+ * misc:
+     BIP101/2: planned hardforks are possible, bitcoin community governance
+       is demonstrably working, etc
+     segwit: malleability fixes, script improvements, lightning
+       enablement, etc
+
+The block data is the only case where the average case is already just
+about the worst case; for the others, as long as the worst case doesn't
+inspire new attacks, the future average case should just increase in
+proportion to the additional transactions.
+
+Cheers,
+aj
+
+[0] (and segwit should actually account for sigops in witness data before
+     being deployed...)
+
+[1] If segwit warrants a hardfork to clean up data structures, I think
+    that should be deferred until well after the MAX_BLOCK_SIZE hardfork,
+    rather than trying to do it at the same time. As such, doing segwit by
+    soft fork in the short term seems to make sense, since it also helps
+    with transaction malleability and further improvements to script.
+
