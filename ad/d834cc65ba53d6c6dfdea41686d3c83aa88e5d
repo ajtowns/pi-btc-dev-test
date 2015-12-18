@@ -1,0 +1,122 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Fri, 18 Dec 2015 03:30:38 +0100
+Subject: [bitcoin-dev] On the security of softforks
+Message-ID: <CAPg+sBjJcqeqGLHnPyWt23z3YoCRGozQupuMxy51J_-hdkKBSA@mail.gmail.com>
+
+Hello all,
+
+For a long time, I was personally of the opinion that soft forks
+constituted a mild security reduction for old full nodes, albeit one
+that was preferable to hard forks due to being far less risky, easier,
+and less forceful to deploy.
+
+After thinking more about this, I'm not convinced that it is even that anymore.
+
+Let's analyze all failure modes (and feel free to let me know whether
+I've missed any specific ones):
+
+1) The risk of an old full node wallet accepting a transaction that is
+invalid to the new rules.
+
+The receiver wallet chooses what address/script to accept coins on.
+They'll upgrade to the new softfork rules before creating an address
+that depends on the softfork's features.
+
+So, not a problem.
+
+2) The risk of an old full node wallet accepting a transaction whose
+coins passed through a script that depends on the softforked rules.
+
+It is reasonable that the receiver of a transaction places some trust
+in the sender, and on the basis of that, decides to reduce the number
+of confirmations before acceptance. In case the transaction indirectly
+depends on a low-confirmation transaction using softforked rules, it
+may be treated as an anyone-can-spend transaction. Obviously, no trust
+can be placed in such a transactions not being reorged out and
+replaced with an incompatible one.
+
+However, this problem is common for all anyonecanspend transactions,
+which are perfectly legal today in the blockchain. So, if this is a
+worry, we can solve it by marking incoming transactions as "uncertain
+history" in the wallet if they have an anyonecanspend transaction with
+less than 6 confirmations in its history. In fact, the same problem to
+a lesser extent exists if coins pass through a 1-of-N multisig or so,
+because you're not only trusting the (indirect) senders, but also
+their potential cosigners.
+
+3) The risk of an SPV node wallet accepting an unconfirmed transaction
+which is invalid to new nodes.
+
+Defrauding an SPV wallet with an invalid unconfirmed transaction
+doesn't change with the introduction of new consensus rules, as they
+don't validate them anyway.
+
+In the case the client trusts the full node peer(s) it is connected to
+to do validation before relay, nodes can either indicate (service bit
+or new p2p message) which softforks are accepted (as it only matters
+to SPV wallets that wish to accept transactions using new style script
+anyway), or wallets can rely on the new rules being non-standard even
+to old full nodes (which is typically aimed for in softforks).
+
+4) The risk of an SPV node wallet accepting a confirmed transaction
+which is invalid to new nodes
+
+Miners can of course construct an invalid block purely for defrauding
+SPV nodes, without intending to get that block accepted by full nodes.
+That is expensive (no subsidy/fee income for those blocks) and more
+importantly it isn't in any way affected by softforks.
+
+So the only place where this matters is where miners create a block
+chain that violates the new rules, and still get it accepted. This
+requires a hash rate majority, and sufficiently few economically
+important full nodes that forking them off is a viable approach.
+
+It's interesting that even though it requires forking off full nodes
+(who will notice, there will be an invalid majority hash rate chain to
+them), the attack only allows defrauding SPV nodes. It can't be used
+to bypass any of the economic properties of the system (as subsidy and
+other resource limits are still enforced by old nodes, and invalid
+scripts will either not be accepted by old full nodes wallets, or are
+as vulnerable as unrelated anyonecanspends).
+
+Furthermore, it's easily preventable by not using the feature in SPV
+wallets until a sufficient amount of economically relevant full nodes
+are known to have upgraded, or by just waiting for enough
+confirmations.
+
+
+
+So, we'd of course prefer to have all full nodes enforce all rules,
+but the security reduction is not large. On the other hand, there are
+also security advantages that softforks offer:
+
+A) Softforks do not require the pervasive consensus that hardforks
+need. Soft forks can be deployed without knowing when all full nodes
+will adopt the rule, or even whether they will ever adopt it at all.
+
+B) Keeping up with hard forking changes puts load on full node
+operators, who may choose to instead switch to delegating full
+validation to third parties, which is worse than just validating the
+old rules.
+
+C) Hardfork coordination has a centralizing effect on development. As
+hardforks can only be deployed with sufficient node deployment, they
+can't just be triggered by miner votes. This requires central
+coordination to determine flag times, which is incompatible with
+having multiple independent consensus changes being proposed. For
+softforks, something like BIP9 supports having multiple independent
+softforks in flight, that nodes can individually chose to accept or
+not, only requiring coordination to not choose clashing bit numbers.
+For hardforks, there is effectively no choice but having every
+codebase deployed at a particular point in time to support every
+possible hard forks (there can still be an additional hashpower based
+trigger conditions for hardforks, but all nodes need to support the
+fork at the earliest time it can happen, or risk being forked off).
+
+D) If you are concerned about the security degradation a soft fork
+might bring, you can always configure your node to treat a (signalled)
+softfork as a hardfork, and stop processing blocks if a sortfork
+condition is detected. The other direction is not possible.
+
+-- 
+Pieter
