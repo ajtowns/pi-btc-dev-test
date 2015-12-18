@@ -1,0 +1,105 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 18 Dec 2015 16:12:23 +1000
+Subject: [bitcoin-dev] On the security of softforks
+In-Reply-To: <E76D5BF9-41BF-4AF5-BBAC-06F4EF574EBE@toom.im>
+References: <CAPg+sBjJcqeqGLHnPyWt23z3YoCRGozQupuMxy51J_-hdkKBSA@mail.gmail.com>
+	<E76D5BF9-41BF-4AF5-BBAC-06F4EF574EBE@toom.im>
+Message-ID: <20151218061223.GA22650@sapphire.erisian.com.au>
+
+On Fri, Dec 18, 2015 at 10:47:14AM +0800, Jonathan Toomim via bitcoin-dev wrote:
+> On Dec 18, 2015, at 10:30 AM, Pieter Wuille via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > 1) The risk of an old full node wallet accepting a transaction that is
+> > invalid to the new rules.
+> > The receiver wallet chooses what address/script to accept coins on.
+> > They'll upgrade to the new softfork rules before creating an address
+> > that depends on the softfork's features.
+> > So, not a problem.
+> Mallory wants to defraud Bob with a 1 BTC payment for some beer. Bob
+> runs the old rules. Bob creates a p2pkh address for Mallory to
+> use. Mallory takes 1 BTC, and creates an invalid SegWit transaction
+> that Bob cannot properly validate and that pays into one of Mallory's
+> wallets. [...]
+> Clueless Carol is one of the 4.9% of miners who forgot to upgrade
+> her mining node. Carol sees that Mallory included an enormous fee in
+> his transactions, so Carol makes sure to include both transactions in
+> her block.
+
+For it to be a "safe" soft fork, the "invalid segwit transaction" should
+look non-standard to Carol, and as such she should refuse to mine it.
+
+I think the attack has to go like this:
+
+ * segwit activates; 5% of miners fail to upgrade however
+
+ * Mallory creates a transaction paying to a segwit script
+   (ie scriptPubKey is just a 33 byte push) [0]
+
+ * non-upgraded nodes and miners will refuse to forward or mine
+   this transaction (a non-p2sh scriptPubKey that just pushes data is
+   non-standard) but the upgraded nodes and miners will forward and mine
+   it. it will be included in the blockchain by upgraded miners fairly
+   soon, and will then be in the UTXO set of non-upgraded miners and
+   nodes too.
+
+ * Mallory creates a segwit-invalid spend back to himself (or directly
+   to Bob for the 1BTC), ie provides empty scriptSig, but no
+   witness data. Upgraded miners and nodes reject the transaction,
+   but non-upgraded nodes will relay and mine it afaics.
+
+I *think* that transaction will fail the AreInputsStandard() test on
+non-upgraded nodes, and thus still won't be accepted to the mempool
+or mined by non-upgraded nodes, and thus no one will see it, or any
+descendent transactions. (Upgraded nodes will reject it because it's
+segwit invalid, of course)
+
+If it is accepted by some old nodes, that transaction won't ever get many
+confirmations -- if Carol mines it, her block will be orphaned by the
+upgraded mining majority after the next two or three blocks are found.
+With only 5% of hashpower, it will take around three hours for Carol
+and friends to find a block in general.
+
+Also, the fact that segwit outputs are "anyone can spend" maybe mitigates
+this further -- you could have a vigilante node that creates invalid
+segwit txns for every segwit output that just spends the entire thing
+to fees. Even if the vigilante's transactions get rejected by nodes who
+see Mallory's attempt first, that should still be enough to trigger any
+sort of double-spend alerts I can think of, at least if anyone at all
+is altruistic enough to run a vigilante node like that in the first place.
+
+> Mallory gets free beer.
+> Anything I'm missing?
+
+So I think the only way Mallory gets free beer from you with segwit
+soft-fork is if:
+
+ - you're running out of date software and you're ignoring warnings to
+   upgrade (block versions have bumped)
+ - you've turned off standardness checks
+ - you're accepting low-confirmation transactions
+ - you're not using any double-spend detection service
+
+If you're not accepting zero-confirmation transactions straight from
+the mempool, (ie you require 1 or 2 confirmations) you also need:
+
+ - some non-upgraded miners who have turned off standardness checks
+ - your business is setup that an attacker can happily wait hours for
+   the transaction to be included in a block before trying to get beer
+   from you
+
+In general (IMO), just leaving standardness checks turned on (and waiting
+for 6 confirmations before accepting any non-standard transaction) should
+be enough to keep you safe from any attack a soft-fork might enable.
+
+Upgrading your software regularly should also be enough to keep you safe
+for any soft-fork, and also for any hard-fork, obviously.
+
+Cheers,
+aj
+
+[0] Actually, for this attack Mallory could use *any* segwit payment, it
+    doesn't have to be his bitcoins to start with, he just has to make
+    it look like they finish up with him, which is trivial if segwit
+    looks like anyone can spend. Having it be his segwit payment in the
+    first place makes it a little easier to ensure his payment is seen
+    as the original and not the doublespend though.
+
