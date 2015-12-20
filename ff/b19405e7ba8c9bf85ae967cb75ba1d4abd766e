@@ -1,0 +1,231 @@
+From: joe2015@openmailbox.org (joe2015 at openmailbox.org)
+Date: Sun, 20 Dec 2015 18:56:33 +0800
+Subject: [bitcoin-dev] Increasing the blocksize as a (generalized) softfork.
+Message-ID: <1bf64a5b514d57ca37744ae5f5238149@openmailbox.org>
+
+This is a draft.
+
+--joe
+
+Introduction
+============
+
+It is generally assumed that increasing the blocksize limit requires a
+hardfork.  Instead we show that a increasing the limit can be achieved 
+using a
+"generalized" softfork.  Like standard softforks, generalized softforks 
+need a
+mere miner majority (>50% hashpower) rather than global consensus.
+
+Standard Softforks
+==================
+
+After a softfork two potential chains exist:
+
+* The new chain B3,B4,B5,... valid under the new rules and old rules.
+* The old chain B3',B4',B5',... valid under the old rules only.
+
+E.g.
+
+                       +-- B3 --- B4 --- B5
+                       |
+     ... -- B1 -- B2 --+
+                       |
+                       +-- B3' -- B4' -- B5' -- B6'
+
+Assuming that >50% of the hashpower follow the new rules, the old chain 
+is
+doomed to be orphaned:
+
+                       +-- B3 --- B4 --- B5 --- B6 --- B7 --- B8 --- ...
+                       |
+     ... -- B1 -- B2 --+
+                       |
+                       +-- B3' -- B4' -- B5' -- B6' (orphaned)
+
+Hardforks may result in two chains that can co-exist indefinitely:
+
+                       +-- B3 --- B4 --- B5 --- B6 --- B7 --- B8 --- ...
+                       |
+     ... -- B1 -- B2 --+
+                       |
+                       +-- B3' -- B4' -- B5' -- B6' -- B7' -- B8' -- ...
+
+Generalized Softforks
+=====================
+
+A *generalized* softfork introduces a transform function f(B)=B' that 
+maps a
+block B valid under the new rules to a block B' valid under the old 
+rules.
+
+After a generalized softfork three chains may exist:
+
+* The new chain B3,B4,B5,... valid under the new rules only.
+* The mapped chain f(B3),f(B4),f(B5),... valid under the old rules.
+* The old chain B3',B4',B5',... valid under the old rules only.
+
+E.g.
+
+                       +-- B3 ---- B4 ---- B5
+                       |
+     ... -- B1 -- B2 --+-- f(B3) - f(B4) - f(B5)
+                       |
+                       +-- B3' --- B4' --- B5' --- B6'
+
+This is "generalized" softfork since defining f(B)=B (identity function)
+reduces to the standard softfork case above.
+
+As with standard softforks, if the majority of the hashpower follow the 
+new
+rules then the old chain B3',B4',B5',... is doomed to be orphaned:
+
+                       +-- B3 ---- B4 ---- B5 ---- B6 ---- B7 ---- ...
+                       |
+     ... -- B1 -- B2 --+-- f(B3) - f(B4) - f(B5) - f(B6) - f(B7) - ...
+                       |
+                       +-- B3' --- B4' --- B5' --- B6' (orphaned)
+
+Example:
+--------
+
+Segregated Witness can be thought of as an example of a generalized 
+softfork.
+Here the new block format consists of the combined old block and witness 
+data.
+The function f() simply strips the witness data to reveal a valid block 
+under
+the old rules:
+
+     NewBlock := OldBlock ++ Witness
+     f(NewBlock) = OldBlock
+
+An Arbitrary Block-size Increase Via a Generalized Softfork
+===========================================================
+
+Segregated Witness only allows for a modest effective blocksize increase
+(although there can be other motivations for SW, but that is off-topic).
+
+Instead we engineer a generalized softfork that allows an arbitrarily 
+increase
+of the blocksize limit.  The proposal consists of two parts: (a) new 
+rules for
+valid blocks, and (b) a transformation function f().
+
+The new block rules are very similar to the old block rules but with 
+some
+small changes.  In summary the changes are:
+
+* The MAX_BLOCK_SIZE limit is raised to some new limit
+   (e.g. 8Mb, BIP101, 2-4-8, BIP202, etc., or some other limit)
+* The MerkleRoot field in the header has been re-interpreted.
+* The CoinBaseTx must obey some additional new rules.
+
+As with old blocks, a block under the new rules consists of a block 
+header
+followed by a vector of transactions [CoinBaseTx, Tx1, .., Txn], i.e.
+
+     NewBlock := BlockHeader ++ NumTx ++ CoinBaseTx ++ Tx1 ++ .. ++ Txn
+
+The block header format is the same as under the old rules defined as 
+follows:
+
+     
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     |  Ver  |                        PrevHash                            
+    |
+     
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     |                           MerkleRoot                          | 
+Time  |
+     
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     | Bits  | Nonce |
+     +-+-+-+-+-+-+-+-+
+
+Under the old rules MerkleRoot is the Merkle root of the hashes of all
+transactions included in the block, i.e.
+
+     MerkleRoot = merkleRoot([hash(CoinBaseTx), hash(Tx1), .., 
+hash(Txn)])
+
+Under the new rules we instead define:
+
+     MerkleRoot = merkleRoot([hash(CoinBaseTx)])
+
+That is, under the new rules, MerkleRoot is the Merkle root of a 
+singleton
+vector containing the CoinBaseTx hash only.
+
+In order to preserve the security properties of Bitcoin we additionally
+require that the CoinBaseTx somehow encodes the Merkle root of the 
+remaining
+transactions [Tx1, .., Txn].  For example, this could be achieved by 
+requiring
+a mandatory OP_RETURN output that encodes this information, e.g.
+
+     OP_RETURN merkleRoot([hash(Tx1), .., hash(Txn)])
+
+Alternatively the Merkle root could be encoded in the coinbase itself.  
+This
+ensures that new transactions cannot be added/deleted from the block 
+without
+altering the MerkleRoot field in the header.
+
+Aside from these changes and the increased MAX_BLOCK_SIZE, the new block 
+must
+obey all the rules of the old block format, e.g. valid PoW, have valid 
+block
+reward, contain valid transactions, etc., etc.
+
+In order to be a generalized softfork we also need to define a mapping 
+f()
+from valid new blocks to valid blocks under the old rules.  We can 
+define this
+as follows:
+
+     NewBlock    := BlockHeader ++ NumTx ++ CoinBaseTx ++ Tx1 ++ .. ++ 
+Txn
+     f(NewBlock) := BlockHeader ++ 1 ++ CoinBaseTx
+
+That is, function f() simply truncates the block so that it contains the
+coinbase transaction only.  After truncation, the MerkleRoot field of 
+the
+block header is valid under the old rules.
+
+The proposed new rules combined with the transformation f() comprise a
+generalized softfork.  After the fork a new chain B3,B4,B5,... will be
+generated under the new rules defined above, including an increased 
+blocksize
+limit.  This new chain can be mapped to a valid chain 
+f(B3),f(B4),f(B5),...
+under the old rules.  Assuming that >50% of the hashpower has adopted 
+the new
+rules, the mapped chain will orphan any competing chain under the old 
+rules,
+just like a standard softfork.
+
+An interesting consequence of this design is that, since all mapped 
+blocks are
+empty, old clients will never see transactions confirming.  This is be a
+strong incentive for users to update their clients.
+
+Conclusion
+==========
+
+Conventional wisdoms suggests that increasing the blocksize limit 
+requires a
+hardfork.  We show that it can instead be achieved using a generalized
+softfork.  Like with a standard softfork, a generalized softfork merely
+requires a majority (>50%) of hash power rather than global consensus.
+Experience has shown that the former is significantly easier to achieve.
+
+Future Work
+-----------
+
+Investigate other kinds of hardforks that can instead be implemented as
+generalized softforks, and the security implications of such...
+
+7943a2934d0be2f96589fdef2b2e00a2a7d8c3b782546bb37625d1669accb9b1
+72f018588572ca2786168cb531d10e79b81b86d3fada92298225a0f950eed3a5
+
