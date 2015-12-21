@@ -1,0 +1,90 @@
+From: jl2012@xbt.hk (jl2012)
+Date: Mon, 21 Dec 2015 00:14:12 -0500
+Subject: [bitcoin-dev] =?utf-8?q?A_new_payment_address_format_for_segregat?=
+ =?utf-8?q?ed_witness_or_not=3F?=
+Message-ID: <537b176b25a681255eee5f6c4268ab6e@xbt.hk>
+
+On the -dev IRC I asked the same question and people seem don't like it. 
+I would like to further elaborate this topic and would like to consult 
+merchants, exchanges, wallet devs, and users for their preference
+
+Background:
+
+People will be able to use segregated witness in 2 forms. They either 
+put the witness program directly as the scriptPubKey, or hide the 
+witness program in a P2SH address. They are referred as "native SW" and 
+"SW in P2SH" respectively
+
+Examples could be found in the draft BIP: 
+https://github.com/jl2012/bips/blob/segwit/bip-segwit.mediawiki
+
+As a tx malleability fix, native SW and SW in P2SH are equally good.
+
+The SW in P2SH is better in terms of:
+1. It allows payment from any Bitcoin reference client since version 
+0.6.0.
+2. Slightly better privacy by obscuration since people won't know 
+whether it is a traditional P2SH or a SW tx before it is spent. I don't 
+consider this is important since the type of tx will be revealed 
+eventually, and is irrelevant when native SW is more popular
+
+The SW in P2SH is worse in terms of:
+1. It requires an additional push in scriptSig, which is not prunable in 
+transmission, and is counted as part of the core block size
+2. It requires an additional HASH160 operation than native SW
+3. It provides 160bit security, while native SW provides 256bit
+4. Since it is less efficient, the tx fee is likely to be higher than 
+native SW (but still lower than non-SW tx)
+---------------------------
+
+The question: should we have a new payment address format for native SW?
+
+The native SW address in my mind is basically same as existing P2PKH and 
+P2SH addresses:
+
+BASE58(address_version|witness_program|checksum) , where checksum is the 
+first 4 bytes of dSHA256(address_version|witness_program)
+
+Why not a better checksum algorithm? Reusing the existing algorithm make 
+the implementation much easier and safe.
+
+Pros for native SW address:
+1. Many people and services are still using BASE58 address
+2. Promote the use of native SW which allows lower fee, instead of the 
+less efficient SW in P2SH
+3. Not all wallets and services support payment protocol (BIP70)
+4. Easy for wallets to implement
+5. Even if a wallet wants to only implement SW in P2SH, they need a new 
+wallet format anyway. So there is not much exta cost to introduce a new 
+address format.
+6. Since SW is very flexible, this is very likely to be the last address 
+format to define.
+
+Cons for native SW address:
+1. Addresses are bad and should not be used anymore (some arguments 
+could be found in BIP13)
+2. Payment protocol is better
+3. With SW in P2SH, it is not necessary to have a new address format
+4. Depends on the length of the witness program, the address length 
+could be a double of the existing address
+5. Old wallets won't be able to pay to a new address (but no money could 
+be lost this way)
+
+------------------------------
+
+So I'd like to suggest 2 proposals:
+
+Proposal 1:
+
+To define a native SW address format, while people can still use payment 
+protocol or SW in P2SH if the want
+
+Proposal 2:
+
+No new address format is defined. If people want to pay as lowest fee as 
+possible, they must use payment protocol. Otherwise, they may use SW in 
+P2SH
+
+Since this topic is more relevant to user experience, in addition to 
+core devs, I would also like to consult merchants, exchanges, wallet 
+devs, and users for their preferences.
