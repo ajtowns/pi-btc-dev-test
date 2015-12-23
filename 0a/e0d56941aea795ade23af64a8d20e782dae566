@@ -1,0 +1,193 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 22 Dec 2015 17:31:19 -0800
+Subject: [bitcoin-dev] Segregated witnesses and validationless mining
+Message-ID: <20151223013119.GA31113@muck>
+
+# Summary
+
+1) Segregated witnesses separates transaction information about what
+coins were transferred from the information proving those transfers were
+legitimate.
+
+2) In its current form, segregated witnesses makes validationless mining
+easier and more profitable than the status quo, particularly as
+transaction fees increase in relevance.
+
+3) This can be easily fixed by changing the protocol to make having a
+copy of the previous block's (witness) data a precondition to creating a
+block.
+
+
+# Background
+
+## Why should a miner publish the blocks they find?
+
+Suppose Alice has negligible hashing power. She finds a block. Should
+she publish that block to the rest of the hashing power? Yes! If she
+doesn't publish, the rest of the hashing power will build a longer chain
+than her chain, and she won't be rewarded. Right?
+
+Well, can other miners build on top of Alice's block? If she publishes
+nothing at all, the answer is certainely no - block headers commit to
+the previous block's hash, so without knowing at least the hash of
+Alice's block other miners can't build upon it.
+
+
+## Validationless mining
+
+Suppose Bob knows the hash of Alice's new block, as well as the height
+of it. This is sufficient information for Bob to create a new, valid,
+block building upon Alice's block. The hash is needed because of the
+prevhash field in the block header; the height is needed because the
+coinbase has to contain the block height. (technically he needs to know
+nTime as well to be 100% sure he's satisfying the median time rule) What
+Bob is doing is validationless mining: he hasn't validated Alice's
+block, and is assuming it is valid.
+
+If Alice runs a pool her stratum or getblocktemplate interfaces give
+sufficient information for Bob to figure all this out. Miners today take
+advantage of this to reduce their orphan rates - the sooner you can
+start mining on top of the most recently found block the more money you
+earn. Pools have strong incentives to only publish work that's valid to
+their hashers, so as long as the target pool doesn't know who you are,
+you have high assurance that the block hash you're building upon is
+real.
+
+Of course, when this goes wrong it goes very wrong, greatly amplifying
+the effect of 51% attacks and technical screwups, as seen by the July
+4th 2015 chain fork, where a majority of hashing power was building on
+top of an invalid block.
+
+
+## Transactions
+
+However other than coinbase transactions, validationless mined blocks
+are nearly always empty: if Bob doesn't know what transactions Alice
+included in her block, he doesn't know what transaction outputs are
+still unspent and can't safely include transactions in his block. In
+short, Bob doesn't know what the current state of the UTXO set is. This
+helps limit the danger of validationless mining by making it visible to
+everyone, as well as making it not as profitable due to the inability to
+collect transaction fees. (among other reasons)
+
+
+# Segregated witnesses and validationless mining
+
+With segregated witnesses the information required to update the UTXO
+set state is now separate from the information required to prove that
+the new state is valid. We can fully expect miners to take advantage of
+this to reduce latency and thus improve their profitability.
+
+We can expect block relaying with segregated witnesses to separate block
+propagation into four different parts, from fastest to propagate to
+slowest:
+
+1) Stratum/getblocktemplate - status quo between semi-trusting miners
+
+2) Block header - bare minimum information needed to build upon a block.
+Not much trust required as creating an invalid header is expensive.
+
+3) Block w/o witness data - significant bandwidth savings, (~75%) and
+allows next miner to include transactions as normal. Again, not much
+trust required as creating an invalid header is expensive.
+
+4) Witness data - proves that block is actually valid.
+
+The problem is #4 is optional: the only case where not having the
+witness data matters is when an invalid block is created, which is a
+very rare event. It's also difficult to test in production, as creating
+invalid blocks is extremely expensive - it would be surprising if an
+anyone had ever deliberately created an invalid block meeting the
+current difficulty target in the past year or two.
+
+
+# The nightmare scenario - never tested code ~never works
+
+The obvious implementation of highly optimised mining with segregated
+witnesses will have the main codepath that creates blocks do no
+validation at all; if the current ecosystem's validationless mining is
+any indication the actual code doing this will be proprietary codebases
+written on a budget with little testing, and lots of bugs. At best the
+codepaths that actually do validation will be rarely, if ever, tested in
+production.
+
+Secondly, as the UTXO set can be updated without the witness data, it
+would not be surprising if at least some of the wallet ecosystem skips
+witness validation.
+
+With that in mind, what happens in the event of a validation failure?
+Mining could continue indefinitely on an invalid chain, producing blocks
+that in isolation appear totally normal and contain apparently valid
+transactions. It's easy to imagine this happening from an engineering
+perspective: a simple implementation would be to have the main mining
+codepaths be a separate, not-validating, process that receives "invalid
+block" notifications from another process containing a validating
+implementation of the Bitcoin protocol. If a bug/exploit is found that
+causes that validation process to crash, what's to guarantee that the
+block creation codepath will even notice? Quite likely it will continue
+creating blocks unabated - the invalid block notification codepath is
+never tested in production.
+
+
+# Easy solution: previous witness data proof
+
+To return segregated witnesses to the status quo, we need to at least
+make having the previous block's witness data be a precondition to
+creating a block with transactions; ideally we would make it a
+precondition to making any valid block, although going this far may
+receive pushback from miners who are currently using validationless
+mining techniques.
+
+We can require blocks to include the previous witness data, hashed with
+a different hash function that the commitment in the previous block.
+With witness data W, and H(W) the witness commitment in the previous
+block, require the current block to include H'(W)
+
+A possible concrete implementation would be to compute the hash of the
+current block's coinbase txouts (unique per miner for obvious reasons!)
+as well as the previous block hash. Then recompute the previous block's
+witness data merkle tree (and optionally, transaction data merkle tree)
+with that hash prepended to the serialized data for each witness.
+
+This calculation can only be done by a trusted entity with access to all
+witness data from the previous block, forcing miners to both publish
+their witness data promptly, as well as at least obtain witness data
+from other miners. (if not actually validate it!) This returns us to at
+least the status quo, if not slightly better.
+
+This solution is a soft-fork. As the calculation is only done once per
+block, it is *not* a change to the PoW algorithm and is thus compatible
+with existing miner/hasher setups. (modulo validationless mining
+optimizations, which are no longer possible)
+
+
+# Proofs of non-inflation vs. proofs of non-theft
+
+Currently full nodes can easily verify both that inflation of the
+currency has no occured, as well as verify that theft of coins through
+invalid scriptSigs has not occured. (though as an optimisation currently
+scriptSig's prior to checkpoints are not validated by default in Bitcoin
+Core)
+
+It has been proposed that with segregated witnesses old witness data
+will be discarded entirely. This makes it impossible to know if miner
+theft has occured in the past; as a practical matter due to the
+significant amount of lost coins this also makes it possible to inflate
+the currency.
+
+How to fix this problem is an open question; it may be sufficient have
+the previous witness data proof solution above require proving posession
+of not just the n-1 block, but a (random?) selection of other previous
+blocks as well. Adding this to the protocol could be done as soft-fork
+with respect to the above previous witness data proof.
+
+-- 
+'peter'[:-1]@petertodd.org
+000000000000000002c7cfc8455339de54444ac9798cad32cbfbcda77e0f2b09
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151222/6792b37a/attachment.sig>
