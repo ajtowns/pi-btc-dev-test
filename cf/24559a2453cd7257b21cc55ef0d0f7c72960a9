@@ -1,0 +1,88 @@
+From: elombrozo@gmail.com (Eric Lombrozo)
+Date: Sat, 26 Dec 2015 08:23:38 +0000
+Subject: [bitcoin-dev] We need to fix the block withholding attack
+In-Reply-To: <20151220132842.GA25481@muck>
+Message-ID: <ema8a70574-c28e-4c43-a1e3-5f2f4df7d3a2@platinum>
+
+Peter Todd wrote:
+  Fixing block withholding is relatively simple, but (so far) requires a
+SPV-visible hardfork. (Luke-Jr's two-stage target mechanism) We should
+do this hard-fork in conjunction with any blocksize increase, which will
+have the desirable side effect of clearly show consent by the entire
+ecosystem, SPV clients included.
+
+I think we can generalize this and argue that it is impossible fix this 
+without reducing the visible difficulty and blinding the hasher to an 
+invisible difficulty. Unfortunately, changing the retargeting algo to 
+compute lower visible difficulty (leaving all else the same) or 
+interpreting the bits field in a way that yields a lower visible 
+difficulty is a hard fork by definition - blocks that didn't meet the 
+visible difficulty requirement before will now meet it.
+
+jl2012 wrote:
+>After the meeting I find a softfork solution. It is very inefficient 
+>and I am leaving it here just for record.
+>
+>1. In the first output of the second transaction of a block, mining 
+>pool will commit a random nonce with an OP_RETURN.
+>
+>2. Mine as normal. When a block is found, the hash is concatenated with 
+>the committed random nonce and hashed.
+>
+>3. The resulting hash must be smaller than 2 ^ (256 - 1/64) or the 
+>block is invalid. That means about 1% of blocks are discarded.
+>
+>4. For each difficulty retarget, the secondary target is decreased by 2 
+>^ 1/64.
+>
+>5. After 546096 blocks or 10 years, the secondary target becomes 2 ^ 
+>252. Therefore only 1 in 16 hash returned by hasher is really valid. 
+>This should make the detection of block withholding attack much easier.
+>
+>All miners have to sacrifice 1% reward for 10 years. Confirmation will 
+>also be 1% slower than it should be.
+>
+>If a node (full or SPV) is not updated, it becomes more vulnerable as 
+>an attacker could mine a chain much faster without following the new 
+>rules. But this is still a softfork, by definition.
+jl2012's key discovery here is that if we add an invisible difficulty 
+while keeping the retarget algo and bits semantics the same, the visible 
+difficulty will decrease automatically to compensate. In other words, we 
+can artificially increase the block time interval, allowing us to force 
+a lower visible difficulty at the next retarget without changing the 
+retarget algo nor the bits semantics. There are no other free parameters 
+we can tweak, so it seems this is really the best we can do.
+
+Unfortunately, this also means longer confirmation times, lower 
+throughput, and lower miner revenue. Note, however, that confirmations 
+would (on average) represent more PoW, so fewer confirmations would be 
+required to achieve the same level of security.
+
+We can compensate for lower throughput and lower miner revenue by 
+increasing block size and increasing block rewards. Interestingly, it 
+turns out we *can* do these things with soft forks by embedding new 
+structures into blocks and nesting their hash trees into existing 
+structures. Ideas such as extension blocks 
+[https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-May/008356.html] 
+have been proposed before...but they add significant complications to 
+the protocol and require nontrivial app migration efforts. Old nodes 
+would not get forked off the network but backwards compatibility would 
+still be a problem as they would not be able to see at least some of the 
+transactions and some of the bitcoins in blocks. But if we're willing to 
+accept this, even the "sacred" 21 million asymptotic limit can be raised 
+via soft fork!
+
+So in conclusion, it *is* possible to fix this attack with a soft fork 
+and without altering the basic economics...but it's almost surely a lot 
+more trouble than it's worth. Luke-Jr's solution is far simpler and more 
+elegant and is perhaps one of the few examples of a new feature (as 
+opposed to merely a structure cleanup) that would be better to deploy as 
+a hard fork since it's simple to implement and seems to stand a 
+reasonable chance of near universal support...and soft fork alternatives 
+are very, very ugly and significantly impact system usability...and I 
+think theory tells us we can't do any better.
+
+- Eric
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20151226/5d48d72e/attachment-0001.html>
