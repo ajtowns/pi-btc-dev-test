@@ -1,0 +1,160 @@
+From: dscotese@litmocracy.com (Dave Scotese)
+Date: Thu, 7 Jan 2016 12:56:33 -0800
+Subject: [bitcoin-dev] Time to worry about 80-bit collision attacks or
+	not?
+In-Reply-To: <CALqxMTHjvFT2aCBYDEiG-6F5qvsXK57_LR6ttpPb3xUG2i443w@mail.gmail.com>
+References: <CABsx9T3aTme2EQATamGGzeqNqJkUcPGa=0LVidJSRYNznM-myQ@mail.gmail.com>
+	<CALqxMTHjvFT2aCBYDEiG-6F5qvsXK57_LR6ttpPb3xUG2i443w@mail.gmail.com>
+Message-ID: <CAGLBAhczEceqDp6XPSVLJ0FuTcmZgYkVnUE4rspb3JdeHnZJUg@mail.gmail.com>
+
+Maybe I'm being dense, but I don't see why 2**80 storage is required for
+this attack.  Also, I don't see why the attacker ever needs to get the
+victim to accept "arbitrary_data".  Perhaps I'm wrong about how the
+collision attack works:
+
+   1. Create a script which is perfectly acceptable and would pass the
+   sniff test Gavin proposed (no arbitrary_data).
+   2. Set off CPU power to construct a second script that lets attacker
+   keep his coins and has the same hash. (This is where you get
+   "arbitrary_data").
+   3. Send a transaction with the first script to the seller as payment.
+   4. Wait for the transaction to be included in a block.
+   5. Redeem the transaction with the second script, thus stealing the
+   coins back.
+
+So the seller would never see the I'd appreciate any correction to my
+understanding here.  Where do you need 2**80 storage?  And when does the
+seller have to accept "arbitrary_data"?
+Thanks!
+
+On Thu, Jan 7, 2016 at 11:19 AM, Adam Back via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> You could say 256 bit ECDSA is overkill lets go to 160 equivalently.
+> Saves even more bytes.
+>
+> The problem with arguing down is where to stop.
+>
+> As Matt said these things dont degrade gracefully so a best practice
+> is to aim for a bit of extra margin.
+>
+> 256-bit is quite common at this point since AES, SHA256 etc even in
+> things with much less at stake than Bitcoin.
+>
+> You could send the compressed (unhashed) pubkey then there's no hash
+> (and omit it from the sig).  Greg had mentioned that in the past.
+>
+> I think it might be possible to do both (reclaim the hash bits in the
+> serialisation of the pub key).
+>
+> Adam
+>
+> On 7 January 2016 at 20:02, Gavin Andresen via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > I'm hoisting this from some private feedback I sent on the segregated
+> > witness BIP:
+> >
+> > I said:
+> >
+> > "I'd also use RIPEMD160(SHA256()) as the hash function and save the 12
+> > bytes-- a successful preimage attack against that ain't gonna happen
+> before
+> > we're all dead. I'm probably being dense, but I just don't see how a
+> > collision attack is relevant here."
+> >
+> > Pieter responded:
+> >
+> > "The problem case is where someone in a contract setup shows you a
+> script,
+> > which you accept as being a payment to yourself. An attacker could use a
+> > collision attack to construct scripts with identical hashes, only one of
+> > which does have the property you want, and steal coins.
+> >
+> > So you really want collision security, and I don't think 80 bits is
+> > something we should encourage for that. Normal pubkey hashes don't have
+> that
+> > problem, as they can't be constructed to pay to you."
+> >
+> > ... but I'm unconvinced:
+> >
+> > "But it is trivial for contract wallets to protect against collision
+> > attacks-- if you give me a script that is "gavin_pubkey CHECKSIG
+> > arbitrary_data OP_DROP" with "I promise I'm not trying to rip you off,
+> just
+> > ignore that arbitrary data" a wallet can just refuse. Even more likely, a
+> > contract wallet won't even recognize that as a pay-to-gavin transaction.
+> >
+> > I suppose it could be looking for some form of "gavin_pubkey
+> > somebody_else_pubkey CHECKMULTISIG ... with the attacker using
+> > somebody_else_pubkey to force the collision, but, again, trivial contract
+> > protocol tweaks ("send along a proof you have the private key
+> corresponding
+> > to the public key" or "everybody pre-commits pubkeys they'll use at
+> protocol
+> > start") would protect against that.
+> >
+> > Adding an extra 12 bytes to every segwit to prevent an attack that takes
+> > 2^80 computation and 2^80 storage, is unlikely to be a problem in
+> practice,
+> > and is trivial to protect against is the wrong tradeoff to make."
+> >
+> > 20 bytes instead of 32 bytes is a savings of almost 40%, which is
+> > significant.
+> >
+> > The general question I'd like to raise on this list is:
+> >
+> > Should we be worried, today, about collision attacks against RIPEMD160
+> (our
+> > 160-bit hash)?
+> >
+> > Mounting a successful brute-force collision attack would require at least
+> > O(2^80) CPU, which is kinda-sorta feasible (Pieter pointed out that
+> Bitcoin
+> > POW has computed more SHA256 hashes than that). But it also requires
+> O(2^80)
+> > storage, which is utterly infeasible (there is something on the order of
+> > 2^35 bytes of storage in the entire world).  Even assuming doubling every
+> > single year (faster than Moore's Law), we're four decades away from an
+> > attacker with THE ENTIRE WORLD's storage capacity being able to mount a
+> > collision attack.
+> >
+> >
+> > References:
+> >
+> > https://en.wikipedia.org/wiki/Collision_attack
+> >
+> >
+> https://vsatglobalseriesblog.wordpress.com/2013/06/21/in-2013-the-amount-of-data-generated-worldwide-will-reach-four-zettabytes/
+> >
+> >
+> > --
+> > --
+> > Gavin Andresen
+> >
+> >
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+
+
+
+-- 
+I like to provide some work at no charge to prove my value. Do you need a
+techie?
+I own Litmocracy <http://www.litmocracy.com> and Meme Racing
+<http://www.memeracing.net> (in alpha).
+I'm the webmaster for The Voluntaryist <http://www.voluntaryist.com> which
+now accepts Bitcoin.
+I also code for The Dollar Vigilante <http://dollarvigilante.com/>.
+"He ought to find it more profitable to play by the rules" - Satoshi
+Nakamoto
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160107/b5c2e636/attachment.html>
