@@ -1,0 +1,116 @@
+From: eth3rs@gmail.com (Ethan Heilman)
+Date: Thu, 7 Jan 2016 17:56:38 -0500
+Subject: [bitcoin-dev] Time to worry about 80-bit collision attacks or
+	not?
+In-Reply-To: <CABsx9T0JX41bOQxjPg7QFUKGEwgFaCGFzR3ySbaqFwy4i28Hbg@mail.gmail.com>
+References: <CABsx9T3aTme2EQATamGGzeqNqJkUcPGa=0LVidJSRYNznM-myQ@mail.gmail.com>
+	<CALqxMTHjvFT2aCBYDEiG-6F5qvsXK57_LR6ttpPb3xUG2i443w@mail.gmail.com>
+	<CAGLBAhczEceqDp6XPSVLJ0FuTcmZgYkVnUE4rspb3JdeHnZJUg@mail.gmail.com>
+	<CABsx9T0JX41bOQxjPg7QFUKGEwgFaCGFzR3ySbaqFwy4i28Hbg@mail.gmail.com>
+Message-ID: <CAEM=y+VAmT5wRsDhUufPCDPB=U+h-MQ1+xY5uJqAAO8Xt6SaxA@mail.gmail.com>
+
+>Ethan:  your algorithm will find two arbitrary values that collide. That isn't useful as an attack in the context we're talking about here (both of those values will be useless as coin destinations with overwhelming probability).
+
+I'm not sure exactly the properties you want here and determining
+these properties is not an easy task, but the case is far worse than
+just two random values. For instance: (a). with a small modification
+my algorithm can also find collisions containing targeted substrings,
+(b). length extension attacks are possible with RIPEMD160.
+
+(a). targeted cycles:
+
+target1 = "str to prepend"
+target2 = "str to end with"
+
+seed = {0,1}^160
+x = hash(seed)
+
+for i in 2^80:
+....x = hash(target1||x||target2)
+x_final = x
+
+y = hash(tartget1||x_final||target2)
+
+for j in 2^80:
+....if y == x_final:
+........print "cycle len: "+j
+........break
+....y = hash(target1||y||target2)
+
+If a collision is found, the two colliding inputs must both start with
+"str to prepend" and end with the phrase "str to end with". As before
+this only requires 2^81.5 computations and no real memory. For an
+additional 2**80 an adversary has an good change of finding two
+different targeted substrings which collide. Consider the case where
+the attacker mixes the targeted strings with the hash output:
+
+hash("my name is=0x329482039483204324423"+x[1]+", my favorite number
+is="+x) where x[1] is the first bit of x.
+
+(b). length extension attacks
+
+Even if all the adversary can do is create two random values that
+collide, you can append substrings to the input and get collisions.
+Once you find two random values hash(x) = hash(y), you could use a
+length extension attack on RIPEMD-160 to find hash(x||z) = hash(y||z).
+
+Now the bitcoin wiki says:
+"The padding scheme is identical to MD4 using Merkle?Damg?rd
+strengthening to prevent length extension attacks."[1]
+
+Which is confusing to me because:
+
+1. MD4 is vulnerable to length extension attacks
+2. Merkle?Damg?rd strengthening does not protect against length
+extension: "Indeed, we already pointed out that none of the 64
+variants above can withstand the 'extension' attack on the MAC
+application, even with the Merkle-Damgard strengthening" [2]
+3. RIPEMD-160 is vulnerable to length extension attacks, is Bitcoin
+using a non-standard version of RIPEMD-160.
+
+RIPEMD160(SHA256()) does not protect against length extension attacks
+on SHA256, but should protect RIPEMD-160 against length extension
+attacks as RIPEMD-160 uses 512-bit message blocks. That being said we
+should be very careful here. Research has been done that shows that
+cascading the same hash function twice is weaker than using HMAC[3]. I
+can't find results on cascading RIPEMD160(SHA256()).
+
+RIPEMD160(SHA256()) seems better than RIPEMD160() though, but security
+should not rest on the notion that an attacker requires 2**80 memory,
+many targeted collision attacks can work without much memory.
+
+[1]: https://en.bitcoin.it/wiki/RIPEMD-160
+[2]: "Merkle-Damgard Revisited: How to Construct a Hash Function"
+https://www.cs.nyu.edu/~puniya/papers/merkle.pdf
+[3]: https://www.cs.nyu.edu/~dodis/ps/h-of-h.pdf
+
+On Thu, Jan 7, 2016 at 4:06 PM, Gavin Andresen via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Maybe I'm asking this question on the wrong mailing list:
+>
+> Matt/Adam: do you have some reason to think that RIPEMD160 will be broken
+> before SHA256?
+> And do you have some reason to think that they will be so broken that the
+> nested hash construction RIPEMD160(SHA256()) will be vulnerable?
+>
+> Adam: re: "where to stop"  :  I'm suggesting we stop exactly at the current
+> status quo, where we use RIPEMD160 for P2SH and P2PKH.
+>
+> Ethan:  your algorithm will find two arbitrary values that collide. That
+> isn't useful as an attack in the context we're talking about here (both of
+> those values will be useless as coin destinations with overwhelming
+> probability).
+>
+> Dave: you described a first preimage attack, which is 2**160 cpu time and no
+> storage.
+>
+>
+> --
+> --
+> Gavin Andresen
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
