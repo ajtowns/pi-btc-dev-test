@@ -1,0 +1,65 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Sat, 9 Jan 2016 01:33:29 +1000
+Subject: [bitcoin-dev] Time to worry about 80-bit collision attacks or
+ not?
+In-Reply-To: <CABsx9T1gmz=sr_sEEuy8BQU6SXdmi58O30rzRWNW=0Ej98fi4A@mail.gmail.com>
+References: <CABsx9T3aTme2EQATamGGzeqNqJkUcPGa=0LVidJSRYNznM-myQ@mail.gmail.com>
+	<CAPg+sBhH0MODjjp8Avx+Fy_UGqzMjUq_jn3vT3oH=u3711tsSA@mail.gmail.com>
+	<8760z4rbng.fsf@rustcorp.com.au>
+	<C4B5B9F1-9C53-45BC-9B30-F572C78096E3@mattcorallo.com>
+	<8737u8qnye.fsf@rustcorp.com.au>
+	<CABsx9T1gmz=sr_sEEuy8BQU6SXdmi58O30rzRWNW=0Ej98fi4A@mail.gmail.com>
+Message-ID: <20160108153329.GA15731@sapphire.erisian.com.au>
+
+On Fri, Jan 08, 2016 at 07:38:50AM -0500, Gavin Andresen via bitcoin-dev wrote:
+> Lets see if I've followed the specifics of the collision attack correctly,
+> Ethan (or somebody) please let me know if I'm missing something:
+> 
+> So attacker is in the middle of establishing a payment channel with
+> somebody. Victim gives their public key, attacker creates the innocent
+> fund-locking script  '2 V A 2 CHECKMULTISIG' (V is victim's public key, A
+> is attacker's) but doesn't give it to the victim yet.
+
+Using Ethan Heilman's procedure, the attacker can create two scripts:
+
+  2 V __A1__ 2 CHECKMULTISIG
+
+  2 V __A2__ 2 CHECKMULTISIG
+
+and find values A1 and A2 which hash the scripts to the same result
+with under 3*2**80 work. I think you can do that by setting the next
+private key as the result of RIPEMD(SHA256(script with pubkey)), so you
+could still spend either. But it doesn't change the script, so it's not
+*that* helpful -- you've just got two different keys you can use.
+
+Ah, but you can make the form of the script be a function of your key, so:
+
+  if privkey % 2 == 0:
+    script = "2 V %s 2 CHECKMULTISIG" % (pubkey)
+  else:
+    script = "%s CHECKSIG" % (pubkey)
+  hash = ripemd160(sha256(script))
+
+  nextprivkey = hash
+
+Then you have a 50% chance of your cycle giving you a matching hash for
+one script with A1 and the other script with A2, and you can find the
+cycle with under 3*2**80 work. Doing five attempts should give you ~96%
+chance of hitting a usable pair, and should take under 15*2**80 work ~=
+2**84 work, with trivial memory use.
+
+Trying that in python with a vastly weakened hash function (namely,
+the first five bytes of ripemd160(sha256()), with 40 bits of security
+and 3*2**20 work) works as expected -- I got a "useful" collision on my
+second try in about 7 seconds, seeding with "grumpycat3" ("grumpycat2"
+didn't work) with the result being:
+
+ hexlify(ripemd160(sha256("foo%sbar"%unhexlify("86f9fbac1a")))[:5])
+ 'ae94d9f908'
+
+ hexlify(ripemd160(sha256("baz%squux"%unhexlify("104fc5093f")))[:5])
+ 'ae94d9f908'
+
+Cheers,
+aj
+
