@@ -1,0 +1,168 @@
+From: adam@cypherspace.org (Adam Back)
+Date: Fri, 8 Jan 2016 16:26:50 +0100
+Subject: [bitcoin-dev] Time to worry about 80-bit collision attacks or
+	not?
+In-Reply-To: <CACsn0cmE-c3MCAegH6QaFfDg6NDgNy7tKbczsxtQvkWBnLYJgw@mail.gmail.com>
+References: <CABsx9T3aTme2EQATamGGzeqNqJkUcPGa=0LVidJSRYNznM-myQ@mail.gmail.com>
+	<CAPg+sBhH0MODjjp8Avx+Fy_UGqzMjUq_jn3vT3oH=u3711tsSA@mail.gmail.com>
+	<8760z4rbng.fsf@rustcorp.com.au>
+	<C4B5B9F1-9C53-45BC-9B30-F572C78096E3@mattcorallo.com>
+	<8737u8qnye.fsf@rustcorp.com.au>
+	<CABsx9T1gmz=sr_sEEuy8BQU6SXdmi58O30rzRWNW=0Ej98fi4A@mail.gmail.com>
+	<CACsn0cmE-c3MCAegH6QaFfDg6NDgNy7tKbczsxtQvkWBnLYJgw@mail.gmail.com>
+Message-ID: <CALqxMTHHh81Rkd274_XepXuZY-r_6Us+0FYrg9_Uupi0R9yVUw@mail.gmail.com>
+
+Tricky choice. On the one hand I had spotted this too before and maybe
+one or two more exceptions to bitcoin's 128-bit security target and
+been vaguely tut-tutting about them in the background.  It's kind of a
+violation of crypto rule of thumb that you want to balance things and
+not have odd weak points as Watson was implying, it puts you closer to
+the margin if there is a slip or other problem so you have an
+imbalanced crypto format.
+
+On the other hand it's not currently a problem as such and it's less
+change and slightly more compact.
+
+RIPEMD probably is less well reviewed than SHA2.  However SHA1 has
+problems, and SHA2 is a bigger SHA1 basically so, hence the NIST
+motivation for SHA3 designed to fix the design flaw in SHA1 (and SHA2
+in principle).
+
+So then if we agree with this rule of thumb (and not doing so would
+fly against best practices which we probably shouldnt look to do in
+such a security focussed domain) then what this discussion is more
+about is when is a good time to write down tech debt.
+
+I think that comes to segregated-witness itself which writes down a
+tidily organised by lines of code robust fix to a bunch of long
+standing problems.
+
+Doing a 2MB hard-fork in comparison fixes nothing really.  Leaving
+known issues to bake in for another N years eventually builds up on
+you (not even in security just in software engineering) as another
+rule of thumb.  I mean if we dont fix it now that we are making a
+change that connects, when will we?
+
+In software projects I ran we always disguised the cost of tech-debt
+as non-negotiable baked into our estimates without a line item to
+escape the PHB syndrome of haggling for features instead of tech debt
+(which is _never_ a good idea:)
+
+Pragmatism vs refactoring as you go.
+
+But for scale I think segregated-witness does offer the intriguing
+next step of being able to do 2 of 2, 3 of 3 and N of N which give
+size of one sig multisig (indistinguishable even for privacy) as well
+as K of N key tree sigs, which are also significantly more compact.
+
+There was also the other thing I mentioned further up the thread that
+if we want to take an approach of living with little bit of bloat from
+getting back to a universal 128-bit target, there are still some
+fixable bloat things going on:
+a) sending pubKey in the signature vs recovery (modulo interference
+with Schnorr batch verify compatibility*);
+b) using the PubKey instead of PKH in the ScriptPubKey, though that
+loses the nice property of of not having the key to do DL attacks on
+until the signed transaction is broadcast;
+c) I think there might be a way to combine hash & PubKey to keep the
+delayed PubKey publication property and yet still save the bloat of
+having both.
+
+* I did suggest to Pieter that you could let the miner decide to forgo
+Schnorr batch verifiability to get compaction from recovery - the pub
+key could be optionally elided from the scriptSig serialisation by the
+miner.
+
+The other thing we could consider is variable sized hashes (& a few
+pubkey size choices) that is software complexity however.  We might be
+better of focussing on the bigger picture like IBLT/weak-blocks and
+bigger wins like MAST, multiSig Schnorr & key tree sigs.
+
+Didnt get time to muse on c) but a nice crypto question for someone :)
+
+Another thing to note is combining has been known to be fragile to bad
+interactions or unexpected behaviours.  This paper talks about things
+tradeoffs and weaknesses in hash combiners.
+http://tuprints.ulb.tu-darmstadt.de/2094/1/thesis.lehmann.pdf
+
+Weak concept NACK I think for losing a cleanup opportunity to store it
+up for the future when there is a reasonable opportunity to fix it?
+
+Adam
+
+
+On 8 January 2016 at 15:34, Watson Ladd via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> On Fri, Jan 8, 2016 at 4:38 AM, Gavin Andresen via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> On Fri, Jan 8, 2016 at 7:02 AM, Rusty Russell <rusty at rustcorp.com.au> wrote:
+>>>
+>>> Matt Corallo <lf-lists at mattcorallo.com> writes:
+>>> > Indeed, anything which uses P2SH is obviously vulnerable if there is
+>>> > an attack on RIPEMD160 which reduces it's security only marginally.
+>>>
+>>> I don't think this is true?  Even if you can generate a collision in
+>>> RIPEMD160, that doesn't help you since you need to create a specific
+>>> SHA256 hash for the RIPEMD160 preimage.
+>>>
+>>> Even a preimage attack only helps if it leads to more than one preimage
+>>> fairly cheaply; that would make grinding out the SHA256 preimage easier.
+>>> AFAICT even MD4 isn't this broken.
+>>
+>>
+>> It feels like we've gone over that before, but I can never remember where or
+>> when. I believe consensus was that if we were using the broken MD5 in all
+>> the places we use RIPEMD160 we'd still be secure today because of Satoshi's
+>> use of nested hash functions everywhere.
+>>
+>>>
+>>> But just with Moore's law (doubling every 18 months), we'll worry about
+>>> economically viable attacks in 20 years.[1]
+>>>
+>>>
+>>> That's far enough away that I would choose simplicity, and have all SW
+>>> scriptPubKeys simply be "<0> RIPEMD(SHA256(WP))" for now, but it's
+>>> not a no-brainer.
+>>
+>>
+>> Lets see if I've followed the specifics of the collision attack correctly,
+>> Ethan (or somebody) please let me know if I'm missing something:
+>>
+>> So attacker is in the middle of establishing a payment channel with
+>> somebody. Victim gives their public key, attacker creates the innocent
+>> fund-locking script  '2 V A 2 CHECKMULTISIG' (V is victim's public key, A is
+>> attacker's) but doesn't give it to the victim yet.
+>>
+>> Instead they then generate about 2^81scripts that are some form of
+>> pay-to-attacker ....
+>> ... wait, no that doesn't work, because SHA256 is used as the inner hash
+>> function.  They'd have to generate 2^129 to find a cycle in SHA256.
+>
+> For 2^80 they simply generate 2^80 scripts that look innocent, and
+> 2^80 that are not. With high probability there is a collision. I agree
+> that most cryptanalysis won't work because of the nesting, but 2^80 is
+> not good.
+>>
+>> Instead, they .. what? I don't see a viable attack unless RIPEMD160 and
+>> SHA256 (or the combination) suffers a cryptographic break.
+>>
+>>
+>> --
+>> --
+>> Gavin Andresen
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>
+>
+>
+> --
+> "Man is born free, but everywhere he is in chains".
+> --Rousseau.
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
