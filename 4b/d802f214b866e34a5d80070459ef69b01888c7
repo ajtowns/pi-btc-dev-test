@@ -1,0 +1,46 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Mon, 11 Jan 2016 23:57:59 +0000
+Subject: [bitcoin-dev] Time to worry about 80-bit collision attacks or
+	not?
+In-Reply-To: <CABsx9T3MfndREm9icE-TUF58zsRZ5YsBMvUAMy4E-MmYWxWV=A@mail.gmail.com>
+References: <CABsx9T3aTme2EQATamGGzeqNqJkUcPGa=0LVidJSRYNznM-myQ@mail.gmail.com>
+	<CAPg+sBhH0MODjjp8Avx+Fy_UGqzMjUq_jn3vT3oH=u3711tsSA@mail.gmail.com>
+	<8760z4rbng.fsf@rustcorp.com.au>
+	<C4B5B9F1-9C53-45BC-9B30-F572C78096E3@mattcorallo.com>
+	<8737u8qnye.fsf@rustcorp.com.au>
+	<CABsx9T1gmz=sr_sEEuy8BQU6SXdmi58O30rzRWNW=0Ej98fi4A@mail.gmail.com>
+	<20160108153329.GA15731@sapphire.erisian.com.au>
+	<CABsx9T3MfndREm9icE-TUF58zsRZ5YsBMvUAMy4E-MmYWxWV=A@mail.gmail.com>
+Message-ID: <CAE-z3OUMRivWPVA+3BgC_95MGYBHN34+hoo6xfCu_gNeLFVknA@mail.gmail.com>
+
+On Fri, Jan 8, 2016 at 3:46 PM, Gavin Andresen via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> How many years until we think a 2^84 attack where the work is an ECDSA
+> private->public key derivation will take a reasonable amount of time?
+>
+
+I think the EC multiply is not actually required.  With compressed public
+keys, the script selection rule can just be a sha256 call instead.
+
+V is the public key of the victim, and const_pub_key is the attacker's
+public key.
+
+     if prev_hash % 2 == 0:
+        script = "2 V 0x02%s 2 CHECKMULTISIG" % (sha256(prev_hash)))
+    else:
+        script = "CHECKSIG %s OP_DROP" % (prev_hash, const_pub_key)
+
+    next_hash = ripemd160(sha256(script))
+
+If a collision is found, there is a 50% chance that the two scripts have
+different parity and there is a 50% chance that a compressed key is a valid
+key.
+
+This means that you need to run the algorithm 4 times instead of 2.
+
+The advantage is that each step is 2 sha256 calls and a ripemd160 call.  No
+EC multiply is required.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160111/be7bd486/attachment.html>
