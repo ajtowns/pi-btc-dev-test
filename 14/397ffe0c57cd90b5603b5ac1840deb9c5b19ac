@@ -1,0 +1,153 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Tue, 12 Jan 2016 11:17:20 -0800
+Subject: [bitcoin-dev] Libconsensus phase 2
+In-Reply-To: <CABm2gDqPrsuHH4L+dQE-6e162Zj6jbyyB1-6htjB_+2EY2qTXg@mail.gmail.com>
+References: <CABm2gDqPrsuHH4L+dQE-6e162Zj6jbyyB1-6htjB_+2EY2qTXg@mail.gmail.com>
+Message-ID: <56955140.7050301@voskuil.org>
+
+Jorge, first, thanks again for your work on this.
+
+Without creating and using a public blockchain interface in phase 2, how
+will you isolate the database dependency from consensus critical code?
+Is it that the interface will exist but you will recommend against its use?
+
+This work presumes that the users of the library reject the argument
+that the database implementation is consensus critical code. Faithful
+reproduction of stored data is a prerequisite for a validity. But a
+common store implementation is only slightly more reasonable for this
+library than a common RAM implementation.
+
+e
+
+On 01/12/2016 09:53 AM, Jorge Tim?n wrote:
+> After talking to some people about libconsensus in the last Hong Kong
+> conference I realized that my initial plan of exposing one more thing
+> at a time would actually probably slow things down.
+> 
+> There's still a promised pdf with pictures that will be released, and
+> actually drafting the UML pictures helped realize that the whole
+> explanation could be much simpler if #7091 was merged first as the
+> last step in phase 1 (that phase has so many contributors that I will
+> probably never get finished documenting it). Matt Corallo's idea of
+> exposing VerifyScript() through a C API certainly helped a lot in
+> cementing the more-minimal-than-earlier dependencies (thanks to Cory
+> Fields among many other people before him) that are not part of the
+> incomplete but existing libbitcoinconsensus library.
+> 
+> Given this success in protecting encapsulation by exposing things in a
+> new library, my instinct was to expose more things: VerifyHeader(),
+> VerifyTx() and VerifyBlock() [in that order].
+> But all those three new functions depend on storage in one way or
+> another. That was part of my reasoning to expose VerifyHeader() first,
+> because I believe there will be less discussion on a common interface
+> for the stored longest chain than for the utxo view (which may depend
+> on other transactions spent within the same block).
+> In any case, I realized we should finish putting all the consensus
+> critical code in the libconsensus lib and then worry about its "final"
+> API.
+> 
+> Therefore I changed the goal of the phase 2 in my libconsensus
+> encapsulation planning from "expose VerifyHeader() in the existing
+> libconsensus library" to "build all the consensus critical code within
+> the existing libconsensus library, even if we don't expose anything
+> else". I believe this is much feasible for a single Bitcoin Core
+> release cycle and also more of a priority. Other implementations
+> experimenting with libconsensus like
+> https://github.com/libbitcoin/libbitcoin-consensus will have the
+> chance to compare their reimplementations with the future complete
+> libbitcoinconsensus without having to worry about the C API, which
+> ideally they will help to define.
+> 
+> I repeat, the goal of phase 2 in my upcoming libconsensus
+> encapsulation plan is to fully decouple libconsensus from Bitcoin
+> Core.
+> In phase 3, we can refine the storage interfaces and focus on a
+> quasi-final C API.
+> In phase 4, we can refine and take out code that doesn't belong in
+> libconsensus like CTxOut::GetDustThreshold() in
+> primitives/transaction.h and move all those consensus files to the
+> consensus folder before creating a separate sub-repository like for
+> libsecp256k1. Note that most of the file-moving work can be in
+> parallel to phases 2 and 3 and, in fact, by any new developer that is
+> willing to exchange rebase-patience for meaningless github stats (I'll
+> do it if nobody else wants, but I'm more than happy to delegate there:
+> I have more than enough github meaningless stats already).
+> 
+> As said, the document with pictures and the update to #6714 are still
+> promised, but until they're ready, merging/reviewing #7091, #7287,
+> #7310 and #7311 could do a great deal to make later steps in
+> libconsensus phase 2 more readable.
+> Most reviewers probably don't need to see any "big picture" to tell
+> whether certain functions on Bitcoin Core are consensus-critical or
+> not, or whether consensus critical code needs to depend on util.o or
+> not.
+> But I wouldn't be writing to the mailing list without a plan with
+> further words nor pictures if I didn't had what I believe is a
+> complete implementation of what I just defined as "libconsensus phase
+> 2".
+> 
+> Phase 3 should finish long pending discussions like "should
+> libconsensus be C++14 or plain C" which should NOT delay phase 2.
+> Phase 4 should be mostly trivial: rename files to the target dir and
+> move the remaining unused code out of libconsensus.
+> Phase 5 should make Bitcoin Core eat its own dog food and use
+> libbitcoinconsensus oonly by its generic C API (I'm sorry if this
+> looks too far away for me to even think about detailing it).
+> 
+> The work in progress branch (but hopefully being finished, nit and
+> merged within the 0.12.99 cycle) can be found in:
+> https://github.com/jtimon/bitcoin/commits/libconsensus-f2
+> 
+> Before sipa asks, signing code may make it into a new library but
+> SHOULDN'T BE PART OF LIBBITCOINCONSENSUS. Ideally, all exposed
+> functions will return true or false and an error string. It is based
+> on last-0.12.99 3cd836c1 but by popular demand I can open it as a
+> "DEPENDENT-tagged" PR linking to smaller steps and keeping track of
+> steps done. Analogous to the about to be replaced (for a simpler and
+> more maintainable example of testchain) #6382. If people like
+> Wladimir, Cory and Pieter cannot see that I've been able to reduce my
+> overall cry-for-review noise thanks to github adoption of emacs'
+> org-mode's [ ] vs [X] I can alwways leave those "big picture" branches
+> as "private" branches out of the pull request count.
+> 
+> I expect to publish a phase 3 branch very shortly. But as said I
+> expect a lot of discussion on the API part, so I don't expect big
+> movements in phase 3 until phase 2 is done (as said phase 4 is
+> orthogonal to anything, this time git will say "verified MOVEONLY" for
+> us).
+> 
+> To finish this long mail, if you are new to free software and would
+> like to get familiarized with Bitcoin Core development in particular,
+> moving one file is a simple task that you can always besure you can do
+> right.
+> The way I plan to hand this to you, you won't need to convince anyone
+> to publicly confirm that your "MOVEONLY" commit being legit, because
+> all your remaining work will be to build on one platform (ideally you
+> should do a gitian build, but embarrassingly enough for someone
+> touching consensus code I just trust travis ) and trust travis (as
+> said, that's what I do from my laptop, but I plan to buy my own
+> building machine [and maybe outsource it for free in some protocol
+> that hasn't been invented, sorry again for the distraction]) and fix
+> the includes that have stopped working.
+> 
+> I intend to create an issue to move all the files in this list one by one:
+> 
+> https://github.com/bitcoin/bitcoin/pull/7091/files#diff-480477e89f9b6ddafb30c4383dcdd705R250
+> 
+> But don't hesitate to contact me if are eager for moving some files,
+> because I believe we can save a few lines of total diff if we chose
+> the order of the movements properly.
+> 
+> Sorry, I forgot many people read this list again.
+> Happy to answer any question.
+> 
+> Specially about https://github.com/jtimon/bitcoin/commits/libconsensus-f2
+> 
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 473 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160112/8976d566/attachment.sig>
