@@ -1,0 +1,209 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Mon, 18 Jan 2016 22:02:51 +1000
+Subject: [bitcoin-dev] Capacity increases for the Bitcoin system.
+In-Reply-To: <20151208045803.GA1042@sapphire.erisian.com.au>
+References: <CAAS2fgQyVs1fAEj+vqp8E2=FRnqsgs7VUKqALNBHNxRMDsHdVg@mail.gmail.com>
+	<20151208024224.GA32631@sapphire.erisian.com.au>
+	<20151208045803.GA1042@sapphire.erisian.com.au>
+Message-ID: <20160118120251.GA14507@sapphire.erisian.com.au>
+
+TLDR:
+
+  1.7MB effective block size is a better estimate than 1.6MB for p2pkh
+  with segwit. 2MB for 2/2 multisig still seems accurate.
+
+  Additional post-segwit soft forked script improvements can improve
+  the effective block size for p2pkh txns from 1.7MB to 1.9MB, and for
+  2/2 multisig from 2MB to 2.5MB/3MB.
+
+  (To the best of my knowledge, anyway; if I've made a mistake in my
+  maths or assumptions, corrections appreciated)
+
+On Tue, Dec 08, 2015 at 02:58:03PM +1000, Anthony Towns via bitcoin-dev wrote:
+> So from IRC, this doesn't seem quite right -- capacity is constrained as
+>   base_size + witness_size/4 <= 1MB
+..
+> That would be 1.6MB and 2MB of total actual data if you hit the limits
+> with real transactions, so it's more like a 1.8x increase for real
+> transactions afaics, even with substantial use of multisig addresses.
+
+I think these numbers are slightly mistaken -- I was only aware of version
+1 segwit scripts at the time, and assumed 256 bit hashes would be used
+for all segwit transaction, however version 0 segwit txns would be more
+efficient for p2pkh, with the same security as bitcoin currently has
+(which seems fine).
+
+Also, segwit will make two additional soft-fork improvements possible that
+would have a positive effect on transactions per block without requiring
+more data per block: ecdsa public key recovery (more space efficient for
+*both* multisig and p2pkh) and schnorr signatures (more space efficient
+multisig) which might also improve things. I don't know how soon they're
+planned to be worked on post segwit's roll out; basic Schnorr signatures
+are in the Elements sidechain, but I don't think key recovery has been
+implemented anywhere? (Actually, I guess they could both be done already
+via softforking OP_NOP opcodes, though segwit makes them slightly
+cleaner)
+
+Anyhoo here's some revised figures, working explained in the footnotes.
+If I've made mistakes, corrections appreciated, of course.
+
+p2pkh:
+
+  now: 10+146i+34o [0]
+  segwit: 10+41i+36o + 0.25*105*i [1]
+  ecdsa recovery: 10+41i+33o + 0.25*71*i [2]
+  80-bit schnorr: 10+41i+33o + 0.25*71*i (same as ecdsa recovery imo [3])
+  128-bit schnorr: 10+41i+43o + 0.25*106*i [4]
+
+(128-bit schnorr provides a not very useful increase in security here)
+
+2-of-2 multisig:
+
+  now: 10+254i+32o [5]
+  segwit: 10+43i+43o + 0.25*213*i [6]
+  ecdsa recovery: 10+43i+43o + 0.25+187*i [7]
+  80-bit schnorr: 10+41i+33o + 0.25*71*i (same as p2pkh)
+  128-bit schnorr: 10+41i+43o + 0.25*106*i (same as p2pkh)
+
+(segwit, ecdsa recovery and 128-bit schnorr all provide a beneficial
+security increase here, as per the "Time to worry about 80-bit collision
+attacks" thread; 80-bit schnorr provides the same security as current
+p2sh multisig)
+
+Using the same assumptions in the previous mail, ie that over the long
+term number inputs is about the same as number of outputs, these
+simplify to:
+
+        p2pkh           2-of-2 msig
+now     10+180i         10+286i
+segwit  10+104i         10+140i
+recov   10+92i          10+133i
+sch80   10+92i          10+92i
+sch128  10+111i         10+111i
+
+Translating "now" to 100%, the scaling factors work out to be:
+
+i=1, i->inf
+
+        p2pkh           2-of-2 msig
+now     100%            100%
+segwit  166%-173%       197%-204%
+recov   186%-195%       207%-215%
+sch80   186%-195%       290%-310%
+sch128  157%-162%       244%-257%
+
+So 170% for p2pkh (rather my original estimate of 160%) and 200% for
+multisig (same as my original estimate), which can rise via further
+soft-forks up to 190% for p2pkh and 250% or 300% for 2-of-2 multisig
+(depending on whether you want additional security for 2/2 multisig
+beyond what's currently available).
+
+(I'm assuming people are mostly interested in the number of transactions
+per block (or tx/second or tx/day); if miners are worried about the
+actual data per block (which effects orphan rates) implied by the above,
+but don't want to work it out themselves, I could do the maths for that
+too pretty easily. Let me know)
+
+
+If a 2MB hard fork is done first, then the 1/4 discount for segwit could
+mean up to 8MB of total data per block -- from what I understand this
+is currently infeasible; so I presume that segwit on top of a hardfork
+and prior to IBLT/weak blocks would need to have a smaller discount or
+no discount applied so as to ensure total data per block remains at 4MB
+or less. With no discount for witness data (ie, no "accounting tricks")
+those figures look like:
+
+        p2pkh           2-of-2 msig
+now     100%            100%
+segwit  99%             95%
+recov   122%-124%       104%
+sch80   122%-124%       191%-198%
+sch128  94%-95%         148%-150%
+
+That is, without discounting, segwit comes at a slight cost in
+transactions per block, and additional soft forks will only result in
+25% gain for p2pkh (via key recovery) and 50%-100% for 2-of-2 multisig
+(through the use of schnorr sigs and key recovery, and depending on
+whether you want 128 bits of security rather than 80 bits).
+
+(So without the discounting factor, with a 2MB block size, 2MB per block
+with segwit and key recovery gives you 25% more p2pkh transactions than
+just 2MB per block now; while segwit and schnorr signatures gives you
+50%-100% more 2/2 multisig transactions in the same 2MB. Likewise with
+1MB or 4MB and no discounting. Discounting has the indirect benefit of
+providing a monetary incentive to limit UTXO sizes however)
+
+
+(2 of 3 multisig for escrow payments would probably be interesting to
+work out too; I think ecdsa key recovery combined with 1/4 discounting
+would provide a substantial improvement there. I don't think Schnorr
+helps at all for that case, unfortunately; and it's probably too small
+scale for merkle-ised abstract syntax trees to do any good either)
+
+
+A caveat: I'm only counting the script data from witnesses here; but it's
+possible that additional metadata (such as a length for each witness
+signature, or the value of the input, or even some/all of the merkle
+hashes) should also be accounted for. I don't think any of them need to
+be accounted for segwit as proposed, but I'm not sure. And it might well
+be different for a hardforked segwit; there I have no idea at all. I
+don't think a byte or two for length would make much difference, at least.
+
+Cheers,
+aj
+
+[0] 10 bytes for version (4), input count (1), output count (1) and
+    locktime (4); 146 bytes per input consisting of tx hash (32), txout
+    index (4), script length (1), scriptsig (signature and pubkey =
+    105), CHECKSIG = 25), and sequence number (4); 34 bytes per output
+    consisting of value (8), script length (1) and scriptpubkey (DUP
+    HASH160 PUSH20 EQVERIFY CHECKSIG = 25).
+
+[1] Same as now, except two extra bytes per output script (segwit push and
+    segwit version byte), and moving the 105 bytes of signature script
+    directly into the segregated witness
+
+[2] Allowing ECDSA recovery requires an additional soft-fork post segwit
+    to change the CHECKSIG operation; this requires bumping the
+    segwit script version to 2 or higher and possibly using a different
+    opcode, but allows the scriptsig to just be the 70 byte signature,
+    without also including the 33 byte pubkey. The 33 byte pubkey is
+    automatically calculated from the signature, and verified against
+    the hash provided in the scriptpubkey to maintain security, with a
+    scriptpubkey like: [PUSH (20 byte pubkey hash) CHECKSIG_RECOVER] (22
+    bytes versus 25 bytes), and a scriptsig like [PUSH (70 byte sig)]
+    (71 bytes versus 105 bytes).
+
+[3] libsecp256k1 has a function to recover a pubkey from a schnorr
+    signature, so I'm assuming that means pubkey recovery with schnorr
+    is possible :) -- I haven't actually verified the maths
+    https://github.com/bitcoin/secp256k1/blob/master/include/secp256k1_schnorr.h
+
+[4] The witness scriptpubkey is limited to 32 bytes (plus push op and
+    version byte for a total of 34 bytes, so 128 bit security requires
+    version 1 segwit, and p2sh-style constuction. Hence: 10 bytes
+    (version, input and output counts and locktime); 41 base bytes per
+    input (tx hash, tx index, script length, and sequence number); 106
+    witness bytes per input (sig (70 bytes) plus witness script (PUSH
+    schnorr merged pubkey (32 bytes) plus CHECKSCHNORR), plus PUSH ops);
+    and 43 bytes per output (value, script length, and 34 bytes for the
+    v1-style witness script).
+
+[5] Per input is (32 bytes tx hash, 4 bytes tx index, 4 bytes nsequence,
+    1 byte scriptsig length, 143 bytes for actual signature (2x70
+    for the sigs, 3 bytes for OP_0 and two OP_PUSH), and 70 bytes for
+    the redeemscript (2 pub pub 2 OP_CHECKMULTISIG)) for 254 bytes;
+    per output is (8 bytes value, 1 byte length, 23 bytes for HASH160
+    [20 byte hash] OP_EQUAL) for 32 bytes.
+
+[6] Per input is (34 bytes tx hash, 4 bytes tx index, 4 bytes nsequence,
+    1 byte scriptsig length) for 43 bytes in the base block and (143
+    bytes for the actual signature, plus 70 bytes for the redeemscript)
+    for 213 bytes of witness data; per output is (8 bytes value, 1 byte
+    length, and 34 bytes for version 1 segwit scriptpubkey) for 43
+    bytes.
+
+[7] Same as [6], but with key recovery on a MULTISIG op, rather than 33
+    bytes per pubkey, this could be reduced to a 20 byte pubkey hash
+    per pubkey, for a saving of 26 bytes of witness data.
+
