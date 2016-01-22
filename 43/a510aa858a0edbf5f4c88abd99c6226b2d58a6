@@ -1,0 +1,91 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 22 Jan 2016 19:46:18 +1000
+Subject: [bitcoin-dev] Capacity increases for the Bitcoin system.
+In-Reply-To: <20160118120251.GA14507@sapphire.erisian.com.au>
+References: <CAAS2fgQyVs1fAEj+vqp8E2=FRnqsgs7VUKqALNBHNxRMDsHdVg@mail.gmail.com>
+	<20151208024224.GA32631@sapphire.erisian.com.au>
+	<20151208045803.GA1042@sapphire.erisian.com.au>
+	<20160118120251.GA14507@sapphire.erisian.com.au>
+Message-ID: <20160122094618.GA18567@sapphire.erisian.com.au>
+
+On Mon, Jan 18, 2016 at 10:02:51PM +1000, Anthony Towns via bitcoin-dev wrote:
+> I think these numbers are slightly mistaken -- I was only aware of version
+> 1 segwit scripts at the time, and assumed 256 bit hashes would be used
+> for all segwit transaction, however version 0 segwit txns would be more
+> efficient for p2pkh, with the same security as bitcoin currently has
+> (which seems fine).
+
+Latest segwit code just has version 0 witness format, and treats a 32
+byte push as the sha256 of a script, and a 20 byte push as the hash of
+the pub key. Also, the witness scriptPubKey format uses "OP_0 [hash]" to
+push the version and hash to the script separately, rather than "[0x00
+script]" or "[0x01 hash]" (this changes allows segwit transactions to
+be encoded backwards compatibly as a p2sh payment).
+
+> p2pkh:
+>   segwit: 10+41i+36o + 0.25*105*i [1]
+
+> [0] 10 bytes for version (4), input count (1), output count (1) and
+>     locktime (4); 146 bytes per input consisting of tx hash (32), txout
+>     index (4), script length (1), scriptsig (signature and pubkey =
+>     105), CHECKSIG = 25), and sequence number (4); 34 bytes per output
+>     consisting of value (8), script length (1) and scriptpubkey (DUP
+>     HASH160 PUSH20 EQVERIFY CHECKSIG = 25).
+
+> [1] Same as [0], except two extra bytes per output script (segwit push
+>     and segwit version byte), and moving the 105 bytes of signature
+>     script directly into the segregated witness
+
+So this change means segwit p2pkh needs 31 bytes per output not 36 bytes (value,
+length stay the same, scriptpubkey becomes "OP_0 PUSH20" for 22 bytes
+instead of 25+2 bytes). This gives another couple of percent gain, so:
+
+    segwit: 10+41i+31o + 0.25*105*i [1]
+
+Setting i=o makes:
+
+>         p2pkh           2-of-2 msig
+> now     10+180i         10+286i
+> segwit  10+104i         10+140i
+
+become:
+
+segwit    10+99i          10+140i
+
+and therefore,
+
+>         p2pkh           2-of-2 msig
+> now     100%            100%
+> segwit  166%-173%       197%-204%
+
+becomes:
+
+segwit    174%-181%       197%-204%
+
+Constantly creeping up! Pretty nice.
+
+Also, p2pkh with segwit-via-p2sh is probably interesting, those numbers
+work out as:
+
+segwit:   10+41i+31o + 0.25*105*i (for comparison)
+segp2sh:  10+60i+32o + 0.25*105*i [0]
+  ->      10+119i
+  ->      147%-151%
+
+So that still looks like a reasonable improvement even if (eg) in the
+short term merchants are the only ones that upgrade, and customers just
+use non-segwit-aware wallets with a p2sh address that's only redeemable
+by a segwit-aware wallet.
+
+Cheers,
+aj
+
+[0] 10 bytes standard. For each input, tx hash (32) plus index (4),
+    script length (1) and scriptsig which is a push of the standard segwit
+    pubscript (22+1) totaling to 60, and witness data is the same as for
+    normal segwit (105). Each output is standard p2sh, which is value
+    (8), length (1) and script (23) for a total of 32.
+
+Cheers,
+aj
+
