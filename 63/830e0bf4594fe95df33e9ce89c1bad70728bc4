@@ -1,0 +1,136 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 28 Jan 2016 13:51:24 -0500
+Subject: [bitcoin-dev] Segwit Upgrade Procedures & Block Extension Data
+Message-ID: <20160128185124.GA5140@savin.petertodd.org>
+
+A few notes on upgrade procedures associated with segregated witnesses:
+
+
+Initial Deployment
+==================
+
+While segregated witnesses is a soft-fork, because it adds new data
+blocks that old nodes don't relay segwit nodes can't sync from
+non-segwit nodes and still be fully validating; once the segwit softfork
+has activated full nodes need witness data to function. This poses a
+major problem during deployment: if full node adoption lags miner
+adoption, the segwit-supporting P2P network can partition and lose
+consensus.
+
+While Pieter Wuille's segwit branch(1) doesn't yet implement a fix for
+the above problem, the obvious thing to do is to add a new service bit
+such as NODE_SEGWIT, and/or bump the protocol version, and for outgoing
+peers only connect to peers with segwit support. Interestingly, a
+closely related problem already exists in Bitcoin Core: neither addrman
+nor the outgoing connection thread takes what service bits a peer
+advertises into account. So if a large number of non-block-relaying
+nodes joined the network and advertised their addresses the network
+could, in theory, partition even without an explicit attack. (My own
+full-RBF fork of Bitcoin Core does fix(2) this issue, though by
+accident!)
+
+Note how because of this the segwit soft-fork has properties not unlike
+hard-forks in terms of the need for nodes to upgrade with regard to the
+P2P layer. Even with the above fix, the worst case would be for segwit
+to not be adopted widely by full node operators, resulting in a network
+much more vulnerable to attacks such as DoSing nodes. This is one of the
+(many) reasons why hard-forks are generally significantly more dangerous
+than soft-forks.
+
+
+Future Upgrades
+===============
+
+Segwit isn't going to be the last thing that adds new block data. For
+example, my own prev-block-proof proposal(3) requires that blocks commit
+to another tree, which itself is calculated using a nonce that must be
+passed along with the block data. (U)TXO commitments are another
+possible future example.
+
+BIP141 (currently) suggests an Extensible Commitment Structure(4)
+consisting of a hashed linked list of consensus-critical commitments,
+with a redefinable nonce at the end of the list for future soft-forks.
+Currently this nonce is put into the otherwise useless, and non-hashed,
+witness for the coinbase transaction(6) and a block is invalid if its
+witness contains more than that single nonce.(7)
+
+Unfortunately, this means that the next soft-fork upgrade to add
+additional data will have the above relaying problem all over again!
+Even a minimal upgrade adding a new commitment - like my
+prev-block-proof proposal - needs to at least add another nonce for
+future upgrades. In addition to having to upgrade full nodes, this also
+requires systems like the relay network to upgrade, even though they may
+not themselves otherwise need to care about the contents of blocks.
+
+A more subtle implication of this problem is how do you handle parallel
+upgrades, as proposed by BIP9? Splitting the P2P network into
+non-upgraded nodes, and a much smaller group of upgraded nodes, is bad
+enough when done every once in a awhile. How does this look with more
+frequent upgrades, not necessarily done by teams that are working
+closely with each other?
+
+
+Proposal: Unvalidated Block Extension Data
+==========================================
+
+1) Remove the restriction that the coinbase witness contain exactly one
+   32byte value.
+
+2) Hash the contents of the coinbase witness (e.g. as a merkle tree) and
+   commit them in place of the current nonce commitment.
+
+3) Include that data in the blocksize limit (to prevent abuse).
+
+Now future soft-forks can simply add additional data, which non-upgraded
+nodes simply see as extension data that they don't know how to fully
+validate. All nodes can however validate that data came from the miner,
+and thus they can freely propagate that data without risk of attack
+(Bitcoin Core used to allow additional data to be included with
+transactions, which was used in a DoS attack (CVE-2013-4627)).
+
+This is more efficient than it may appear at first glace. As most future
+upgrades are expected to be additional commitments where full nodes can
+deterministically recalculate the commitment, the additional data for
+each new commitment is just 32 bytes.
+
+A significant design consideration is that if arbitrary data can be
+added, it is very likely that miners will make use of that ability for
+non-Bitcoin purposes; we've already run into problems deploying segwit
+itself because of pools using the coinbase space for advertising and
+merge-mining. Avoiding this problem is easiest with a merkelized
+key:value mapping, with the ability to use collision-resistant ID's as
+keys (e.g. UUID).
+
+Secondly, does using the coinbase witness for this really make sense?
+Logically it'd make more sense to change the way blocks are serialized,
+much the same way transaction serialization was changed to accomodate
+segwit; stuffing this in the coinbase witness smells like a hack. (along
+those lines, note how witnesses themselves could have been implemented
+this way - probably too late to change now)
+
+
+References
+==========
+
+1) https://github.com/sipa/bitcoin/tree/segwit
+
+2) https://github.com/petertodd/bitcoin/blob/replace-by-fee-v0.12.0rc2/src/net.cpp#L1616
+
+3) http://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-December/012103.html
+
+5) https://github.com/bitcoin/bips/blob/6a315c023f13d83c58aab98cf8668d74cf7566c7/bip-0141.mediawiki#Extensible_commitment_structure
+
+6) https://github.com/sipa/bitcoin/blob/37973bf2efd7a558c86bf35455a1355e5b0d5d64/src/main.cpp#L3212
+
+7) https://github.com/sipa/bitcoin/blob/37973bf2efd7a558c86bf35455a1355e5b0d5d64/src/main.cpp#L3209
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+0000000000000000003b293f5507f7787f1ba64ba58a21c46ba4454c21a88710
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 650 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160128/961968b0/attachment.sig>
