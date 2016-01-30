@@ -1,0 +1,149 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Sun, 31 Jan 2016 01:32:26 +1000
+Subject: [bitcoin-dev] Segwit Upgrade Procedures & Block Extension Data
+In-Reply-To: <20160128185124.GA5140@savin.petertodd.org>
+References: <20160128185124.GA5140@savin.petertodd.org>
+Message-ID: <20160130153226.GA9757@sapphire.erisian.com.au>
+
+On Thu, Jan 28, 2016 at 01:51:24PM -0500, Peter Todd via bitcoin-dev wrote:
+> While Pieter Wuille's segwit branch(1) doesn't yet implement a fix for
+> the above problem, the obvious thing to do is to add a new service bit
+> such as NODE_SEGWIT, and/or bump the protocol version, and for outgoing
+> peers only connect to peers with segwit support.
+
+If I'm following the code right, the segwit branch has a fHaveWitness
+flag for each connection, which is set when a HAVEWITNESS message comes
+from the peer, and HAVEWITNESS is sent as part of handshaking. BIP144
+suggests maybe this should be changed to a service bit though:
+
+https://github.com/bitcoin/bips/blob/master/bip-0144.mediawiki
+
+If you've got a limit of 8 outgoing connections and >4 of them don't
+support witnesses, would it be enough to just drop a non-witness
+connection and try a new one? Or is anything less than 8 of 8 outgoing
+witness supporting connections likely to be bad for the network?
+
+> Future Upgrades
+> ===============
+> Segwit isn't going to be the last thing that adds new block data. For
+> example, my own prev-block-proof proposal(3) requires that blocks commit
+> to another tree, which itself is calculated using a nonce that must be
+> passed along with the block data. (U)TXO commitments are another
+> possible future example.
+
+Commitments to a merkle sum tree of transaction bytes, sigops, sighash
+bytes, fees, priority, etc for small fraud proofs also fit here,
+don't they?
+
+> Unfortunately, this means that the next soft-fork upgrade to add
+> additional data will have the above relaying problem all over again!
+
+This isn't necessarily true -- you could just make the coinbase witness
+nonce become HASH(newinformation | newnonce), and put newnonce back into
+the coinbase as an additional OP_RETURN, so that it can be verified.
+
+If you want to have layered soft-forks adding new commitments, I think
+you have to keep adding 32 byte hashed nonces; dropping them would be
+a hard fork as far as I can see. So if there might eventually be three
+or four of them, putting them in the witness block rather than the base
+block seems sensible to me.
+
+> Proposal: Unvalidated Block Extension Data
+> ==========================================
+> 1) Remove the restriction that the coinbase witness contain exactly one
+>    32byte value.
+
++1.
+
+If the linked list approach in BIP141 is used, then I think the logic
+could be something like this:
+
+ * suppose there have been a few soft-forks and the coinbase witness
+   now handles three commitments: segwit, prevblockproof, fraudproofs
+
+ * then the coinbase witness stack should have at least 3 32-byte
+   values pushed on it, which should evaluate to:
+
+     s[1] = HASH( fraudproof-info ; s[2] )
+     s[0] = HASH( prevblockproof-info ; s[1] )
+
+   and the coinbase should include
+
+     OP_RETURN SHA256d( segwit-info ; s[0] )
+
+ * old segwit code works fine (assuming the stack.size() != 1 check is
+   changed to == 0), just treating s[0] as a meaningless nonce
+
+ * old prevblockproof supporting nodes check s[0], treating s[1] as a
+   meaningless nonce, but still validating the prevblock proofs
+
+ * nodes running the latest code validate all three checks, and will
+   continue to work if new checks are soft-forked in later
+
+> 2) Hash the contents of the coinbase witness (e.g. as a merkle tree) and
+>    commit them in place of the current nonce commitment.
+
+But I think this seems just as good, and a fair bit simpler. ie with the
+same three commitments, the coinbase witness contains:
+
+     s[2] = nonce
+     s[1] = fraudproof-info-hash
+     s[0] = prevblockproof-info-hash
+
+and coinbase includes:
+
+     OP_RETURN SHA256d( HASH(segwit-info) ; s[0] ; s[1] ; s[2] ; ... )
+
+I'm not sure if the use of a nonce has any value if done this way.
+
+With this apporach, the commitments could be ordered arbitrarily --
+you only have to check that "fraudproof-info-hash" is somewhere on the
+stack of the coinbase witness, not that it's s[1] in particular.
+
+I think it makes sense to plan on cleaning these up with infrequent
+hard forks, eg one that combines the transactions hashMerkleRoot
+and the witnessMerkleRoot and the fraudProofMerkleSumRoot and the
+prevBLockProofHash into a single entry in the block header, but being
+able to add features with soft-forks in the meantime seems like a win.
+
+> 3) Include that data in the blocksize limit (to prevent abuse).
+
+Including it in the coinbase witness already includes it in the blocksize
+limit, albeit discounted, no? If someone wants to propose a soft-fork
+adding 500kB of extra consensus-critical data to each block for some
+reason, sticking it in the coinbase witness seems about the least
+offensive way to do it?
+
+> Secondly, does using the coinbase witness for this really make sense?
+
+If you look at the witness as a proof of "this is why it's okay to
+accept this transaction" in general, and the coinbase witness is "this
+is why it's okay to accept this block", then including prevblock proofs
+and fraud proof info in the coinbase witness seems pretty logical... Or
+at least, it does to me.
+
+This topic seems to be being discussed in a PR on the segwit branch:
+
+  https://github.com/sipa/bitcoin/pull/48
+
+where there's a proposal to have the coinbase witness include the merkle
+path to the segwit data, so, if I understand it right, the coinbase
+commitment might be:
+
+  OP_RETURN Hash( s[0] || Hash( Hash( s[2] || segwit-data ) || s[1] ) )
+
+if the path to the segwit data happened to be right-left-right. That
+would still make it hard to work out the path to some proof that happened
+to be in position right-right-left, though, so it seems inferior to the
+approaches described above to me...
+
+Cheers,
+aj
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 801 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160131/7cb0c5c1/attachment.sig>
