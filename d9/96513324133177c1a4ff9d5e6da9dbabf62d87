@@ -1,0 +1,78 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Mon, 1 Feb 2016 17:55:03 +0100
+Subject: [bitcoin-dev] Segwit Upgrade Procedures & Block Extension Data
+In-Reply-To: <20160128185124.GA5140@savin.petertodd.org>
+References: <20160128185124.GA5140@savin.petertodd.org>
+Message-ID: <CAPg+sBgH0SegmFemRPA1BdAjgM=u3SZK=FDkZkbpuobEUQ1YHw@mail.gmail.com>
+
+On Thu, Jan 28, 2016 at 7:51 PM, Peter Todd via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> A few notes on upgrade procedures associated with segregated witnesses:
+
+> While Pieter Wuille's segwit branch(1) doesn't yet implement a fix for
+> the above problem, the obvious thing to do is to add a new service bit
+> such as NODE_SEGWIT, and/or bump the protocol version, and for outgoing
+> peers only connect to peers with segwit support.
+
+Agree, I've merged the changes to switch to a service bit instead.
+We'll need further changes to prefer connecting to segwit nodes.
+
+> Segwit isn't going to be the last thing that adds new block data. For
+> example, my own prev-block-proof proposal(3) requires that blocks commit
+> to another tree, which itself is calculated using a nonce that must be
+> passed along with the block data. (U)TXO commitments are another
+> possible future example.
+
+> Unfortunately, this means that the next soft-fork upgrade to add
+> additional data will have the above relaying problem all over again!
+> Even a minimal upgrade adding a new commitment - like my
+> prev-block-proof proposal - needs to at least add another nonce for
+> future upgrades. In addition to having to upgrade full nodes, this also
+> requires systems like the relay network to upgrade, even though they may
+> not themselves otherwise need to care about the contents of blocks.
+
+Those are good arguments for making the witness data more extensible.
+>
+> A more subtle implication of this problem is how do you handle parallel
+> upgrades, as proposed by BIP9? Splitting the P2P network into
+> non-upgraded nodes, and a much smaller group of upgraded nodes, is bad
+> enough when done every once in a awhile. How does this look with more
+> frequent upgrades, not necessarily done by teams that are working
+> closely with each other?
+
+I don't expect that changes that add more data to be relayed with
+blocks will be frequent, though I certainly agree there may be some.
+
+> Proposal: Unvalidated Block Extension Data
+> ==========================================
+
+(snip)
+
+This will need a backward-incompatible change to the current segwit
+change anyway, so at the risk of more bikeshedding, let me propose
+going a bit further:
+
+* The coinbase scriptSig gets a second number push (similar to the
+current BIP34 height push), which pushes a number O. O is a byte
+offset inside the coinbase transaction (excluding its witness data)
+that points to a 32-byte hash H. This is more flexible and more
+compact than what we have now (a suggestion by jl2012).
+* H is the root of a Merkle tree, whose leaves are the hashes of the
+coinbase witness's stack items.
+* Item 0 of the coinbase witness stack must be 32 bytes, and must be
+equal to the witness tree root.
+* No further restrictions on the rest of the stack items; these can be
+used for future commitments.
+
+> A significant design consideration is that if arbitrary data can be
+> added, it is very likely that miners will make use of that ability for
+> non-Bitcoin purposes; we've already run into problems deploying segwit
+> itself because of pools using the coinbase space for advertising and
+> merge-mining. Avoiding this problem is easiest with a merkelized
+> key:value mapping, with the ability to use collision-resistant ID's as
+> keys (e.g. UUID).
+
+I agree with the concern, but I don't really understand how this idea solves it.
+
+-- 
+Pieter
