@@ -1,0 +1,87 @@
+From: lists@coryfields.com (Cory Fields)
+Date: Mon, 1 Feb 2016 16:43:33 -0500
+Subject: [bitcoin-dev] SegWit GBT updates
+In-Reply-To: <201602011946.24405.luke@dashjr.org>
+References: <201601301850.03469.luke@dashjr.org>
+	<CAApLimg+65PTn+=V_Es029j-Z-GJRCeMvO0aGdMrgTYFzJStvA@mail.gmail.com>
+	<201602011946.24405.luke@dashjr.org>
+Message-ID: <CAApLimgF2D97rAL8A9G36ULBE5tqKoXHFawYi35a0JiuQRu4Zg@mail.gmail.com>
+
+On Mon, Feb 1, 2016 at 2:46 PM, Luke Dashjr <luke at dashjr.org> wrote:
+> On Monday, February 01, 2016 6:41:06 PM Cory Fields wrote:
+>> Noticeably absent here is the "default_witness_commitment" key, as
+>> added by the current reference implementation[0].
+>>
+>> I assume (please correct me if I'm wrong) that this has been omitted
+>> for the sake of having clients create the commitment themselves as
+>> opposed to having it provided to them.
+>>
+>> I don't think that the two approaches (providing the default
+>> commitment for the complete tx set as well as the ability to create it
+>> from chosen transactions) are at odds with each-other, rather it
+>> merely allows for a simpler approach for those who are taking tx's
+>> as-is from bitcoind. It's obviously important for the clients to be
+>> able to chose tx's and create commitments as they desire, but it's
+>> equally important to allow for simpler use-cases.
+>
+> Allowing for simpler cases both encourages the lazy case, and enables pools to
+> require miners use it. It also complicates the server-side implementation
+> somewhat, and could in some cases make it more vulnerable to DoS attacks. Keep
+> in mind that GBT is not merely a bitcoind protocol, but is used between
+> pool<->miner as well... For now, it makes sense to leave
+> "default_witness_commitment" as a bitcoind-specific extension to encourage
+> adoption, but it seems better to leave it out of the standard protocol. Let me
+> know if this makes sense or if I'm overlooking something.
+>
+
+I think that's a bit of a loaded answer. What's to keep a pool from
+building its own commitment and requiring miners to use that? I don't
+see how providing the known-working commitment for the
+passed-in-hashes allows the pool/miner to do anything they couldn't
+already, with the exception of skipping some complexity. Please don't
+confuse encouraging with enabling.
+
+What's the DoS vector here?
+
+>> The issue in particular here is that a non-trivial burden is thrust
+>> upon mining software, increasing the odds of bugs in the process.
+>
+> It can always use libblkmaker to handle the "heavy lifting"... In any case,
+> the calculation for the commitment isn't significantly more than what it must
+> already do for the stripped merkle tree.
+
+Agreed. However for the sake of initial adoption, it's much easier to
+have a known-correct value to use. Even if it's just for the sake of
+checking against.
+
+>
+>> I'd like to point out that this is not a theoretical argument. I've
+>> already fixed a handful of bugs relating to serialization or
+>> commitment creation in the mining/pool software that I've worked on
+>> for segwit [1][2][3][4].
+>
+> That's not really fair IMO. I wrote the libblkmaker branch prior to even
+> reading the SegWit BIPs or code, and without a way to test it. It's only to be
+> expected there are bugs that get fixed in first-try testing.
+
+I didn't mean this as an insult/attack, quite the opposite actually.
+Thanks for doing the integration :)
+
+I was merely pointing out how easy it is to introduce subtle bugs here.
+
+>
+>> [4]:
+>> https://github.com/theuni/ckpool/commit/7d84b1d76b39591cc1c1ef495ebec513cb
+>> 19a08e
+>
+> I'm pretty sure this commit is actually /introducing/ a bug in working (albeit
+> ugly) code. The height, while always positive, is serialised as a signed
+> number, so 0x80 needs to be two bytes: 80 00.
+
+You're right, thanks. The current code breaks on heights of (for ex)
+16513. I'll fix up my changes to take the sign bit into account.
+
+Heh, that only reinforces my point above about introducing bugs :p
+
+>
+> Luke
