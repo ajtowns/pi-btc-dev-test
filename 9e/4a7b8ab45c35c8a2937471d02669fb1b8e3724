@@ -1,0 +1,101 @@
+From: lists@coryfields.com (Cory Fields)
+Date: Mon, 1 Feb 2016 20:40:49 -0500
+Subject: [bitcoin-dev] SegWit GBT updates
+In-Reply-To: <201602012308.35215.luke@dashjr.org>
+References: <201601301850.03469.luke@dashjr.org>
+	<201602011946.24405.luke@dashjr.org>
+	<CAApLimgF2D97rAL8A9G36ULBE5tqKoXHFawYi35a0JiuQRu4Zg@mail.gmail.com>
+	<201602012308.35215.luke@dashjr.org>
+Message-ID: <CAApLimiefAkDaDShfq4b6T-6heqYyB5dqZDh58+Stwf7VqDWkg@mail.gmail.com>
+
+On Mon, Feb 1, 2016 at 6:08 PM, Luke Dashjr <luke at dashjr.org> wrote:
+> On Monday, February 01, 2016 9:43:33 PM Cory Fields wrote:
+>> On Mon, Feb 1, 2016 at 2:46 PM, Luke Dashjr <luke at dashjr.org> wrote:
+>> > Allowing for simpler cases both encourages the lazy case, and enables
+>> > pools to require miners use it. It also complicates the server-side
+>> > implementation somewhat, and could in some cases make it more vulnerable
+>> > to DoS attacks. Keep in mind that GBT is not merely a bitcoind protocol,
+>> > but is used between pool<->miner as well... For now, it makes sense to
+>> > leave
+>> > "default_witness_commitment" as a bitcoind-specific extension to
+>> > encourage adoption, but it seems better to leave it out of the standard
+>> > protocol. Let me know if this makes sense or if I'm overlooking
+>> > something.
+>>
+>> I think that's a bit of a loaded answer. What's to keep a pool from
+>> building its own commitment and requiring miners to use that? I don't
+>> see how providing the known-working commitment for the
+>> passed-in-hashes allows the pool/miner to do anything they couldn't
+>> already, with the exception of skipping some complexity. Please don't
+>> confuse encouraging with enabling.
+>
+> Making it simpler to do a centralised implementation than a decentralised one,
+> is both enabling and encouraging. GBT has always been designed to make it
+> difficult to do in a centralised manner.
+>
+
+But your suggestion is "use libblkmaker" which will build the trees
+for me. By that logic, isn't libblkmaker making a centralized
+implementation easier? Shouldn't that usage be discouraged as well?
+And along those lines, shouldn't the fact that it's used as a pool <->
+miner protocol be discouraged rather than touted as a feature?
+
+I don't wish to sound hostile, I'm just trying follow the logic. I
+can't rationalize why GBT shouldn't expose the commitment that it
+knows to be correct (when paired with the transactions it provides),
+purely to make things difficult.
+
+>> What's the DoS vector here?
+>
+> It's more work for the pool to provide it, similar to the "midstate" field was
+> with getwork. Someone performing a DoS needs to do less work to force the pool
+> to do complex calculations (unless the same transaction tree / commitment is
+> used for all miners, which would be an unfortunate limitation).
+
+It's being provided to them. And if they're using a modified set of
+tx's, they'll need to re-calculate it in order to verify the result
+anyway. I suspect I'm not understanding this argument.
+
+>
+>> >> The issue in particular here is that a non-trivial burden is thrust
+>> >> upon mining software, increasing the odds of bugs in the process.
+>> >
+>> > It can always use libblkmaker to handle the "heavy lifting"... In any
+>> > case, the calculation for the commitment isn't significantly more than
+>> > what it must already do for the stripped merkle tree.
+>>
+>> Agreed. However for the sake of initial adoption, it's much easier to
+>> have a known-correct value to use. Even if it's just for the sake of
+>> checking against.
+>
+> Sure, I'm not suggesting we remove this from bitcoind (probably the only place
+> that makes initial adoption easier).
+>
+
+How about exposing it as a feature/capability, then? That way pools
+can expect it from bitcoind, but won't be required to expose it
+downstream.
+
+>> >> [4]:
+>> >> https://github.com/theuni/ckpool/commit/7d84b1d76b39591cc1c1ef495ebec513
+>> >> cb 19a08e
+>> >
+>> > I'm pretty sure this commit is actually /introducing/ a bug in working
+>> > (albeit ugly) code. The height, while always positive, is serialised as
+>> > a signed number, so 0x80 needs to be two bytes: 80 00.
+>>
+>> You're right, thanks. The current code breaks on heights of (for ex)
+>> 16513. I'll fix up my changes to take the sign bit into account.
+>
+> I'm curious what bug it was fixing? Was it overwriting data beyond the number?
+
+Using 16513 as an example:
+
+serialized by bitcoind: 0x028140
+serialized by ckpool: 0x03814000
+
+ckpool works because blocks after 32768 end up looking the same, but
+it will break again at 2113664.
+
+>
+> Luke
