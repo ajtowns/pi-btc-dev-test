@@ -1,0 +1,57 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Sun, 7 Feb 2016 21:37:57 +1000
+Subject: [bitcoin-dev] BIP proposal: Increase block size limit to 2
+ megabytes
+In-Reply-To: <CABsx9T1Bd0-aQg-9uRa4u3dGA5fKxaj8-mEkxVzX8mhdj4Gt2g@mail.gmail.com>
+References: <CABsx9T1Bd0-aQg-9uRa4u3dGA5fKxaj8-mEkxVzX8mhdj4Gt2g@mail.gmail.com>
+Message-ID: <20160207113757.GA10769@sapphire.erisian.com.au>
+
+On Fri, Feb 05, 2016 at 03:51:08PM -0500, Gavin Andresen via bitcoin-dev wrote:
+> Constructive feedback welcome; [...]
+> Summary:
+>   Increase block size limit to 2,000,000 bytes.
+>   With accurate sigop counting, but existing sigop limit (20,000)
+>   And a new, high limit on signature hashing
+
+To me, it seems absurd to have a hardfork but not take the opportunity
+to combine these limits into a single weighted sum.
+
+I'd suggest:
+
+   0.5*blocksize + 50*accurate_sigops + 0.001*sighash < 2,000,000
+
+That provides worst case blocksize of 4MB, worst case sigops of 40,000
+and worst case sighash bytes of 2GB. Given the separate limit on sighash
+bytes and the improvements from libsecp256k1 I think 40k sigops should
+be fine, but I'm happy to be corrected.
+
+For a regular transaction, of say 380 bytes with 2 sigops and hashing
+about 800 bytes, that uses up about 291 units of the limit, meaning
+that if a block was full of transactions of that form, the limit would
+be 6872 tx or 2.6MB per block (along with 13.7k sigops and ~5.5MB hashed
+for signatures).  Those weightings could probably be improved by doing
+some detailed analysis and measurements, but I think they're pretty
+reasonable for round figures.
+
+The main advantage is that it would prevent blocks being cheaply filled
+up due to hitting one of the secondary limits but only paying for the
+contribution to the primary limit (presumably block size), which avoids
+denial of service spam attacks.
+
+I think having the limit take UTXO increase (or decrease) into effect
+would be helpful too; but I don't have a specific suggestion. If it's
+just a matter of making the limit stronger (eg adding "0.25*max(0,change
+in UTXO bytes)" to the formula on the left, but not changing the limit on
+the right), that would be a soft-forking change that could be introduced
+later, and maybe that's fine.
+
+If there was time to actually iterate on this proposal, rather than an
+apparent aim to get it out the door in the next month or two, I think it
+would be good to also design it so that the parameters of the weighted
+sum could be adjusted by a soft-fork in future rather than requiring a
+hard fork every time a limit's reached, or a weighting can be relaxed.
+But I don't think that's feasible to design within a few weeks, so I
+think it's off the table given the activation goal.
+
+Cheers,
+aj
