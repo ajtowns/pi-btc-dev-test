@@ -1,0 +1,77 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Sun, 7 Feb 2016 13:18:52 +0000
+Subject: [bitcoin-dev] Pre-BIP Growth Soft-hardfork
+In-Reply-To: <201602070952.33457.luke@dashjr.org>
+References: <201602070952.33457.luke@dashjr.org>
+Message-ID: <CAE-z3OUPwBtpYRQL3CaANMQS88=cw_XLj0tAzyThpZxn0f8yhA@mail.gmail.com>
+
+This is a specific implementation of the "nuclear option" soft fork (or
+"firm-fork").
+
+The problem with any hard-fork (like) change is that there is an incentive
+to add as much as possible and then the process gets bogged down.
+
+Since the POW is based on the header 1, you could make header 3
+expandable.  This would allow adding new fields later.
+
+This could be used for other block commitments.  This would save having to
+make the merkle tree a sum tree immediately.  At a later time, the sum-tree
+root could be added. (I think you also need to commit the path to the first
+entry in the sum-tree, in order to get compact proofs).  There could be
+separate sum-trees for each counter (sigops, block size, tx count, sighash?)
+
+Having a dedicated hard fork and soft fork counter is a good idea.  There
+should also be a field for parallel soft forks.  Incrementing the soft fork
+counter could set the bitfield soft forks back to zero.  Ideally, each soft
+fork would have a yes and no bit.  If > 50% vote No, then it fails adoption.
+
+The effect of this change is that nodes react to hard forks by stalling the
+chain.  The hard fork counter means that the new rules could be that nodes
+should do that going forward for all new hard forks.
+
+- soft fork (bitfield or count) => warn user that a soft fork has happened
+- hard fork count increase => warn user that update is required and don't
+process any more blocks
+
+This means that header3 should be kept as simple as possible.
+
+   - 2 bytes: hardfork block version
+   - 2 bytes: softfork block version
+   - 4 bytes: softfork bitfields
+   - 32 byte: hash(header4)
+
+Header4 and everything else in the block could be changed when a hard fork
+happens.  The merged mining rules and header3 would be fixed.
+
+I think confirmation counts should be based on even numbers, i.e. 3800 of
+4000, but that is an aesthetic issue and doesn't really matter.
+
+A section on recommendations for the different client types would be useful.
+
+If 1000 of the last 2000 blocks are votes for a hard fork, then warn the
+user that a hard fork is being considered
+
+If 4000 of the last 4463 blocks are votes for a hard fork, then warn the
+user that a hard fork is likely to occur within the next few days
+
+If a hard fork happens:
+
+- shut down transaction processing
+- inform the user that a hard fork has happened
+
+Non-upgraded miners could blacklist the hard forking block and keep mining
+on their own chain.  Their chain would never reach the threshold to trigger
+the hard fork.  It would max out at 4323 blocks of the last 4463.
+
+Ironically, if users did this, it would defeat some of the benefit of using
+the hard fork field.
+
+Users should definitely be given the option of accepting or rejecting the
+hard fork.  Otherwise, miners can hard-fork at will, which isn't desirable.
+<https://www.avast.com/sig-email> This email has been sent from a
+virus-free computer protected by Avast.
+www.avast.com <https://www.avast.com/sig-email>
+<#DDB4FAA8-2DD7-40BB-A1B8-4E2AA1F9FDF2>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160207/4f6fd01b/attachment.html>
