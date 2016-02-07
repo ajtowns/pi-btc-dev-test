@@ -1,0 +1,224 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Mon, 8 Feb 2016 01:25:40 +1000
+Subject: [bitcoin-dev] Making a 2MB blocksize hardfork safer
+Message-ID: <20160207152540.GA8337@sapphire.erisian.com.au>
+
+Hello world,
+
+The core roadmap calls for having patches at the ready for
+implementing hardforking blocksize increases [0]. However, at least
+to my understanding, is that the deployment of segregated witness has
+a significant impact on what a hardforking blocksize increase should
+look like -- with segwit, the increase in the blocksize may have to
+be traded off against decreasing the witness discount; without segwit,
+alternative changes might need to be made to provide some of the other
+benefits of segwit without segwit (in particular, additional limits to
+prevent hashing massive amounts of data when checking sigs or to reduce
+worst-case UTXO growth).
+
+I don't personally have any real concerns that segregated witness will be
+too complicated to implement and release by April, and given how quickly
+CLTV rolled out, my guess is it will be usable prior to the block reward
+halving. I'm also not terribly worried about fees rising significantly,
+or that there will be a "fee event" [1] or "market disruption" -- fees
+don't seem to be rising even with the spam attacks we've seen, and all
+the problems with transactions not confirming that I've been able to see
+so far seem to be due either to people trying to do free transactions,
+fees not being calculated based on transaction size, or not checking
+for dust outputs, all of which are things that can be dealt with by
+individual wallets. [2]
+
+But those are guesses and opinions, and I think it makes sense to have
+a backup plan if everything goes horribly wrong -- someone discovers
+a problem with segwit that requires major rearchitecturing to fix and
+won't happen until 2017, eg.
+
+To me, Gavin's BIP [3] and the Bitcoin Classic approach don't seem like
+a good backup plan; but I don't see why they couldn't be *made* into a
+good plan. In particular, if segwit turns out too hard to actually deploy
+safely, I think Gavin's patchset -- an increase to ~2MB, coupled with
+accurate counting and limiting of sighash bytes, and pretty much nothing
+else -- is about the right set of *technical* things to do as a backup plan.
+
+So the following are my suggestions for making Gavin's BIP workable
+procedurally/politically as a backup plan. But that said, I don't know
+if this is even remotely acceptable politically; I'm just following
+bitcoin as a hobby and I don't have any backchannel contacts in mining
+or bitcoin startups or anything.
+
+1. Level of supermajority
+=========================
+
+First, it was reported that the Chinese miners came up with a 2MB
+blocksize plan in late January [4], with the following summarised plan:
+
+]  If:
+]    1: Blocks are full
+]    2: Core proposal is <2MB
+]    3: Classic proposal have not gained consensus
+]  Then:
+]    Under the 90% hash power condition, switch from a 1MB limit to a
+]    2MB limit to deal with the block size problem.
+
+The summary also expresses concerns about segwit deployment; that it
+makes significant changes, and that any issues with reliability may have
+major impact. Those seem like valid concerns to me; though if they are
+not addressed directly, then I expect miners will simply not enable the
+segwit soft-fork until they are.
+
+I think the only change to make this match Gavin's code for Bitcoin
+Classic then is to require 90% hashpower support rather than 75%. I think
+that can be easily done by a soft-forking change where miners reject any
+block with a Classic vote (ie a version of 0x10000000) if the block height
+is cleanly divisible by 6 [5]. As this is a soft-forking change, and one
+that's only relevant until either Classic activates or the 2MB hardfork
+attempt is permanently aborted on 2018-01-01, it seems like it could
+easily be deployed prior to either segwit or Classic voting beginning.
+
+2. Activation Time
+==================
+
+The activation time for Gavin's BIP is very short -- 1000 blocks for
+voting could be as short as 6 days, followed by 28 days grace period.
+I haven't seen any indication that there is an immediate crisis, or
+that there will be one in the next few months; and the fact that the
+BIP does not expire for two years seems to indicate it's not a short
+term issue. Allowing three to six months before attempting to activate
+the hardfork seems like it would still provide plenty of opportunity to
+address the issue quickly, and would also mean there was time to see if
+the segwit rollout worked as planned.
+
+That also could be enforced by a soft-fork: eg having a rule that until
+the median time past is 2015-05-27, any block voting for the 2MB hardfork
+will be rejected, would ensure the hard fork was not activated until
+1st of July. A slightly more complicated rule, eg only rejecting the
+blocks if the last three decimal digits of its height was 500 or greater,
+would allow support to be measured in the leadup to possible activation,
+without any risk of activation happening early.
+
+3. Upgrade encouragement
+========================
+
+I think there's three ways the 2MB hardfork could go: (a) not ever being
+activated at all, similar to XT; (b) being activated with effective
+consensus, where everyone switches to the hard-fork, whether happily
+or not; or (c) being activated, but with the old chain being actively
+mined and used on an ongoing, long-term basis.
+
+If the 2MB blocksize hardfork is deployed as a fallback after segwit
+deployment has failed, or determined to be much more complicated than
+currently believed, then it seems like (c) would be a pretty undesirable
+outcome.
+
+The only way I can see of avoiding/discouraging (c) is to have the new
+hardfork be merge-minable with the existing chain, and having every
+block in the new chain also commit to a merged-mined empty block on the
+old chain, so that as long as the new chain has more hashpower than the
+old chain, the longest valid old chain will have no outgoing payments
+after the hardfork activates. (That requirement could probably be safely
+dropped after some number of blocks, perhaps 25000 or 6 months?)
+
+Alternatively, if the old blockchain has 10% or less hashpower remaining
+(due to the 90% activation above), then the new chain has 9x the
+hashpower. Perhaps a rule such that every 8th block in the hard-forked
+chain must include an OP_RETURN in the coinbase that provides a valid,
+empty block for the old chain. With a 90%/10% split, this would ensure
+that the empty chain had more work than any other attempt at extending
+it. However at the next difficulty change for the old chain (decreasing
+by a factor of 4, presumably), I think they'd have to be mined every
+second block rather than every 8th, and by the second difficulty change,
+would need to be mined every block; otherwise I think 10% of hashpower
+could catch up in chain-work. (Again, the requirement could probably be
+dropped entirely after 6 months, or similar)
+
+I believe this latter approach could be implemented as a soft-fork on
+top of Gavin's BIP / Bitcoin Classic, provided activation was at 90% [7].
+
+In this scenario, it would be possible for miners to simply sell empty
+blocks on the old chain once they find them, so finding an empty block
+for the old chain could plausibly be independent of finding the new
+block for the new chain.
+
+
+Conclusion
+==========
+
+I think those three changes, which all should be implementable as
+soft-forks compatible with Gavin's current code (the first two only
+relevant prior to activation; the last only relevant after activation),
+would mitigate what I see as the biggest risks of classic:
+
+ - low-consensus/controversial activation
+ - short preparation time, and resulting uncertainty and pressure
+ - non-trivial chance of old chain remaining active after activation
+ - miners' and core's plans being ignored [8]
+
+And I think that would make this BIP (for me) a workable backup plan in
+the event segwit doesn't work as planned. And for a multi-billion dollar
+service, backup plans seem like a worthwhile thing to have, even if it's
+highly unlikely it will actually get used.
+
+However, these are all ideas where the benefits are basically "political"
+rather than "technical", and I have no idea if the above *actually* makes
+sense... And I guess trying to establish that is probably off-topic for
+bitcoin-dev anyway? Anyway, as a consequence I've no idea if a write up
+as a BIP and/or patches to implement any/all of the above as soft-forks
+for classic/core that could be activated would be interesting for anyone,
+and beyond posting about the ideas here, no idea how to find out. It
+seemed like an interesting thought experiment to me, anyway. Apologies
+in advance if it turns out I'm alone in that :)
+
+Cheers,
+aj
+
+[0] "Finally--at some point the capacity increases from the above may not
+    be enough.  Delivery on [various improvements], and other advances
+    in technology will reduce the risk and therefore controversy around
+    moderate block size increase proposals (such as 2/4/8 rescaled to
+    respect segwit's increase). Bitcoin will be able to move forward
+    with these increases when improvements and understanding render
+    their risks widely acceptable relative to the risks of not deploying
+    them. In Bitcoin Core we should keep patches ready to implement them
+    as the need and the will arises, ..."
+
+    https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-December/011865.html
+    via https://bitcoincore.org/en/2015/12/23/capacity-increases-faq/
+
+[1] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-December/011973.html
+
+[2] I do think that, without segwit or a blocksize increase, there will be
+    a discontinuity for venture funded bitcoin companies, because the
+    transactions per second metric will become capped by the end of
+    2016. I've argued that at:
+
+    http://lists.linuxfoundation.org/pipermail/bitcoin-discuss/2016-January/000042.html
+
+    but I have not seen anyone from the a VC-backed bitcoin company
+    actually confirm that's a concern, so perhaps it isn't something
+    worth worrying about even there.
+
+[3] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-February/012358.html
+    https://github.com/gavinandresen/bips/blob/bump2mb/bip-bump2mb.mediawiki
+
+[4] https://blog.bitmex.com/translation-of-chinese-miner-consensus-meeting/
+
+[5] In that case, if 90% of miners by hashpower actually support the BIP,
+    that would imply that 1/6th of blocks artificially don't vote for
+    it, but 90% of the remaining 5/6th of blocks do, and 90% of 5/6th
+    gives the 75% activation threshold specified in Gavin's BIP.
+
+[6] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-December/012069.html
+
+[7] With activation at 75%, you'd need to dedicate 1/3rd of hashpower
+    to mining empty old blocks to stay in the lead, which would then mean
+    the hashpower for the new proof-of-work would only be half what it
+    had previously been, and you'd end up with blocks taking 20 minutes
+    on the new chain, and at least every second block including an empty
+    block on the old chain. You could probably fix this by having the
+    difficulty artificially halve when the hardfork activates though.
+
+[8] Miners agree to 90% majority, code comes out with 75% majority. In
+    December, core announces plans to deploy segwit with 1.6x capacity
+    increase by April; Classic appears in January planning to do a hard
+    fork with 2x capacity increase in/around March.
+
