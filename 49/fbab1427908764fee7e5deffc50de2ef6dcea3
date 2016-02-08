@@ -1,0 +1,162 @@
+From: jl2012@xbt.hk (jl2012 at xbt.hk)
+Date: Tue, 9 Feb 2016 04:37:36 +0800
+Subject: [bitcoin-dev] On Hardforks in the Context of SegWit
+In-Reply-To: <56B8EBF8.4050602@mattcorallo.com>
+References: <56B8EBF8.4050602@mattcorallo.com>
+Message-ID: <236601d162b0$8da286e0$a8e794a0$@xbt.hk>
+
+Thanks for this proposal. Just some quick response:
+
+1. The segwit hardfork (BIP HF) could be deployed with BIP141 (segwit
+softfork). BIP141 doesn't need grace period. BIP HF will have around 1 year
+of grace period.
+
+2. Threshold is 95%. Using 4 versoin bits: a) BIP 141; b) BIP HF; c) BIP 141
+if BIP HF has already got 95%; d) BIP HF if BIP141 has already got 95%.
+Voting a and c (or b and d) at the same time is invalid. BIP 141 is
+activated if a>95% or (a+c>95% and b+d>95%). BIP HF is activated if b>95% or
+(a+c>95% and b+d>95%).
+
+3. Fix time warp attack: this may break some SPV implementation
+
+4. Limiting non-segwit inputs may make some existing signed tx invalid. My
+proposal is: a) count the number of non-segwit sigop in a tx, including
+those in unexecuted branch (sigop); b) measure the tx size without scripgSig
+(size); c) a new rule is SUM(sigop*size) < some_value . This allows
+calculation without actually running the script.
+
+
+-----Original Message-----
+From: bitcoin-dev-bounces at lists.linuxfoundation.org
+[mailto:bitcoin-dev-bounces at lists.linuxfoundation.org] On Behalf Of Matt
+Corallo via bitcoin-dev
+Sent: Tuesday, 9 February, 2016 03:27
+To: Bitcoin Dev <bitcoin-dev at lists.linuxfoundation.org>
+Subject: [bitcoin-dev] On Hardforks in the Context of SegWit
+
+Hi all,
+
+I believe we, today, have a unique opportunity to begin to close the book on
+the short-term scaling debate.
+
+First a little background. The scaling debate that has been gripping the
+Bitcoin community for the past half year has taken an interesting turn in
+2016. Until recently, there have been two distinct camps - one proposing a
+significant change to the consensus-enforced block size limit to allow for
+more on-blockchain transactions and the other opposing such a change,
+suggesting instead that scaling be obtained by adding more flexible systems
+on top of the blockchain. At this point, however, the entire Bitcoin
+community seems to have unified around a single vision - roughly 2MB of
+transactions per block, whether via Segregated Witness or via a hard fork,
+is something that can be both technically supported and which adds more
+headroom before second-layer technologies must be in place. Additionally, it
+seems that the vast majority of the community agrees that segregated witness
+should be implemented in the near future and that hard forks will be a
+necessity at some point, and I don't believe it should be controversial
+that, as we have never done a hard fork before, gaining experience by
+working towards a hard fork now is a good idea.
+
+With the apparent agreement in the community, it is incredibly disheartening
+that there is still so much strife, creating a toxic environment in which
+developers are not able to work, companies are worried about their future
+ability to easily move Bitcoins, and investors are losing confidence. The
+way I see it, this broad unification of visions across all parts of the
+community places the burden of selecting the most technically-sound way to
+achieve that vision squarely on the development community.
+
+Sadly, the strife is furthered by the huge risks involved in a hard fork in
+the presence of strife, creating a toxic cycle which prevents a safe hard
+fork. While there has been talk of doing an "emergency hardfork" as an
+option, and while I do believe this is possible, it is not something that
+will be easy, especially for something as controversial as rising fees.
+Given that we have never done a hard fork before, being very careful and
+deliberate in doing so is critical, and the technical community working
+together to plan for all of the things that might go wrong is key to not
+destroying significant value.
+
+As such, I'd like to ask everyone involved to take this opportunity to
+"reset", forgive past aggressions, and return the technical debates to
+technical forums (ie here, IRC, etc).
+
+As what a hard fork should look like in the context of segwit has never
+(!) been discussed in any serious sense, I'd like to kick off such a
+discussion with a (somewhat) specific proposal.
+
+First some design notes:
+* I think a key design feature should be taking this opportunity to add
+small increases in decentralization pressure, where possible.
+* Due to the several non-linear validation time issues in transaction
+validation which are fixed by SegWit's signature-hashing changes, I strongly
+believe any hard fork proposal which changes the block size should rely on
+SegWit's existence.
+* As with any hard fork proposal, its easy to end up pulling in hundreds of
+small fixes for any number of protocol annoyances. In order to avoid doing
+this, we should try hard to stick with a few simple changes.
+
+Here is a proposed outline (to activate only after SegWit and with the
+currently-proposed version of SegWit):
+
+1) The segregated witness discount is changed from 75% to 50%. The block
+size limit (ie transactions + witness/2) is set to 1.5MB. This gives a
+maximum block size of 3MB and a "network-upgraded" block size of roughly
+2.1MB. This still significantly discounts script data which is kept out of
+the UTXO set, while keeping the maximum-sized block limited.
+
+2) In order to prevent significant blowups in the cost to validate
+pessimistic blocks, we must place additional limits on the size of many
+non-segwit transactions. scriptPubKeys are now limited to 100 bytes in size
+and may not contain OP_CODESEPARATOR, scriptSigs must be push-only (ie no
+non-push opcodes), and transactions are only allowed to contain up to 20
+non-segwit inputs. Together these limits limit total-bytes-hashed in block
+validation to under 200MB without any possibility of making existing outputs
+unspendable and without adding additional per-block limits which make
+transaction-selection-for-mining difficult in the face of attacks or
+non-standard transactions. Though 200MB of hashing (roughly 2 seconds of
+hash-time on my high-end
+workstation) is pretty strongly centralizing, limiting transactions to fewer
+than 20 inputs seems arbitrarily low.
+
+Along similar lines, we may wish to switch MAX_BLOCK_SIGOPS from
+1-per-50-bytes across the entire block to a per-transaction limit which is
+slightly looser (though not too much looser - even with libsecp256k1
+1-per-50-bytes represents 2 seconds of single-threaded validation in just
+sigops on my high-end workstation).
+
+3) Move SegWit's generic commitments from an OP_RETURN output to a second
+branch in the merkle tree. Depending on the timeline this may be something
+to skip - once there is tooling for dealing with the extra OP_RETURN output
+as a generic commitment, the small efficiency gain for applications checking
+the witness of only one transaction or checking a non-segwit commitment may
+not be worth it.
+
+4) Instead of requiring the first four bytes of the previous block hash
+field be 0s, we allow them to contain any value. This allows Bitcoin mining
+hardware to reduce the required logic, making it easier to produce
+competitive hardware [1].
+
+I'll deliberately leave discussion of activation method out of this
+proposal. Both jl2012 and Luke-Jr recently begun some discussions about
+methods for activation on this list, and I'd love to see those continue.
+If folks think a hard fork should go ahead without SPV clients having a say,
+we could table #4, or activate #4 a year or two after 1-3 activate.
+
+
+[1] Simpler here may not be entirely true. There is potential for
+optimization if you brute force the SHA256 midstate, but if nothing else,
+this will prevent there being a strong incentive to use the version field as
+nonce space. This may need more investigation, as we may wish to just set
+the minimum difficulty higher so that we can add more than 4 nonce-bytes.
+
+
+
+
+Obviously we cannot reasonably move forward with a hard fork as long as the
+contention in the community continues. Still, I'm confident continuing to
+work towards SegWit as a 2MB-ish soft-fork in the short term with some plans
+on what a hard fork should look like if we can form broad consensus can go a
+long way to resolving much of the contention we've seen.
+_______________________________________________
+bitcoin-dev mailing list
+bitcoin-dev at lists.linuxfoundation.org
+https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
