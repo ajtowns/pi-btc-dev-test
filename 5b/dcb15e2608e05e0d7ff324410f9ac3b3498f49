@@ -1,0 +1,142 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Tue, 9 Feb 2016 21:54:01 +0000
+Subject: [bitcoin-dev] On Hardforks in the Context of SegWit
+In-Reply-To: <20160209090002.GB18324@sapphire.erisian.com.au>
+References: <56B8EBF8.4050602@mattcorallo.com>
+	<20160209090002.GB18324@sapphire.erisian.com.au>
+Message-ID: <56BA5FF9.6090905@mattcorallo.com>
+
+Thanks for keeping on-topic, replying to the proposal, and being civil!
+
+Replies inline.
+
+On 02/09/16 09:00, Anthony Towns via bitcoin-dev wrote:
+> On Mon, Feb 08, 2016 at 07:26:48PM +0000, Matt Corallo via bitcoin-dev wrote:
+>> As what a hard fork should look like in the context of segwit has never
+>> (!) been discussed in any serious sense, I'd like to kick off such a
+>> discussion with a (somewhat) specific proposal.
+> 
+>> Here is a proposed outline (to activate only after SegWit and with the
+>> currently-proposed version of SegWit):
+> 
+> Is this intended to be activated soon (this year?) or a while away
+> (2017, 2018?)?
+
+It's intended to activate when we have clear and broad consensus around
+a hard proposal across the community.
+
+>> 1) The segregated witness discount is changed from 75% to 50%. The block
+>> size limit (ie transactions + witness/2) is set to 1.5MB. This gives a
+>> maximum block size of 3MB and a "network-upgraded" block size of roughly
+>> 2.1MB. This still significantly discounts script data which is kept out
+>> of the UTXO set, while keeping the maximum-sized block limited.
+> 
+> This would mean the limits go from:
+> 
+>    pre-segwit  segwit pkh  segwit 2/2 msig  worst case
+>    1MB         -           -                1MB
+>    1MB         1.7MB       2MB              4MB
+>    1.5MB       2.1MB       2.2MB            3MB
+> 
+> That seems like a fairly small gain (20% for pubkeyhash, which would
+> last for about 3 months if you're growth rate means doubling every 9
+> months), so this probably makes the most sense as a "quick cleanup"
+> change, that also safely demonstrates how easy/difficult doing a hard
+> fork is in practice?
+>
+> On the other hand, if segwit wallet deployment takes longer than
+> hoped, the 50% increase for pre-segwit transactions might be a useful
+> release-valve.
+> 
+> Doing a "2x" hardfork with the same reduction to a 50% segwit discount
+> would (I think) look like:
+> 
+>    pre-segwit  segwit pkh  segwit 2/2 msig  worst case
+>    1MB         -           -                1MB
+>    1MB         1.7MB       2MB              4MB
+>    2MB         2.8MB       2.9MB            4MB
+> 
+> which seems somewhat more appealing, without making the worst-case any
+> worse; but I guess there's concern about the relay networking scaling
+> above around 2MB per block, at least prior to IBLT/weak-blocks/whatever?
+
+
+The goal isnt really to get a "gain" here...its mostly to decrease the
+worst-case (4MB is pretty crazy) and keep the total size in-line with
+what the network could handle. Getting 1MB blocks through the network in
+under a second is already incredibly difficult...2MB is pretty scary and
+will take lots of work...3MB is over the bound of "yea, we can pretty
+for sure get that to work pretty well".
+
+
+>> 2) In order to prevent significant blowups in the cost to validate
+>> [...] and transactions are only allowed to contain
+>> up to 20 non-segwit inputs. [...]
+> 
+> This could potentially make old, signed, but time-locked transactions
+> invalid. Is that a good idea?
+
+
+Hmmmmmm...you make a valid point. I was trying to avoid breaking old
+transactions, but didnt think too much about time-locked ones.
+Hmmmmmm...we could apply the limits to txn that dont have at least one
+"newer than the fork input", but I'm not sure I like that either.
+
+
+>> Along similar lines, we may wish to switch MAX_BLOCK_SIGOPS from
+>> 1-per-50-bytes across the entire block to a per-transaction limit which
+>> is slightly looser (though not too much looser - even with libsecp256k1
+>> 1-per-50-bytes represents 2 seconds of single-threaded validation in
+>> just sigops on my high-end workstation).
+> 
+> I think turning MAX_BLOCK_SIGOPS and MAX_BLOCK_SIZE into a combined
+> limit would be a good addition, ie:
+> 
+>   #define MAX_BLOCK_SIZE       1500000
+>   #define MAX_BLOCK_DATA_SIZE  3000000
+>   #define MAX_BLOCK_SIGOPS     50000
+> 
+>   #define MAX_COST             3000000
+>   #define SIGOP_COST           (MAX_COST / MAX_BLOCK_SIGOPS)
+>   #define BLOCK_COST           (MAX_COST / MAX_BLOCK_SIZE)
+>   #define DATA_COST            (MAX_COST / MAX_BLOCK_DATA_SIZE)
+> 
+>   if (utxo_data * BLOCK_COST + bytes * DATA_COST + sigops * SIGOP_COST
+>        > MAX_COST)
+>   {
+>       block_is_invalid();
+>   }
+> 
+> Though I think you'd need to bump up the worst-case limits somewhat to
+> make that work cleanly.
+
+
+There is a clear goal here of NOT using block-based limits and switching
+to transaction-based limits. By switching to transaction-based limits we
+avoid nasty issues with mining code either getting complicated or
+enforcing too-strict limits on individual transactions.
+
+
+>> 4) Instead of requiring the first four bytes of the previous block hash
+>> field be 0s, we allow them to contain any value. This allows Bitcoin
+>> mining hardware to reduce the required logic, making it easier to
+>> produce competitive hardware [1].
+>> [1] Simpler here may not be entirely true. There is potential for
+>> optimization if you brute force the SHA256 midstate, but if nothing
+>> else, this will prevent there being a strong incentive to use the
+>> version field as nonce space. This may need more investigation, as we
+>> may wish to just set the minimum difficulty higher so that we can add
+>> more than 4 nonce-bytes.
+> 
+> Could you just use leading non-zero bytes of the prevhash as additional
+> nonce?
+> 
+> So to work out the actual prev hash, set leading bytes to zero until
+> you hit a zero. Conversely, to add nonce info to a hash, if there are
+> N leading zero bytes, fill up the first N-1 (or less) of them with
+> non-zero values.
+> 
+> That would give a little more than 255**(N-1) possible values
+> ((255**N-1)/254) to be exact). That would actually scale automatically
+> with difficulty, and seems easy enough to make use of in an ASIC?
+
