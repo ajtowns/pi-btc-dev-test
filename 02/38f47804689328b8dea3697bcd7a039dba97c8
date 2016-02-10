@@ -1,0 +1,78 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Wed, 10 Feb 2016 15:16:56 +1000
+Subject: [bitcoin-dev] On Hardforks in the Context of SegWit
+In-Reply-To: <56BA618C.4010301@mattcorallo.com>
+References: <56B8EBF8.4050602@mattcorallo.com>
+	<20160209090002.GB18324@sapphire.erisian.com.au>
+	<56BA5FF9.6090905@mattcorallo.com>
+	<56BA618C.4010301@mattcorallo.com>
+Message-ID: <20160210051655.GA1568@sapphire.erisian.com.au>
+
+On Tue, Feb 09, 2016 at 10:00:44PM +0000, Matt Corallo wrote:
+> Indeed, we could push for more place by just always having one 0-byte,
+> but I'm not sure the added complexity helps anything? ASICs can never be
+> designed which use more extra-nonce-space than what they can reasonably
+> assume will always be available,
+
+I was thinking ASICs could be passed a mask of which bytes they could
+use for nonce; in which case the variable-ness can just be handled prior
+to passing the work to the ASIC.
+
+But on second thoughts, the block already specifies the target difficulty,
+so maybe that could be used to indicate which bytes of the previous hash
+must be zero? You have to be a bit careful to deal with the possibility
+that you just did a maximum difficulty increase compared to the previous
+block (in which case there may be fewer bits in the previous hash that
+are zero), but that's just a factor of 4, so:
+
+    #define RETARGET_THRESHOLD ((1ul<<24) / 4)
+    y = 32 - bits[0];
+    if (bits[1]*65536 + bits[2]*256 + bits[3] >= RETARGET_THRESHOLD)
+        y -= 1;
+    memset(prevhash, 0x00, y); // clear "first" y bytes of prevhash
+
+should work correctly/safely, and give you 8 bytes of additional nonce
+to play with at current difficulty (or 3 bytes at minimum difficulty),
+and scale as difficulty increases. No need to worry about avoiding zeroes
+that way either.
+
+
+
+As far as midstate optimisations go, rearranging the block to be:
+
+ version ; time ; bits ; merkleroot ; prevblock ; nonce
+
+would mean that the last 12 bytes of prevblock and the 4 bytes of nonce
+would be available for manipulation [0] if the first round of sha256
+was pre-calculated prior to being sent to ASICs (and also that version
+and time wouldn't be available). Worth considering?
+
+
+
+I don't see how you'd make either of these changes compatible
+with Luke-Jr's soft-hardfork approach [1] to ensuring non-upgraded
+clients/nodes can't be tricked into following a shorter chain, though.
+I think the approach I suggested in my mail avoid Gavin's proposed hard
+fork might work though [2].
+
+
+
+Combining these with making merge-mining easier [1] and Luke-Jr/Peter
+Todd's ideas [3] about splitting the proof of work between something
+visible to miners, and something only visible to pool operators to avoid
+the block withholding attack on pooled mining would probably make sense
+though, to reduce the number of hard forks visible to lightweight clients?
+
+Cheers,
+aj
+
+[0] Giving a total of 128 bits, or 96 bits with difficulty such that
+    only the last 8 bytes of prevblock are available.
+
+[1] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-February/012377.html
+
+[2] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-December/012046.html
+
+[3] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-February/012384.html
+    In particular, the paragraph beginning "Alternatively, if the old
+    blockchain has 10% of less hashpower ..."
