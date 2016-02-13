@@ -1,0 +1,98 @@
+From: ekaggata@gmail.com (Adam Gibson)
+Date: Sat, 13 Feb 2016 18:55:31 +0200
+Subject: [bitcoin-dev] Question regarding Confidential Transactions
+In-Reply-To: <56BB67BD.1060901@gmail.com>
+References: <20160209131215.GE2329@banane.informatik.uni-ulm.de>	<56BA6455.9030803@gmail.com>	<20160210115345.GD2336@banane.informatik.uni-ulm.de>
+	<56BB67BD.1060901@gmail.com>
+Message-ID: <56BF6003.6040803@gmail.com>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+In case it helps:
+The elements alpha sidechain uses a different address format, which
+includes an ECDH pubkey used for creating an ECDH shared secret.
+That shared secret is used to seed a RFC6979 prng, which allows both
+sides to generate the blinding factors used in the rangeproof.
+
+So the situation is: both sides can generate the blinding factors, but
+also the fake signatures used in the rangeproof (the basic idea there
+is to have N signatures in a ring, but only one of them real; the rest
+are forged and can be (must be) entirely random numbers. I say 'basic'
+because the Borromean sig design is to link together several rings,
+not just one). This allows the sender to embed the amount into one of
+those fake signatures (usually the last one) using xor, with certain
+formatting details.
+
+It would be possible to not bother to embed the amount in this way;
+the receiver, knowing the stream of fake/real signatures (again -
+because he knows the seed for the prng), could simply observe which
+ones are real and therefore know the digits of the amount. But if he
+did it this way, it would not be possible to embed any other data into
+the range proof (such as: auditing related information) using xor as
+above.
+
+I did some detailed explanation/investigation of this in sections 3.3
+and 3.4 of
+https://github.com/AdamISZ/ConfidentialTransactionsDoc/blob/master/essayonCT.pdf
+; with apologies for any errors, it was just an investigation I did
+last summer.
+
+
+On 02/10/2016 06:39 PM, Jeremy Papp via bitcoin-dev wrote:
+> On 2/10/2016 5:53 AM, Henning Kopp wrote:
+>> Hi Jeremy,
+>> 
+>>> My understanding of the paper is that the blinding factor would
+>>> be included in the extra data which is incorporated into the
+>>> ring signatures used in the range proof.
+>> Yep, that is a possibility. The blinding factor could be
+>> encrypted with the public key of the receiver. Thus it is only
+>> visible for the receiver who can then check that the correct
+>> amount has been sent.
+> ECC doesn't work like RSA; you can't encrypt directly with a
+> public key.  That's why you generate a shared secret between sender
+> and receiver.  See also, ECDH. (Basically, if (m, M = m*G) is your 
+> private/public key pair, and (n, N = n*G) is your recipient's
+> private public key pair, you can both generate shared secret S =
+> m*N = n*M = m*n*G without revealing your private keys to each
+> other, and without revealing the secret to anyone else as long as
+> they don't know either private key. You then use S as the basis for
+> the key to some symmetric algorithm.)
+>>> you'd transmit it then, though in any case, since using it
+>>> will pretty much require segwit, adding extraneous data isn't
+>>> much of a problem.  In both cases, I imagine the blinding
+>>> factor would be protected from outside examination via some
+>>> form of shared secret generation... Although that would require
+>>> the sender to know the recipient's unhashed public key; I don't
+>>> know of any shared secret schemes that will work on hashed
+>>> keys.
+>> Here you lost me. Why do we need to create a shared secret? Is
+>> this shared secret used as the blinding factor? Also I think the
+>> sender knows the unhashed public key of the receiver. The only
+>> reason not to include it in the transaction script is that an 
+>> external observer is unable to see the receiver directly in the 
+>> blockchain.
+> Normal Bitcoin transactions are made to the hash of a public key
+> because once the public key is known, it becomes easier to break it
+> if we ever develop quantum computers. That's why it's recommended
+> that you only spend from a particular address once (if possible)
+> since its only in spending that you are required to reveal your
+> public key.   Since you can't do a shared secret with a public key
+> hash, AFAIK, you'd have to know the public key of your recipient to
+> be able to do ECDH.
+> 
+> Jeremy Papp _______________________________________________ 
+> bitcoin-dev mailing list bitcoin-dev at lists.linuxfoundation.org 
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1
+
+iQEcBAEBAgAGBQJWv1/8AAoJELOuCfHpoxl6dV8H/AvlEUebgKBAZdSdIEDKm0m0
+pSXNWH62v327YdJ2wFqPCB2zG9HKXP76XhCGx39PEEvBmAFAoD6URAWPk8o03kTo
+aJZUeRB7wLqIALuUub/0JzAJwcxZtTIhYu3ygfyZZuvpomG8yXlERwfjB+BcCXnm
+D7TJ2qOyq3X3uaneb/OnUEvDxOrl9zAp9q7CUnFQB2xagCRnHyGNcrWaH43RmpHl
+Eima6eonQUR4AAcIUu0CKSRjgM6q46bMbXTFt9I4XeqQxsMB5Gfe9Ggk15TNRoUm
+ENVaJnPL4qlJqODSrO9R4xrurVCcp7HVeR9B5aztFQszVNxhMoZtFlyn5U3J0gY=
+=+I00
+-----END PGP SIGNATURE-----
