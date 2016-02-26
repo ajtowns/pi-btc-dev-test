@@ -1,0 +1,59 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Fri, 26 Feb 2016 05:56:56 +0000
+Subject: [bitcoin-dev] INV overhead and batched INVs to reduce full node
+	traffic
+In-Reply-To: <B186E7A6-0FD4-4C82-B42F-7EE61D420A7E@toom.im>
+References: <B186E7A6-0FD4-4C82-B42F-7EE61D420A7E@toom.im>
+Message-ID: <CAAS2fgTTUjVUx0GQYed-tWnH4RmS0tpv2yrpCOGJSeW8kJkYiw@mail.gmail.com>
+
+On Fri, Feb 26, 2016 at 5:35 AM, Jonathan Toomim via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> An improvement that I've been thinking about implementing (after
+> Blocktorrent) is an option for batched INVs. Including the hashes for two
+> txes per IP packet instead of one would increase the INV size to 229 bytes
+> for 64 bytes of payload -- that is, you add 36 bytes to the packet for every
+> 32 bytes of actual payload. This is a marginal efficiency of 88.8% for each
+> hash after the first. This is *much* better.
+>
+> Waiting a short period of time to accumulate several hashes together and
+> send them as a batched INV could easily reduce the traffic of running
+> bitcoin nodes by a factor of 2,
+
+Copying my response to you from BitcoinTalk
+(https://bitcointalk.org/index.php?topic=1377345.msg14013294#msg14013294):
+
+Uh. Bitcoin has done this since the very early days. The batching was
+temporarily somewhat hobbled between 0.10 and 0.12 (especially when
+you had any abusive frequently pinging peers attached), but is now
+fully functional again and it now manages to batch many transactions
+per INV pretty effectively. Turn on net message debugging and you'll
+see the many INVs that are much larger than the minimum. The average
+batching size (ignoring the trickle cut-through) is about 5 seconds
+long-- and usually gets about 10 transactions per INV. My measurements
+were with these fixes in effect; I expect the blocksonly savings would
+have been higher otherwise.
+
+2016-02-26 05:47:08 sending: inv (1261 bytes) peer=33900
+2016-02-26 05:47:08 sending: inv (109 bytes) peer=32460
+2016-02-26 05:47:08 sending: inv (37 bytes) peer=34501
+2016-02-26 05:47:08 sending: inv (217 bytes) peer=33897
+2016-02-26 05:47:08 sending: inv (145 bytes) peer=41863
+2016-02-26 05:47:08 sending: inv (37 bytes) peer=35725
+2016-02-26 05:47:08 sending: inv (73 bytes) peer=20567
+2016-02-26 05:47:08 sending: inv (289 bytes) peer=44703
+2016-02-26 05:47:08 sending: inv (73 bytes) peer=13408
+2016-02-26 05:47:09 sending: inv (649 bytes) peer=41279
+2016-02-26 05:47:09 sending: inv (145 bytes) peer=42612
+2016-02-26 05:47:09 sending: inv (325 bytes) peer=34525
+2016-02-26 05:47:09 sending: inv (181 bytes) peer=41174
+2016-02-26 05:47:09 sending: inv (469 bytes) peer=41460
+2016-02-26 05:47:10 sending: inv (973 bytes) peer=133
+2016-02-26 05:47:10 sending: inv (361 bytes) peer=20541
+
+Twiddling here doesn't change the asymptotic efficiency though; which
+is what my post is about.
+
+[I'm also somewhat surprised that you were unaware of this; one of the
+patches "classic" was talking about patching out was the one restoring
+the batching... due to a transaction deanonymization service (or
+troll) claiming it interfered with their operations.]
