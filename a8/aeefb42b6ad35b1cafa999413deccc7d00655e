@@ -1,0 +1,82 @@
+From: joseph@lightning.network (Joseph Poon)
+Date: Thu, 25 Feb 2016 17:07:46 -0800
+Subject: [bitcoin-dev] SIGHASH_NOINPUT in Segregated Witness
+Message-ID: <20160226010746.GB10295@lightning.network>
+
+As Segregated Witness will be merged soon as a solution for transaction
+malleability, especially with multi-party adversarial signatures, there
+may be an additional use case/functionality which is helpful for
+Lightning Network and possibly other Bitcoin use cases. This requires a
+new SIGHASH flag inside Segregated Witness which does not sign the input
+txid/index.
+
+Segwit is very helpful in resolving malleability in pretty much every
+case which matters. It is especially helpful in having solid and safe
+defaults for standard Bitcoin payments; it's very difficult to mess up
+if you are writing code in conjunction with the Bitcoin RPC API.
+
+However, it is very useful for LN if there is a certain level of
+outsourcibility for transactions without this 3rd party taking on
+onerous costs. In LN, there is a dispute resolution period established
+to prevent the counterparty from attesting an incorrect channel state
+(represented by broadcasting a timelocked transaction). In other words,
+if someone in a channel broadcasts an incorrect state, the output can be
+redeemed by a 3rd party (but this 3rd party is not a custodian, since
+the output goes to the other party in the channel).
+
+Ideally, a 3rd-party can be handed a transaction which can encompass all
+prior states in a compact way. For currently-designed Segregated Witness
+transactions, this requires storing all previous signatures, which can
+become very costly if individuals to thousands of channel state updates
+per day. This is very possible, as fees are near-zero, the value in
+atomizing all payments to many transactions becomes viable (reducing
+transaction/information costs). If individuals are doing tens of
+thousands of transactions per day, and one presumes something like
+70-bytes of data per Commitment state in the channel, it quickly becomes
+infeasible to watch on behalf of many channels without material costs.
+
+This is especially necessary because it is highly desirable to make
+keeping track of these channels be very cheap, as it allows for more
+participants to be watching on one's behalf (reducing the chance of a
+3rd party fail to watch). Further, it may reduce the need to notify the
+3rd party for every single channel Commitment state, instead only
+providing the most recent one should provide sufficient information for
+all prior states (since the signature will apply for any type of
+transaction), making the only updated information the revocation
+secret/preimage. Without this SIGHASH flag, every single state would
+need to be contacted and updated with 3rd parties. With this SIGHASH
+flag, one could instead delegate outsourcing when one's client goes
+offline with a single message several hundred bytes in size,
+encompassing all prior states.
+
+Of course, while running a 24/7 full-node is encouraged, I suspect many
+people will not want to do so at the current time, and it needs to be
+functional for those who elect to be connected intermittently. This
+requires outsourcing or watching on one's behalf.
+
+This would be achieved using a SIGHASH flag, termed SIGHASH_NOINPUT. It
+does not include as part of the signature, the outpoint being spent
+(txid and index), nor the amount. It however, would include the spent
+outpoint's script as part of the signature. Note that this is just a
+SIGHASH flag, and the outpoints are still being included as part of the
+txins (if they are mutated, the new txids can be updated by the wallet
+without resigning). This allows for a signature to apply to anything
+with that pubkey (therefore pubkeys with this flag should not be
+reused). For safety, this only applies in SegWit transactions, as segwit
+provides a sufficient malleability solution, there is no incentive to
+improperly use this sighash flag as a roundabout way to resolve
+malleability.
+
+This helps with 3rd-party outsourcing for watching the blockchain, as
+one can provide a signature (and the most recent hash-chain of
+revocation preimages), which encompasses penalty transactions for all
+prior states. Functionally, this allows for opt-in wildcard inputs, but
+wallets which do not require these transactions do not need to be
+concerned with this flag; since they will never be signing with this
+flag, they do not need to be concerned with address re-use.
+
+I'm interested in input and in the level of receptiveness to this. If
+there is interest, I'll write up a draft BIP in the next couple days.
+
+-- 
+Joseph Poon
