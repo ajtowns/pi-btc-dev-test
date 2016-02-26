@@ -1,0 +1,81 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 26 Feb 2016 13:20:56 +1000
+Subject: [bitcoin-dev] SIGHASH_NOINPUT in Segregated Witness
+In-Reply-To: <CAAS2fgTphe5T8EBtz0xKRpRuLaO0P=3WeW2d1WD6b4Ark79rMQ@mail.gmail.com>
+References: <20160226010746.GB10295@lightning.network>
+	<CAAS2fgTphe5T8EBtz0xKRpRuLaO0P=3WeW2d1WD6b4Ark79rMQ@mail.gmail.com>
+Message-ID: <20160226032056.GA10450@sapphire.erisian.com.au>
+
+On Fri, Feb 26, 2016 at 01:32:34AM +0000, Gregory Maxwell via bitcoin-dev wrote:
+> On Fri, Feb 26, 2016 at 1:07 AM, Joseph Poon via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > I'm interested in input and in the level of receptiveness to this. If
+> > there is interest, I'll write up a draft BIP in the next couple days.
+> .. I think this should probably be constructed as a new segwit script type,
+> and not a base feature.
+
++1 to both
+
+> The exact construction you're thinking of there isn't clear to me...
+
+I think the idea is that you have three transactions:
+
+ anchor:
+   input: whatever
+   output:
+     - single output, spendable by 2-of-2 multisig
+     - [possibly others as well, whatever]
+
+ commitment:
+   input: anchor
+   outputs:
+     1. payment to A
+     2. payment to B
+     3. HTLC to A on R1, timeout T1
+     4. HTLC to A on R2, timeout T2
+     5. HTLC to B on R3, timeout T3
+     ...
+
+ penalty:
+   inputs:
+     all the outputs from the commitment tx
+   outputs:
+     1. 99% as payment to me
+     2.  1% as outsourcing fee
+
+As long as the key I use for spending each of commitment transactions
+outputs is "single use" -- ie, I don't use it for other channels or
+anywhere else on the blockchain, then as long as the signature commits
+to the outputs it's safe afaics.
+
+(You still have to send a lot of data to the place you're outsourcing
+chain-monitoring to; all the R1,R2,R3 and T1,T2,T3 values are needed in
+order to reconstruct the redeem scripts)
+
+> one thing that comes to mind is that I think it is imperative that we
+> do not deploy a without-inputs SIGHASH flag without also deploying at
+> least a fee-committing sighash-all.
+
+If the fee for commitment transactions changes regularly (eg, a new
+commitment transaction is generated every few seconds/minutes, and the fee
+is chosen based on whatever estimatefee returns), I think this would cause
+problems -- you couldn't use a single signature to cover every revoked
+commitment, you'd need one for each different fee level that you'd used
+for the lifetime of the channel. Actually, the size of the commitment
+transaction will differ anyway depending on how many HTLCs are open,
+so even if estimatefee didn't change, the fee would still differ. So I
+think commiting to a fee isn't workable for the lightning use case...
+
+> When you do write a BIP for this its imperative that the vulnerability
+> to replay is called out in bold blinking flaming text, along with the
+> necessary description of how to use it safely. The fact that without
+> input commitments transactions are replayable is highly surprising to
+> many developers... Personally, I'd even go so far as to name the flag
+> SIGHASH_REPLAY_VULNERABLE. :)
+
++1, though I'm not sure it's so much "vulnerable" to replay as it is
+"explicitly designed" to be replayable...
+
+Cheers,
+aj
+
