@@ -1,0 +1,26 @@
+From: j@toom.im (Jonathan Toomim)
+Date: Sat, 27 Feb 2016 01:08:22 -0800
+Subject: [bitcoin-dev] INV overhead and batched INVs to reduce full node
+	traffic
+In-Reply-To: <05C32A45-2EE8-4808-A0C6-18B1C30A8E1C@toom.im>
+References: <B186E7A6-0FD4-4C82-B42F-7EE61D420A7E@toom.im>
+	<CAAS2fgTTUjVUx0GQYed-tWnH4RmS0tpv2yrpCOGJSeW8kJkYiw@mail.gmail.com>
+	<05C32A45-2EE8-4808-A0C6-18B1C30A8E1C@toom.im>
+Message-ID: <52B8920A-1482-4662-BC90-1A2A9BF8F924@toom.im>
+
+Well, here's another idea: we could shorten the tx hashes to about 4 to 6 bytes instead of 32.
+
+Let's say we have a 1 GB mempool with 2M transactions in it. A 4 byte shorthash would have a 0.046% chance of resulting in a collision with another transaction in our mempool, assuming a random distribution of hash values.
+
+Of course, an attacker might construct transactions specifically for collisions. To protect against that, we set up a different salt value for each connection, and for the INV message, we use a 4 to 6 byte salted hash instead of the full thing. In case a peer does have a collision with one salt value, there are still 7 other peers with different salt values. The probability that they all fail is about 2.2e-27 with a 4-byte hash for a single peer. If we have 500,000 full nodes and 1M transactions per 10 minutes, the chance is 1.1e-15 that even one peer misses even one transaction.
+
+This strategy would come with about 12 bytes of additional memory overhead per peer per tx, or maybe a little more. In exchange for that 12 bytes per peer*tx, we would save up to 28 bytes per peer*tx of network bandwidth. In typical conditions (e.g. 100-ish MB mempool, 16 peers, 2 MB blocks, 500 B serialized tx size), that could result in 1.792 MB net traffic saved per block (7.7 GB/month) at the expense of 12 MB of RAM. Overall, this technique might have the ability to reduce INV traffic by 5-8x in the asymptotic case, or maybe 2-3x for a realistic case.
+
+I know short hashes like this have been proposed many times before for block propagation (e.g. by Gavin in his O(1) scaling gist, or in XTB). Has anyone else thought of using them like this in INV messages? Can anyone think of any major problems with the idea?
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 496 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160227/95ea770f/attachment.sig>
