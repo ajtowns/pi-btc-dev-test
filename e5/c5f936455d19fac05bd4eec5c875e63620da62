@@ -1,0 +1,45 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Mon, 29 Feb 2016 10:55:53 +1030
+Subject: [bitcoin-dev] SIGHASH_NOINPUT in Segregated Witness
+In-Reply-To: <20160226010746.GB10295@lightning.network>
+References: <20160226010746.GB10295@lightning.network>
+Message-ID: <87oab0e50u.fsf@rustcorp.com.au>
+
+Joseph Poon via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> writes:
+> Ideally, a 3rd-party can be handed a transaction which can encompass all
+> prior states in a compact way. For currently-designed Segregated Witness
+> transactions, this requires storing all previous signatures, which can
+> become very costly if individuals to thousands of channel state updates
+> per day.
+
+AFAICT we need more than this.  Or are you using something other than
+the deployable lightning commit tx style?
+
+If each HTLC output is a p2sh[1], you need the timeout and rhash for
+each one to build the script to redeem it.  In practice, there's not
+much difference between sending a watcher a tx for every commit tx and
+sending it information for every new HTLC (roughly a factor of 2).
+
+So we also need to put more in the scriptPubKey for this to work; either
+the entire redeemscript, or possibly some kind of multiple-choice P2SH
+where any one of the hashes will redeem the payment.
+
+Cheers,
+Rusty.
+[1] eg. from https://github.com/ElementsProject/lightning/blob/master/doc/deployable-lightning.pdf
+        OP_HASH160 OP_DUP # Replace top element with two copies of its hash
+        <R-HASH> OP_EQUAL # Test if they supplied the HTLC R value
+        OP_SWAP <COMMIT-REVOCATION-HASH> OP_EQUAL OP_ADD
+                          # Or the commitment revocation hash
+        OP_IF # If any hash matched.
+                <KEY-B> # Pay to B.
+        OP_ELSE # Must be A, after HTLC has timed out.
+                <HTLC-TIMEOUT> OP_CHECKLOCKTIMEVERIFY Ensure (absolute) time has passed.
+                <DELAY> OP_CHECKSEQUENCEVERIFY # Delay gives B enough time to use revocation if it has it.
+                OP_2DROP # Drop the delay and htlc-timeout from the stack.
+                <KEY-A> # Pay to A.
+        OP_ENDIF
+        OP_CHECKSIG # Verify A or B's signature is correct.
+
+Cheers,
+Rusty.
