@@ -1,0 +1,86 @@
+From: dave@dtrt.org (David A. Harding)
+Date: Wed, 2 Mar 2016 12:14:28 -0500
+Subject: [bitcoin-dev] Hardfork to fix difficulty drop algorithm
+In-Reply-To: <201603021456.15820.luke@dashjr.org>
+References: <201603021456.15820.luke@dashjr.org>
+Message-ID: <20160302171418.GA5312@localhost.localdomain>
+
+On Wed, Mar 02, 2016 at 02:56:14PM +0000, Luke Dashjr via bitcoin-dev wrote:
+> To alleviate this risk, it seems reasonable to propose a hardfork to the 
+> difficulty adjustment algorithm so it can adapt quicker to such a significant 
+> drop in mining rate.
+
+Having a well-reviewed hard fork patch for rapid difficulty adjustment
+would seem to be a useful reserve for all sorts of possible problems.
+That said, couldn't this specific potential situation be dealt with by a
+relatively simple soft fork?
+
+Let's say that, starting soon, miners require that valid block header
+hashes be X% below the target value indicated by nBits. The X% changes
+with each block, starting at 0% and increasing to 50% just before block
+420,000 (the halving). This means the before the halving, every two
+hashes are being treated as one hash, on average.
+
+For blocks 420,000 and higher the code is disabled, immediately doubling
+the effective hash rate at the same time the subsidy is halved,
+potentially roughly canceling each other out to make a pre-halving hash
+equal in economic value to a post-halving hash.
+
+Of course, some (perhaps many) miners will not be profitable at the
+post-halving subsidy level, so the steady increase in X% will force them
+off the network at some point before the halving, hopefully in small
+numbers rather than all at once like the halving would be expected to do.
+
+For example, if the soft fork begins enforcement at block 410,000, then
+X% can be increased 0.01% per block. Alice is a miner whose costs are
+24BTC per block and she never claims tx fees for some reason, so her
+profits now are always 25BTC per block. During the first difficulty
+period after the soft fork is deployed, the cost to produce a hash will
+increase like this,
+
+    0: 0%           500: 5%         1000: 10%       1500: 15%       2000: 20%
+    100: 1%         600: 6%         1100: 11%       1600: 16%
+    200: 2%         700: 7%         1200: 12%       1700: 17%
+    300: 3%         800: 8%         1300: 13%       1800: 18%
+    400: 4%         900: 9%         1400: 14%       1900: 19%
+
+Somewhere around block 417, Alice will need to drop out because her
+costs are now above 25BTC per block.  With the loss of her hash rate,
+the average interblock time will increase and the capacity will decrease
+(all other things being equal). However, Bob whose costs are 20BTC per
+block can keep mining through the period.
+
+At the retarget, the difficulty will go down (the target goes up) to
+account for the loss of Alice's hashes. It may even go down enough
+that Alice can mine profitably for a few more blocks early in the new
+period, but the increasing X% factor will make her uneconomical again,
+and this time it might even make Bob uneconomical too near the end of
+the period. However, Charlie whose costs are 12BTC per block will
+never be uneconomical as he can continue mining profitably even after
+the halving. Alice and Bob mining less will increase the percentage of
+blocks Charlie produces before the retarget, steadily shifting the
+dynamics of the mining network to the state expected after the halving
+and hopefully minimizing the magnitude of any shocks.
+
+This does create the question about whether this soft fork would be
+ethical, as Alice and Bob may have invested money and time on the
+assumption that their marginal hardware would be usable up until the
+halving and with this soft fork they would become uneconomical earlier
+than block 420,000. A counterargument here is such an investment was
+always speculative given the vagaries of exchange rate fluctuation, so
+it could be permissible to change the economics slightly in order to
+help ensure all other Bitcoin users experience minimal disruption during
+the halving.
+
+Unless I'm missing something (likely) I think this proposal has the
+advantage of fast rollout (if the mechanism of an adjusted target is as
+simple as I think it could be) in a non-emergency manner without a hard
+fork that would require all full nodes upgrade (plus maybe some SPV
+software that check nBits, which they probably all should be doing
+given it's in the block headers that they download anyway).
+
+-Dave
+
+P.S. I see Tier Nolan proposed something similar while I was writing
+     this. I think this proposal differs in its analysis to warrant a
+     possible duplicate posting.
