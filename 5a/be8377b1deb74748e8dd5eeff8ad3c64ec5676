@@ -1,0 +1,78 @@
+From: luke@dashjr.org (Luke Dashjr)
+Date: Thu, 24 Mar 2016 02:16:55 +0000
+Subject: [bitcoin-dev] p2p authentication and encryption BIPs
+In-Reply-To: <56F2B51C.8000105@jonasschnelli.ch>
+References: <56F2B51C.8000105@jonasschnelli.ch>
+Message-ID: <201603240216.56752.luke@dashjr.org>
+
+On Wednesday, March 23, 2016 3:24:12 PM Jonas Schnelli via bitcoin-dev wrote:
+> I have just PRed a draft version of two BIPs I recently wrote.
+> https://github.com/bitcoin/bips/pull/362
+
+In the future, please submit BIP drafts to the mailing list for comment and 
+initial peer review before opening a pull request (or requesting a BIP number 
+assignment), per BIP 1.
+
+> Each peer that supports p2p authentication, must provide two user editable
+> databases (can be a simple record-per-line file).
+
+As long as the format of these databases is not standardised, it seems 
+inappropriate to define *any* of this implementation detail in a BIP.
+
+> A peer can send an authenticate message by wrapping the desired message into
+> an <code>auth</code>-message-wrapper to the remote peer.
+
+How does a peer know what messages the other peer requires to be 
+authenticated?
+
+> 33bytes || identity-pubkey || comp.-pubkey || The identity pubkey of the
+> requesting peer
+
+Seems a waste to include this with every single [authenticated] message...
+
+> 8bytes || auth-msg-id || int64 || up-counting auth-msg-id (0 to INT64MAX)
+
+Is this required to persist across connections/restarts/possibly complete 
+reinstalls?
+
+Can the same auth-msg-id be used for multiple peers, so a message can be 
+signed once and sent to all N peers?
+
+> Responding peers must ignore (banning would lead to fingerprinting) the
+> requesting peer after 5 unsuccessfully authentication tries to avoid
+> resource attacks.
+
+How does banning in this specific case enable fingerprinting as opposed to any 
+other banning?
+
+> The peers should display the identity-pubkey as a identity-address to the
+> users, which is a base58-check encoded ripemd160(sha256) hash.
+
+If this is going to become a general-purpose identity system, I think more is 
+needed than a simple EC keypair. At the very least, it should probably use a 
+HD chain and use a new key for every signature (notice you already have auth-
+msg-id to use with this!).
+
+> This proposal is backward compatible. Non supporting peers will ignore the
+> <code>auth</code> message.
+
+... and not process it at all? How is that backward compatible?
+
+> Encrypting traffic between peers is already possible with VPN, tor, stunnel,
+> curveCP or any other encryption mechanism on a deeper OSI level, however, 
+> most mechanism are not practical for SPV or other DHCP/NAT environment and
+> will require significant knowhow in how to setup a secure channel.
+
+I don't see how Tor fails this criteria...
+
+> The responding peer will set a session timeout time-interval. The default
+> must be 1'800 seconds.
+
+What default? Is the timeout field optional? Why not simply require it?
+
+> This proposal is backward compatible. Non supporting peers will ignore the
+> <code>enc*</code> messages.
+
+How should the supporting peer handle the message being ignored?
+
+Luke
