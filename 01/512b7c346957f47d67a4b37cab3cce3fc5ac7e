@@ -1,0 +1,113 @@
+From: forum@leeclagett.com (Lee Clagett)
+Date: Fri, 25 Mar 2016 03:17:29 -0400
+Subject: [bitcoin-dev] p2p authentication and encryption BIPs
+In-Reply-To: <56F2B51C.8000105@jonasschnelli.ch>
+References: <56F2B51C.8000105@jonasschnelli.ch>
+Message-ID: <20160325031729.511ab37c@laptop-m1330>
+
+On Wed, 23 Mar 2016 16:24:12 +0100
+Jonas Schnelli via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+wrote:
+> Hi
+> 
+> I have just PRed a draft version of two BIPs I recently wrote.
+> https://github.com/bitcoin/bips/pull/362
+> 
+> Two BIPs that addresses the problem of decoupling wallets/clients from
+> nodes while assuming a user (or a group) know the remote peer.
+> 
+> Authentication would be necessary to selective allow bloom filtering
+> of transactions, encryption or any other node service that might lead
+> to fingerprinting or resource attacks. Authentication would also be a
+> pre-requirement for certificate free encryption-handshakes that is
+> (enough?) resistant to MITM attacks.
+> 
+> Encryption is highly recommended if you connect a SPV node to a
+> trusted node.
+> 
+> Authentication would allow accessing private p2p extensions from a
+> remote SPV peer (example: fee estimation).
+> 
+> I'm aware of other methods to increase privacy and integrity (tor,
+> VPN, stunnel, etc.), however I think authentication and a basic
+> communication encryption should be part of the protocol and its setup
+> should be complete hassle-free.
+> 
+> Thanks for your feeback.
+> 
+> /jonas
+> 
+
+- The motivation sections seem weak. Why not use SSH? It would have
+  similar setup requirements, and is already a deployed solution. If
+  there are additional setup simplicities (compared to SSH),
+  consider listing them. And if one of the motivating factors is
+  complexity reduction from the various "do everything you could
+  possible want" protocols/implementations, then add this to the
+  motivation.
+- ECDSA and "ec pubkey" are mentioned, but not the specific curve.
+- The hash algorithm for ECDSA is not explicitly mentioned.
+- There is no way to change the cryptographic primitives being used or
+  to update to a new protocol version. Would it be done with a new
+  message type `auth2` ... ?
+- The following seems to be contradictory:
+
+> If the responding peer could not lookup the requesting peer's
+> identity-pubkey in the local authorized-peers database or if the
+> responding peer could not verify the signature, the requested auth
+> message must be ignored to avoid fingerprinting of peers with
+> authentication support.
+>
+> Responding peers must ignore (banning would lead to fingerprinting)
+> the requesting peer after 5 unsuccessfully authentication tries to
+> avoid resource attacks.
+
+  If I connect to a peer, send 5 auth messages followed by another type
+  of message that gets no response, this could indicate auth support.
+  Or is this supposed to say ignore further auth messages, but not
+  other types of messages? The wording seems to suggest an ignore-all.
+- The pubkey from the requester is sent in cleartext, which can be used
+  as an identifier across connections (similar to a MAC, except it can
+  be seen across every network hop and correlated across connection
+  types). Hiding this will likely require encryption, and the protocol
+  will start to look similar to CurveCP. If the additional complexity
+  is not worth fixing this issue, a section in the encryption BIP
+  should be added to explain the identifier leakage.
+- The known-peers has an IP and port section. Should the requester limit
+  signatures based on this information? This algorithm or process needs
+  to be better defined than the vague paragraph about verifying the
+  integrity of the remote peer; if an implementation uses the
+  any-one-of server approach the known-peers file becomes more like a
+  SSL CA list, which does not seem like the intent. However, the example
+  at the bottom says "Requesting peer does a lookup of (F) in
+  known-peers database (B)".
+- The encryption portion does not mention the pubkey pairs in use for
+  ECDH (this needs to be described), so I am assuming the pairs from
+  authentication are re-used. This increases the chances of data
+  exposure since a single botched k selection (re-use) for ECDSA would
+  allow for forged authentications, and the decryption of all
+  historical data. Adding a temporary key exchange would add slight
+  complexity and one RTT from the requesters perspective, but it
+  provides forward-secrecy and protection against ECDSA implementation
+  failures.
+- Can the responding peer set a different cipher in the `ecinit`
+  response, or should/must it be the same?
+- What happens if the responding peer does not support the cipher?
+  Presumably, a rejection?
+- The contents of the IV field are unspecified, and should be
+  specified to contain new output from a CSPRNG for each message.
+- Should `enc` messages be wrapped in `auth` messages (presumably so
+  since there is no MAC)? `encinit` have this restriction, but nothing
+  is specified for `enc`.
+- Is the context hash unique in each direction? There seems to be one,
+  which would be racy - what if the client wanted to pipeline messages?
+  Or is the intent a single open request/response style? I think this
+  _adds_ a restriction to the Bitcoin protocol.
+- Instead of a hash, what about a counter in each direction for the
+  `enc` stream? The auth portion verifies integrity, authenticity, and
+  completeness of each message (including this counter). Missing
+  messages (through TCP injection?) would still detected. Using TCP
+  injection to forcefully teardown a connection is possible in both
+  designs.
+
+Lee
