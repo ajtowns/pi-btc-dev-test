@@ -1,0 +1,74 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Fri, 25 Mar 2016 11:17:10 +0100
+Subject: [bitcoin-dev] p2p authentication and encryption BIPs
+In-Reply-To: <56F2B51C.8000105@jonasschnelli.ch>
+References: <56F2B51C.8000105@jonasschnelli.ch>
+Message-ID: <56F51026.8010708@jonasschnelli.ch>
+
+> I have just PRed a draft version of two BIPs I recently wrote.
+> https://github.com/bitcoin/bips/pull/362
+
+Thanks for the feedback and IRC discussions.
+
+I have overhauled both BIPs.
+https://github.com/bitcoin/bips/pull/362/files#diff
+
+Main changes for the encryption BIP:
+* No message wrapping. Once encryption is established, everything is
+encrypted. No timeout.
+* Added MAC: proposed AEAD is now ChaCha20-Poly1305 with an alternative
+for AES256-GCH
+* Independent ECDH negotiation and independent secrets for the symmetric
+cipher for both communication directions
+* Optimized message format and message-batch-option for encrypted data
+
+It could be that the p2p performance for Chacha20-poly1305 encrypted
+message is slightly better then the current plaintext message format
+(dropping the network magic and the sha256 per message).
+
+P2p authentication BIP:
+* No message wrapping. Peers keep the state once authenticated.
+* Simplified and auth now requires encrypted channels.
+
+
+Some answers...
+
+> How does a peer know what messages the other peer requires to be
+authenticated?
+
+This is not covered by the auth BIP. Peers could agree on a protocol
+extension outside of any BIP.
+Once auth is possible, new BIPs could be written. Things like only
+allowing filtering (or other services) to authenticated peers (and
+disabling NODE_BLOOM).
+
+> How does banning in this specific case enable fingerprinting as
+opposed to any other banning?
+
+Current nodes ignore a unknown message with a command like "auth".
+Banning would allow a requesting peer to identify nodes that support
+auth and attack them over different channels ("ah, ... this guy supports
+auth, they must have some secret data, lets attack over SSH).
+
+>> This proposal is backward compatible. Non supporting peers will
+ignore the <code>auth</code> message.
+> ... and not process it at all? How is that backward compatible?
+
+Depends how we define backward compatibility. :-)
+Peers supporting this "extension" can still interact with older peers.
+
+> This proposal is backward compatible. Non supporting peers will ignore
+the > <code>enc*</code> messages.
+
+Current p2p implementation ignores any unknown command.
+
+
+</jonas>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 819 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160325/79ef629f/attachment.sig>
