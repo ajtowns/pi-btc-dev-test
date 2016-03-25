@@ -1,0 +1,143 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Fri, 25 Mar 2016 19:43:00 +0100
+Subject: [bitcoin-dev] p2p authentication and encryption BIPs
+In-Reply-To: <2590065.B4dTBeyc1A@garp>
+References: <56F2B51C.8000105@jonasschnelli.ch> <1983116.UNQS71VxHo@garp>
+	<56F310D6.2070002@jonasschnelli.ch> <2590065.B4dTBeyc1A@garp>
+Message-ID: <56F586B4.8020507@jonasschnelli.ch>
+
+Hi Tom
+
+>> The encryption should be optional.
+>> The proposed authentication scheme does take care of the
+>> identity-management and therefor prevent MITM attacks.
+>> Without the identity management, you might not detect sending/receiving
+>> encrypted data from/to a MITM.
+> 
+> If you want to extend the Bitcoin protocol itself, you will have to resolve 
+> that. Which many other solutions do (ssh for instance).
+
+Please check the newest auth BIP (it solves MITM).
+
+The encryption BIP itself does not cover peer authentication.
+Encryption without authentication of peers can also be valuable.
+
+
+>>> * What is the reason for using the p2p code to connect a wallet to a node?
+>>> I suggest using one of the other connection methods to connect to the
+>>> node.
+>>> This avoids a change in the bitcoin protocol for a very specific usecase.
+>>
+>> Most known use-case: SPV.
+> 
+> You didn't answer the question.
+
+I hope you see the today's problem with SPV.
+You fully reveal to your ISP / WiFi provider most of your wallet
+controlled addresses (when using BF). The ISP/WiFi provider can link
+your bitcoin usage to other inet traffic and/or they could sell
+information to statistics company like google.
+
+Also, an attacker controlling a WiFi router or any other network peer
+between your SPV node and the remote full node could censorship
+transactions.
+
+Etc. etc.
+
+An encrypted channel together with a trusted full node would finally
+allow to have a secure and save SPV communication.
+
+
+>>> * Why do you want to do a per-message encryption (wrapping the original)?
+>>> Smaller messages that contain predictable content and are able to be
+>>> matched to the unencrypted versions on the wire send to other nodes will
+>>> open this scheme up to various old statistical attacks.
+>>
+>> It's probably extremely inefficient to create a constant time stream.
+> 
+> Your use of "probably" makes me wonder if you already have an implementation. 
+> Doing any encryption and handshaking design *without* actually having it coded 
+> and gone though testing yet makes no sense.
+> I do not belief Bitcoin will benefit from "design by committee" where a 
+> specification is drawn before an implementation is written.
+> 
+> Also, you didn't actually address the attack-vector.
+
+Which attack-vector? MITM? Is conceptual solved with the auth BIP (that
+requires encryption).
+
+There is no implementation done yet.
+It would be a waste of time to start writing a such implementation
+_before_ having this discusses and improved by the community.
+
+But the encryption BIP now recommends Chacha20-Polay1305 as AEAD which
+is widely used.
+
+I'm ready to write an implementation as soon as I have some signs that
+the BIP does make sense.
+
+Also, auth and enc is not something we will have in the next couple of
+weeks. This might require a couple of months until its stable and ready
+for production.
+
+> 
+>  
+>>>> Responding peers must ignore (banning would lead to fingerprinting) the
+>>>
+>>> requesting peer after 5 unsuccessfully authentication tries to avoid
+>>> resource attacks.
+>>>
+>>> Any implementation of that kind would itself again be open to resource
+>>> attacks.
+>>> Why 5? Do you want to allow a node to make a typo?
+>>
+>> Good point. Maybe one false try should lead to ignoring the peer.
+> 
+> That doesn't take away the resource attack at all.
+> 
+>  
+>>>> To ensure that no message was dropped or blocked, the complete
+>>>> communication> 
+>>> must be hashed (sha256). Both peers keep the SHA256 context of the
+>>> encryption session. The complete <code>enc</code> message (leaving out
+>>> the hash itself) must be added to the hash-context by both parties.
+>>> Before sending a <code>enc</code> command, the sha256 context will be
+>>> copied and finalized.
+>>>
+>>> You write "the complete communication must be hashed" and every message
+>>> has a hash of the state until it is at that point.
+>>> I think you need to explain how that works specifically.
+>>
+>> This is a relative simple concept and does not require rehashing the
+>> whole communication. 
+> 
+> Apologies, I should have been more clear; the BIP should specify the actual 
+> algorithm, otherwise you can't create an implementation from just reading the 
+> BIP.
+
+The sha256 context is gone now and replaced by a proper MAC.
+
+> 
+> Also, this may be a good time to ask why you want to have a per-message 
+> encryption?
+> Practically every single popular end-to-end encryption uses one approach or 
+> another were it just encrypts as another layer. (the  L in ssl). You are 
+> mixing layers, and unless you do that for a very good reason, or have a very 
+> good reason why everyone else is doing it wrong, I suggest using a layered 
+> encryption approach.
+
+Like most other encryption layers, we would still use messages. But we
+call them "encrypted messages", the have a tiny header of plaintext data
+(message length, AEAD-tag) and they will contain <n> plaintext p2p
+messages _after_ decrypting. The plaintext messages have a much simpler
+header (removed the 4 bytes sha256 checksum, removed the 4byte network)
+
+</jonas>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 819 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160325/438b2e1f/attachment-0001.sig>
