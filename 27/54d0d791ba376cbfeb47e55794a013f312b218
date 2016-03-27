@@ -1,0 +1,109 @@
+From: macwhyte@gmail.com (James MacWhyte)
+Date: Sun, 27 Mar 2016 17:04:30 +0000
+Subject: [bitcoin-dev] p2p authentication and encryption BIPs
+In-Reply-To: <56F7CAD3.9080809@jonasschnelli.ch>
+References: <56F2B51C.8000105@jonasschnelli.ch> <2590065.B4dTBeyc1A@garp>
+	<56F586B4.8020507@jonasschnelli.ch> <4517402.JLxTDjem5X@garp>
+	<CAH+Axy7cyZXzAHE7bfGxyMF8oxy=hpOW9nFd5KiLnVab3b=qCA@mail.gmail.com>
+	<56F7CAD3.9080809@jonasschnelli.ch>
+Message-ID: <CAH+Axy7RiWtQDZCLq7uwgzTAbKz7sHO6POivrMHag46Z-iFmiw@mail.gmail.com>
+
+On Sun, Mar 27, 2016 at 5:49 AM Jonas Schnelli via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+>
+> >     I guess my question didn't get across.
+> >
+> >     Why would you want to make your usecase do connections over the
+> >     peer2peer
+> >     (net.cpp) connection at all?
+> >
+> >     Mixing messages that are being sent to everyone and encrypted
+> >     messages is
+> >     asking for trouble.
+> >     Making your private connection out-of-band would work much better.
+> >
+> >
+> > I agree doing it out-of-band is the easiest solution for people who need
+> > this privacy right now, but I do like the idea of adding this feature as
+> > the number of SPV wallets is going to increase. I think the best way to
+> > organize things would be to give encrypted messages their own port
+> > number, similar to how http vs. https works.
+>
+> I'm not sure if different ports would make sense. I can't see a benefit
+> (happy if someone can convince me).
+> How would this affect p2p address management (address relay)? Wouldn't
+> this require to extend the current address message to support two port
+> numbers?
+>
+> I'm assuming clients that connect with encryption don't want to use
+unencrypted connections, and are only interested in other peers that
+support encryption. From their perspective, it is quite inefficient to get
+a generic list of peers and then have to connect to each one searching for
+those that accept encryption. If we use port numbers, we can assume any
+connection that comes on the encrypted port is only interested in encrypted
+communication, so a getaddr to an encrypted port would only return a list
+of other encryption-capable peers.
+
+This isn't an issue if the plan is to require all peers to support
+encryption, and we assume the majority of the network will upgrade before
+too long.
+
+
+>
+> > We don't want two networks to develop, separated by which nodes support
+> > encryption and which don't, so ideally nodes would rebroadcast messages
+> > they receive on both (encrypted and non-encrypted) channels. This would
+> > essentially double the required bandwidth of the network, which is
+> > something to think about.
+>
+> It can be the same "p2p network". The only difference would be, that
+> once two peers has negotiated encryption, the whole traffic between
+> _these two peers_, and _only_ these two pears, would be encrypted (would
+> _not_ affect traffic to/from other peers).
+>
+>
+You're right, there would not be an increase in bandwidth. Please forget I
+said that :) But following the logic I wrote above, it would be possible
+for peers to become segregated (those who require encryption would only
+connect to each other). It wouldn't be a problem as long as there are
+enough peers that provide both encrypted and non-encrypted connections; or,
+as I said above, if we can assume every peer will support it. Maybe the
+issues I'm thinking of are just growing pains that will be solved once the
+majority of people upgrade?
+
+
+> A simplified example:
+> 1. Peer Alice connects to peer Bob
+> 2. Alice asks Bob: "lets do encrypted communication, here is my session
+> pubkey"
+> 3. Bob also supports encryption and answers "Yes, let's do this, here is
+> my session pubkey"
+> 4. Alice tells Bob (encrypted now): "Perfect. Here I prove that I'm
+> Alice by signing the session ID with my identity pubkey"
+> 5. Bob checks his "authorized-peers" database and look-up Alices pubkey
+> and verifies the signatures.
+> 6. Bob tells Alice: "Good! I trust you now Alice, here is my identity
+> pubkey with a signature of our session-ID"
+> 7. Alice looks up Bobs pubkey in her "known-peers" database and verifies
+> the signature.
+> 8. Alice response to bob: "Perfect. Indeed, you are Bob!"
+> ---
+> At this point, the communication is encrypted and the identities has
+> been verified (MITM protection).
+>
+>
+> (simplified negotiation [only one-way, missing dh explanation, missing
+> KDF, session-ID, cipher suite nego., missing re-keying, etc.])
+>
+>
+> </jonas>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160327/30bc800e/attachment.html>
