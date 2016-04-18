@@ -1,0 +1,68 @@
+From: jl2012@xbt.hk (jl2012 at xbt.hk)
+Date: Tue, 19 Apr 2016 03:03:07 +0800
+Subject: [bitcoin-dev] BIP CPRKV: Check private key verify
+In-Reply-To: <CAE-z3OWjqQ=UgNRXyxJiTzsW6Ze7Ytwz3kK2HYcC7eLy2jKnow@mail.gmail.com>
+References: <CAE-z3OUpaMLxF9dGttzLUd6tG+nO18FMo3LZqr7taASVmrEumg@mail.gmail.com>	<23e401d16552$996546d0$cc2fd470$@xbt.hk>	<CAE-z3OUqEXpwGiOdv_X=T_CmtP+wwrAJALQT=Bm42K=k4mMV3Q@mail.gmail.com>	<CAE8CtVkuWL7XSEi_CTbrO2Ze7Q9a+V_P6=6cqGMXMouFzCio+Q@mail.gmail.com>
+	<CAE-z3OWjqQ=UgNRXyxJiTzsW6Ze7Ytwz3kK2HYcC7eLy2jKnow@mail.gmail.com>
+Message-ID: <00aa01d199a4$f3a41c80$daec5580$@xbt.hk>
+
+I just realize that if we have OP_CAT, OP_CHECKPRIVATEKEYVERIFY (aka OP_CHECKPRIVPUBPAIR) is not needed (and is probably better for privacy)
+
+ 
+
+Bob has the prikey-x for pubkey-x. Alice and Bob will agree to a random secret nonce, k. They calculate r, in the same way as signing a transaction.
+
+ 
+
+The script is:
+
+ 
+
+SIZE <r-length + 1> ADD <0x30> SWAP CAT <0x02|r-length|r> CAT SWAP CAT <pubkey-x> CECHKSIGVERIFY <Bob pubkey hash> CHECKSIG
+
+ 
+
+To redeem, Bob has to provide:
+
+ 
+
+<Bob sig> <0x02|s-length|s|sighashtype>
+
+ 
+
+With k, s and sighash, Alice (and only Alice) can recover the prikey-x with the well-known k-reuse exploit
+
+( https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm )
+
+ 
+
+The script will be much cleaner if we remove the DER encoding in the next generation of CHECKSIG
+
+ 
+
+The benefit is prikey-x remains a secret among Alice and Bob. If they don?t mind exposing the prikey-x, they could use r = x coordinate of pubkey-x, which means k = prikey-x (https://bitcointalk.org/index.php?topic=291092.0) This would reduce the witness size a little bit as a DUP may be used
+
+ 
+
+From: bitcoin-dev-bounces at lists.linuxfoundation.org [mailto:bitcoin-dev-bounces at lists.linuxfoundation.org] On Behalf Of Tier Nolan via bitcoin-dev
+Sent: Monday, 29 February, 2016 19:53
+Cc: Bitcoin Dev <bitcoin-dev at lists.linuxfoundation.org>
+Subject: Re: [bitcoin-dev] BIP CPRKV: Check private key verify
+
+ 
+
+On Mon, Feb 29, 2016 at 10:58 AM, Mats Jerratsch <matsjj at gmail.com <mailto:matsjj at gmail.com> > wrote:
+
+This is actually very useful for LN too, see relevant discussion here
+
+http://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-November/011827.html
+
+ 
+
+Is there much demand for trying to code up a patch to the reference client?  I did a basic one, but it would need tests etc. added.
+
+I think that segregated witness is going to be using up any potential soft-fork slot for the time being anyway.
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160419/232ba8d8/attachment.html>
