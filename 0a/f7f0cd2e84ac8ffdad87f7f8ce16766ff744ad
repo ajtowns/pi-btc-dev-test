@@ -1,0 +1,108 @@
+From: elombrozo@gmail.com (Eric Lombrozo)
+Date: Thu, 21 Apr 2016 08:28:45 -0700
+Subject: [bitcoin-dev] Proposal to update BIP-32
+In-Reply-To: <5717AF19.1030102@gmail.com>
+References: <5717AF19.1030102@gmail.com>
+Message-ID: <CF7E1C6B-F52F-4658-AB24-553AC3493A86@gmail.com>
+
+In practice the probability of this case triggering is on the order of 2^-128 or something astronomically tiny. I've been using BIP32 for a few years already as have many others...I don't think we've ever had to handle this case. Justifiably, many app developers feel like the additional complexity of properly handling this case is not worth the effort.
+
+Having said that, if the handling of this case is simple to implement and easy to isolate in the program flow, I am in favor of doing something along the lines of what you propose.
+
+- Eric
+
+On April 20, 2016 9:32:25 AM PDT, Jochen Hoenicke via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>Hello Bitcoin Developers,
+>
+>I would like to make a proposal to update BIP-32 in a small way.
+>
+>TL;DR: BIP-32 is hard to use right (due to its requirement to skip
+>addresses).  This proposal suggests a modification such that the
+>difficulty can be encapsulated in the library.
+>
+>#MOTIVATION:
+>
+>The current BIP-32 specifies that if for some node in the hierarchy
+>the computed hash I_L is larger or equal to the prime or 0, then the
+>node is invalid and should be skipped in the BIP-32 tree.  This has
+>several unfortunate consequences:
+>
+>- All callers of CKDpriv or CKDpub have to check for errors and handle
+>  them appropriately.  This shifts the burden to the application
+>  developer instead of being able to handle it in the BIP-32 library.
+>
+>- It is not clear what to do if an intermediate node is
+>  missing. E.g. for the default wallet layout, if m/i_H/0 is missing
+>  should m/i_H/1 be used for external chain and m/i_H/2 for internal
+>  chain?  This would make the wallet handling much more difficult.
+>
+>- It gets even worse with standards like BIP-44.  If m/44' is missing
+>  should we use m/45' instead?  If m/44'/0' is missing should we use
+>  m/44'/1' instead, using the same addresses as for testnet?
+>  One could also restart with a different seed in this case, but this
+>  wouldn't work if one later wants to support another BIP-43 proposal
+>  and still keep the same wallet.
+>
+>I think the first point alone is reason enough to change this.  I am
+>not aware of a BIP-32 application that handles errors like this
+>correctly in all cases.  It is also very hard to test, since it is
+>infeasible to brute-force a BIP-32 key and a path where the node does
+>not exists.
+>
+>This problem can be avoided by repeating the hashing with slightly
+>different input data until a valid private key is found.  This would
+>be in the same spirit as RFC-6979.  This way, the library will always
+>return a valid node for all paths.  Of course, in the case where the
+>node is valid according to the current standard the behavior should be
+>unchanged.
+>
+>I think the backward compatibility issues are minimal.  The chance
+>that this affects anyone is less than 10^-30.  Even if it happens, it
+>would only create some additional addresses (that are not seen if the
+>user downgrades).  The main reason for suggesting a change is that we
+>want a similar method for different curves where a collision is much
+>more likely.
+>
+>#QUESTIONS:
+>
+>What is the procedure to update the BIP?  Is it still possible to
+>change the existing BIP-32 even though it is marked as final?  Or
+>should I make a new BIP for this that obsoletes BIP-32?
+>
+>What algorithm is preferred? (bike-shedding)  My suggestion:
+>
+>---
+>
+>Change the last step of the private -> private derivation functions to:
+>
+> . In case parse(I_L) >= n or k_i = 0, the procedure is repeated
+>   at step 2 with
+>    I = HMAC-SHA512(Key = c_par, Data = 0x01 || I_R || ser32(i))
+>
+>---
+>
+>I think this suggestion is simple to implement (a bit harder to unit
+>test) and the string to hash with HMAC-SHA512 always has the same
+>length.  I use I_R, since I_L is obviously not very random if I_L >= n.
+>There is a minimal chance that it will lead to an infinite loop if I_R
+>is the same in two consecutive iterations, but that has only a chance
+>of 1 in 2^512 (if the algorithm is used for different curves that make
+>I_L >= n more likely, the chance is still less than 1 in 2^256).  In
+>theory, this loop can be avoided by incrementing i in every iteration,
+>but this would make an implementation error in the "hard to test" path
+>of the program more likely.
+>
+>The other derivation functions should be updated in a similar matter.
+>Also the derivation of the root node from the seed should be updated
+>in a similar matter to avoid invalid seeds.
+>
+>If you followed until here, thanks for reading this long posting.
+>
+>  Jochen
+>_______________________________________________
+>bitcoin-dev mailing list
+>bitcoin-dev at lists.linuxfoundation.org
+>https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160421/f6ea5a61/attachment.html>
