@@ -1,0 +1,271 @@
+From: jjlegoupil@gmail.com (=?utf-8?Q?J=C3=A9r=C3=B4me_Legoupil?=)
+Date: Sun, 24 Apr 2016 12:05:52 +0200
+Subject: [bitcoin-dev] Private "Merkle" Vaults for the Bitcoin system
+In-Reply-To: <mailman.4068.1456528991.1673.bitcoin-dev@lists.linuxfoundation.org>
+References: <mailman.4068.1456528991.1673.bitcoin-dev@lists.linuxfoundation.org>
+Message-ID: <86B5737C-2B2A-45F3-998C-4CD6818AEE83@gmail.com>
+
+In Febuary, an email intitled "Bitcoin Vaults" was addressed to this mailing list linking to a paper on ?covenants? (see mail below) describing a way to apply recursive restrictions temporarily or permanently on bitcoins (for digital asset use-cases) and Bitcoin Vaults were offered as an application (thanks to the authors for sharing their work with the community, I personally found this paper insightful and inspiring). Unfortunately, this proposal isn?t fungibility friendly and could lead Bitcoin to undesirable outcomes.
+
+What follows is an attempt to design Vaults that preserve Bitcoin?s fungibility and keep their defensive attributes private from blockchain observers and from potential insider participants: the Vault?s defence is incrementally revealed when executed. If I am a war chief defending a castle, I?m certainly not going to show my defence strategy to the world and if it leaked to the enemy, it would greatly weaken my chances to succeed: greater privacy leads to greater security.
+ 
+Vaults enable important use-cases for Bitcoin as a store of value, in particular the tricky but critical use-case of successions (heritages).
+
+
+? General idea ? 
+
+This design restricts the bitcoins in a Vault to a private, predefined, finite (no patterns) and unforgeable set of authorized actions defined by the Vault creator at the setup.
+
+Definition: an authorized action (or action) is an authorized address the bitcoins inside a Vault can be sent to, with an authorized timelock.
+Action = <pubKeyHash> < timelock>
+
+The Vault can be defined as a set of parent/child authorized actions. This enables the Vault creator to construct a Merkle tree of his Vault. During the setup, the creator computes the hashs of every authorized action, and builds his Merkle tree from the bottom, up to the top Merkle root. The Vault creator must give the appropriate Merkle proofs (authorizations) to the Vault participants (if any) according to the authorizations he grants them, and when someone wants to move funds inside or out of the Vault, he needs to provide to the network (in addition of a valid signature) the Merkle proof that demonstrates that his action is authorized by the Vault. The network can verify that:    
+Hash [ Merkle_proof(Action) + Hash(Action) ] == Merkle_proof(Parent_Action)
+
+The Merkle tree must be destroyed once the setup is completed. Storing the tree anywhere is unnecessary and endangers the Vault's privacy.
+
+
+? Example ? 
+
+In this example, the Vault is composed of the actions A, B, C, D:
+
+A--->B--->C
+          \
+            `--->D
+
+If H is the hash function, the Merkle tree is:
+                                                                          Merkle_root  
+                                                                              /     \
+              H(H(H(H(D)+H(1)) + H(H(C)+H(1))) + H(B))       H(A)
+                                                 /     \                                                        
+H(H(H(D)+H(1)) + H(H(C)+H(1)))        H(B)                                 
+                     /     \                                   
+ H(H(D)+H(1))        H(H(C)+H(1))                
+           /                            \
+          1                             1
+
+Note: 1 are terminations to signal to the network that the coins are now allowed to exit the Vault. If the 1-terminations were not added, the bitcoins would be locked forever in the Vault because it would require to reverse H to spend them.
+
+With notations:
+                                                                                   Merkle_root  
+                                                                                        /     \
+                                                              Merkle_Proof(A)       H(A)
+                                                                        /     \                                                        
+Merkle_Proof(parent of C) = Merkle_Proof(B)        H(B)                                 
+                                      /     \                                   
+            Merkle_Proof(C)        H(H(C)+H(1))                
+                                                        \
+                                                         1
+
+? nSequence ?
+
+nSequence has different timelock meanings for the different time related OP codes:
+OP_CLTV: a tx spending the outputs of a [parent tx with nSequence] is invalid if current block number <= nSequence
+OP_CSV: a tx spending the outputs of a [parent tx with nSequence] is invalid if current block number <= block number of the parent tx + nSequence
+
+New meaning of nSequence for OP_VAULT:
+OP_VAULT: a tx with nSequence is invalid if current block number <= block number of the parent tx + nSequence
+
+?OP_VAULT? 
+
+This opcode checks if the tx timelock allows the tx to be included in a block and outputs a hash.
+
+OP_VAULT (nSequence, Merkle_proof(Action), pubKeyHash)
+{
+IF (current block number >= Max(block number of the parent outputs) + nSequence of current tx)
+     hAction=H(H(pubKeyHash)+H(nSequence));
+     h=H(Merkle_proof(Action)+hAction);
+     return h;
+
+ELSE
+     return H(0);                                    // the tx cannot be included in a block yet
+}
+
+
+?Vault transaction structures?
+
+Funding tx
+scriptSig=<sig> <pubKey>
+scriptPubKey=
+<3> OP_PICK OP_HASH160 OP_VAULT <Merkle_root> OP_EQUALVERIFY OP_HASH160 <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+
+Vault tx
+scriptSig=<sig> <pubKey> <nSequence> <Merkle_proof>
+scriptPubKey=
+<3> OP_PICK OP_HASH160 OP_VAULT <Merkle_proof> OP_EQUALVERIFY OP_HASH160 <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+
+Exit tx
+scriptSig=<sig>  <pubKey> <nSequence> <Merkle_proof>
+scriptPubKey=
+OP_DUP OP_HASH160 <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+
+Note: The exit tx can also use OP_VAULT if it is exiting the Vault while funding another Vault.
+
+
+?New consensus rules? (enforcement of OP_VAULT txs)
+
+IF
+// this new rule concerns only Vault txs...
+(parent tx VAULT_FLAG_ENABLE)
+AND
+ // ...that are not permitted to exit the Vault if the action is not terminated by 1 in the Merkle tree 
+(    
+H(<Merkle_proof> in tx?s scriptSig + H(H(H(pubKeyHash)+H(nSequence))) + H(1))) != <Merkle_proof> in parent tx?s scriptSig
+)
+AND
+{
+// the tx must be flagged as a Vault tx
+(tx VAULT_FLAG_DISABLE) 
+OR
+// the tx violates the Merkle tree data structure
+(<Merkle_proof> in tx?s scriptSig != <Merkle_proof> in tx?s scriptPubKey)
+}
+
+THEN the transaction is INVALID.
+
+?Privacy? 
+
+In this design, Vault txs are CoinJoin/CT compatible (joining with other Vault txs) and perhaps Vault users will be willing to way for days or weeks to achieve maximum privacy, as they are susceptible of holding significant value in these structures.
+
+?Use-cases? 
+
+"Smart successions" : a morbid yet critical use-case for Bitcoin as a store of value
+
+Bitcoin currently struggles in dealing with successions in a trustless manner. How does the Bitcoin system know when the succession should be executed ? What happens in case of conflict between the heirs ? It?s a tricky but important use-case.
+
+Bitcoin successions are dealt with by either sharing decrypted private keys with the heirs (trusting they won?t take the coins before due time or won?t have them stolen), renting a safe at the bank and making a testament (trusting the bank) or simply hiding the keys and hoping the heirs will find them when you disappear. None of these schemes are satisfying, especially when dealing with multiple heirs. This gap could likely hold back investors from investing a significant portion of their wealth in Bitcoin if they don?t have a trustless and secure mechanism that guarantees their succession will be executed according to their will.
+
+Funding addr
+    \
+      `->Transfert addr?0?>Alice addr                                 (1)
+               |          \
+               |            `-50000?>Multisig2/2?>Bob addr    
+               |                                             \                               (2)
+               |                                               `?>Carol addr
+               |
+                `-100000?>Multisig2/3?>Bob addr                
+                                                  \                                          (3) 
+                                                    `?>Carol addr             
+
+(1) Alice?s recovery address in case Bob and Carol were too impatient to spend the heritage.
+(2) Alice added a Multisig2/2 controlled by Bob and Carol. Alice gave Bob and Carol each, half of the Merkel proof to pull the funds into Multisig2/2: first Bob and Carol need to agree on the conditions of the succession and sign the exit transaction from the Multisig2/2, than they can share their Merkel proof halves and pull the funds.
+(3) Arbitration in case of disagreement (or if Bob or Carol is uncooperative, or disappeared): Alice added a Multisig2/3 involving an arbitrator in case Alice and Bob couldn?t find an agreement after 20?000 blocks or something. The arbitrator has no information on the succession until Bob or Carol asks for his assistance. Alice gave each Bob and Carol the full Merkel proof to pull the funds to Multisig2/3.
+
+We can imagine services assisting in the Vault setups and in the blockchain monitoring, enabling successions to occur entirely on-chain, in a trustless, private and peer-to-peer manner, outside of the current financial system. 
+
+Scorched earth policies if the Vault defender is entirely compromised
+The following defence strategy is inspired from the paper mentionned in the introduction :
+
+Funding addr
+    \
+      `->Transfert addr-1000->Spending addr
+                \
+                  `-0->Recovery addr1-100->Recovery addr2-1000->Recovery addr3
+                                                                         \
+                                                                           `-0->Hidden addr ??
+
+An attacker broadcasts the Transfer tx from the Funding address. The defender can stay patient and learn if the attacker knows the recovery key (& the corresponding Merkle proofs) and ajust his defence accordingly: if indeed the adversary can move funds (he knows the recovery key(s)) and approches to the Vault exit (he knows also the Merkle proofs), the defender can burn all funds into fees, denying the attacker.
+
+?Thanks for your attention?
+
+Please let me know if you think this idea is worth exploring deeper.
+
+Cheers,
+Jerome
+                                                                 
+
+
+> On 27 Feb 2016, at 00:23, bitcoin-dev-request at lists.linuxfoundation.org wrote:
+> 
+> Send bitcoin-dev mailing list submissions to
+> 	bitcoin-dev at lists.linuxfoundation.org
+> 
+> To subscribe or unsubscribe via the World Wide Web, visit
+> 	https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> or, via email, send a message with subject or body 'help' to
+> 	bitcoin-dev-request at lists.linuxfoundation.org
+> 
+> You can reach the person managing the list at
+> 	bitcoin-dev-owner at lists.linuxfoundation.org
+> 
+> When replying, please edit your Subject line so it is more specific
+> than "Re: Contents of bitcoin-dev digest..."
+> 
+> 
+> Today's Topics:
+> 
+>   1. Bitcoin Vaults. (Emin G?n Sirer)
+>   2. The first successful Zero-Knowledge Contingent Payment
+>      (Gregory Maxwell)
+>   3. Re: The first successful Zero-Knowledge Contingent	Payment
+>      (Sergio Demian Lerner)
+>   4. Fwd: The first successful Zero-Knowledge Contingent	Payment
+>      (Gregory Maxwell)
+> 
+> 
+> ----------------------------------------------------------------------
+> 
+> Message: 1
+> Date: Fri, 26 Feb 2016 11:05:20 -0500
+> From: Emin G?n Sirer <el33th4x0r at gmail.com>
+> To: Bitcoin Dev <bitcoin-dev at lists.linuxfoundation.org>
+> Cc: Malte M?ser <malte.moeser at uni-muenster.de>,	Ittay Eyal
+> 	<ittay.eyal at cornell.edu>
+> Subject: [bitcoin-dev] Bitcoin Vaults.
+> Message-ID:
+> 	<CAPkFh0vuLsoNQUEdH-kGqXYvFJt1tXLvt0eMEuFZGm7Pus-_2g at mail.gmail.com>
+> Content-Type: text/plain; charset="utf-8"
+> 
+> At the 3rd Bitcoin Workshop being held in conjunction with the Financial
+> Cryptography Conference in Barbados, my group will be presenting a new idea
+> for improving Bitcoin wallet security and deterring thefts today.
+> 
+> The write-up is here:
+> 
+> http://hackingdistributed.com/2016/02/26/how-to-implement-secure-bitcoin-vaults/
+> 
+> The paper with the nitty gritty details is here:
+>    http://fc16.ifca.ai/bitcoin/papers/MES16.pdf
+> 
+> The core idea:
+> 
+> Our paper describes a way to create vaults, special accounts whose keys can
+> be neutralized if they fall into the hands of attackers. Vaults are
+> Bitcoin?s decentralized version of you calling your bank to report a stolen
+> credit card -- it renders the attacker?s transactions null and void. And
+> here?s the interesting part: in so doing, vaults demotivate key theft in
+> the first place. An attacker who knows that he will not be able to get away
+> with theft is less likely to attack in the first place, compared to current
+> Bitcoin attackers who are guaranteed that their hacking efforts will be
+> handsomely rewarded.
+> 
+> Operationally, the idea is simple. You send your money to a vault address
+> that you yourself create. Every vault address has a vault key and a
+> recovery key. When spending money from the vault address with the
+> corresponding vault key, you must wait for a predefined amount of time
+> (called the unvaulting period) that you established at the time you created
+> the vault -- say, 24 hours. When all goes well, your vault funds are
+> unlocked after the unvaulting period and you can move them to a standard
+> address and subsequently spend them in the usual way. Now, in case Harry
+> the Hacker gets a hold of your vault key, you have 24 hours to revert any
+> transaction issued by Harry, using the recovery key. His theft,
+> essentially, gets undone, and the funds are diverted unilaterally to their
+> rightful owner. It?s like an ?undo? facility that the modern banking world
+> relies on, but for Bitcoin.
+> 
+> The technical trick relies on a single new opcode, CheckOutputVerify, that
+> checks the shape of a redeem transaction. Note that fungibility is not
+> affected, as the restrictions are at the discretion of the coin owner alone
+> and can only be placed by the coin owner ahead of time.
+> 
+> We suspect that this modest change could actually be a game-changer for
+> bitcoin security: clients and keys are notoriously hard to secure, and a
+> facility that allows you to possibly recover, and if not, permanently keep
+> the hacker from acquiring your funds, could greatly deter Bitcoin thefts.
+> 
+> As always, comments and suggestions are welcome.
+> - egs, Ittay Eyal and Malte Moeser.
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160424/403f4b0c/attachment-0001.html>
