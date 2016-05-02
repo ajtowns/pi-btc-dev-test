@@ -1,0 +1,442 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Mon, 2 May 2016 22:13:22 +0000
+Subject: [bitcoin-dev] Compact Block Relay BIP
+Message-ID: <5727D102.1020807@mattcorallo.com>
+
+Hi all,
+
+The following is a BIP-formatted design spec for compact block relay
+designed to limit on wire bytes during block relay. You can find the
+latest version of this document at
+https://github.com/TheBlueMatt/bips/blob/master/bip-TODO.mediawiki.
+
+There are several TODO items left on the document as indicated.
+Additionally, the implementation linked at the bottom of the document
+has a few remaining TODO items as well:
+
+ * Only request compact-block-announcement from one or two peers at a
+time, as the spec requires.
+ * Request new blocks using MSG_CMPCT_BLOCK where appropriate.
+ * Fill prefilledtxn with more than just the coinbase, as noted by the
+spec, up to 10K in transactions.
+
+Luke (CC'd): Can you assign a BIP number?
+
+Thanks,
+Matt
+
+<pre>
+  BIP: TODO
+  Title: Compact block relay
+  Author: Matt Corallo <bip at bluematt.me>
+  Status: Draft
+  Type: Standards Track
+  Created: 2016-04-27
+</pre>
+
+==Abstract==
+
+Compact blocks on the wire as a way to save bandwidth for nodes on the
+P2P network.
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+"SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+document are to be interpreted as described in RFC 2119.
+
+==Motivation==
+
+Historically, the Bitcoin P2P protocol has not been very bandwidth
+efficient for block relay. Every transaction in a block is included when
+relayed, even though a large number of the transactions in a given block
+are already available to nodes before the block is relayed. This causes
+moderate inbound bandwidth spikes for nodes when receiving blocks, but
+can cause very significant outbound bandwidth spikes for some nodes
+which receive a block before their peers. When such spikes occur, buffer
+bloat can make consumer-grade internet connections temporarily unusable,
+and can delay the relay of blocks to remote peers who may choose to wait
+instead of redundantly requesting the same block from other, less
+congested, peers.
+
+Thus, decreasing the bandwidth used during block relay is very useful
+for many individuals running nodes.
+
+While the goal of this work is explicitly not to reduce block transfer
+latency, it does, as a side effect reduce block transfer latencies in
+some rather significant ways. Additionally, this work forms a foundation
+for future work explicitly targeting low-latency block transfer.
+
+==Specification==
+
+===Intended Protocol Flow===
+TODO: Diagrams
+
+The protocol is intended to be used in two ways, depending on the peers
+and bandwidth available, as discussed [[#Implementation_Details|later]].
+The "high-bandwidth" mode, which nodes may only enable for a few of
+their peers, is enabled by setting the first boolean to 1 in a
+"sendcmpct" message. In this mode, peers send new block announcements
+with the short transaction IDs already, possibly even before fully
+validating the block. In some cases no further round-trip is needed, and
+the receiver can reconstruct the block and process it as usual
+immediately. When some transactions were not available from local
+sources (ie mempool), a getblocktxn/blocktxn roundtrip is neccessary,
+bringing the best-case latency to the same 1.5*RTT minimum time that
+nodes take today, though with significantly less bandwidth usage.
+
+The "low-bandwidth" mode is enabled by setting the first boolean to 0 in
+a "sendcmpct" message. In this mode, peers send new block announcements
+with the usual inv/headers announcements (as per BIP130, and after fully
+validating the block). The receiving peer may then request the block
+using a MSG_CMPCT_BLOCK getdata reqeuest, which will receive a response
+of the header and short transaction IDs. In some cases no further
+round-trip is needed, and the receiver can reconstruct the block and
+process it as usual, taking the same 1.5*RTT minimum time that nodes
+take today, though with significantly less bandwidth usage. When some
+transactions were not available from local sources (ie mempool), a
+getblocktxn/blocktxn roundtrip is neccessary, bringing the best-case
+latency to 2.5*RTT, again with significantly less bandwidth usage than
+today. Because TCP often exhibits worse transfer latency for larger data
+sizes (as a multiple of RTT), total latency is expected to be reduced
+even when full the 2.5*RTT transfer mechanism is used.
+
+===New data structures===
+Several new data structures are added to the P2P network to relay
+compact blocks: PrefilledTransaction, HeaderAndShortIDs,
+BlockTransactionsRequest, and BlockTransactions. Additionally, we
+introduce a new variable-length integer encoding for use in these data
+structures.
+
+For the purposes of this section, CompactSize refers to the
+variable-length integer encoding used across the existing P2P protocol
+to encode array lengths, among other things, in 1, 3, 5 or 9 bytes.
+
+====New VarInt====
+TODO: I just copied this out of the src...Something that is
+wiki-formatted and more descriptive should be used here isntead.
+
+Variable-length integers: bytes are a MSB base-128 encoding of the number.
+The high bit in each byte signifies whether another digit follows. To make
+sure the encoding is one-to-one, one is subtracted from all but the last
+digit.
+Thus, the byte sequence a[] with length len, where all but the last byte
+has bit 128 set, encodes the number:
+
+(a[len-1] & 0x7F) + sum(i=1..len-1, 128^i*((a[len-i-1] & 0x7F)+1))
+
+Properties:
+* Very small (0-127: 1 byte, 128-16511: 2 bytes, 16512-2113663: 3 bytes)
+* Every integer has exactly one encoding
+* Encoding does not depend on size of original integer type
+* No redundancy: every (infinite) byte sequence corresponds to a list
+  of encoded integers.
+
+0:         [0x00]  256:        [0x81 0x00]
+1:         [0x01]  16383:      [0xFE 0x7F]
+127:       [0x7F]  16384:      [0xFF 0x00]
+128:  [0x80 0x00]  16511: [0x80 0xFF 0x7F]
+255:  [0x80 0x7F]  65535: [0x82 0xFD 0x7F]
+2^32:           [0x8E 0xFE 0xFE 0xFF 0x00]
+
+Several uses of New VarInts below are "differentially encoded". For
+these, instead of using raw indexes, the number encoded is the
+difference between the current index and the previous index, minus one.
+For example, a first index of 0 implies a real index of 0, a second
+index of 0 thereafter refers to a real index of 1, etc.
+
+====PrefilledTransaction====
+A PrefilledTransaction structure is used in HeaderAndShortIDs to provide
+a list of a few transactions explicitly.
+
+{|
+|Field Name||Type||Size||Encoding||Purpose
+|-
+|index||New VarInt||1-3 bytes||[[#New_VarInt|New VarInt]],
+differentially encoded since the last PrefilledTransaction in a
+list||The index into the block at which this transaction is
+|-
+|tx||Transaction||variable||As encoded in "tx" messages||The transaction
+which is in the block at index index.
+|}
+
+====HeaderAndShortIDs====
+A HeaderAndShortIDs structure is used to relay a block header, the short
+transactions IDs used for matching already-available transactions, and a
+select few transactions which we expect a peer may be missing.
+
+{|
+|Field Name||Type||Size||Encoding||Purpose
+|-
+|header||Block header||80 bytes||First 80 bytes of the block as defined
+by the encoding used by "block" messages||The header of the block being
+provided
+|-
+|nonce||uint64_t||8 bytes||Little Endian||A nonce for use in short
+transaction ID calculations
+|-
+|shortids_length||CompactSize||1, 3, 5, or 9 bytes||As used elsewhere to
+encode array lengths||The number of short transaction IDs in shortids
+|-
+|shortids||List of uint64_ts||8*shortids_length bytes||Little
+Endian||The short transaction IDs calculated from the transactions which
+were not provided explicitly in prefilledtxn
+|-
+|prefilledtxn_length||CompactSize||1, 3, 5, or 9 bytes||As used
+elsewhere to encode array lengths||The number of prefilled transactions
+in prefilledtxn
+|-
+|prefilledtxn||List of PrefilledTransactions||variable
+size*prefilledtxn_length||As defined by PrefilledTransaction definition,
+above||Used to provide the coinbase transaction and a select few which
+we expect a peer may be missing
+|}
+
+====BlockTransactionsRequest====
+A BlockTransactionsRequest structure is used to list transaction indexes
+in a block being requested.
+
+{|
+|Field Name||Type||Size||Encoding||Purpose
+|-
+|blockhash||Binary blob||32 bytes||The output from a double-SHA256 of
+the block header, as used elsewhere||The blockhash of the block which
+the transactions being requested are in
+|-
+|indexes_length||New VarInt||1-3 bytes||As defined in [[#New_VarInt|New
+VarInt]]||The number of transactions being requested
+|-
+|indexes||List of New VarInts||1-3 bytes*indexes_length||As defined in
+[[#New_VarInt|New VarInt]], differentially encoded||The indexes of the
+transactions being requested in the block
+|}
+
+====BlockTransactions====
+A BlockTransactions structure is used to provide some of the
+transactions in a block, as requested.
+
+{|
+|Field Name||Type||Size||Encoding||Purpose
+|-
+|blockhash||Binary blob||32 bytes||The output from a double-SHA256 of
+the block header, as used elsewhere||The blockhash of the block which
+the transactions being provided are in
+|-
+|transactions_length||New VarInt||1-3 bytes||As defined in
+[[#New_VarInt|New VarInt]]||The number of transactions provided
+|-
+|transactions||List of Transactions||variable||As encoded in "tx"
+messages||The transactions provided
+|}
+
+====Short transaction IDs====
+Short transaction IDs are used to represent a transaction without
+sending a full 256-bit hash. They are calculated by:
+# single-SHA256 hashing the block header with the nonce appended (in
+little-endian)
+# XORing each 8-byte chunk of the double-SHA256 transaction hash with
+each corresponding 8-byte chunk of the hash from the previous step
+# Adding each of the XORed 8-byte chunks together (in little-endian)
+iteratively to find the short transaction ID
+
+===New messages===
+A new inv type (MSG_CMPCT_BLOCK == 4) and several new protocol messages
+are added: sendcmpct, cmpctblock, getblocktxn, and blocktxn.
+
+====sendcmpct====
+# The sendcmpct message is defined as a message containing a 1-byte
+integer followed by a 8-byte integer where pchCommand == "sendcmpct".
+# The first integer SHALL be interpreted as a boolean (and MUST have a
+value of either 1 or 0)
+# The second integer SHALL be interpreted as a little-endian version
+number. Nodes sending a sendcmpct message MUST currently set this value
+to 1.
+# Upon receipt of a "sendcmpct" message with the first and second
+integers set to 1, the node SHOULD announce new blocks by sending a
+cmpctblock message.
+# Upon receipt of a "sendcmpct" message with the first integer set to 0,
+the node SHOULD NOT announce new blocks by sending a cmpctblock message,
+but SHOULD announce new blocks by sending invs or headers, as defined by
+BIP130.
+# Upon receipt of a "sendcmpct" message with the second integer set to
+something other than 1, nodes SHOULD treat the peer as if they had not
+received the message (as it indicates the peer will provide an
+unexpected encoding in cmpctblock, and/or other, messages)
+# Nodes SHOULD check for a protocol version of >= 70014 before sending
+sendcmpct messages.
+# Nodes MUST NOT send a request for a MSG_CMPCT_BLOCK object to a peer
+before having received a sendcmpct message from that peer.
+
+====MSG_CMPCT_BLOCK====
+# getdata messages may now contain requests for MSG_CMPCT_BLOCK objects.
+# Upon receipt of a getdata containing a request for a MSG_CMPCT_BLOCK
+object with the hash of a block which was recently announced and after
+having sent the requesting peer a sendcmpct message, nodes MUST respond
+with a cmpctblock message containing appropriate data representing the
+block being requested.
+# MSG_CMPCT_BLOCK inv objects MUST NOT appear anywhere except for in
+getdata messages.
+
+====cmpctblock====
+# The cmpctblock message is defined as as a message containing a
+serialized HeaderAndShortIDs message and pchCommand == "cmpctblock".
+# Upon receipt of a cmpctblock message after sending a sendcmpct
+message, nodes SHOULD calculate the short transaction ID for each
+unconfirmed transaction they have available (ie in their mempool) and
+compare each to each short transaction ID in the cmpctblock message.
+# After finding already-available transactions, nodes which do not have
+all transactions available to reconstruct the full block SHOULD request
+the missing transactions using a getblocktxn message.
+# A node MUST NOT send a cmpctblock message unless they are able to
+respond to a getblocktxn message which requests every transaction in the
+block.
+# A node MUST NOT send a cmpctblock message without having validated
+that the header properly commits to each transaction in the block, and
+properly builds on top of the existing chain with a valid proof-of-work.
+A node MAY send a cmpctblock before validating that each transaction in
+the block validly spends existing UTXO set entries.
+
+====getblocktxn====
+# The getblocktxn message is defined as as a message containing a
+serialized BlockTransactionsRequest message and pchCommand == "getblocktxn".
+# Upon receipt of a properly-formatted getblocktxnmessage, nodes which
+recently provided the sender of such a message a cmpctblock for the
+block hash identified in this message MUST respond with an appropriate
+blocktxn message. Such a blocktxn message MUST contain exactly and only
+each transaction which is present in the appropriate block at the index
+specified in the getblocktxn indexes list, in the order requested.
+
+====blocktxn====
+# The blocktxn message is defined as as a message containing a
+serialized BlockTransactions message and pchCommand == "blocktxn".
+# Upon receipt of a properly-formatted requested blocktxn message, nodes
+SHOULD attempt to reconstruct the full block by:
+## Taking the prefilledtxn transactions from the original cmpctblock and
+placing them in the marked positions.
+## For each short transaction ID from the original cmpctblock, in order,
+find the corresponding transaction either from the blocktxn message or
+from other sources and place it in the first available position in the
+block.
+# Once the block has been reconstructed, it shall be processed as
+normal, keeping in mind that short transaction IDs are expected to
+occasionally collide, and that nodes MUST NOT be penalized for such
+collisions, wherever they appear.
+
+===Implementation Notes===
+# For nodes which have sufficient inbound bandwidth, sending a sendcmpct
+message with the first integer set to 1 to up to three peers is
+RECOMMENDED. If possible, it is RECOMMENDED that those peers be selected
+based on their past performance in providing blocks quickly. This will
+allow them to receive some blocks in only 0.5*RTT between them and the
+sending peer. It will also reduce their block transfer latency in other
+cases due to the smaller amount of data transmitted. Nodes MUST NOT send
+such sendcmpct messages to all peers, as it encourages wasting outbound
+bandwidth across the network.
+
+# All nodes SHOULD send a sendcmpct message to all appropriate peers.
+This will reduce their outbound bandwidth usage by allowing their peers
+to request compact blocks instead of full blocks.
+
+# Nodes with limited inbound bandwidth SHOULD request blocks using
+MSG_CMPCT_BLOCK/getblocktxn requests, when possible. While this
+increases worst-case message round-trips, it is expected to reduce
+overall transfer latency as TCP is more likely to exhibit poor
+throughput on low-bandwidth nodes.
+
+# Nodes sending cmpctblock messages SHOULD make an attempt to not place
+too many transactions into prefilledtxn (ie should limit prefilledtxn to
+only around 10KB of transactions). When in doubt, nodes SHOULD only
+include the coinbase transaction in prefilledtxn.
+
+# Nodes MAY pick one nonce per block they wish to send, and only build a
+cmpctblock message once for all peers which they wish to send a given
+block to. Nodes SHOULD NOT use the same nonce across multiple different
+blocks.
+
+# Nodes MAY impose additional requirements on when they announce new
+blocks by sending cmpctblock messages. For example, nodes with limited
+outbound bandwidth MAY choose to announce new blocks using inv/header
+messages (as per BIP130) to conserve outbound bandwidth.
+
+# Note that the MSG_CMPCT_BLOCK section does not require that nodes
+respond to MSG_CMPCT_BLOCK getdata requests for blocks which they did
+not recently announce. This allows nodes to calculate cmpctblock
+messages at announce-time instead of at request-time. Thus, nodes MUST
+NOT request blocks using MSG_CMPCT_BLOCK getdatas unless it is in
+response to an inv/headers block announcement (as per BIP130), and MUST
+NOT request blocks using MSG_CMPCT_BLOCK getdatas in response to headers
+messages which were, themselves, responses to getheaders requests.
+
+# While the current version sends transactions with the same encodings
+as is used in tx messages and elsewhere in the protocol, the version
+field in sendcmpct is intended to allow this to change in the future.
+For this reason, it is recommended that the code used to decode
+PrefilledTransaction and BlockTransactions messages be prepared to take
+a different transaction encoding, if and when the version field in
+sendcmpct changes in a future BIP.
+
+==Justification==
+
+====Protocol design====
+There have been many proposals to save wire bytes when relaying blocks.
+Many of them have a two-fold goal of reducing block relay time and thus
+rely on the use of significant processing power in order to avoid
+introducing additional worst-case RTTs. Because this work is not focused
+primarily on reducing block relay time, its design is much simpler (ie
+does not rely on set reconciliation protocols). Still, in testing at the
+time of writing, nodes are able to relay blocks without the extra
+getblocktxn/blocktxn RTT around 90% of the time. With a smart
+compact-block-announcement policy, it is thus expected that this work
+might allow blocks to be relayed between nodes in 0.5*RTT instead of
+1.5*RTT at least 75% of the time.
+
+====Use of New VarInts====
+Bitcoin has long had a variable-length integer implementation (referred
+to as CompactSize in this document), making a second a strange protocol
+quirk. However, in this protocol most of our variable-length integers
+are between 0 and 2000. For both encodings, small numbers (<100) are
+encoded as 1-byte. For numbers over 250, the CompactSize encoding begins
+to use 3 bytes instead of 1, whereas the New VarInt encoding uses 2.
+Because the primary motivation for this work is to save bytes during
+block relay, the extra byte of saving per transaction-difference is
+considered worth the extra design complexity.
+
+====Short transaction ID calculation====
+The short transaction ID calculation is designed to take absolutely
+minimal processing time during block compaction to avoid introducing
+serious DoS vulnerabilities such as those introduced by the
+bloom-filtering in BIP 37. As such, it is possible for a node to
+construct one compact-block representation of a block for relay to
+multiple peers. Additionally, only one cryptographic hash (2 SHA rounds)
+is used when calculating the short transaction IDs for an entire block.
+
+The XOR-and-add method is used for calculating short transaction IDs
+primarily because it is fast and is reasonably able to limit the ability
+of an attacker who does not know the block hash or nonce to cause
+collisions in short transaction IDs. If an attacker were able to cause
+such collisions, filling mempools (and, thus, blocks) with them would
+cause poor network propagation of new (or non-attacker, in the case of a
+miner) blocks.
+
+The 8-byte nonce in short transaction ID calculation is used to
+introduce additional entropy on a per-node level. While the use of 8
+bytes is sufficient for an attacker to maliciously cause short
+transaction ID collisions in their own block relay, this would have less
+of an effect than if such an attacker were relaying headers/invs and not
+responding to requests for the full block.
+
+==Backward compatibility==
+
+Older clients remain fully compatible and interoperable after this change.
+
+==Implementation==
+
+https://github.com/TheBlueMatt/bitcoin/tree/udp
+
+==Acknowledgements==
+
+Thanks to Gregory Maxwell for the initial suggestion as well as a lot of
+back-and-forth design and significant testing.
+
+==Copyright==
+
+This document is placed in the public domain.
+
