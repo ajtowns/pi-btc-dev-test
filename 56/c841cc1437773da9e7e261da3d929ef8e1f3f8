@@ -1,0 +1,133 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Sun, 8 May 2016 03:24:22 +0000
+Subject: [bitcoin-dev] Compact Block Relay BIP
+In-Reply-To: <CALOxbZv5GL5br=Z5idR-ACVzkBxS6JP_KgSr3JBuYVLgsej3eA@mail.gmail.com>
+References: <5727D102.1020807@mattcorallo.com>
+	<CALOxbZv5GL5br=Z5idR-ACVzkBxS6JP_KgSr3JBuYVLgsej3eA@mail.gmail.com>
+Message-ID: <572EB166.5070305@mattcorallo.com>
+
+(This response was originally off-list as moderators were still
+deciding, here it is for those interested).
+
+Hi Tom,
+
+Thanks for reading the draft text and commenting! Replies inline.
+
+Matt
+
+On 05/08/16 00:40, Johnathan Corgan wrote:
+> ---------- Forwarded message ----------
+> From: Tom <tomz at freedommail.ch <mailto:tomz at freedommail.ch>>
+> To: bitcoin-dev at lists.linuxfoundation.org
+> <mailto:bitcoin-dev at lists.linuxfoundation.org>, Matt Corallo <lf-lists at mattcorallo.com <mailto:lf-lists at mattcorallo.com>>
+> Cc: 
+> Date: Fri, 06 May 2016 13:31:15 +0100
+> Subject: Re: [bitcoin-dev] Compact Block Relay BIP
+> On Monday 02 May 2016 22:13:22 Matt Corallo via bitcoin-dev wrote:
+> 
+> Thanks for putting in the time to make a spec!
+> 
+> It looks good already, but I do think some more improvements can be made.
+> 
+> 
+>> ===Intended Protocol Flow===
+> I'm not a fan of the solution that a CNode should keep state and talk to
+> its remote nodes differently while announcing new blocks.
+> Its too complicated and ultimately counter-productive.
+> 
+> The problem is that an individual node needs to predict network behaviour in
+> advance. With the downside that if it guesses wrong that both nodes end up
+> paying for the wrong guess.
+> This is not a good way to design a p2p layer.
+
+Nodes don't need to predict much in advance, and the cost for predicting
+wrong is 0 if your peers receive blocks with a few hundred ms between
+them (as we should expect) and you haven't set the announce bit on more
+than a few peers (as the spec requires for this reason). As for
+complexity of keeping state, think of it as a version flag in much the
+same way sendheaders operates.
+
+It seems I forgot to add a suggested peer-preforwarding-selection
+algorithm in the text, but the intended use-case is to set the bit on
+peers which recently provided you blocks faster than other peers, up to
+only one or three peers. This is both simple and should be incredibly
+effective.
+
+[This has now been clarified in the BIP text]
+
+> I would suggest that a new block is announced to all nodes equally and then
+> individual nodes can respond with a request of either a 'compact' or a
+> normal block.
+> This is much more in line with the current design as well.
+> 
+> Detection if remote nodes support compact blocks, for the purpose of
+> requesting a compact-block, can be done either via a network-bit or just a
+> protocol version. Or something else entirely, if you have better
+> suggestions.
+
+In line with recent trends, neither service bits nor protocol versions
+are particularly well-suited for this purpose. Protocol versions are
+impossible to handle sanely across different nodes on the network, as
+they cannot indicate optional features. Service bits, while somewhat
+more appropriate for this purpose, are a very limited resource which is
+generally better suited to indicating significant new features which
+nodes might need for correct operation, and thus might wish to actively
+seek out when making connections. I'm not sure anyone is suggesting that
+here, and absent that recent agreement preferred message-based feature
+indication instead of version-message-extension.
+
+>> Variable-length integers: bytes are a MSB base-128 encoding of the
+>> number.
+>> The high bit in each byte signifies whether another digit follows.
+>> [snip bitwise spec]
+> 
+> I suggest just referring to UTF-8 which describes this just fine.
+> it is good practice to refer to existing specs when possible and not copy
+> the details.
+
+Hmm? There is no UTF anywhere in this protocol. Indeed this section
+needs to be rewritten, as indicated. I'd recommend you read the code
+until I update the section with better text if you're confused.
+
+>> ====Short transaction IDs====
+>> Short transaction IDs are used to represent a transaction without
+>> sending a full 256-bit hash. They are calculated by:
+>> # single-SHA256 hashing the block header with the nonce appended (in
+>> little-endian)
+>> # XORing each 8-byte chunk of the double-SHA256 transaction hash with
+>> each corresponding 8-byte chunk of the hash from the previous step
+>> # Adding each of the XORed 8-byte chunks together (in little-endian)
+>> iteratively to find the short transaction ID
+> 
+> I don't think this is needed. Just use the first 8 bytes.
+> The reason to do xor-ing doesn't hold up and extra complexity is unneeded.
+> Especially since you mention some lines down;
+> 
+>> The short transaction ID calculation is designed to take absolutely
+>> minimal processing time during block compaction to avoid introducing
+>> serious DoS vulnerabilities
+
+I'm confused as to what, specifically, you're proposing this be changed
+to. I'm pretty sure the proposed protocol is about as simple as you can
+get while retaining some reasonable collision resistance. I might,
+however, decide to switch to siphash with a very low round count, given
+that it's probably faster than the cache-fill-time taken by just
+iterating over the mempool. Needs a bit further investigation.
+
+> ==Acknowledgements==
+> 
+> I think you need to acknowledge some more people, or just remove this
+> paragraph.
+> 
+> Cheers
+
+Greg was the only large contributor to the document (and was a very
+large contributor, as mentioned - the work is based hugely on a protocol
+recommendation he wrote up several years ago) don't see why this should
+mean he doesn't get credit.
+
+[For those interested, I'm referring here to
+https://en.bitcoin.it/wiki/User:Gmaxwell/block_network_coding. This
+BIP/the implementation is a precursor to an implementation that looks
+similar to what Greg proposes there which can be found on my udp-wip
+branch, which is based on and uses the data structures involved here.]
