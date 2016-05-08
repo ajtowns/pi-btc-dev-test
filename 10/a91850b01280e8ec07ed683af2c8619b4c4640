@@ -1,0 +1,110 @@
+From: marek@palatinus.cz (Marek Palatinus)
+Date: Sun, 8 May 2016 15:48:27 +0200
+Subject: [bitcoin-dev] Fwd:  Proposal to update BIP-32
+In-Reply-To: <CAPg+sBiAv7PFWEw5s=BPcOkL-x9GfWqi24pD3xMnfxvz9xQy4g@mail.gmail.com>
+References: <5717AF19.1030102@gmail.com>
+	<CAJna-HiG5Nq_c0nZ28bTV4ZQKaU-zY1YiSEEaRK9ZvFO7LH-EA@mail.gmail.com>
+	<CAPg+sBiAv7PFWEw5s=BPcOkL-x9GfWqi24pD3xMnfxvz9xQy4g@mail.gmail.com>
+Message-ID: <CAJna-HjiN9-KbVgUVFeaDWeFgQV9o5o_omEV5bh4drEyEALdnw@mail.gmail.com>
+
+I received this:
+
+---------- Forwarded message ----------
+From: Pieter Wuille <pieter.wuille at gmail.com>
+Date: Fri, Apr 22, 2016 at 6:44 PM
+Subject: Re: [bitcoin-dev] Proposal to update BIP-32
+To: Marek Palatinus <marek at palatinus.cz>
+Cc: Bitcoin Dev <bitcoin-dev at lists.linuxfoundation.org>
+
+
+On Thu, Apr 21, 2016 at 2:08 PM, Marek Palatinus <marek at palatinus.cz> wrote:
+
+> On Wed, Apr 20, 2016 at 6:32 PM, Jochen Hoenicke via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> Hello Bitcoin Developers,
+>>
+>> I would like to make a proposal to update BIP-32 in a small way.
+>>
+>> I think the backward compatibility issues are minimal.  The chance
+>> that this affects anyone is less than 10^-30.  Even if it happens, it
+>> would only create some additional addresses (that are not seen if the
+>> user downgrades).  The main reason for suggesting a change is that we
+>> want a similar method for different curves where a collision is much
+>> more likely.
+>>
+>
+I think I change like this makes a lot of sense technically, and I wish I
+had known how BIP-32 would end up being used inside higher level mechanisms
+that automatically increment the position beyond the control of the
+application generating them. The inclusion of the requirement was there
+because ECDSA is notorious for security problems under biased secret keys,
+though it's really only a certificational issue for secp256k1 (due to its
+group order being so close to 2^256).
+
+>
+>> #QUESTIONS:
+>>
+>> What is the procedure to update the BIP?  Is it still possible to
+>> change the existing BIP-32 even though it is marked as final?  Or
+>> should I make a new BIP for this that obsoletes BIP-32?
+>>
+>
+BIPs are not supposed to be updated with new ideas, only
+remarks/links/typos/clarifications/..., so that their bumbers can
+unambiguously be used to refer to an idea. My suggestion would be to write
+a new BIP that overrides parts of BIP32, and then put a note in BIP32 that
+a better mechanism is available that is unlikely to change things in
+reality for the secp256k1 curve.
+
+I guess
+
+
+> What algorithm is preferred? (bike-shedding)  My suggestion:
+>>
+>> ---
+>>
+>> Change the last step of the private -> private derivation functions to:
+>>
+>>  . In case parse(I_L) >= n or k_i = 0, the procedure is repeated
+>>    at step 2 with
+>>     I = HMAC-SHA512(Key = c_par, Data = 0x01 || I_R || ser32(i))
+>
+>
+>> ---
+>>
+>> I think this suggestion is simple to implement (a bit harder to unit
+>> test) and the string to hash with HMAC-SHA512 always has the same
+>> length.  I use I_R, since I_L is obviously not very random if I_L >= n.
+>> There is a minimal chance that it will lead to an infinite loop if I_R
+>> is the same in two consecutive iterations, but that has only a chance
+>> of 1 in 2^512 (if the algorithm is used for different curves that make
+>> I_L >= n more likely, the chance is still less than 1 in 2^256).  In
+>> theory, this loop can be avoided by incrementing i in every iteration,
+>> but this would make an implementation error in the "hard to test" path
+>> of the program more likely.
+>>
+>
+The chance for failure is a bit higher than that, as it only requires a
+failed key (one in 2^128) in the first step, followed by an iteration that
+results in the same I_R to cause a cycle. If you take multiple failures
+before the cycle starts into account, the combined chance for failure is
+p/(1-p)^2 / 2^256 (with p the chance for a random inadmissable key), which
+is not much better than 1 in 2^128 for high values of p.
+
+An alternative that always converges is to retry with an appended iteration
+count is possible:
+{
+  I = HMAC-SHA512(Key = c_par, Data = 0x01 ||  || ser32(i)) for the first
+iteration
+  I = HMAC-SHA512(Key = c_par, Data = 0x01 ||  || ser32(i) || ser32(j)) for
+iteration number j, with j > 0
+}
+
+Cheers,
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160508/f42d5ac4/attachment.html>
