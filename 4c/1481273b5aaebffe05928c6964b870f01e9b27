@@ -1,0 +1,51 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Mon, 9 May 2016 08:57:08 +0000
+Subject: [bitcoin-dev] Committed bloom filters for improved wallet
+ performance and SPV security
+In-Reply-To: <71d822e413ac457a530e1c367811cc24@cock.lu>
+References: <71d822e413ac457a530e1c367811cc24@cock.lu>
+Message-ID: <CAAS2fgTG6AKDVMMe6kZC5YbZhAkoNiYLh16mfodUR3=Pc_3AyA@mail.gmail.com>
+
+On Mon, May 9, 2016 at 8:26 AM, bfd--- via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> We introduce several concepts that rework the lightweight Bitcoin
+> client model in a manner which is secure, efficient and privacy
+> compatible.
+[...]
+> A Bloom Filter Digest is deterministically created of every block
+
+I think this is a fantastic idea.
+
+Some napkin work shows that it has pretty good communications
+bandwidth so long as you assume that the wallet has many keys (e.g.
+more than the number of the outputs in the block)-- otherwise BIP37
+uses less bandwidth, but you note its terrible privacy problems.
+
+You should be aware that when the filter is transmitted but not
+updated, as it is in these filtering applications, the bloom filter is
+not the most communication efficient data structure.
+
+The most efficient data structure is similar to a bloom filter, but
+you use more bits and only one hash function. The result will be
+mostly zero bits. Then you entropy code it using RLE+Rice coding or an
+optimal binomial packer (e.g.
+https://people.xiph.org/~greg/binomial_codec.c).  This is about 45%
+more space efficient than a bloom filter. ... it's just a PITA to
+update, though that is inapplicable here.  Entropy coding for this can
+be quite fast, if many lookups are done the decompression could even
+be faster than having to use two dozen hash functions for each lookup.
+
+The intuition is that this kind of simple hash-bitmap is great, but
+space inefficient if you don't have compression since most of the bits
+are 0 you end up spending a bit to send less than a bit of
+information. A bloom filter improve the situation by using the
+multiple filters to increase the ones density to 50%, but the
+increased collisions create overhead. This is important when its a
+in-memory data-structure that you're updating often, but not here.
+
+One thing to do with matching blocks is after finding the matches the
+node could potentially consult some PIR to get the blocks it cares
+about... thus preventing a leak of which blocks it was interested in,
+but not taking PIR costs for the whole chain or requiring the
+implementation of PIR tree search (which is theoretically simple but
+in practice hard to implement).
