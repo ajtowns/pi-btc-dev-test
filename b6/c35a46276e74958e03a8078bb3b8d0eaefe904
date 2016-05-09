@@ -1,0 +1,139 @@
+From: tomz@freedommail.ch (Tom Zander)
+Date: Mon, 09 May 2016 10:35:32 +0100
+Subject: [bitcoin-dev] Compact Block Relay BIP
+In-Reply-To: <572EB166.5070305@mattcorallo.com>
+References: <5727D102.1020807@mattcorallo.com>
+	<CALOxbZv5GL5br=Z5idR-ACVzkBxS6JP_KgSr3JBuYVLgsej3eA@mail.gmail.com>
+	<572EB166.5070305@mattcorallo.com>
+Message-ID: <86058327.pdmfHP132A@kiwi>
+
+On Sunday, May 08, 2016 03:24:22 AM Matt Corallo wrote:
+> >> ===Intended Protocol Flow===
+> > 
+> > I'm not a fan of the solution that a CNode should keep state and talk to
+> > its remote nodes differently while announcing new blocks.
+> > Its too complicated and ultimately counter-productive.
+> > 
+> > The problem is that an individual node needs to predict network behaviour
+> > in advance. With the downside that if it guesses wrong that both nodes
+> > end up paying for the wrong guess.
+> > This is not a good way to design a p2p layer.
+> 
+> Nodes don't need to predict much in advance, and the cost for predicting
+> wrong is 0 if your peers receive blocks with a few hundred ms between
+> them (as we should expect) and you haven't set the announce bit on more
+> than a few peers (as the spec requires for this reason).
+
+You misunderstand the networking effects.
+The fact that your node is required to choose which one to set the announce 
+bit on implies that it needs to predict which node will have the best data in 
+the future.
+It needs to predict which nodes will not start being incommunicado and it 
+requires them to predict all the things that are not possible to predict in a 
+network.
+In networking it is even more true than in stocks; results of the past are no 
+guarantee for the future.
+
+This means you are creating a fragile system. Your system will only work in 
+laboratory situations.  It will fail spectacularly when the network or the 
+internet is under stress or some parts fall away.
+
+
+Another problem with your solution is that nodes send a much larger amount of 
+unsolicited data to peers in the form of the thin-block compared to the normal 
+inv or header-first data.
+
+Saying this is mitigated by only subscribing on this data from a small 
+subsection of nodes means you position yourself in a situation that I 
+displayed above. A tradeoff of fragile and fast.  With no possible way to make 
+a node automatically decide on a good equilibrium.
+
+
+> It seems I forgot to add a suggested peer-preforwarding-selection
+> algorithm in the text, but the intended use-case is to set the bit on
+> peers which recently provided you blocks faster than other peers, up to
+> only one or three peers. This is both simple and should be incredibly
+> effective.
+
+Network autorepair systems have been researched for decades, no real solution 
+has as of yet appeared. 
+PHDs are written on the subject and you want to make this a design for Bitcoin 
+based on "[it] should be incredibly effective", I think you are underestimating 
+the subject matter you are dealing with.
+
+
+> > I would suggest that a new block is announced to all nodes equally and
+> > then
+> > individual nodes can respond with a request of either a 'compact' or a
+> > normal block.
+> > This is much more in line with the current design as well.
+> > 
+> > Detection if remote nodes support compact blocks, for the purpose of
+> > requesting a compact-block, can be done either via a network-bit or just a
+> > protocol version. Or something else entirely, if you have better
+> > suggestions.
+> 
+> In line with recent trends, neither service bits nor protocol versions
+> are particularly well-suited for this purpose.
+
+Am I to understand that you choose the solution based on the fact that service 
+bits are too expensive to extend? (if not, please respond to my previous 
+question actually answering the suggestion)
+
+That sounds like a rather bad way of doing design. Maybe you can add a second 
+service bits field of message instead and then do the compact blocks correctly.
+
+
+> >> Variable-length integers: bytes are a MSB base-128 encoding of the
+> >> number.
+> >> The high bit in each byte signifies whether another digit follows.
+> >> [snip bitwise spec]
+> > 
+> > I suggest just referring to UTF-8 which describes this just fine.
+> > it is good practice to refer to existing specs when possible and not copy
+> > the details.
+> 
+> Hmm? There is no UTF anywhere in this protocol. Indeed this section
+> needs to be rewritten, as indicated. I'd recommend you read the code
+> until I update the section with better text if you're confused.
+
+Wait, you didn't steal the variable length encoding from an existing standard 
+and you programmed a new one?
+I strongly suggest you don't reinvent this kind of protocol level encodings 
+but instead steal from something like UTF8. Which has been around for decades.
+
+Please base your standard on other standards where possible.
+
+Look at UTF-8 on wikipedia, you may have "invented" the same encoding that IBM 
+published in 1992.
+
+
+> >> ====Short transaction IDs====
+> >> Short transaction IDs are used to represent a transaction without
+> >> sending a full 256-bit hash. They are calculated by:
+> >> # single-SHA256 hashing the block header with the nonce appended (in
+> >> little-endian)
+> >> # XORing each 8-byte chunk of the double-SHA256 transaction hash with
+> >> each corresponding 8-byte chunk of the hash from the previous step
+> >> # Adding each of the XORed 8-byte chunks together (in little-endian)
+> >> iteratively to find the short transaction ID
+> > 
+> > I don't think this is needed. Just use the first 8 bytes.
+> > The reason to do xor-ing doesn't hold up and extra complexity is unneeded.
+> > Especially since you mention some lines down;
+> > 
+> >> The short transaction ID calculation is designed to take absolutely
+> >> minimal processing time during block compaction to avoid introducing
+> >> serious DoS vulnerabilities
+> 
+> I'm confused as to what, specifically, you're proposing this be changed
+> to.
+
+Just the first (highest) 8 bytes of a sha256 hash.
+
+The amount of collisions will not be less if you start xoring the rest.
+The whole reason for doing this extra work is also irrelevant as a spam 
+protection. 
+
+-- 
+Tom Zander
