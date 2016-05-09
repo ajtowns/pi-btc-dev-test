@@ -1,0 +1,108 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Mon, 9 May 2016 10:43:02 +0000
+Subject: [bitcoin-dev] Compact Block Relay BIP
+In-Reply-To: <86058327.pdmfHP132A@kiwi>
+References: <5727D102.1020807@mattcorallo.com>
+	<CALOxbZv5GL5br=Z5idR-ACVzkBxS6JP_KgSr3JBuYVLgsej3eA@mail.gmail.com>
+	<572EB166.5070305@mattcorallo.com> <86058327.pdmfHP132A@kiwi>
+Message-ID: <CAAS2fgRiSNNHA5psaUYOM6rHfjJ1aOgWhnsT8Z-pU4FBcR_65w@mail.gmail.com>
+
+On Mon, May 9, 2016 at 9:35 AM, Tom Zander via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> You misunderstand the networking effects.
+> The fact that your node is required to choose which one to set the announce
+> bit on implies that it needs to predict which node will have the best data in
+> the future.
+
+Not required. It may. If it chooses fortunately, latency is reduced--
+to 0.5 RTT in many cases. If not-- nothing harmful happens.
+
+Testing on actual nodes in the actual network (not a "lab") shows that
+blocks are normally requested from one of the last three peers they
+were requested from 70% of the time, with no special affordances or
+skipping samples when peers disconnected.
+
+(77% for last 4, 88% for last 8)
+
+This also _increases_ robustness. Right now a single peer failing at
+the wrong time will delay blocks with a long time out. In high
+bandwidth mode the redundancy means that node will be much more likely
+to make progress without timeout delays-- so long at least one of the
+the selected opportunistic mode peers was successful.
+
+Because the decision is non-normative to the protocol, nodes can
+decide based on better criteria if better criteria is discovered in
+the future.
+
+> Another problem with your solution is that nodes send a much larger amount of
+> unsolicited data to peers in the form of the thin-block compared to the normal
+> inv or header-first data.
+
+"High bandwidth" mode uses somewhat more bandwidth than low
+bandwidth... but still >>10 times less than an ordinary getdata relay
+which is used ubiquitously today.
+
+If a node is trying to minimize bandwidth usage, it can choose to not
+request the "high bandwidth" mode.
+
+The latency bound cannot be achieved without unsolicited data. The
+best we can while achieving 0.5 RTT is try to arrange things so that
+the information received is maximally useful and as small as
+reasonably possible.
+
+If receivers implemented joint decoding (combining multiple
+comprblocks in the event of faild decoding) 4 byte IDs would be
+completely reasonable, and were what I originally suggested (along
+with forward error correction data, in that case).
+
+> Am I to understand that you choose the solution based on the fact that service
+> bits are too expensive to extend? (if not, please respond to my previous
+> question actually answering the suggestion)
+>
+> That sounds like a rather bad way of doing design. Maybe you can add a second
+> service bits field of message instead and then do the compact blocks correctly.
+
+Service bits are not generally a good mechanism for negating optional
+peer-local parameters.
+
+The settings for compactblocks can change at runtime, having to
+reconnect to change them would be obnoxious.
+
+> Wait, you didn't steal the variable length encoding from an existing standard
+> and you programmed a new one?
+
+This is one of the two variable length encodings used for years in
+Bitcoin Core. This is just the first time it's shown up in a BIP.
+
+[It's a little disconcerting that you appear to be maintaining a fork
+and are unaware of this.]
+
+> Look at UTF-8 on wikipedia, you may have "invented" the same encoding that IBM
+> published in 1992.
+
+The similarity with UTF-8 is that both are variable length and some
+control information is in the high bits. The similarity ends there.
+
+UTF-8 is more complex and less efficient for this application (coding
+small numbers), as it has to handle things like resynchronization
+which are critical in text but irrelevant in our framed, checksummed,
+reliably transported binary protocol.
+
+> Just the first (highest) 8 bytes of a sha256 hash.
+>
+> The amount of collisions will not be less if you start xoring the rest.
+> The whole reason for doing this extra work is also irrelevant as a spam
+> protection.
+
+Then you expose it to a trivial collision attack:  To find two 64 bit
+hashes that collide I need perform only roughly 2^32 computation. Then
+I can send them to the network.  You cannot reason about these systems
+just by assuming that bad things happen only according to pure chance.
+
+This issue is eliminated by salting the hash.  Moreover, with
+per-source randomization of the hash, when a rare chance collision
+happens it only impacts a single node at a time, so the propagation
+doesn't stall network wide on an unlucky block; it just goes slower on
+a tiny number of links a tiny percent of the time (instead of breaking
+everywhere an even tinyer amount of the time)-- in the non-attacker,
+chance event case.
