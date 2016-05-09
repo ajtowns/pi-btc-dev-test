@@ -1,0 +1,147 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Mon, 9 May 2016 12:12:14 +0000
+Subject: [bitcoin-dev] Fwd:  Compact Block Relay BIP
+In-Reply-To: <CAAS2fgR01=SfpAdHhFd_DFa9VNiL=e1g4FiguVRywVVSqFe9rA@mail.gmail.com>
+References: <5727D102.1020807@mattcorallo.com> <86058327.pdmfHP132A@kiwi>
+	<CAAS2fgRiSNNHA5psaUYOM6rHfjJ1aOgWhnsT8Z-pU4FBcR_65w@mail.gmail.com>
+	<2273040.Bd6rtJjYLF@garp>
+	<CAAS2fgR01=SfpAdHhFd_DFa9VNiL=e1g4FiguVRywVVSqFe9rA@mail.gmail.com>
+Message-ID: <CAAS2fgRL1=YSrAZVES0WBySyL1brZcvQsvZdsqUEY2-8UOFFiA@mail.gmail.com>
+
+On Mon, May 9, 2016 at 11:32 AM, Tom <tomz at freedommail.ch> wrote:
+> On Monday 09 May 2016 10:43:02 Gregory Maxwell wrote:
+>> On Mon, May 9, 2016 at 9:35 AM, Tom Zander via bitcoin-dev
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> > You misunderstand the networking effects.
+>> > The fact that your node is required to choose which one to set the
+>> > announce
+>> > bit on implies that it needs to predict which node will have the best data
+>> > in the future.
+>>
+>> Not required. It may.
+>
+> It is required, in the reference of wanting to actually use compact block
+> relay.
+
+I cannot parse this sentence.
+
+A node implementing this does not have to ask peers to send blocks
+without further solicitation.
+
+If they don't, their minimum transfer time increases to the current
+1.5 RTT (but sending massively less data).
+
+> Apologies, I thought that the term was wider known.  "Laboratory situations"
+> is used where I am from as the opposite of real-world messy and unpredictable
+> situations.
+>
+> So, your measurements may be true, but are not useful to decide how well it
+> behaves under less optimal situations. aka "the real world".
+
+My measurements were made in the real world, on a collection of nodes
+around the network which were not setup for this purpose and are
+running standard configurations, over many weeks of logs.
+
+This doesn't guarantee that they're representative of everything-- but
+they don't need to be.
+
+>> This also _increases_ robustness. Right now a single peer failing at
+>> the wrong time will delay blocks with a long time out.
+>
+> If your peers that were supposed to send you a compact block fail, then you'll
+> end up in exactly that same situation again.  Only with various timeouts in
+> between before you get your block making it a magnitude slower.
+
+That is incorrect.
+
+If a header shows up and a compact block has not shown up, a compact
+block will be requested.
+
+If compactblock shows up reconstruction will be attempted.
+
+If any of the requested compact blocks show up (the three in advance,
+if high bandwidth mode is used, or a requested one, if there was one)
+then reconstruction proceeds without delay.
+
+The addition of the unsolicited input causes no additional timeouts or
+delays (ignoring bandwidth usage). It does use some more bandwidth
+than not having it, but still massively less than the status quo.
+
+>> > Another problem with your solution is that nodes send a much larger amount
+>> > of unsolicited data to peers in the form of the thin-block compared to
+>> > the normal inv or header-first data.
+>>
+>> "High bandwidth" mode
+>
+> Another place where I may have explained better.
+> This is not about the difference about the two modes of your design.
+> This is about the design as a whole. As compared to current.
+
+It is massively more efficient than the current protocol, even under
+fairly poor conditions. In the absolute worst possible case (miner
+sends a block of completely unexpected transactions, and three peers
+send compact blocks, it adds about 6% overhead)
+
+> Service bits are exactly the right solution to indicate additional p2p
+> feature-support.
+
+With this kind of unsubstantiated axiomatic assertion, I don't think
+further discussion with you is likely to be productive-- at least I
+gave a reason.
+
+> That's all fine and well, it doesn't at any point take away from my point that
+> any specification should NOT invent something new that has for decades had a
+> great specification already.
+
+UTF-8 would be a poor fit here for the reasons I explained and others
+less significant ones (including the additional error cases that must
+be handled resulting from the inefficient encoding; -- poor handing of
+invalid UTF-8 have even resulted in security issues in some
+applications).
+
+I am a bit baffled that you'd suggest using UTF-8 as a general compact
+integer encoding in a binary protocol in the first place.
+
+>> > Just the first (highest) 8 bytes of a sha256 hash.
+>> >
+>> > The amount of collisions will not be less if you start xoring the rest.
+>> > The whole reason for doing this extra work is also irrelevant as a spam
+>> > protection.
+>>
+>> Then you expose it to a trivial collision attack:  To find two 64 bit
+>> hashes that collide I need perform only roughly 2^32 computation. Then
+>> I can send them to the network.
+>
+> No, you still need to have done a POW.
+>
+> Next to that, your scheme is 2^32 computations *and* some XORs. The XORs are
+> percentage wise a rounding error on the total time. So your argument also
+> destroys your own addition.
+>
+>> This issue is eliminated by salting the hash.
+>
+> The issue is better eliminated by not allowing nodes to send uninvited large
+> messages.
+
+What are you talking about? You seem profoundly confused here. There
+is no proof of work involved anywhere.
+
+I obtain some txouts. I write a transaction spending them in malleable
+form (e.g. sighash single and an op_return output).. then grind the
+extra output to produce different hashes.  After doing this 2^32 times
+I am likely to find two which share the same initial 8 bytes of txid.
+
+I send one to half the nodes, the other to half the nodes.  When a
+block shows up carrying one or the other of my transactions
+reconstruction will fail on half the nodes in the network in a
+protocol with a simple truncated hash.
+
+Of course, doing this is easy, so I can keep it going persistently. If
+I am a miner, I can be sure to filter these transactions from my own
+blocks-- causing all my competition to suffer higher orphaning.
+
+The salted short-ids do not have this easily exploited, and gratuitous
+vulnerability. This was obvious enough that it this feature was in the
+very earliest descriptions of these techniques in 2013/2014. The
+salted short-ids cannot be collided in pre-computation, and cannot be
+collided with respect to multiple nodes at once.
