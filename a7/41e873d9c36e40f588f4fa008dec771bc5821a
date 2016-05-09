@@ -1,0 +1,122 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Mon, 9 May 2016 19:06:06 +0200
+Subject: [bitcoin-dev] Compact Block Relay BIP
+In-Reply-To: <5727D102.1020807@mattcorallo.com>
+References: <5727D102.1020807@mattcorallo.com>
+Message-ID: <5730C37E.2000004@gmail.com>
+
+On 05/03/2016 12:13 AM, lf-lists at mattcorallo.com (Matt Corallo) wrote:
+> Hi all,
+> 
+> The following is a BIP-formatted design spec for compact block relay
+> designed to limit on wire bytes during block relay. You can find the
+> latest version of this document at
+> https://github.com/TheBlueMatt/bips/blob/master/bip-TODO.mediawiki.
+
+Hi Matt,
+
+thank you for working on this!
+
+> ===New data structures===
+> Several new data structures are added to the P2P network to relay
+> compact blocks: PrefilledTransaction, HeaderAndShortIDs,
+> BlockTransactionsRequest, and BlockTransactions. Additionally, we
+> introduce a new variable-length integer encoding for use in these data
+> structures.
+> 
+> For the purposes of this section, CompactSize refers to the
+> variable-length integer encoding used across the existing P2P protocol
+> to encode array lengths, among other things, in 1, 3, 5 or 9 bytes.
+
+This is a not, but I think it's a bit strange to have two separate
+variable length integers in the same specification. I understand is one
+is already the default for variable-length integers currently, and there
+are reasons to use the other one for efficiency reasons in some places,
+but perhaps we should aim to get everything using the latter?
+
+> ====New VarInt====
+> Variable-length integers: bytes are a MSB base-128 encoding of the number.
+> The high bit in each byte signifies whether another digit follows. To make
+> sure the encoding is one-to-one, one is subtracted from all but the last
+> digit.
+
+Maybe it's worth mentioning that it is based on ASN.1 BER's compressed
+integer format (see
+https://www.itu.int/ITU-T/studygroups/com17/languages/X.690-0207.pdf
+section 8.1.3.5), though with a small modification to make every integer
+have a single unique encoding.
+
+> ====HeaderAndShortIDs====
+> A HeaderAndShortIDs structure is used to relay a block header, the short
+> transactions IDs used for matching already-available transactions, and a
+> select few transactions which we expect a peer may be missing.
+> 
+> |shortids||List of uint64_ts||8*shortids_length bytes||Little
+> Endian||The short transaction IDs calculated from the transactions which
+> were not provided explicitly in prefilledtxn
+
+I tried to derive what length of short ids is actually necessary (some
+write-up is on
+https://gist.github.com/sipa/b2eb2e486156b5509ac711edd16153ed but it's
+incomplete).
+
+For any reasonable numbers I can come up with (in a very wide range),
+the number of bits needed is very well approximated by:
+
+  log2(#receiver_mempool_txn * #block_txn_not_in_receiver_mempool /
+acceptable_per_block_failure_rate)
+
+For example, with 20000 mempool transactions, 2500 transactions in a
+block, 95% hitrate, and a chance of 1 in 10000 blocks to fail to
+reconstruct, needed_bits = log2(20000 * 2500 * (1 - 0.95) / 0.0001) =
+34.54, or 5 byte txids would suffice.
+
+Note that 1 in 10000 failures may sound like a lot, but this is for each
+individual connection, and since every transmission uses separately
+salted identifiers, occasional failures should not affect global
+propagation. Given that transmission failures due to timeouts, network
+connectivity, ... already occur much more frequently than once every few
+gigabytes (what 10000 blocks corresponds to), that's probably already
+more than enough.
+
+In short: I believe 5 or 6 byte txids should be enough, but perhaps it
+makes sense to allow the sender to choose (so he can weigh trying
+multiple nonces against increasing the short txid length).
+
+> ====Short transaction IDs====
+> Short transaction IDs are used to represent a transaction without
+> sending a full 256-bit hash. They are calculated by:
+> # single-SHA256 hashing the block header with the nonce appended (in
+> little-endian)
+> # XORing each 8-byte chunk of the double-SHA256 transaction hash with
+> each corresponding 8-byte chunk of the hash from the previous step
+> # Adding each of the XORed 8-byte chunks together (in little-endian)
+> iteratively to find the short transaction ID
+
+An alternative would be using SipHash-1-3 (a form of SipHash with
+reduced iteration counts; the default is SipHash-2-4). SipHash was
+designed as a Message Authentication Code, where the security
+requirements are much stronger than in our case (in particular, we don't
+care about observers being able to finding the key, as the key is just
+public knowledge here). One of the designers of SipHash has commented
+that SipHash-1-3 for collision resistance in hash tables may be enough:
+https://github.com/rust-lang/rust/issues/29754#issuecomment-156073946
+
+Using SipHash-1-3 on modern hardware would take ~32 CPU cycles per txid.
+
+> ===Implementation Notes===
+
+There are a few more heuristics that MAY be used to improve performance:
+
+* Receivers should treat short txids in blocks that match multiple
+mempool transactions as non-matches, and request the transactions. This
+significantly reduces the failure to reconstruct.
+
+* When constructing a compact block to send, the sender can verify it
+against its own mempool to check for collisions, and if so, choose to
+either try another nonce, or increase the short txid length.
+
+Cheers,
+
+-- 
+Pieter
