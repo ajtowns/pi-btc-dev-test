@@ -1,0 +1,71 @@
+From: peter_r@gmx.com (Peter R)
+Date: Mon, 9 May 2016 11:34:47 -0700
+Subject: [bitcoin-dev] Compact Block Relay BIP
+In-Reply-To: <5730C37E.2000004@gmail.com>
+References: <5727D102.1020807@mattcorallo.com> <5730C37E.2000004@gmail.com>
+Message-ID: <D0F57BE3-EFD2-4557-8D05-704D9C4E5EA1@gmx.com>
+
+Hi Pieter,
+
+> I tried to derive what length of short ids is actually necessary (some
+> write-up is on
+> https://gist.github.com/sipa/b2eb2e486156b5509ac711edd16153ed but it's
+> incomplete).
+> 
+> For any reasonable numbers I can come up with (in a very wide range),
+> the number of bits needed is very well approximated by:
+> 
+>  log2(#receiver_mempool_txn * #block_txn_not_in_receiver_mempool /
+> acceptable_per_block_failure_rate)
+> 
+> For example, with 20000 mempool transactions, 2500 transactions in a
+> block, 95% hitrate, and a chance of 1 in 10000 blocks to fail to
+> reconstruct, needed_bits = log2(20000 * 2500 * (1 - 0.95) / 0.0001) =
+> 34.54, or 5 byte txids would suffice.
+> 
+> Note that 1 in 10000 failures may sound like a lot, but this is for each
+> individual connection, and since every transmission uses separately
+> salted identifiers, occasional failures should not affect global
+> propagation. Given that transmission failures due to timeouts, network
+> connectivity, ... already occur much more frequently than once every few
+> gigabytes (what 10000 blocks corresponds to), that's probably already
+> more than enough.
+> 
+> In short: I believe 5 or 6 byte txids should be enough, but perhaps it
+> makes sense to allow the sender to choose (so he can weigh trying
+> multiple nonces against increasing the short txid length).
+
+[9 May 16 @ 11am PDT]  
+
+We worked on this with respect to ?Xthin" for Bitcoin Unlimited, and came to a similar conclusion.  
+
+But we (I think it was theZerg) also noticed another trick: if the node receiving the thin blocks has a small number of collisions with transactions in its mempool (e.g., 1 or 2), then it can test each possible block against the Merkle root in the block header to determine the correct one.  Using this technique, it should be possible to further reduce the number of bytes used for the txids.  That being said, even thin blocks built from 64-bit short IDs represent a tremendous savings compared to standard block propagation.  So we (Bitcoin Unlimited) decided not to pursue this optimization any further at that time.
+
+***
+
+It?s also interesting to ask what the information-theoretic minimum amount of information necessary for a node to re-construct a block is. The way I?m thinking about this currently[1] is that the node needs all of the transactions in the block that were not initially part of its mempool, plus enough information to select and ordered subset from that mempool that represents the block.  If m is the number of transactions in mempool and n is the number of transactions in the block, then the number of possible subsets (C') is given by the binomial coefficient:
+
+  C' =  m! / [n! (m - n)!]
+
+Since there are n! possible orderings for each subset, the total number of possible blocks (C) of size n from a mempool of size m is
+
+  C = n! C? = m! / (m-n)!
+
+Assuming that all possible blocks are equally likely, the Shannon entropy (the information that must be communicated) is the base-2 logarithm of the number of possible blocks.  After making some approximations, this works out very close to
+
+   minimum information ~= n * log2(m),
+
+which for your case of 20,000 transactions in mempool (m = 20,000) and a 2500-transaction block (n = 2500), yields
+
+   minimum information = 2500 * log2(20,000) ~ 2500 * 15 bits.
+
+In other words, a lower bound on the information required is about 2 bytes per transactions for every transaction in the block that the node is already aware of, as well as all the missing transactions in full. 
+
+Of course, this assumes an unlimited number of round trips, and it is probably complicated by other factors that I haven?t considered (queue the ?spherical cow? jokes :), but I thought it was interesting that a technique like Xthin or compact blocks is already pretty close to this limit.  
+
+Cheers,
+Peter 
+
+[1] There are still some things that I can?t wrap my mind around that I?d love to discuss with another math geek :)
+
+
