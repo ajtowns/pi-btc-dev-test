@@ -1,0 +1,111 @@
+From: bfd@cock.lu (bfd at cock.lu)
+Date: Mon, 09 May 2016 09:26:06 +0100
+Subject: [bitcoin-dev] Committed bloom filters for improved wallet
+ performance and SPV security
+Message-ID: <71d822e413ac457a530e1c367811cc24@cock.lu>
+
+We introduce several concepts that rework the lightweight Bitcoin
+client model in a manner which is secure, efficient and privacy
+compatible.
+
+Thea properties of BIP37 SPV [0] are unfortunately not as strong as
+originally thought:
+
+     * The expected privacy of the probabilistic nature of bloom
+       filters does not exist [1][2], any user with a BIP37 SPV wallet
+       should be operating under no expectation of privacy.
+       Implementation flaws make this effect significantly worse, the
+       behavior meaning that no matter how high the false positive
+       rate (up to simply downloading the whole blocks verbatim) the
+       intent of the client connection is recoverable.
+
+     * Significant processing load is placed on nodes in the Bitcoin
+       network by lightweight clients, a single syncing wallet causes
+       (at the time of writing) 80GB of disk reads and a large amount
+       of CPU time to be consumed processing this data. This carries
+       significant denial of service risk [3], non-distinguishable
+       clients can repeatedly request taxing blocks causing
+       reprocessing on every request. Processed data is unique to every
+       client, and can not be cached or made more efficient while
+       staying within specification.
+
+     * Wallet clients can not have strong consistency or security
+       expectations, BIP37 merkle paths allow for a wallet to validate
+       that an output was spendable at some point in time but does not
+       prove that this output is not spent today.
+
+     * Nodes in the network can denial of service attack all BIP37 SPV
+       wallet clients by simply returning null filter results for
+       requests, the wallet has no way of discerning if it has been
+       lied to and may be made simply unaware that any payment has been
+       made to them. Many nodes can be queried in a probabilistic manor
+       but this increases the already heavy network load with little
+       benefit.
+
+
+
+We propose a new concept which can work towards addressing these
+shortcomings.
+
+
+A Bloom Filter Digest is deterministically created of every block
+encompassing the inputs and outputs of the containing transactions,
+the filter parameters being tuned such that the filter is a small
+portion of the size of the total block data. To determine if a block
+has contents which may be interesting a second bloom filter of all
+relevant key material is created. A binary comparison between the two
+filters returns true if there is probably matching transactions, and
+false if there is certainly no matching transactions. Any matched
+blocks can be downloaded in full and processed for transactions which
+may be relevant.
+
+The BFD can be used verbatim in replacement of BIP37, where the filter
+can be cached between clients without needing to be recomputed. It can
+also be used by normal pruned nodes to do re-scans locally of their
+wallet without needing to have the block data available to scan, or
+without reading the entire block chain from disk.
+
+-
+
+For improved probabilistic security the bloom filters can be presented
+to lightweight clients by semi-trusted oracles. A client wallet makes
+an assumption that they trust a set, or subset of remote parties
+(wallet vendors, services) which all all sign the BFD for each block.
+The BFD can be downloaded from a single remote source, and the hash of
+the filters compared against others in the trust set. Agreement is a
+weak suggestion that the filter has not been tampered with, assuming
+that these parties are not conspiring to defraud the client.
+
+The oracles do not learn any additional information about the client
+wallet, the client can download the block data from either nodes on
+the network, HTTP services, NTTP, or any other out of band
+communication method that provides the privacy desired by the client.
+
+-
+
+The security model of the oracle bloom filter can be vastly improved
+by instead committing a hash of the BFD inside every block as a soft-
+fork consensus rule change. After this, every node in the network would
+build the filter and validate that the hash in the block is correct,
+then make a conscious choice discard it for space savings or cache the
+data to disk.
+
+With a commitment to the filter it becomes impossible to lie to
+lightweight clients by omission. Lightweight clients are provided with
+a block header, merkle path, and the BFD. Altering the BFD invalidates
+the merkle proof, it's validity is a strong indicator that the client
+has an unadulterated picture of the UTXO condition without needing to
+build one itself. A strong assurance that the hash of the BFD means
+that the filters can be downloaded out of band along with the block
+data at the leisure of the client, allowing for significantly greater
+privacy and taking load away from the P2P Bitcoin network.
+
+Committing the BFD is not a hard forking change, and does not require
+alterations to mining software so long as the coinbase transaction
+scriptSig is not included in the bloom filter.
+
+
+[0] https://github.com/bitcoin/bips/blob/master/bip-0037.mediawiki
+[1] https://eprint.iacr.org/2014/763.pdf
+[2] https://jonasnick.github.io/blog/2015/02/12/privacy-in-bitcoinj/
+[3] https://github.com/petertodd/bloom-io-attack
