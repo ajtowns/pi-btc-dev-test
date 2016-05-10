@@ -1,0 +1,88 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Wed, 11 May 2016 06:53:55 +0930
+Subject: [bitcoin-dev] Compact Block Relay BIP
+In-Reply-To: <CAAS2fgRePSQ=-3MTR3p3U1zbd1ucfNg0_ocAegJCi4qR=XpypA@mail.gmail.com>
+References: <5727D102.1020807@mattcorallo.com> <5730C37E.2000004@gmail.com>
+	<87twi6zdl8.fsf@rustcorp.com.au>
+	<CAAS2fgRePSQ=-3MTR3p3U1zbd1ucfNg0_ocAegJCi4qR=XpypA@mail.gmail.com>
+Message-ID: <87k2j1zjx0.fsf@rustcorp.com.au>
+
+Gregory Maxwell <greg at xiph.org> writes:
+> On Tue, May 10, 2016 at 5:28 AM, Rusty Russell via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> I used variable-length bit encodings, and used the shortest encoding
+>> which is unique to you (including mempool).  It's a little more work,
+>> but for an average node transmitting a block with 1300 txs and another
+>> ~3000 in the mempool, you expect about 12 bits per transaction.  IOW,
+>> about 1/5 of your current size.  Critically, we might be able to fit in
+>> two or three TCP packets.
+>
+> Hm. 12 bits sounds very small even giving those figures. Why failure
+> rate were you targeting?
+
+That's a good question; I was assuming a best-case in which we have
+mempool set reconciliation (handwave) thus know they are close.  But
+there's also an alterior motive: any later more sophisticated approach
+will want variable-length IDs, and I'd like Matt to do the work :)
+
+In particular, you can significantly narrow the possibilities for a
+block by sending the min-fee-per-kb and a list of "txs in my mempool
+which didn't get in" and "txs which did despite not making the
+fee-per-kb".  Those turn out to be tiny, and often make set
+reconciliation trivial.  That's best done with variable-length IDs.
+
+> (*Not interesting because it mostly reduces exposure to loss and the
+> gods of TCP, but since those are the long poles in the latency tent,
+> it's best to escape them entirely, see Matt's udp_wip branch.)
+
+I'm not convinced on UDP; it always looks impressive, but then ends up
+reimplementing TCP in practice.  We should be well within a TCP window
+for these, so it's hard to see where we'd win.
+
+>> I would also avoid the nonce to save recalculating for each node, and
+>> instead define an id as:
+>
+> Doing this would greatly increase the cost of a collision though, as
+> it would happen in many places in the network at once over the on the
+> network at once, rather than just happening on a single link, thus
+> hardly impacting overall propagation.
+
+"Greatly increase"?  I don't see that.
+
+Let's assume an attacker grinds out 10,000 txs with 128 bits of the same
+TXID, and gets them all in a block.  They then win the lottery and get a
+collision.  Now we have to transmit ~48 bytes more than expected.
+
+> Using the same nonce means you also would not get a recovery gain from
+> jointly decoding using compact blocks sent from multiple peers (which
+> you'll have anyways in high bandwidth mode).
+
+Not quite true, since if their mempools differ they'll use different
+encoding lengths, but yes, you'll get less of this.
+
+> With a nonce a sender does have the option of reusing what they got--
+> but the actual encoding cost is negligible, for a 2500 transaction
+> block its 27 microseconds (once per block, shared across all peers)
+> using Pieter's suggestion of siphash 1-3 instead of the cheaper
+> construct in the current draft.
+>
+> Of course, if you're going to check your whole mempool to reroll the
+> nonce, thats another matter-- but that seems wasteful compared to just
+> using a table driven size with a known negligible failure rate.
+
+I'm not worried about the sender: The recipient needs to encode all the
+mempool.
+
+>> As Peter R points out, we could later enhance receiver to brute force
+>> collisions (you could speed that by sending a XOR of all the txids, but
+>> really if there are more than a few collisions, give up).
+>
+> The band between "no collisions" and "infeasible many" is fairly
+> narrow.  You can add a small amount more space to the ids and
+> immediately be in the no collision zone.
+
+Indeed, I would be adding extra bits in the sender and not implementing
+brute force in the receiver.  But I welcome someone else to do so.
+
+Cheers,
+Rusty.
