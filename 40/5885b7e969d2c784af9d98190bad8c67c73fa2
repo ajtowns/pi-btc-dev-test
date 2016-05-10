@@ -1,0 +1,85 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Tue, 10 May 2016 10:07:27 +0000
+Subject: [bitcoin-dev] Compact Block Relay BIP
+In-Reply-To: <87twi6zdl8.fsf@rustcorp.com.au>
+References: <5727D102.1020807@mattcorallo.com> <5730C37E.2000004@gmail.com>
+	<87twi6zdl8.fsf@rustcorp.com.au>
+Message-ID: <CAAS2fgRePSQ=-3MTR3p3U1zbd1ucfNg0_ocAegJCi4qR=XpypA@mail.gmail.com>
+
+On Tue, May 10, 2016 at 5:28 AM, Rusty Russell via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> I used variable-length bit encodings, and used the shortest encoding
+> which is unique to you (including mempool).  It's a little more work,
+> but for an average node transmitting a block with 1300 txs and another
+> ~3000 in the mempool, you expect about 12 bits per transaction.  IOW,
+> about 1/5 of your current size.  Critically, we might be able to fit in
+> two or three TCP packets.
+
+Hm. 12 bits sounds very small even giving those figures. Why failure
+rate were you targeting?
+
+I've mostly been thing in terms of 3000 txn, and 20k mempools, and
+blocks which are 90% consistent with the remote mempool, targeting
+1/100000 failure rates (which is roughly where it should be to put it
+well below link failure levels).
+
+If going down the path of more complexity, set reconciliation is
+enormously more efficient (e.g. 90% reduction), which no amount of
+packing/twiddling can achieve.
+
+But the savings of going from 20kb to 3kb is not interesting enough to
+justify it*.  My expectation is that later we'll deploy set
+reconciliation to fix relay efficiency, where the savings is _much_
+larger,  and then with the infrastructure in place we could define
+another compactblock mode that used it.
+
+(*Not interesting because it mostly reduces exposure to loss and the
+gods of TCP, but since those are the long poles in the latency tent,
+it's best to escape them entirely, see Matt's udp_wip branch.)
+
+> I would also avoid the nonce to save recalculating for each node, and
+> instead define an id as:
+
+Doing this would greatly increase the cost of a collision though, as
+it would happen in many places in the network at once over the on the
+network at once, rather than just happening on a single link, thus
+hardly impacting overall propagation.
+
+(The downside of the nonce is that you get an exponential increase in
+the rate that a collision happens "somewhere", but links fail
+"somewhere" all the time-- propagation overall doesn't care about
+that.)
+
+Using the same nonce means you also would not get a recovery gain from
+jointly decoding using compact blocks sent from multiple peers (which
+you'll have anyways in high bandwidth mode).
+
+With a nonce a sender does have the option of reusing what they got--
+but the actual encoding cost is negligible, for a 2500 transaction
+block its 27 microseconds (once per block, shared across all peers)
+using Pieter's suggestion of siphash 1-3 instead of the cheaper
+construct in the current draft.
+
+Of course, if you're going to check your whole mempool to reroll the
+nonce, thats another matter-- but that seems wasteful compared to just
+using a table driven size with a known negligible failure rate.
+
+64-bits as a maximum length is high enough that the collision rate
+would be negligible even under fairly unrealistic assumptions-- so
+long as it's salted. :)
+
+> As Peter R points out, we could later enhance receiver to brute force
+> collisions (you could speed that by sending a XOR of all the txids, but
+> really if there are more than a few collisions, give up).
+
+The band between "no collisions" and "infeasible many" is fairly
+narrow.  You can add a small amount more space to the ids and
+immediately be in the no collision zone.
+
+Some earlier work we had would send small amount of erasure coding
+data of the next couple bytes of the IDs.  E.g. the receiver in all
+the IDs you know, mark totally unknown IDs as erased and the let the
+error correction fix the rest. This let you algebraically resolve
+collisions _far_ beyond what could be feasibly bruteforced. Pieter
+went and implemented... but the added cost of encoding and software
+complexity seem not worth it.
