@@ -1,0 +1,65 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Tue, 10 May 2016 14:58:19 +0930
+Subject: [bitcoin-dev] Compact Block Relay BIP
+In-Reply-To: <5730C37E.2000004@gmail.com>
+References: <5727D102.1020807@mattcorallo.com> <5730C37E.2000004@gmail.com>
+Message-ID: <87twi6zdl8.fsf@rustcorp.com.au>
+
+Pieter Wuille via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> writes:
+> On 05/03/2016 12:13 AM, lf-lists at mattcorallo.com (Matt Corallo) wrote:
+>> Hi all,
+>> 
+>> The following is a BIP-formatted design spec for compact block relay
+>> designed to limit on wire bytes during block relay. You can find the
+>> latest version of this document at
+>> https://github.com/TheBlueMatt/bips/blob/master/bip-TODO.mediawiki.
+>
+> Hi Matt,
+>
+> thank you for working on this!
+
+Indeed!  Sorry for the delayed feedback.
+
+>> |shortids||List of uint64_ts||8*shortids_length bytes||Little
+>> Endian||The short transaction IDs calculated from the transactions which
+>> were not provided explicitly in prefilledtxn
+>
+> I tried to derive what length of short ids is actually necessary (some
+> write-up is on
+> https://gist.github.com/sipa/b2eb2e486156b5509ac711edd16153ed but it's
+> incomplete).
+
+I did this for IBLT testing.
+
+I used variable-length bit encodings, and used the shortest encoding
+which is unique to you (including mempool).  It's a little more work,
+but for an average node transmitting a block with 1300 txs and another
+~3000 in the mempool, you expect about 12 bits per transaction.  IOW,
+about 1/5 of your current size.  Critically, we might be able to fit in
+two or three TCP packets.
+
+The wire encoding of all those bit arrays was:
+  [varint-min-numbits] - Shortest bit array length
+  [varint-array-size]  - Number of bit arrays.
+          [varint-num].... - Number of entries in array N (x varint-array-size)
+  [packed-bit-arrays...]
+
+  Last byte was padded with zeros.
+  See: https://github.com/rustyrussell/bitcoin-iblt/blob/master/wire_encode.cpp#L12
+
+I would also avoid the nonce to save recalculating for each node, and
+instead define an id as:
+
+        [<64-bit-short-id>][txid]
+
+Since you only ever send as many bits as needed to distinguish, this only
+makes a difference if there actually are collisions.
+
+As Peter R points out, we could later enhance receiver to brute force
+collisions (you could speed that by sending a XOR of all the txids, but
+really if there are more than a few collisions, give up).
+
+And a prototype could just always send 64-bit ids to start.
+
+Cheers,
+Rusty.
