@@ -1,0 +1,57 @@
+From: bob_bitcoin@mcelrath.org (Bob McElrath)
+Date: Wed, 11 May 2016 20:06:48 +0000
+Subject: [bitcoin-dev] Committed bloom filters for improved wallet
+ performance and SPV security
+In-Reply-To: <71d822e413ac457a530e1c367811cc24@cock.lu>
+References: <71d822e413ac457a530e1c367811cc24@cock.lu>
+Message-ID: <20160511200648.GQ20063@mcelrath.org>
+
+I like this idea, but let's run some numbers...
+
+bfd--- via bitcoin-dev [bitcoin-dev at lists.linuxfoundation.org] wrote:
+> A Bloom Filter Digest is deterministically created of every block
+
+Bloom filters completely obfuscate the required size of the filter for a desired
+false-positive rate.  But, an optimal filter is linear in the number of elements
+it contains for fixed false-positive rate, and logarithmic in the false-positive
+rate.  (This comment applies to a RLL encoded Bloom filter Greg mentioned, but
+that's not the only way)  That is for N elements and false positive rate
+\epsilon:
+
+    filter size = - N \log_2 \epsilon
+
+Given that the data that would be put into this particular filter is *already*
+hashed, it makes more sense and is faster to use a Cuckoo[1] filter, choosing a
+fixed false-positive rate, given expected wallet sizes.  For Bloom filters,
+multiply the above formula by 1.44.
+
+To prevent light clients from downloading more blocks than necessary, the
+false-positive rate should be roughly less than 1/(block height).  If we take
+the false positive rate to be 1e-6 for today's block height ~ 410000, this is
+about 20 bits per element.  So for todays block's, this is a 30kb filter, for a
+3% increase in block size, if blocks commit to the filter.  Thus the required
+size of the filter commitment is roughly:
+
+    filter size = N \log_2 H
+
+where H is the block height.  If bitcoin had these filters from the beginning, a
+light client today would have to download about 12MB of data in filters.  My
+personal SPV wallet is using 31MB currently.  It's not clear this is a bandwidth
+win, though it's definitely a win for computing load on full nodes.
+
+
+[1] https://www.cs.cmu.edu/~dga/papers/cuckoo-conext2014.pdf
+
+--
+Cheers, Bob McElrath
+
+"For every complex problem, there is a solution that is simple, neat, and wrong."
+    -- H. L. Mencken 
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 198 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160511/90715bc8/attachment.sig>
