@@ -1,0 +1,155 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Wed, 18 May 2016 10:00:44 +0200
+Subject: [bitcoin-dev] p2p authentication and encryption BIPs
+In-Reply-To: <20160409154038.4c04dd9b@laptop-m1330>
+References: <56F2B51C.8000105@jonasschnelli.ch>
+	<56FEE39B.3040401@jonasschnelli.ch>
+	<20160409154038.4c04dd9b@laptop-m1330>
+Message-ID: <573C212C.6070604@jonasschnelli.ch>
+
+Hi Lee
+
+Thank you very much for the valuable input.
+I'm still processing your feedback....
+
+> 
+> *Key Revocation*
+> This is probably too complicated, but an additional public key would
+> allow for cold-storage key revocation. Spreading the knowledge of such
+> an event is always painful, but it could be stored in the blockchain. I
+> think this is likely too complicated, but having these long-term keys
+> constantly in memory/disk is unfortunate.
+> 
+
+Yes. This could be something that could be extended once the BIP is
+stable and/or implemented.
+
+
+
+>> <code>K_1</code> must be used to only encrypt the payload size of the
+>> encrypted message to avoid leaking information by revealing the
+>> message size. 
+>>
+>> <code>K_2</code> must be used in conjunction with poly1305 to build
+>> an AEAD.
+> 
+> Chacha20 is a stream cipher, so only a single encryption key is needed.
+> The first 32 bytes of the keystream would be used for the Poly1305 key,
+> the next 4 bytes would be used to encrypt the length field, and the
+> remaining keystream would be used to encrypt the payload. Poly1305
+> would then generate a tag over the length and payload. The receiver
+> would generate the same keystream to decrypt the length which
+> identifies the length of the message and the MAC offset, then
+> authenticate the length and payload, then decypt with the remaining
+> keystream.
+> 
+
+Right. The AEAD construct I though of is probably called
+chacha20-poly1305 at openssh.com and specified in
+https://github.com/openssh/openssh-portable/blob/05855bf2ce7d5cd0a6db18bc0b4214ed5ef7516d/PROTOCOL.chacha20poly1305#L34
+
+I think this construct has already serval implementations and is widely
+used.
+
+I have updated the BIP to mention the chacha20-poly1305 at openssh.com
+specification.
+
+> Is it safer to define two keys to prevent implementations from screwing
+> this up? You have to split the decryption and authentication, so the
+> basic modes of libsodium cannot be used for instance. If a custom tag
+> generation scheme is being used, then the basic modes are already
+> unusable ...
+> 
+> *Failed Authentication*
+> What happens on a failed MAC attempt? Connection closure is the
+> easiest way to handle the situation.
+
+Yes. I think closing would make sense.
+
+>> After a successful <code>encinit</code>/<code>encack</code>
+>> interaction from both sides, the messages format must use the
+>> "encrypted messages structure". Non-encrypted messages from the
+>> requesting peer must lead to a connection termination (can be
+>> detected by the 4 byte network magic in the unencrypted message
+>> structure).
+> 
+> The magic bytes are at the same offset and size as the encrypted length
+> field in the encrypted messages structure. So the magic bytes are not a
+> reliable way to identify unencrypted messages, although the probability
+> of collision is low.
+
+Yes. This is a good point.
+The implementation should probably also accept messages that contain the
+4 byte network magic from unencrypted messages (to avoid possible
+collisions).
+If the message is unencrypted, the length check or the unsuccessful
+authentication check will lead to a disconnect.
+
+>> {|class="wikitable"
+>> ! Field Size !! Description !! Data type !! Comments
+>> |-
+>> | 4 || length || uint32_t || Length of ciphertext payload in number
+>> of bytes
+>> |-
+>> | ? || ciphertext payload || ? || One or many ciphertext command &
+>> message data
+>> |-
+>> | 8 || MAC tag || ? || MAC-tag truncated to 8 bytes
+>> |}
+> 
+> Why have a fixed MAC length? I think the MAC length should be inferred
+> from the cipher + authentication mode. And the Poly1305 tag is 16 bytes.
+> 
+> *Unauthenticated Buffering*
+> Implementations are unlikely to (i.e. should not) process the payload
+> until authentication succeeds. Since the length field is 4 bytes, this
+> means an implementation may have to buffer up to 4 GiB of data _per
+> connection_ before it can authenticate the length field. If the outter
+> length field were reduced to 2 or 3 bytes, the unauthenticated
+> buffering requirements drop to 64 KiB and 16 MiB respectively. Inner
+> messages already have their own length, so they can span multiple
+> encrypted blocks without other changes. This will increase the
+> bandwidth requirements when the size of a single message exceeds 64 KiB
+> or 16 MiB, since it will require multiple authentication tags for that
+> message. I think an additional 16 bytes per 16 MiB seems like a good
+> tradeoff.
+> 
+
+Good point.
+I have mentioned this now in the BIP but I think the BIP should allow
+message > 16 MiB.
+I leave the max. message length up to the implementation while keeping
+the 4 byte length on the protocol level.
+
+> 
+>> A responding peer can inform the requesting peer over a re-keying
+>> with a <code>encack</code> message containing 33byte of zeros to
+>> indicate that all encrypted message following after this
+>> <code>encack</code> message will be encrypted with ''the next
+>> symmetric cipher key''.
+>>
+>> The new symmetric cipher key will be calculated by
+>> <code>SHA256(SHA256(old_symetric_cipher_key))</code>.
+>>
+>> Re-Keying interval is a peer policy with a minimum timespan of 600
+>> seconds.
+> 
+> Should the int64_t message count be reset to 0 on a re-key? Or should
+> the value reset to zero after 2^63-1? Hopefully the peer re-keys before
+> that rollover, or keystream reusage will occur. Unlikely that many
+> messages are sent on a single connection though. And presumably this
+> only re-keys the senders side? Bi-directional re-keying would be racy.
+
+I just added the RFC4253 recommendation as a must (re-key after every
+1GB of data sent or received).
+
+
+</jonas>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 819 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160518/b974c034/attachment.sig>
