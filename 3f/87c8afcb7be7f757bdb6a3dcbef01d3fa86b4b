@@ -1,0 +1,100 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 18 May 2016 19:53:36 -0400
+Subject: [bitcoin-dev] Making UTXO Set Growth Irrelevant With
+ Low-Latency Delayed TXO Commitments
+In-Reply-To: <CABm2gDp9NLKS=+2BhtS3tT2aZjV0sGHUkVV-+n_90w4Ud9Aakw@mail.gmail.com>
+References: <20160517132311.GA21656@fedora-21-dvm>
+	<CABm2gDoj=6CimHm2C0H_qa=o5SRqWr0ZTGamf-qT-kUjt5WXTA@mail.gmail.com>
+	<CABm2gDqMQanaY0Eo4QAnx2MrKCSP+v31R6J80jSVx+jOwsVsVw@mail.gmail.com>
+	<CABm2gDp9NLKS=+2BhtS3tT2aZjV0sGHUkVV-+n_90w4Ud9Aakw@mail.gmail.com>
+Message-ID: <20160518235336.GA1358@fedora-21-dvm>
+
+On Wed, May 18, 2016 at 01:14:59PM +0200, Jorge Tim?n wrote:
+> On May 17, 2016 15:23, "Peter Todd via bitcoin-dev" <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > # TXO Commitments
+> >
+> 
+> > Specifically TXO commitments proposes a Merkle Mountain Range? (MMR), a
+> > type of deterministic, indexable, insertion ordered merkle tree, which
+> allows
+> > new items to be cheaply appended to the tree with minimal storage
+> requirements,
+> > just log2(n) "mountain tips". Once an output is added to the TXO MMR it is
+> > never removed; if an output is spent its status is updated in place. Both
+> the
+> > state of a specific item in the MMR, as well the validity of changes to
+> items
+> > in the MMR, can be proven with log2(n) sized proofs consisting of a
+> merkle path
+> > to the tip of the tree.
+> 
+> How expensive it is to update a leaf from this tree from unspent to spent?
+
+log2(n) operations.
+
+I wrote a full MMR implementation with pruning support as part of my
+proofchains work:
+
+https://github.com/proofchains/python-proofmarshal/blob/master/proofmarshal/mmr.py
+
+Documentation is a bit lacking, but I'd suggest reading the above source code
+and the unit tests(1) to understand what's going on. As of writing item
+retrieval by index is implemented(2), and if you follow how that works you'll
+see it's log2(n) operations; changing elements in-place isn't yet
+implemented(3) but would be a fun homework problem. I'll bet anyone a beer that
+you'll find it can be done in k*log2(n) operations, with a reasonably small k. :)
+
+Additionally, I also have a merkelized key:value prefix tree implementation
+called a "merbinner tree" in the same library, again with pruning support. It
+does implement changing elements in place(4) with log2(n) operations.
+
+Incidentally, something I probably should have made more clear in my TXO
+commitments post is that the original MMR scheme I developed for OpenTimestamps
+(and independently reinvented for Certificate Transparency) is insufficient:
+while you can easily extract a proof that an element is present in the MMR,
+that inclusion proof doesn't do a good job of proving the position in the tree
+very well. OpenTimestamps didn't need that kind of proof, and I don't think
+Certificate Transparency needs it either. However many other MMR applications
+do, including many types of TXO commitments.
+
+My proofchains MMR scheme fixes this problem by making each inner node in the
+MMR commit to the total number of elements under it(5) - basically it's a
+merkle-sum-tree with the size of the tree being what's summed. There may be
+more efficient ways to do this, but a committed sum-length is easy to
+implement, and the space overhead is only 25% even in the least optimised
+implementation possible.
+
+1) https://github.com/proofchains/python-proofmarshal/blob/3f0ba0a9d46f36377ad6c1901de19273604e6fbc/proofmarshal/test/test_mmr.py
+2) https://github.com/proofchains/python-proofmarshal/blob/3f0ba0a9d46f36377ad6c1901de19273604e6fbc/proofmarshal/mmr.py#L294
+3) https://github.com/proofchains/python-proofmarshal/blob/3f0ba0a9d46f36377ad6c1901de19273604e6fbc/proofmarshal/mmr.py#L230
+4) https://github.com/proofchains/python-proofmarshal/blob/3f0ba0a9d46f36377ad6c1901de19273604e6fbc/proofmarshal/merbinnertree.py#L140
+5) https://github.com/proofchains/python-proofmarshal/blob/3f0ba0a9d46f36377ad6c1901de19273604e6fbc/proofmarshal/mmr.py#L139
+
+> Wouldn't it be better to have both an append-only TXO and an append-only
+> STXO (with all spent outputs, not only the latest ones like in your "STXO")?
+
+Nope. The reason why this doesn't work is apparent when you ask how will the
+STXO be indexed?
+
+If it's indexed by outpoint - that is H(txid:n) - to update the STXO you need
+he entire thing, as the position of any new STXO that you need to add to the
+STXO tree is random.
+
+OTOH, if you index the STXO by txout creation order, with the first txout ever
+created having position #0, the second #1, etc. the data you may need to update
+the STXO later has predictable locality... but now you have something that's
+basically identical to my proposed insertion-ordered TXO commitment anyway.
+
+Incidentally, it's interesting how if a merbinner tree is insertion-order
+indexed you end up with a datastructure that's almost identical to a MMR.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160518/5d585b5c/attachment.sig>
