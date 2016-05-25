@@ -1,0 +1,74 @@
+From: forum@leeclagett.com (Lee Clagett)
+Date: Tue, 24 May 2016 20:22:50 -0400
+Subject: [bitcoin-dev] p2p authentication and encryption BIPs
+In-Reply-To: <573C212C.6070604@jonasschnelli.ch>
+References: <56F2B51C.8000105@jonasschnelli.ch>
+	<56FEE39B.3040401@jonasschnelli.ch>
+	<20160409154038.4c04dd9b@laptop-m1330>
+	<573C212C.6070604@jonasschnelli.ch>
+Message-ID: <20160524202250.01db6f61@laptop-m1330>
+
+On Wed, 18 May 2016 10:00:44 +0200
+Jonas Schnelli via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+wrote:
+
+> Hi Lee
+> 
+> Thank you very much for the valuable input.
+> I'm still processing your feedback....
+
+[...]
+
+> > Why have a fixed MAC length? I think the MAC length should be
+> > inferred from the cipher + authentication mode. And the Poly1305
+> > tag is 16 bytes.
+> > 
+> > *Unauthenticated Buffering*
+> > Implementations are unlikely to (i.e. should not) process the
+> > payload until authentication succeeds. Since the length field is 4
+> > bytes, this means an implementation may have to buffer up to 4 GiB
+> > of data _per connection_ before it can authenticate the length
+> > field. If the outter length field were reduced to 2 or 3 bytes, the
+> > unauthenticated buffering requirements drop to 64 KiB and 16 MiB
+> > respectively. Inner messages already have their own length, so they
+> > can span multiple encrypted blocks without other changes. This will
+> > increase the bandwidth requirements when the size of a single
+> > message exceeds 64 KiB or 16 MiB, since it will require multiple
+> > authentication tags for that message. I think an additional 16
+> > bytes per 16 MiB seems like a good tradeoff.
+> >   
+> 
+> Good point.
+> I have mentioned this now in the BIP but I think the BIP should allow
+> message > 16 MiB.
+> I leave the max. message length up to the implementation while keeping
+> the 4 byte length on the protocol level.
+
+I expect the implementation defined max size to work (SSH 2.0 does this
+after all), but I want to make sure my suggestion is understood
+completely.
+
+There is a length field for the encrypted data, and length field(s)
+inside of the encrypted data to indicate the length of the plaintext
+Bitcoin messages. I am suggesting that the outter (encrypted) length
+field be reduced, which will _not limit_ the length of Bitcoin
+messages. For example, if a 1 GiB Bitcoin message needed to be sent
+and the encrypted length field was 3 bytes - the sender is forced to
+send a minimum of 64 MACs for this message. The tradeoff is allowing
+the receiver to detect malformed data sooner and have a lower max
+buffering window **against** slightly higher bandwidth and CPU
+requirements due to the additional headers+MACs (the CPU requirements
+should primarily be in "finalizing each Poly1305").
+
+An alternative way to think about the suggestion is tunnelling Bitcoin
+messages over TLS or SSH. TLS 1.2 has a 2-byte length field and SSH 2.0
+a 4-byte length field, but neither prevents larger Bitcoin messages from
+being tunnelled; the lengths are independent.
+
+[...]
+
+> 
+> </jonas>
+> 
+
+Lee
