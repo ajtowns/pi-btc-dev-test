@@ -1,0 +1,119 @@
+From: luke@dashjr.org (Luke Dashjr)
+Date: Thu, 26 May 2016 03:53:04 +0000
+Subject: [bitcoin-dev] BIP Number Request: Open Asset
+In-Reply-To: <CA+1nnrmZAdzBn-FMBVMGtp4n7bbG8W0VEGvi1WopS-M49zBXpw@mail.gmail.com>
+References: <CA+1nnrmZAdzBn-FMBVMGtp4n7bbG8W0VEGvi1WopS-M49zBXpw@mail.gmail.com>
+Message-ID: <201605260353.06939.luke@dashjr.org>
+
+On Thursday, May 26, 2016 2:50:26 AM Nicolas Dorier via bitcoin-dev wrote:
+>   Author: Flavien Charlon <flavien at charlon.net>
+
+Is he the author of this BIP, or merely the protocol described in it?
+Would it perhaps make sense to include yourself in the author list?
+
+> The ID of an asset is the RIPEMD-160 hash of the SHA-256 hash of the
+> output script referenced by the first input of the transaction that
+> initially issued that asset (<code>script_hash =
+> RIPEMD160(SHA256(script))</code>). An issuer can reissue more of an
+> already existing asset as long as they retain the private key for that
+> asset ID. Assets on two different outputs can only be mixed together
+> if they have the same asset ID.
+
+Quite a bit ugly, giving a meaning to an input's pubkey script like that.
+But more problematically: how can this work with other pubkey scripts? 
+Particularly relevant now that this old script format is being deprecated.
+
+Another possible problem is that I don't see a way to provably guarantee an 
+asset issuance is final.
+
+> Transactions that are not recognized as an Open Assets transaction are
+> considered as having all their outputs uncolored.
+
+And the assets attached to its inputs are destroyed? Or?
+
+> If multiple parsable PUSHDATA opcodes exist in the same output, the
+> first one is used, and the other ones are ignored.
+> 
+> If multiple valid marker outputs exist in the same transaction, the
+> first one is used and the other ones are considered as regular
+> outputs.
+
+Is it intentional that the first case is "parsable", and the second "valid"?
+I think these need to be better specified; for example, it is not so clear how 
+to reach if the OAP version number is something other than 1: is that 
+parsable? valid?
+
+> ! Asset quantity count || A
+> [https://en.bitcoin.it/wiki/Protocol_specification#Variable_length_integer
+> var-integer] representing the number of items in the <code>asset quantity
+> list</code> field. || 1-9 bytes
+> 
+> |-
+> 
+> ! Asset quantity list  || A list of zero or more
+> [http://en.wikipedia.org/wiki/LEB128 LEB128-encoded] unsigned integers
+> representing the asset quantity of every output in order (excluding the
+> marker output). || Variable
+
+What determines the asset id? How would one issue and/or transfer multiple 
+asset ids in the same transaction?
+
+> The marker output is always uncolored.
+
+What if I have a transaction with 5 outputs, the marker output at position 3, 
+and all 4 other outputs are to receive assets? Does the marker output get 
+skipped in the list (ie, the list is 4 elements long) or must it be set to 
+zero quantity (ie, the list is 5 elements long)?
+
+> Inputs are seen as a sequence of asset units, each having an asset ID.
+> Similarly, outputs are seen as a sequence of asset units to be
+> assigned an asset ID. These two sequences are built by taking each
+> input or output in order, each of them adding a number of asset units
+> equal to their asset quantity. The process starts with the first input
+> of the transaction and the first output after the marker output.
+> 
+> After the sequences have been built, the asset ID of every asset unit
+> in the input sequence is assigned to the asset unit at the same
+> position in the output sequence until all the asset units in the
+> output sequence have received an asset ID. If there are less asset
+> units in the input sequence than in the output sequence, the marker
+> output is considered invalid.
+> 
+> Finally, for each transfer output, if the asset units forming that
+> output all have the same asset ID, the output gets assigned that asset
+> ID. If any output is mixing units with more than one distinct asset
+> ID, the marker output is considered invalid. Outputs with an asset
+> quantity of zero are always considered uncolored.
+
+I don't understand this.
+
+> # This approach uses the recommended way to embed data in the Blockchain
+> (OP_RETURN), and therefore does not pollute the UTXO.
+
+Embedding data is not recommended at all. It seems a better way to have done 
+this would be to put the info in an OP_DROP within a P2SH or witness script.
+
+> # The whole cryptographic infrastructure that Bitcoin provides for
+> securing the spending of outputs is reused for securing the ability to
+> issue assets. There is a symmetry between ''an address + private key''
+> as a way to spend Bitcoins, and ''an address + private key'' as a way
+> to issue assets.
+
+Addresses are not used for spending bitcoins, only for receiving them. The way 
+this BIP uses inputs' pubkey script is extremely unusual and probably a bad 
+idea.
+
+> # Reissuing more of an existing asset is easy and can be done quickly
+> and at no cost (except for the transaction fee) as long as the issuer
+> retains the private key for the asset ID.
+
+As I understand it, this would require address reuse to setup, which is not 
+supported behaviour and insecure.
+
+> For backward compatibility reasons, we consider than an older client
+> is allowed to see a colored output as uncolored.
+
+How is this compatible? Won't an older client then accidentally destroy 
+assets?
+
+Luke
