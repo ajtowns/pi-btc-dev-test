@@ -1,0 +1,46 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Wed, 8 Jun 2016 13:57:36 +0800
+Subject: [bitcoin-dev] BIP141 segwit consensus rule update: extension of
+	witness program definition
+Message-ID: <A7E9BC23-6860-4B31-9D4E-11F771A5E581@xbt.hk>
+
+Please note that the segregated witness (BIP141) consensus rule is updated. Originally, a witness program is a scriptPubKey or redeemScript that consists of a 1-byte push opcode (OP_0 to OP_16) followed by a data push between 2 and 32 bytes. The definition is now extended to 2 to 40 bytes:
+https://github.com/bitcoin/bips/commit/d1b52cb198066d4e515e8a50fc3928c5397c3d9b https://github.com/bitcoin/bitcoin/pull/7910/commits/14d4d1d23a3cbaa8a3051d0da10ff7a536517ed0
+
+
+Why?
+----------
+BIP141 defines only version 0 witness program: 20 bytes program for P2WPKH and 32 bytes program for P2WSH. Versions 1 to 16 are not defined, and are considered as anyone-can-spend scripts, reserved for future extension (e.g. the proposed BIP114). BIP141 also requires that only a witness program input may have witness data. Therefore, before this update, an 1-byte push opcode followed by a 33 bytes data push was not considered to be a witness program, and no witness data is allowed for that.
+
+This may be over-restrictive for a future witness program softfork. When 32-byte program is used, this leaves only 16 versions for upgrade, and any ?sub-version? metadata must be recorded in the witness field. This may not be compatible with some novel hashing functions we are exploring.
+
+By extending the maximum length by 8 bytes, it allows up to 16 * 2 ^ 64 versions for future upgrades, which is enough for any foreseeable use.
+
+
+Why not make it even bigger, e.g. 75 bytes?
+----------
+A 40 bytes witness program allows a 32-byte hash with 8-byte metadata. For any scripts that are larger than 32 bytes, they should be recorded in the witness field, like P2WSH in BIP141, to reduce the transaction cost and impact on UTXO set. Since SHA256 is already used everywhere, it is very unlikely that we would require a larger witness program (e.g. SHA512) without also a major revamp of the bitcoin protocol.
+
+In any case, since scripts with a 1-byte push followed by a push of >40 bytes remain anyone-can-spend, we always have the option to redefine them with a softfork.
+
+
+What are affected?
+----------
+As defined in BIP141, a version 0 witness program is valid only with 20 bytes (P2WPKH) or 32 bytes (P2WSH). Before this update, an OP_0 followed by a data push of 33-40 bytes was not a witness program and considered as anyone-can-spend. Now, such a script will fail due to incorrect witness program length.
+
+Before this update, no witness data was allowed for a script with a 1-byte push followed by a data push of 33-40 bytes. This is now allowed.
+
+
+
+Actions to take:
+----------
+If you are running a segnet node, or a testnet node with segwit code, please upgrade to the latest version at https://github.com/bitcoin/bitcoin/pull/7910
+
+If you have an alternative implementation, please make sure your consensus code is updated accordingly, or your node may fork off the network.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 671 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160608/cbf69a4f/attachment.sig>
