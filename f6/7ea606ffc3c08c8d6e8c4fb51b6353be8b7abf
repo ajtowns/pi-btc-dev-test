@@ -1,0 +1,114 @@
+From: bram@bittorrent.com (Bram Cohen)
+Date: Tue, 14 Jun 2016 17:14:23 -0700
+Subject: [bitcoin-dev] Merkle trees and mountain ranges
+Message-ID: <CA+KqGkosGrWQ2Lpg3Ptc+UyidK7H4_HLQ_QWx2DOAFRmLkv4zQ@mail.gmail.com>
+
+This is in response to Peter Todd's proposal for Merkle Mountain Range
+commitments in blocks:
+
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-May/012715.html
+
+I'm in strong agreement that there's a compelling need to put UTXO
+commitments in blocks, and that the big barrier to getting it done is
+performance, particularly latency. But I have strong disagreements (or
+perhaps the right word is skepticism) about the details.
+
+Peter proposes that there should be both UTXO and STXO commitments, and
+they should be based on Merkle Mountain Ranges based on Patricia Tries. My
+first big disagreement is about the need for STXO commitments. I think
+they're unnecessary and a performance problem. The STXO set is much larger
+than the utxo set and requires much more memory and horespower to maintain.
+Most if not all of its functionality can in practice be done using the utxo
+set. Almost anything accepting proofs of inclusion and exclusion will have
+a complete history of block headers, so to prove inclusion in the stxo set
+you can use a utxo proof of inclusion in the past and a proof of exclusion
+for the most recent block. In the case of a txo which has never been
+included at all, it's generally possible to show that an ancestor of the
+txo in question was at one point included but that an incompatible
+descendant of it (or the ancestor itself) is part of the current utxo set.
+Generating these sorts of proofs efficiently can for some applications
+require a complete STXO set, but that can done with a non-merkle set,
+getting the vastly better performance of an ordinary non-cryptographic
+hashtable.
+
+The fundamental approach to handling the latency problem is to have the
+utxo commitments trail a bit. Computing utxo commitments takes a certain
+amount of time, too much to hold up block propagation but still hopefully
+vastly less than the average amount of time between blocks. Trailing by a
+single block is probably a bad idea because you sometimes get blocks back
+to back, but you never get blocks back to back to back to back. Having the
+utxo set be trailing by a fixed amount - five blocks is probably excessive
+- would do a perfectly good job of keeping latency from every becoming an
+issue. Smaller commitments for the utxos added and removed in each block
+alone could be added without any significant performance penalty. That way
+all blocks would have sufficient commitments for a completely up to date
+proofs of inclusion and exclusion. This is not a controversial approach.
+
+Now I'm going to go out on a limb. My thesis is that usage of a mountain
+range is unnecessary, and that a merkle tree in the raw can be made
+serviceable by sprinkling magic pixie dust on the performance problem.
+
+There are two causes of performance problems for merkle trees: hashing
+operations and memory cache misses. For hashing functions, the difference
+between a mountain range and a straight merkle tree is roughly that in a
+mountain range there's one operation for each new update times the number
+of times that thing will get merged into larger hills. If there are fewer
+levels of hills the number of operations is less but the expense of proof
+of inclusion will be larger. For raw merkle trees the number of operations
+per thing added is the log base 2 of the number of levels in the tree,
+minus the log base 2 of the number of things added at once since you can do
+lazy evaluation. For practical Bitcoin there are (very roughly) a million
+things stored, or 20 levels, and there are (even more roughly) about a
+thousand things stored per block, so each thing forces about 20 - 10 = 10
+operations. If you follow the fairly reasonable guideline of mountain range
+hills go up by factors of four, you instead have 20/2 = 10 operations per
+thing added amortized. Depending on details this comparison can go either
+way but it's roughly a wash and the complexity of a mountain range is
+clearly not worth it at least from the point of view of CPU costs.
+
+But CPU costs aren't the main performance problem in merkle trees. The
+biggest issues is cache misses, specifically l1 and l2 cache misses. These
+tend to take a long time to do, resulting in the CPU spending most of its
+time sitting around doing nothing. A naive tree implementation is pretty
+much the worst thing you can possibly build from a cache miss standpoint,
+and its performance will be completely unacceptable. Mountain ranges do a
+fabulous job of fixing this problem, because all their updates are merges
+so the metrics are more like cache misses per block instead of cache misses
+per transaction.
+
+The magic pixie dust I mentioned earlier involves a bunch of subtle
+implementation details to keep cache coherence down which should get the
+number of cache misses per transaction down under one, at which point it
+probably isn't a bottleneck any more. There is an implementation in the
+works here:
+
+https://github.com/bramcohen/MerkleSet
+
+This implementation isn't finished yet! I'm almost there, and I'm
+definitely feeling time pressure now. I've spent quite a lot of time on
+this, mostly because of a bunch of technical reworkings which proved
+necessary. This is the last time I ever write a database for kicks. But
+this implementation is good on all important dimensions, including:
+
+Lazy root calculation
+Few l1 and l2 cache misses
+Small proofs of inclusion/exclusion
+Reasonably simple implementation
+Reasonably efficient in memory
+Reasonable defense against malicious insertion attacks
+
+There is a bit of a false dichotomy with the mountain range approach.
+Mountain ranges need underlying merkle trees, and mine are semantically
+nearly identically to Peter's. This is not a coincidence - I adopted
+patricia tries at his suggestion. There are a bunch of small changes which
+allow a more efficient implementation. I believe that my underlying merkle
+tree is unambiguously superior in every way, but the question of whether a
+mountain range is worth it is one which can only be answered empirically,
+and that requires a bunch of implementation work to be done, starting with
+me finishing my merkle tree implementation and then somebody porting it to
+C and optimizing it. The Python version has details which are ridiculous
+and only make sense once it gets ported, and even under the best of
+conditions Python performance is not strongly indicative of C performance.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160614/a1bc30c1/attachment.html>
