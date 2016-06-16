@@ -1,0 +1,148 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 15 Jun 2016 20:10:40 -0400
+Subject: [bitcoin-dev] Merkle trees and mountain ranges
+In-Reply-To: <CA+KqGkosGrWQ2Lpg3Ptc+UyidK7H4_HLQ_QWx2DOAFRmLkv4zQ@mail.gmail.com>
+References: <CA+KqGkosGrWQ2Lpg3Ptc+UyidK7H4_HLQ_QWx2DOAFRmLkv4zQ@mail.gmail.com>
+Message-ID: <20160616001040.GA5026@fedora-21-dvm>
+
+On Tue, Jun 14, 2016 at 05:14:23PM -0700, Bram Cohen via bitcoin-dev wrote:
+> This is in response to Peter Todd's proposal for Merkle Mountain Range
+> commitments in blocks:
+> 
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-May/012715.html
+> 
+> I'm in strong agreement that there's a compelling need to put UTXO
+> commitments in blocks, and that the big barrier to getting it done is
+> performance, particularly latency. But I have strong disagreements (or
+> perhaps the right word is skepticism) about the details.
+> 
+> Peter proposes that there should be both UTXO and STXO commitments, and
+
+No, that's incorrect - I'm only proposing TXO commitments, not UTXO nor STXO
+commitments.
+
+> they should be based on Merkle Mountain Ranges based on Patricia Tries. My
+> first big disagreement is about the need for STXO commitments. I think
+> they're unnecessary and a performance problem. The STXO set is much larger
+> than the utxo set and requires much more memory and horespower to maintain.
+
+Again, I'm not proposing STXO commitments precisely because the set of _spent_
+transactions grows without bound. TXO commitments with committed sums of
+remaining unspent TXO's and with pruning of old history are special in this
+regard, because once spent the data associated with spent transactions can be
+discarded completely, and at the same time, data associated with old history
+can be pruned with responsibility for keeping it resting on the shoulders of
+those owning those coins.
+
+> Most if not all of its functionality can in practice be done using the utxo
+> set. Almost anything accepting proofs of inclusion and exclusion will have
+> a complete history of block headers, so to prove inclusion in the stxo set
+> you can use a utxo proof of inclusion in the past and a proof of exclusion
+> for the most recent block. In the case of a txo which has never been
+> included at all, it's generally possible to show that an ancestor of the
+> txo in question was at one point included but that an incompatible
+> descendant of it (or the ancestor itself) is part of the current utxo set.
+> Generating these sorts of proofs efficiently can for some applications
+> require a complete STXO set, but that can done with a non-merkle set,
+> getting the vastly better performance of an ordinary non-cryptographic
+> hashtable.
+
+TXO commitments allows you to do all of this without requiring miners to have
+unbounded storage to create new blocks.
+
+> The fundamental approach to handling the latency problem is to have the
+> utxo commitments trail a bit. Computing utxo commitments takes a certain
+> amount of time, too much to hold up block propagation but still hopefully
+> vastly less than the average amount of time between blocks. Trailing by a
+> single block is probably a bad idea because you sometimes get blocks back
+> to back, but you never get blocks back to back to back to back. Having the
+> utxo set be trailing by a fixed amount - five blocks is probably excessive
+> - would do a perfectly good job of keeping latency from every becoming an
+> issue. Smaller commitments for the utxos added and removed in each block
+> alone could be added without any significant performance penalty. That way
+> all blocks would have sufficient commitments for a completely up to date
+> proofs of inclusion and exclusion. This is not a controversial approach.
+
+Agreed - regardless of approach adding latency to commitment calculations of
+all kinds is something I think we all agree can work in principle, although
+obviously it should be a last resort technique when optimization fails.
+
+> Now I'm going to go out on a limb. My thesis is that usage of a mountain
+> range is unnecessary, and that a merkle tree in the raw can be made
+> serviceable by sprinkling magic pixie dust on the performance problem.
+
+It'd help if you specified exactly what type of merkle tree you're talking
+about here; remember that the certificate transparency RFC appears to have
+reinvented merkle mountain ranges, and they call them "merkle trees".  Bitcoin
+meanwhile uses a so-called "merkle tree" that's broken, and Zcash uses a
+partially filled fixed-sized perfect tree.
+
+> There are two causes of performance problems for merkle trees: hashing
+> operations and memory cache misses. For hashing functions, the difference
+> between a mountain range and a straight merkle tree is roughly that in a
+> mountain range there's one operation for each new update times the number
+> of times that thing will get merged into larger hills. If there are fewer
+> levels of hills the number of operations is less but the expense of proof
+> of inclusion will be larger. For raw merkle trees the number of operations
+> per thing added is the log base 2 of the number of levels in the tree,
+> minus the log base 2 of the number of things added at once since you can do
+> lazy evaluation. For practical Bitcoin there are (very roughly) a million
+> things stored, or 20 levels, and there are (even more roughly) about a
+> thousand things stored per block, so each thing forces about 20 - 10 = 10
+> operations. If you follow the fairly reasonable guideline of mountain range
+> hills go up by factors of four, you instead have 20/2 = 10 operations per
+> thing added amortized. Depending on details this comparison can go either
+> way but it's roughly a wash and the complexity of a mountain range is
+> clearly not worth it at least from the point of view of CPU costs.
+
+I'm having a hard time understanding this paragraph; could you explain what you
+think is happening when things are "merged into larger hills"?
+
+> But CPU costs aren't the main performance problem in merkle trees. The
+> biggest issues is cache misses, specifically l1 and l2 cache misses. These
+> tend to take a long time to do, resulting in the CPU spending most of its
+> time sitting around doing nothing. A naive tree implementation is pretty
+> much the worst thing you can possibly build from a cache miss standpoint,
+> and its performance will be completely unacceptable. Mountain ranges do a
+> fabulous job of fixing this problem, because all their updates are merges
+> so the metrics are more like cache misses per block instead of cache misses
+> per transaction.
+>
+> The magic pixie dust I mentioned earlier involves a bunch of subtle
+> implementation details to keep cache coherence down which should get the
+> number of cache misses per transaction down under one, at which point it
+> probably isn't a bottleneck any more. There is an implementation in the
+> works here:
+
+As UTXO/STXO/TXO sets are all enormously larger than L1/L2 cache, it's
+impossible to get CPU cache misses below one for update operations. The closest
+thing to an exception is MMR's, which due to their insertion-ordering could
+have good cache locality for appends, in the sense that the mountain tips
+required to recalculate the MMR tip digest will already be in cache from the
+previous append. But that's not sufficient, as you also need to modify old
+TXO's further back in the tree to mark them as spent - that data is going to be
+far larger than L1/L2 cache.
+
+> https://github.com/bramcohen/MerkleSet
+> 
+> This implementation isn't finished yet! I'm almost there, and I'm
+> definitely feeling time pressure now. I've spent quite a lot of time on
+> this, mostly because of a bunch of technical reworkings which proved
+> necessary. This is the last time I ever write a database for kicks. But
+> this implementation is good on all important dimensions, including:
+> 
+> Lazy root calculation
+> Few l1 and l2 cache misses
+> Small proofs of inclusion/exclusion
+
+Have you looked at the pruning system that my proofchains work implements?
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160615/9afd4c09/attachment.sig>
