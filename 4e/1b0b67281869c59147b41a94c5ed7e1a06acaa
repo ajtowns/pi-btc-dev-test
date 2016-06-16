@@ -1,0 +1,134 @@
+From: bram@bittorrent.com (Bram Cohen)
+Date: Thu, 16 Jun 2016 02:07:26 -0700
+Subject: [bitcoin-dev] Merkle trees and mountain ranges
+In-Reply-To: <20160616032612.GA7792@fedora-21-dvm>
+References: <CA+KqGkosGrWQ2Lpg3Ptc+UyidK7H4_HLQ_QWx2DOAFRmLkv4zQ@mail.gmail.com>
+	<20160616001040.GA5026@fedora-21-dvm>
+	<CA+KqGkqAHcU2PzEX6OmorXRBQ22eF_QBYYqUDS1v_ZvevhLCuQ@mail.gmail.com>
+	<20160616032612.GA7792@fedora-21-dvm>
+Message-ID: <CA+KqGkqA2WnvBEck3kv6p2no-9wzNVCTNA-MGw=Jg=gMGfrxUQ@mail.gmail.com>
+
+On Wed, Jun 15, 2016 at 8:26 PM, Peter Todd <pete at petertodd.org> wrote:
+
+> >
+> > What do you mean by TXO commitments? If you mean that it only records
+> > insertions rather than deletions, then that can do many of the same
+> proofs
+> > but has no way of proving that something is currently in the UTXO set,
+> > which is functionality I'd like to provide.
+>
+> I think you need to re-read my original post on TXO commitments,
+> specifically
+> where I say:
+>
+>     # TXO Commitments
+>
+>     A merkle tree committing to the state of __all transaction outputs,
+> both spent
+>     and unspent__, we can provide a method of compactly proving the
+> current state of
+>     an output.
+>
+>
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-May/012715.html
+
+
+Okay, clearly my assumptions about the parts of that post I didn't read
+carefully were way off. I'll have to look through it carefully to be able
+to make coherent apples to apples comparisons.
+
+> I'm worried that once there's real transaction fees everyone might stop
+> > consolidating dust and the set of unspent transactions might grow without
+> > bound as well, but that's a topic for another day.
+>
+> Ok, but then if you're concerned about that risk, why introduce a data
+> structure - the STXO set - that's _guaranteed_ to grow without bound?
+>
+
+I'm not proposing STXO set commitments either. My point was that there
+should be incentives for collecting dust. That has nothing to do with this
+thread though and should be discussed separately (also I don't feel like
+discussing it because I don't have a good proposal).
+
+
+> > What I'm making is a patricia trie. Its byte level definition is very
+> > similar to the one in your MMR codebase.
+>
+> Which codebase exactly? I have both a insertion-ordered list (MMR) and a
+> key:value mapping (referred to as a "merbinner tree" in the codebase) in
+> the
+> proofchains codebase. They're very different data structures.
+>
+
+I'm talking about your merbinner trees. I read through that part of your
+codebase carefully and got the impression that the MMR tree section used it
+as a building block.
+
+
+> > The main differences to your patricia trie are the non-padding sha256 and
+> > that each level doesn't hash in a record of its depth and the usage of
+> > ONLY0 and ONLY1.
+>
+> I'm rather confused, as the above sounds nothing like what I've
+> implemented,
+> which only has leaf nodes, inner nodes, and the special empty node
+> singleton,
+> for both the MMR and merbinner trees.
+>
+
+It's quite a bit like merbinner trees. I've basically taken the leaf nodes
+and smushed them into the inner nodes above them, thus saving a hashing
+operation and some memory. They're both binary radix trees.
+
+> Technically even a patricia trie utxo commitment can have sub-1 cache
+> > misses per update if some of the updates in a single block are close to
+> > each other in memory. I think I can get practical Bitcoin updates down
+> to a
+> > little bit less than one l2 cache miss per update, but not a lot less.
+>
+> I'm very confused as to why you think that's possible. When you say
+> "practical
+> Bitcoin updates", what exactly is the data structure you're proposing to
+> update? How is it indexed?
+
+
+My calculations are: a Bitcoin block contains about 2000 updates. The l2
+cache is about 256 kilobytes, and if an update is about 32 bytes times two
+for the parents, grandparents, etc. then an l2 cache can contain about 4000
+values. If the current utxo size is about 2000 * 4000 = 8,000,000 in size
+then about half the pages which contain a transaction will contain a second
+one. I think the utxo set is currently about an order of magnitude greater
+than that, so the number of such collisions will be fairly mall, hence my
+'less than one but not a lot less' comment.
+
+As for how it's indexed, at a crypto definition level it's just a binary
+radix tree. In terms of how it's indexed in memory, that involves some
+optimizations to avoid cache misses. Memory is allocated into blocks of
+about the size of an 12 cache (or maybe an l1 cache, it will require some
+testing and optimization). Blocks are either branch blocks, which keep
+everything in fixed positions, or leaf blocks, which contain fixed size
+entries for nodes plus indexes within the same leaf block of their
+children. Branch blocks can have many children which can be either branch
+blocks or leaf blocks, but typically are either all branch blocks or all
+leaf blocks. Branch blocks always have exactly one parent. Leaf blocks
+always have all their inputs come from a single branch block, but there can
+be multiple ones of those. When a branch block overflows it first tries to
+put stuff into the last leaf block it used, and if there's no more room it
+allocates a new one. It's fairly common for branches to have just a few
+leaf children, but they also could have a lot, depending on whether the
+base 2 log of the number of things currently in the set modulo the number
+levels in a branch is a small number.
+
+Usually when an update is done it consists of first checking the
+appropriate output of the root block (it's jumped to directly to avoid
+unnecessary memory lookups. If there's nothing there the algorithm will
+walk back until it finds something.) That leads directly to (usually)
+another branch whose output is jumped to directly again. At Bitcoin utxo
+set sizes that will usually lead to a leaf block, which is then walked down
+manually to find the actual terminal node, which is then updated, and the
+parent, grandparent, etc. is then marked invalid until something which was
+already marked invalid is hit, and it exits. Calculation of hash values is
+done lazily.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160616/e266893c/attachment.html>
