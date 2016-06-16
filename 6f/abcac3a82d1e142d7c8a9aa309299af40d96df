@@ -1,0 +1,146 @@
+From: bram@bittorrent.com (Bram Cohen)
+Date: Wed, 15 Jun 2016 18:16:26 -0700
+Subject: [bitcoin-dev] Merkle trees and mountain ranges
+In-Reply-To: <20160616001040.GA5026@fedora-21-dvm>
+References: <CA+KqGkosGrWQ2Lpg3Ptc+UyidK7H4_HLQ_QWx2DOAFRmLkv4zQ@mail.gmail.com>
+	<20160616001040.GA5026@fedora-21-dvm>
+Message-ID: <CA+KqGkqAHcU2PzEX6OmorXRBQ22eF_QBYYqUDS1v_ZvevhLCuQ@mail.gmail.com>
+
+On Wed, Jun 15, 2016 at 5:10 PM, Peter Todd <pete at petertodd.org> wrote:
+
+> On Tue, Jun 14, 2016 at 05:14:23PM -0700, Bram Cohen via bitcoin-dev wrote:
+> >
+> > Peter proposes that there should be both UTXO and STXO commitments, and
+>
+> No, that's incorrect - I'm only proposing TXO commitments, not UTXO nor
+> STXO
+> commitments.
+>
+
+What do you mean by TXO commitments? If you mean that it only records
+insertions rather than deletions, then that can do many of the same proofs
+but has no way of proving that something is currently in the UTXO set,
+which is functionality I'd like to provide.
+
+When I say 'merkle tree' what I mean is a patricia trie. What I assume is
+meant by a merkle mountain range is a series of patricia tries of
+decreasing size each of which is an addition to the previous one, and
+they're periodically consolidated into larger tries so the old ones can go
+away. This data structure has the nice property that it's both in sorted
+order and has less than one cache miss per operation because the
+consolidation operations can be batched and done linearly. There are a
+number of different things you could be describing if I misunderstood.
+
+
+> I'm not proposing STXO commitments precisely because the set of _spent_
+> transactions grows without bound.
+
+
+I'm worried that once there's real transaction fees everyone might stop
+consolidating dust and the set of unspent transactions might grow without
+bound as well, but that's a topic for another day.
+
+
+> > Now I'm going to go out on a limb. My thesis is that usage of a mountain
+> > range is unnecessary, and that a merkle tree in the raw can be made
+> > serviceable by sprinkling magic pixie dust on the performance problem.
+>
+> It'd help if you specified exactly what type of merkle tree you're talking
+> about here; remember that the certificate transparency RFC appears to have
+> reinvented merkle mountain ranges, and they call them "merkle trees".
+> Bitcoin
+> meanwhile uses a so-called "merkle tree" that's broken, and Zcash uses a
+> partially filled fixed-sized perfect tree.
+>
+
+What I'm making is a patricia trie. Its byte level definition is very
+similar to the one in your MMR codebase.
+
+Each level of the tree has a single metadata byte and followed by two
+hashes. The hashes are truncated by one byte and the hash function is a
+non-padding variant of sha256 (right now it's just using regular sha256,
+but that's a nice optimization which allows everything to fit in a single
+block).
+
+The possible metadata values are: TERM0, TERM1, TERMBOTH, ONLY0, ONLY1,
+MIDDLE. They mean:
+
+TERM0, TERM1: There is a single thing in the tree on the specified side.
+The thing hashed on that side is that thing verbatim. The other side has
+more than one thing and the hash of it is the root of everything below.
+
+TERMBOTH: There are exactly two things below and they're included inline.
+Note that two things is a special case, if there are more you sometimes
+have ONLY0 or ONLY1.
+
+ONLY0, ONLY1: There are more than two things below and they're all on the
+same side. This makes proofs of inclusion and exclusion simpler, and makes
+some implementation details easier, for example there's always something at
+every level with perfect memory positioning. It doesn't cause much extra
+memory usage because of the TERMBOTH exception for exactly two things.
+
+MIDDLE: There two or more things on both sides.
+
+There's also a SINGLETON special case for a tree which contains only one
+thing, and an EMPTY special value for tree which doesn't contain anything.
+
+The main differences to your patricia trie are the non-padding sha256 and
+that each level doesn't hash in a record of its depth and the usage of
+ONLY0 and ONLY1.
+
+
+>
+> > There are two causes of performance problems for merkle trees: hashing
+> > operations and memory cache misses. For hashing functions, the difference
+> > between a mountain range and a straight merkle tree is roughly that in a
+> > mountain range there's one operation for each new update times the number
+> > of times that thing will get merged into larger hills. If there are fewer
+> > levels of hills the number of operations is less but the expense of proof
+> > of inclusion will be larger. For raw merkle trees the number of
+> operations
+> > per thing added is the log base 2 of the number of levels in the tree,
+> > minus the log base 2 of the number of things added at once since you can
+> do
+> > lazy evaluation. For practical Bitcoin there are (very roughly) a million
+> > things stored, or 20 levels, and there are (even more roughly) about a
+> > thousand things stored per block, so each thing forces about 20 - 10 = 10
+> > operations. If you follow the fairly reasonable guideline of mountain
+> range
+> > hills go up by factors of four, you instead have 20/2 = 10 operations per
+> > thing added amortized. Depending on details this comparison can go either
+> > way but it's roughly a wash and the complexity of a mountain range is
+> > clearly not worth it at least from the point of view of CPU costs.
+>
+> I'm having a hard time understanding this paragraph; could you explain
+> what you
+> think is happening when things are "merged into larger hills"?
+>
+
+I'm talking about the recalculation of mountain tips, assuming we're on the
+same page about what 'MMR' means.
+
+
+> As UTXO/STXO/TXO sets are all enormously larger than L1/L2 cache, it's
+> impossible to get CPU cache misses below one for update operations. The
+> closest
+> thing to an exception is MMR's, which due to their insertion-ordering could
+> have good cache locality for appends, in the sense that the mountain tips
+> required to recalculate the MMR tip digest will already be in cache from
+> the
+> previous append. But that's not sufficient, as you also need to modify old
+> TXO's further back in the tree to mark them as spent - that data is going
+> to be
+> far larger than L1/L2 cache.
+>
+
+This makes me think we're talking about subtly different things for MMRs.
+The ones I described above have sub-1 cache miss per update due to the
+amortized merging together of old mountains.
+
+Technically even a patricia trie utxo commitment can have sub-1 cache
+misses per update if some of the updates in a single block are close to
+each other in memory. I think I can get practical Bitcoin updates down to a
+little bit less than one l2 cache miss per update, but not a lot less.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160615/62646c88/attachment-0001.html>
