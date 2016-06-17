@@ -1,0 +1,193 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 17 Jun 2016 00:34:35 -0400
+Subject: [bitcoin-dev] Merkle trees and mountain ranges
+In-Reply-To: <CA+KqGkqA2WnvBEck3kv6p2no-9wzNVCTNA-MGw=Jg=gMGfrxUQ@mail.gmail.com>
+References: <CA+KqGkosGrWQ2Lpg3Ptc+UyidK7H4_HLQ_QWx2DOAFRmLkv4zQ@mail.gmail.com>
+	<20160616001040.GA5026@fedora-21-dvm>
+	<CA+KqGkqAHcU2PzEX6OmorXRBQ22eF_QBYYqUDS1v_ZvevhLCuQ@mail.gmail.com>
+	<20160616032612.GA7792@fedora-21-dvm>
+	<CA+KqGkqA2WnvBEck3kv6p2no-9wzNVCTNA-MGw=Jg=gMGfrxUQ@mail.gmail.com>
+Message-ID: <20160617043435.GA12800@fedora-21-dvm>
+
+On Thu, Jun 16, 2016 at 02:07:26AM -0700, Bram Cohen wrote:
+> On Wed, Jun 15, 2016 at 8:26 PM, Peter Todd <pete at petertodd.org> wrote:
+> Okay, clearly my assumptions about the parts of that post I didn't read
+> carefully were way off. I'll have to look through it carefully to be able
+> to make coherent apples to apples comparisons.
+
+Thanks!
+
+> > I'm worried that once there's real transaction fees everyone might stop
+> > > consolidating dust and the set of unspent transactions might grow without
+> > > bound as well, but that's a topic for another day.
+> >
+> > Ok, but then if you're concerned about that risk, why introduce a data
+> > structure - the STXO set - that's _guaranteed_ to grow without bound?
+> >
+> 
+> I'm not proposing STXO set commitments either. My point was that there
+> should be incentives for collecting dust. That has nothing to do with this
+> thread though and should be discussed separately (also I don't feel like
+> discussing it because I don't have a good proposal).
+
+Ah, yeah, I misunderstood you there; as expected absolutely no-one is proposing
+STXO set commitments. :)
+
+> > > The main differences to your patricia trie are the non-padding sha256 and
+> > > that each level doesn't hash in a record of its depth and the usage of
+> > > ONLY0 and ONLY1.
+> >
+> > I'm rather confused, as the above sounds nothing like what I've
+> > implemented,
+> > which only has leaf nodes, inner nodes, and the special empty node
+> > singleton,
+> > for both the MMR and merbinner trees.
+> >
+> 
+> It's quite a bit like merbinner trees. I've basically taken the leaf nodes
+> and smushed them into the inner nodes above them, thus saving a hashing
+> operation and some memory. They're both binary radix trees.
+
+Ah, I see what you mean now.
+
+So above you said that in merbinner trees each node "hash[es] in a record of
+its depth" That's actually incorrect: each node commits to the prefix that all
+keys below that level start with, not just the depth.
+
+This means that in merbinner trees, cases where multiple keys share parts of
+the same prefix are handled efficiently, without introducing extra levels
+unnecessarily; there's no need for the ONLY0/1 nodes as the children of an
+inner node will always be on different sides.
+
+When keys are randomly distributed, this isn't a big deal; OTOH against
+attackers who are choosing keys, e.g. by grinding hashes, merbinner trees
+always have maximum depths in proportion to log2(n) of the actual number of
+items in the tree. Grinding is particularly annoying to deal with due to the
+birthday attack: creating a ground prefix 64 bits long only takes 32 bits worth
+of work.
+
+
+In my deterministic expressions work one of the ideas I've been tossing around
+is rather than always using hash digests directly for when you need to commit
+to some data, we could instead extend the idea of a digest to that of a
+"commitment", where a commitment is simply some short, but variable-sized,
+string that uniquely maps to a given set of data. Secondly, commitments do
+*not* always guarantee that the original data can't be recovered from the
+commitment itself.
+
+By allowing commitments to be variable sized - say 0 to ~64 bytes - we get a
+number of advantages:
+
+1) Data shorter than the length of a digest (32 bytes) can be included in the
+commitment itself, improving efficiency.
+
+2) Data a little longer than a digest can have hashing delayed, to better fill
+up blocks.
+
+In particular, case #2 handles your leaf node optimizations generically,
+without special cases and additional complexity. It'd also be a better way to
+do the ONLY0/1 cases, as if the "nothing on this side" symbol is a single byte,
+each additional colliding level would simply extend the commitment without
+hashing. In short, you'd have nearly the same level of optimization even if at
+the cryptography level your tree consists of only leaves, inner nodes, and nil.
+
+Another advantage of variable sized commitments is that it can help make clear
+to users when it's possible to brute force the message behind the commitment.
+For instance, digest from a hashed four byte integer can be trivially reversed
+by just trying all combinations. Equally, if that integer is concatenated with
+a 32 byte digest that the attacker knows, the value of the integer can be brute
+forced.
+
+> > Technically even a patricia trie utxo commitment can have sub-1 cache
+> > > misses per update if some of the updates in a single block are close to
+> > > each other in memory. I think I can get practical Bitcoin updates down
+> > to a
+> > > little bit less than one l2 cache miss per update, but not a lot less.
+> >
+> > I'm very confused as to why you think that's possible. When you say
+> > "practical
+> > Bitcoin updates", what exactly is the data structure you're proposing to
+> > update? How is it indexed?
+> 
+> 
+> My calculations are: a Bitcoin block contains about 2000 updates. The l2
+> cache is about 256 kilobytes, and if an update is about 32 bytes times two
+> for the parents, grandparents, etc. then an l2 cache can contain about 4000
+> values. If the current utxo size is about 2000 * 4000 = 8,000,000 in size
+> then about half the pages which contain a transaction will contain a second
+> one. I think the utxo set is currently about an order of magnitude greater
+> than that, so the number of such collisions will be fairly mall, hence my
+> 'less than one but not a lot less' comment.
+
+Your estimate of updates requiring 32 bytes of data is *way* off.
+
+Each inner node updated on the path to a leaf node will itself require 32 bytes
+of data to be fetched - the digest of the sibling. As of block 416,628, there
+are 39,167,128 unspent txouts, giving us a tree about 25 levels deep.
+
+So if I want to update a single leaf, I need to read:
+
+    25 nodes * 32 bytes/node = 800 bytes
+
+of data. Naively, that'd mean our 2,000 updates needs to read 1.6MB from RAM,
+which is 6.4x bigger than the L2 cache - it's just not going to fit.
+
+Taking into account the fact that this is a batched update improves things a
+little bit. For a node at level i with random access patterns and N accesses
+total our amortised cost is 1/(1 + N/2^i) Summing that over 2,000 leaf updates
+and 25 levels gives us ~29,000 total updates, 0.9MB, which is still a lot
+larger than L2 cache.
+
+While this might fit in L3 cache - usually on the order of megabytes - this is
+a rather optimistic scenario anyway: we're assuming no other cache pressure and
+100% hit rate.
+
+Anyway hashing is pretty slow. The very fast BLAKE2 is about 3 cycles/byte
+(SHA256 is about 15 cycles/byte) so hashing that same data would take around
+200 cycles, and probably quite a bit more in practice due to overheads from our
+short message lengths; fetching a cache line from DRAM only takes about 1,000
+cycles. I'd guess that once other overheads are taken into account, even if you
+could eliminate L2/L3 cache-misses it wouldn't be much of an improvement.
+
+> As for how it's indexed, at a crypto definition level it's just a binary
+> radix tree. In terms of how it's indexed in memory, that involves some
+> optimizations to avoid cache misses. Memory is allocated into blocks of
+> about the size of an 12 cache (or maybe an l1 cache, it will require some
+> testing and optimization). Blocks are either branch blocks, which keep
+> everything in fixed positions, or leaf blocks, which contain fixed size
+> entries for nodes plus indexes within the same leaf block of their
+> children. Branch blocks can have many children which can be either branch
+> blocks or leaf blocks, but typically are either all branch blocks or all
+> leaf blocks. Branch blocks always have exactly one parent. Leaf blocks
+> always have all their inputs come from a single branch block, but there can
+> be multiple ones of those. When a branch block overflows it first tries to
+> put stuff into the last leaf block it used, and if there's no more room it
+> allocates a new one. It's fairly common for branches to have just a few
+> leaf children, but they also could have a lot, depending on whether the
+> base 2 log of the number of things currently in the set modulo the number
+> levels in a branch is a small number.
+> 
+> Usually when an update is done it consists of first checking the
+> appropriate output of the root block (it's jumped to directly to avoid
+> unnecessary memory lookups. If there's nothing there the algorithm will
+> walk back until it finds something.) That leads directly to (usually)
+> another branch whose output is jumped to directly again. At Bitcoin utxo
+> set sizes that will usually lead to a leaf block, which is then walked down
+> manually to find the actual terminal node, which is then updated, and the
+> parent, grandparent, etc. is then marked invalid until something which was
+> already marked invalid is hit, and it exits. Calculation of hash values is
+> done lazily.
+
+I think it's safe to say that given our working set is significantly larger
+than the L2/L3 cache available, none of the above optimizations are likely to
+help much. Better to just keep the codebase simple and use standard techniques.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160617/3c2a9dc6/attachment.sig>
