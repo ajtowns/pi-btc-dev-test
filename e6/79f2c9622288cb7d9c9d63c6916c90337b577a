@@ -1,0 +1,80 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 18 Jun 2016 18:09:29 -0400
+Subject: [bitcoin-dev] Merkle trees and mountain ranges
+In-Reply-To: <CA+KqGko2jW9999A9vkkBrM3EPb5OXYe4OPu0_Ot=fGnc7Cge-Q@mail.gmail.com>
+References: <CA+KqGkosGrWQ2Lpg3Ptc+UyidK7H4_HLQ_QWx2DOAFRmLkv4zQ@mail.gmail.com>
+	<20160616001040.GA5026@fedora-21-dvm>
+	<CA+KqGko2jW9999A9vkkBrM3EPb5OXYe4OPu0_Ot=fGnc7Cge-Q@mail.gmail.com>
+Message-ID: <20160618220929.GA24713@fedora-21-dvm>
+
+On Fri, Jun 17, 2016 at 08:22:04PM -0700, Bram Cohen wrote:
+> On Wed, Jun 15, 2016 at 5:10 PM, Peter Todd <pete at petertodd.org> wrote:
+> > Agreed - regardless of approach adding latency to commitment calculations
+> > of
+> > all kinds is something I think we all agree can work in principle, although
+> > obviously it should be a last resort technique when optimization fails.
+> >
+> 
+> An important point: Adding latency to utxo commitments does not imply
+> latency to proofs of inclusion and exclusion! If roots of what's added and
+> deleted in each block are added as well, then a proof of inclusion can be
+> done by having a proof of inclusion of the trailing utxo set followed by a
+> proof of exclusion from all the following deletion sets, or a proof of
+> inclusion in one of the single block addition sets followed by proofs of
+> exclusion from all the more recent deletion sets. Likewise a proof of
+> exclusion can be a proof of exclusion from the utxo set followed by proofs
+> of exclusion from all the more recent addition sets or a single proof of
+> inclusion in a recent deletion set.
+> 
+> This does make proofs larger (except in the case of recent deletions and
+> maybe recent additions) and adds complexity, so it shouldn't be done unless
+> necessary.
+
+So, to be clear you're assuming that blocks commit to key:value maps of the
+block contents, specifically a pre-block "UTXO deletion/things that this block
+spent" set? First of all, it's interesting how the much smaller dataset of a
+pre-block key:value map would make L2/L3 caching optimizations much more likely
+to be relevant. :)
+
+
+That type of solution would be very similar to the solutions treechains would
+need to prove coins haven't been doublespent. Basically, in treechains the
+system as a whole is a datastructure indexed by time and prefix. So, if you
+want to prove a valid spend you need to convince me of three things:
+
+1. The coin existed as of time t1 at prefix p
+
+2. At t2, p, a valid spend was published.
+
+3. Between t1 and t2 at prefix p no other valid spend was published.
+
+Paths to any prefix p as of time t, will have about log2(len(p)) size (beyond
+the top-level chain), similar to your above suggestion. Of course, unlike your
+above suggestion, in treechains it's not clear if step #1 can be done without
+another n*log(N)-ish sized proof in a truly trustless environment!
+
+> But validation before block propagation needs to be extremely
+> fast, so for utxo roots this trick is probably both necessary and
+> sufficient.
+
+I'm _not_ of the optinion that validation before propagation needs to be done
+at all - I think it's perfectly reasonable to propgate blocks that you have not
+validated at all (beyond checking PoW as an anti-DoS measure).  The time it
+takes miners to start mining the next block - and collecting fees - is however
+very important.
+
+In practice, I think we're mostly in agreement here, but because I'm happy to
+propagate prior to validating I'd be ok with protocol designs that required
+miners to have relatively large amounts of RAM - say 32GB - dedicated to UTXO
+lookup because that wouldn't require relay nodes to also have those kinds of
+resources available to them once validationless propagation was implemented.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160618/0ca1a55b/attachment.sig>
