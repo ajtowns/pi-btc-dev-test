@@ -1,0 +1,205 @@
+From: bram@bittorrent.com (Bram Cohen)
+Date: Fri, 17 Jun 2016 19:43:47 -0700
+Subject: [bitcoin-dev] Merkle trees and mountain ranges
+In-Reply-To: <20160617043435.GA12800@fedora-21-dvm>
+References: <CA+KqGkosGrWQ2Lpg3Ptc+UyidK7H4_HLQ_QWx2DOAFRmLkv4zQ@mail.gmail.com>
+	<20160616001040.GA5026@fedora-21-dvm>
+	<CA+KqGkqAHcU2PzEX6OmorXRBQ22eF_QBYYqUDS1v_ZvevhLCuQ@mail.gmail.com>
+	<20160616032612.GA7792@fedora-21-dvm>
+	<CA+KqGkqA2WnvBEck3kv6p2no-9wzNVCTNA-MGw=Jg=gMGfrxUQ@mail.gmail.com>
+	<20160617043435.GA12800@fedora-21-dvm>
+Message-ID: <CA+KqGkpRmeKyo6TFpe+uUCdJSina+ARraNd0dkHSb2Hpx5dYuw@mail.gmail.com>
+
+On Thu, Jun 16, 2016 at 9:34 PM, Peter Todd <pete at petertodd.org> wrote:
+
+> So above you said that in merbinner trees each node "hash[es] in a record
+> of
+> its depth" That's actually incorrect: each node commits to the prefix that
+> all
+> keys below that level start with, not just the depth.
+
+
+I considered a similar trick at the implementation rather than the
+definition level: A node doesn't have to store the prefix which is implicit
+in its position. That would create a fair number of headaches though,
+because I'm using fixed size stuff in important ways, and it could at most
+save about 10% of memory, so it goes into the 'maybe later' bucket.
+
+
+>
+> This means that in merbinner trees, cases where multiple keys share parts
+> of
+> the same prefix are handled efficiently, without introducing extra levels
+> unnecessarily; there's no need for the ONLY0/1 nodes as the children of an
+> inner node will always be on different sides.
+>
+> When keys are randomly distributed, this isn't a big deal; OTOH against
+> attackers who are choosing keys, e.g. by grinding hashes, merbinner trees
+> always have maximum depths in proportion to log2(n) of the actual number of
+> items in the tree. Grinding is particularly annoying to deal with due to
+> the
+> birthday attack: creating a ground prefix 64 bits long only takes 32 bits
+> worth
+> of work.
+>
+
+Yes an attacker can force the tree to be deeper in places, but it's
+mitigated in several ways: (1) The way I'm using memory it won't cause a
+whole new block to be allocated, it will just force log(attack strength) -
+log(n) nodes to be used (2) logarithmic growth being what it is that isn't
+such a big amount (3) With the special casing of TERMBOTH an attacker needs
+three things with the same prefix to pull off an attack rather than two,
+which is quite a bit harder to pull off.
+
+That said, it wouldn't be all that hard to change how the hashing function
+works to do a single hash for a whole series of ONLY in a row instead of a
+new one at every level, which would make the attacker only able to force
+extra memory usage instead of extra CPU, but this is a slightly annoying
+thing to write to stop a fairly lame attack, so I'm at least not doing it
+for my initial implementation. I could likely be convinced that it's worth
+doing before an actual release though. There's another implementation trick
+to do the same thing for memory usage, which is much more in the 'do later'
+category because it doesn't involve changing the format and hence it can be
+put off.
+
+
+> In particular, case #2 handles your leaf node optimizations generically,
+> without special cases and additional complexity. It'd also be a better way
+> to
+> do the ONLY0/1 cases, as if the "nothing on this side" symbol is a single
+> byte,
+> each additional colliding level would simply extend the commitment without
+> hashing. In short, you'd have nearly the same level of optimization even
+> if at
+> the cryptography level your tree consists of only leaves, inner nodes, and
+> nil.
+>
+
+I'm taking pains to make all the hashing be of fixed-size things, so that a
+non-padding variant of a secure hashing algorithm can be used. The chains
+of ONLY thing above would force a special exception to that, which can be
+done but is annoying. Making things smaller than a single block (64 bytes)
+won't speed up hashing time, and making things a single byte longer than
+that doubles it.
+
+
+> Another advantage of variable sized commitments is that it can help make
+> clear
+> to users when it's possible to brute force the message behind the
+> commitment.
+> For instance, digest from a hashed four byte integer can be trivially
+> reversed
+> by just trying all combinations. Equally, if that integer is concatenated
+> with
+> a 32 byte digest that the attacker knows, the value of the integer can be
+> brute
+> forced.
+>
+
+I'm hashing all strings before inserting to get them to be a fixed size and
+avoid a few different attacks. In Bitcoin most of the strings added are
+longer than that so it's a form of compression. A custom hash function
+could be used which 'hashes' very short strings by repeating them verbatim
+could be used, but seems like not such a hot idea. I'm making extensive use
+of things being fixed size everywhere, which improves performance in a lot
+of ways.
+
+
+> > > Technically even a patricia trie utxo commitment can have sub-1 cache
+> > > > misses per update if some of the updates in a single block are close
+> to
+> > > > each other in memory. I think I can get practical Bitcoin updates
+> down
+> > > to a
+> > > > little bit less than one l2 cache miss per update, but not a lot
+> less.
+> > >
+> > > I'm very confused as to why you think that's possible. When you say
+> > > "practical
+> > > Bitcoin updates", what exactly is the data structure you're proposing
+> to
+> > > update? How is it indexed?
+>
+
+I'll re-answer this because I did a terrible job before. The entire data
+structure consists of nodes which contain a metadata byte (TERM0, ONLY1,
+etc.) followed by fixes size secure hashes, and (in some cases) pointers to
+where the children are. The secure hashes in parent nodes are found by
+hashing their children verbatim (or the stored string in the case of a
+TERM). This is very conventional. All of the cleverness is in where in
+memory these nodes are stored so that tracing down the tree causes very few
+cache misses.
+
+(The alternate approach is to have each node store its own hash rather than
+that be stored by the parent. That approach means that when you're
+recalculating you have to look up siblings which doubles the number of
+cache misses. Not such a hot idea.)
+
+At the root there's a branch block. It consists of all nodes up to some
+fixed depth - let's say 12 - with that depth set so that it roughly fits
+within a single memory page. Branch blocks are arranged with the nodes in
+fixed position defined by the prefix they correspond to, and the terminals
+have outpointers to other blocks. Because they're all clustered together, a
+lookup or update will only require a single
+
+Below the root block are other branch blocks. Each of them has a fixed 12
+bit prefix it is responsible for. When doing a lookup a second cache miss
+will be hit for levels 13-24, because those are all clustered in the same
+branch block.
+
+Below the second level of root block (at Bitcoin utxo set scale - this
+varies based on how much is stored) there are leaf blocks. A leaf block
+consists of nodes with outpointers to its own children which must be within
+the same leaf block. All entry points into a leaf block are from the same
+branch block, and the leaf block has no out pointers to other blocks. When
+a leaf block overflows the entry point into it which overflowed is moved
+into the active leaf for that branch, and if that's full a new one is
+allocated. There's some subtlety to exactly how this is done, but I've
+gotten everything down to simple expedient tricks with straightforward
+implementations. The thing which matters for now is that there's only a
+single cache miss for each leaf node, because they also fit in a page.
+
+So at Bitcoin scale there will probably only be 3 cache misses for a
+lookup, and that's a worst case scenario. The first one is probably always
+warm, bringing it down to 2, and if you do a bunch in sorted order they'll
+probably hit the same second level branches repeatedly bringing it down to
+1, and might even average less than that if there are enough that the leaf
+block has multiple things being accessed.
+
+(These same tricks can be applied to merbinner tree implementation as well,
+although that would be a bit less parsimonious with memory, by a small
+constant factor.)
+
+
+> Anyway hashing is pretty slow. The very fast BLAKE2 is about 3 cycles/byte
+> (SHA256 is about 15 cycles/byte) so hashing that same data would take
+> around
+> 200 cycles, and probably quite a bit more in practice due to overheads
+> from our
+> short message lengths; fetching a cache line from DRAM only takes about
+> 1,000
+> cycles. I'd guess that once other overheads are taken into account, even
+> if you
+> could eliminate L2/L3 cache-misses it wouldn't be much of an improvement.
+>
+
+Those numbers actually back up my claims about performance. If you're doing
+a single update and recalculating the root afterwards, then the amount of
+rehashing to be done is about 30 levels deep times 64 bytes per thing
+hashed times 15 cycles per byte then it's about 28,800 cycles of hashing.
+If you have a naive radix tree implementation which hits a cache miss at
+every level then that's 30,000 cycles, which is about half the performance
+time, certainly worth optimizing. If instead of sha256 you use blake2
+(Which sounds like a very good idea!) then hashing for an update will be
+about 5760 cycles and performance will be completely dominated by cache
+misses. If a more cache coherent implementation is used, then the cost of
+cache misses will be 3000 cycles, which will be a non-factor with sha256
+and a significant but not dominating one with blake2.
+
+It's reasonable to interpret those numbers as saying that blake2 and cache
+coherent implementation are both clearly worth it (probably necessary for
+real adoption) and that an amortized binary radix tree is tempting but not
+worth it.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160617/88e3169a/attachment.html>
