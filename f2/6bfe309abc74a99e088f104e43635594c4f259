@@ -1,0 +1,589 @@
+From: PoliceTerror@dyne.org (Police Terror)
+Date: Mon, 20 Jun 2016 13:26:22 +0000
+Subject: [bitcoin-dev] Building Blocks of the State Machine Approach to
+ Consensus
+In-Reply-To: <20160620085649.GA29964@fedora-21-dvm>
+References: <20160620085649.GA29964@fedora-21-dvm>
+Message-ID: <5767EEFE.7060103@dyne.org>
+
+Bitcoin could embed a lisp interpreter such as Scheme, reverse engineer
+the current protocol into lisp (inside C++), run this alternative engine
+alongside the current one as an option for some years (only for fine
+tuning) then eventually fade this lisp written validation code instead
+of the current one.
+
+Scheme is small and minimal, and embeds easily in C++. This could be a
+better option than the libconsensus library - validation in a functional
+scripting language.
+
+That doesn't mean people can't program the validation code in other
+languages (maybe they'd want to optimize), but this code would be the
+standard.
+
+It's really good how you are thinking deeply how Bitcoin can be used,
+and the implications of everything. Also there's a lot of magical utopic
+thinking in Ethereum, which is transhumanist nonsense that is life
+denying. Bitcoin really speaks to me because it is real and a great tool
+following the UNIX principle.
+
+I wouldn't be so quick to deride good engineering over systematic
+provable systems for all domains. Bitcoin being written in C++ is not a
+defect. It's actually a strong language for what it does. Especially
+when used correctly (which is not often and takes years to master).
+
+With the seals idea- am I understand this correctly?: Every transaction
+has a number (essentially the index starting from 0 upwards) depending
+on where it is in the blockchain.
+
+Then there is an array (probably an on disk array mapping transaction
+indexes to hashes). Each hash entry in the array must be unique (the
+hashes) otherwise the transaction will be denied. This is a great idea
+to solve transaction hash collisions and simple to implement.
+
+Probabilistic validation is a good idea, although the real difficulty
+now seems to be writing and indexing all the blockchain data for
+lookups. And validation is disabled for most of the blocks. Pruning is
+only a stop gap measure (which loses data) that doesn't solve the issue
+of continually growing resource consumption. Hardware and implementation
+can only mitigate this so much. If only there was a way to simplify the
+underlying protocol to make it more resource efficient...
+
+Peter Todd via bitcoin-dev:
+> In light of Ethereum's recent problems with its imperative, account-based,
+> programming model, I thought I'd do a quick writeup outlining the building
+> blocks of the state-machine approach to so-called "smart contract" systems, an
+> extension of Bitcoin's own design that I personally have been developing for a
+> number of years now as my Proofchains/Dex research work.
+> 
+> 
+> # Deterministic Code / Deterministic Expressions
+> 
+> We need to be able to run code on different computers and get identical
+> results; without this consensus is impossible and we might as well just use a
+> central authoritative database. Traditional languages and surrounding
+> frameworks make determinism difficult to achieve, as they tend to be filled
+> with undefined and underspecified behavior, ranging from signed integer
+> overflow in C/C++ to non-deterministic behavior in databases. While some
+> successful systems like Bitcoin are based on such languages, their success is
+> attributable to heroic efforts by their developers.
+> 
+> Deterministic expression systems such as Bitcoin's scripting system and the
+> author's Dex project improve on this by allowing expressions to be precisely
+> specified by hash digest, and executed against an environment with
+> deterministic results. In the case of Bitcoin's script, the expression is a
+> Forth-like stack-based program; in Dex the expression takes the form of a
+> lambda calculus expression.
+> 
+> 
+> ## Proofs
+> 
+> So far the most common use for deterministic expressions is to specify
+> conditions upon which funds can be spent, as seen in Bitcoin (particularly
+> P2SH, and the upcoming Segwit). But we can generalize their use to precisely
+> defining consensus protocols in terms of state machines, with each state
+> defined in terms of a deterministic expression that must return true for the
+> state to have been reached. The data that causes a given expression to return
+> true is then a "proof", and that proof can be passed from one party to another
+> to prove desired states in the system have been reached.
+> 
+> An important implication of this model is that we need deterministic, and
+> efficient, serialization of proof data.
+> 
+> 
+> ## Pruning
+> 
+> Often the evaluation of an expression against a proof doesn't require all all
+> data in the proof. For example, to prove to a lite client that a given block
+> contains a transaction, we only need the merkle path from the transaction to
+> the block header. Systems like Proofchains and Dex generalize this process -
+> called "pruning" - with built-in support to both keep track of what data is
+> accessed by what operations, as well as support in their underlying
+> serialization schemes for unneeded data to be elided and replaced by the hash
+> digest of the pruned data.
+> 
+> 
+> # Transactions
+> 
+> A common type of state machine is the transaction. A transaction history is a
+> directed acyclic graph of transactions, with one or more genesis transactions
+> having no inputs (ancestors), and one or more outputs, and zero or more
+> non-genesis transactions with one or more inputs, and zero or more outputs. The
+> edges of the graph connect inputs to outputs, with every input connected to
+> exactly one output. Outputs with an associated input are known as spent
+> outputs; outputs with out an associated input are unspent.
+> 
+> Outputs have conditions attached to them (e.g. a pubkey for which a valid
+> signature must be produced), and may also be associated with other values such
+> as "# of coins". We consider a transaction valid if we have a set of proofs,
+> one per input, that satisfy the conditions associated with each output.
+> Secondly, validity may also require additional constraints to be true, such as
+> requiring the coins spent to be >= the coins created on the outputs. Input
+> proofs also must uniquely commit to the transaction itself to be secure - if
+> they don't the proofs can be reused in a replay attack.
+> 
+> A non-genesis transaction is valid if:
+> 
+> 1. Any protocol-specific rules such as coins spent >= coins output are
+>    followed.
+> 
+> 2. For every input a valid proof exists.
+> 
+> 3. Every input transaction is itself valid.
+> 
+> A practical implementation of the above for value-transfer systems like Bitcoin
+> could use two merkle-sum trees, one for the inputs, and one for the outputs,
+> with inputs simply committing to the previous transaction's txid and output #
+> (outpoint), and outputs committing to a scriptPubKey and output amount.
+> Witnesses can be provided separately, and would sign a signature committing to
+> the transaction or optionally, a subset of of inputs and/or outputs (with
+> merkle trees we can easily avoid the exponential signature validation problems
+> bitcoin currently has).
+> 
+> As so long as all genesis transactions are unique, and our hash function is
+> secure, all transaction outputs can be uniquely identified (prior to BIP34 the
+> Bitcoin protocol actually failed at this!).
+> 
+> 
+> ## Proof Distribution
+> 
+> How does Alice convince Bob that she has done a transaction that puts the
+> system into the state that Bob wanted? The obvious answer is she gives Bob data
+> proving that the system is now in the desired state; in a transactional system
+> that proof is some or all of the transaction history. Systems like Bitcoin
+> provide a generic flood-fill messaging layer where all participants have the
+> opportunity to get a copy of all proofs in the system, however we can also
+> implement more fine grained solutions based on peer-to-peer message passing -
+> one could imagine Alice proving to Bob that she transferred title to her house
+> to him by giving him a series of proofs, not unlike the same way that property
+> title transfer can be demonstrated by providing the buyer with a series of deed
+> documents (though note the double-spend problem!).
+> 
+> 
+> # Uniqueness and Single-Use Seals
+> 
+> In addition to knowing that a given transaction history is valid, we also want
+> to know if it's unique. By that we mean that every spent output in the
+> transaction history is associated with exactly one input, and no other valid
+> spends exist; we want to ensure no output has been double-spent.
+> 
+> Bitcoin (and pretty much every other cryptocurrency like it) achieves this goal
+> by defining a method of achieving consensus over the set of all (valid)
+> transactions, and then defining that consensus as valid if and only if no
+> output is spent more than once.
+> 
+> A more general approach is to introduce the idea of a cryptographic Single-Use
+> Seal, analogous to the tamper-evidence single-use seals commonly used for
+> protecting goods during shipment and storage. Each individual seals is
+> associated with a globally unique identifier, and has two states, open and
+> closed. A secure seal can be closed exactly once, producing a proof that the
+> seal was closed.
+> 
+> All practical single-use seals will be associated with some kind of condition,
+> such as a pubkey, or deterministic expression, that needs to be satisfied for
+> the seal to be closed. Secondly, the contents of the proof will be able to
+> commit to new data, such as the transaction spending the output associated with
+> the seal.
+> 
+> Additionally some implementations of single-use seals may be able to also
+> generate a proof that a seal was _not_ closed as of a certain
+> time/block-height/etc.
+> 
+> 
+> ## Implementations
+> 
+> ### Transactional Blockchains
+> 
+> A transaction output on a system like Bitcoin can be used as a single-use seal.
+> In this implementation, the outpoint (txid:vout #) is the seal's identifier,
+> the authorization mechanism is the scriptPubKey of the output, and the proof
+> is the transaction spending the output. The proof can commit to additional
+> data as needed in a variety of ways, such as an OP_RETURN output, or
+> unspendable output.
+> 
+> This implementation approach is resistant to miner censorship if the seal's
+> identifier isn't made public, and the protocol (optionally) allows for the
+> proof transaction to commit to the sealed contents with unspendable outputs;
+> unspendable outputs can't be distinguished from transactions that move funds.
+> 
+> 
+> ### Unbounded Oracles
+> 
+> A trusted oracle P can maintain a set of closed seals, and produce signed
+> messages attesting to the fact that a seal was closed. Specifically, the seal
+> is identified by the tuple (P, q), with q being the per-seal authorization
+> expression that must be satisfied for the seal to be closed. The first time the
+> oracle is given a valid signature for the seal, it adds that signature and seal
+> ID to its closed seal set, and makes available a signed message attesting to
+> the fact that the seal has been closed. The proof is that message (and
+> possibly the signature, or a second message signed by it).
+> 
+> The oracle can publish the set of all closed seals for transparency/auditing
+> purposes. A good way to do this is to make a merkelized key:value set, with the
+> seal identifiers as keys, and the value being the proofs, and in turn create a
+> signed certificate transparency log of that set over time. Merkle-paths from
+> this log can also serve as the closed seal proof, and for that matter, as
+> proof of the fact that a seal has not been closed.
+> 
+> 
+> ### Bounded Oracles
+> 
+> The above has the problem of unbounded storage requirements as the closed seal
+> set grows without bound. We can fix that problem by requiring users of the
+> oracle to allocate seals in advance, analogous to the UTXO set in Bitcoin.
+> 
+> To allocate a seal the user provides the oracle P with the authorization
+> expression q. The oracle then generates a nonce n and adds (q,n) to the set of
+> unclosed seals, and tells the user that nonce. The seal is then uniquely
+> identified by (P, q, n)
+> 
+> To close a seal, the user provides the oracle with a valid signature over (P,
+> q, n). If the open seal set contains that seal, the seal is removed from the
+> set and the oracle provides the user with a signed message attesting to the
+> valid close.
+> 
+> A practical implementation would be to have the oracle publish a transparency
+> log, with each entry in the log committing to the set of all open seals with a
+> merkle set, as well as any seals closed during that entry. Again, merkle paths
+> for this log can serve as proofs to the open or closed state of a seal.
+> 
+> Note how with (U)TXO commitments, Bitcoin itself is a bounded oracle
+> implementation that can produce compact proofs.
+> 
+> 
+> ### Group Seals
+> 
+> Multiple seals can be combined into one, by having the open seal commit to a
+> set of sub-seals, and then closing the seal over a second set of closed seal
+> proofs. Seals that didn't need to be closed can be closed over a special
+> re-delegation message, re-delegating the seal to a new open seal.
+> 
+> Since the closed sub-seal proof can additionally include a proof of
+> authorization, we have a protcol where the entity with authorization to close
+> the master seal has the ability to DoS attack sub-seals owners, but not the
+> ability to fraudulently close the seals over contents of their choosing. This
+> may be useful in cases where actions on the master seal is expensive - such as
+> seals implemented on top of decentralized blockchains - by amortising the cost
+> over all sub-seals.
+> 
+> 
+> ## Atomicity
+> 
+> Often protocols will require multiple seals to be closed for a transaction to
+> be valid. If a single entity controls all seals, this is no problem: the
+> transaction simply isn't valid until the last seal is closed.
+> 
+> However if multiple parties control the seals, a party could attack another
+> party by failing to go through with the transaction, after another party has
+> closed their seal, leaving the victim with an invalid transaction that they
+> can't reverse.
+> 
+> We have a few options to resolve this problem:
+> 
+> ### Use a single oracle
+> 
+> The oracle can additionally guarantee that a seal will be closed iff some other
+> set of seals are also closed; seals implemented with Bitcoin can provide this
+> guarantee. If the parties to a transaction aren't already all on the same
+> oracle, they can add an additional transaction reassigning their outputs to a
+> common oracle.
+> 
+> Equally, a temporary consensus between multiple mutually trusting oracles can
+> be created with a consensus protocol they share; this option doesn't need to
+> change the proof verification implementation.
+> 
+> 
+> ### Two-phase Timeouts
+> 
+> If a proof to the fact that a seal is open can be generated, even under
+> adversarial conditions, we can make the seal protocol allow a close to be
+> undone after a timeout if evidence can be provided that the other seal(s) were
+> not also closed (in the specified way).
+> 
+> Depending on the implementation - especially in decentralized systems - the
+> next time the seal is closed, the proof it has been closed may in turn provide
+> proof that a previous close was in fact invalid.
+> 
+> 
+> # Proof-of-Publication and Proof-of-Non-Publication
+> 
+> Often we need to be able to prove that a specified audience was able to receive
+> a specific message. For example, the author's PayPub protocol[^paypub],
+> Todd/Taaki's timelock encryption protocol[^timelock], Zero-Knowledge Contingent
+> Payments[^zkcp], and Lightning, among others work by requiring a secret key to
+> be published publicly in the Bitcoin blockchain as a condition of collecting a
+> payment. At a much smaller scale - in terms of audience - in certain FinTech
+> applications for regulated environments a transaction may be considered invalid
+> unless it was provably published to a regulatory agency.  Another example is
+> Certificate Transparency, where we consider a SSL certificate to be invalid
+> unless it has been provably published to a transparency log maintained by a
+> third-party.
+> 
+> Secondly, many proof-of-publication schemes also can prove that a message was
+> _not_ published to a specific audience. With this type of proof single-use
+> seals can be implemented, by having the proof consist of proof that a specified
+> message was not published between the time the seal was created, and the time
+> it was closed (a proof-of-publication of the message).
+> 
+> ## Implementations
+> 
+> ### Decentralized Blockchains
+> 
+> Here the audience is all participants in the system. However miner censorship
+> can be a problem, and compact proofs of non-publication aren't yet available
+> (requires (U)TXO commitments).
+> 
+> The authors treechains proposal is a particularly generic and scalable
+> implementation, with the ability to make trade offs between the size of
+> audience (security) and publication cost.
+> 
+> ### Centralized Public Logs
+> 
+> Certificate Transparency works this way, with trusted (but auditable) logs run
+> by well known parties acting as the publication medium, who promise to allow
+> anyone to obtain copies of the logs.
+> 
+> The logs themselves may be indexed in a variety of ways; CT simply indexes logs
+> by time, however more efficient schemes are possible by having the operator
+> commit to a key:value mapping of "topics", to allow publication (and
+> non-publication) proofs to be created for specified topics or topic prefixes.
+> 
+> Auditing the logs is done by verifying that queries to the state of the log
+> return the same state at the same time for different requesters.
+> 
+> ### Receipt Oracles
+> 
+> Finally publication can be proven by a receipt proof by the oracle, attesting
+> to the fact that the oracle has successfully received the message. This is
+> particularly appropriate in cases where the required audience is the oracle
+> itself, as in the FinTech regulator case.
+> 
+> 
+> # Validity Oracles
+> 
+> As transaction histories grow longer, they may become impractical to move from
+> one party to another. Validity oracles can solve this problem by attesting to
+> the validity of transactions, allowing history prior to the attested
+> transactions to be discarded.
+> 
+> A particularly generic validity oracle can be created using deterministic
+> expressions systems. The user gives the oracle an expression, and the oracle
+> returns a signed message attesting to the validity of the expression.
+> Optionally, the expression may be incomplete, with parts of the expression
+> replaced by previously generated attestations. For example, an expression that
+> returns true if a transaction is valid could in turn depend on the previous
+> transaction also being valid - a recursive call of itself - and that recursive
+> call can be proven with a prior attestation.
+> 
+> ## Implementations
+> 
+> ### Proof-of-Work Decentralized Consensus
+> 
+> Miners in decentralized consensus systems act as a type of validity oracle, in
+> that the economic incentives in the system are (supposed to be) designed to
+> encourage only the mining of valid blocks; a user who trusts the majority of
+> hashing power can trust that any transaction with a valid merkle path to a
+> block header in the most-work chain is valid. Existing decentralized consensus
+> systems like Bitcoin and Ethereum conflate the roles of validity oracle and
+> single-use seal/anti-replay oracle, however in principle that need not be true.
+> 
+> 
+> ### Trusted Oracles
+> 
+> As the name suggests. Remote-attestation-capable trusted hardware is a
+> particularly powerful implementation - a conspiracy theory is that the reason
+> why essentially zero secure true remote attestation implementations exist is
+> because they'd immediately make untraceable digital currency systems easy to
+> implement (Finney's RPOW[^rpow] is a rare counter-example).
+> 
+> Note how a single-use seal oracle that supports a generic deterministic
+> expressions scheme for seal authorization can be easily extended to provide a
+> validity oracle service as well. The auditing mechanisms for a single-use seal
+> oracle can also be applied to validity oracles.
+> 
+> 
+> # Fraud Proofs
+> 
+> Protocols specified with deterministic expressions can easily generate "fraud
+> proofs", showing that claimed states/proof in the system are actually invalid.
+> Additionally many protocols can be specified with expressions of k*log2(n)
+> depth, allowing these fraud proofs to be compact.
+> 
+> A simple example is proving fraud in merkle-sum tree, where the validity
+> expression would be something like:
+> 
+>     (defun valid? (node)
+>         (or (== node.type leaf)
+>             (and (== node.sum (+ node.left.sum node.right.sum))
+>                  (and (valid? node.left)
+>                       (valid? node.right)))))
+> 
+> To prove the above expression evaluates to true, we'll need the entire contents
+> of the tree. However, to prove that it evaluates to false, we only need a
+> subset of the tree as proving an and expression evaluates to false only
+> requires one side, and requires log2(n) data. Secondly, with pruning, the
+> deterministic expressions evaluator can automatically keep track of exactly
+> what data was needed to prove that result, and prune all other data when
+> serializing the proof.
+> 
+> 
+> ## Validity Challenges
+> 
+> However how do you guarantee it will be possible to prove fraud in the first
+> place? If pruning is allowed, you may simply not have access to the data
+> proving fraud - an especially severe problem in transactional systems where a
+> single fraudulent transaction can counterfeit arbitrary amounts of value out of
+> thin air.
+> 
+> A possible approach is the validity challenge: a subset of proof data, with
+> part of the data marked as "potentially fraudulent". The challenge can be
+> satisfied by providing the marked data and showing that the proof in question
+> is in fact valid; if the challenge is unmet participants in the system can
+> choose to take action, such as refusing to accept additional transactions.
+> 
+> Of course, this raises a whole host of so-far unsolved issues, such as DoS
+> attacks and lost data.
+> 
+> 
+> # Probabilistic Validation
+> 
+> Protocols that can tolerate some fraud can make use of probabilistic
+> verification techniques to prove that the percentage of undetected fraud within
+> the system is less than a certain amount, with a specified probability.
+> 
+> A common way to do this is the Fiat-Shamir transform, which repeatedly samples
+> a data structure deterministically, using the data's own hash digest as a seed
+> for a PRNG. Let's apply this technique to our merkle-sum tree example. We'll
+> first need a recursive function to check a sample, weighted by value:
+> 
+>     (defun prefix-valid? (node nonce)
+>         (or (== node.type leaf)
+>             (and (and (== node.sum (+ node.left.sum node.right.sum))
+>                       (> 0 node.sum)) ; mod by 0 is invalid, just like division by zero
+>                                       ; also could guarantee this with a type system
+>                  (and (if (< node.left.sum (mod nonce node.sum))
+>                           (prefix-valid? node.right (hash nonce))
+>                           (prefix-valid? node.left (hash nonce)))))))
+> 
+> Now we can combine multiple invocations of the above, in this case 256
+> invocations:
+> 
+>     (defun prob-valid? (node)
+>         (and (and (and .... (prefix-valid? node (digest (cons (digest node) 0)))
+>              (and (and ....
+>                             (prefix-valid? node (digest (cons (digest node) 255)))
+> 
+> As an exercise for a reader: generalize the above with a macro, or a suitable
+> types/generics system.
+> 
+> If we assume our attacker can grind up to 128 bits, that leaves us with 128
+> random samples that they can't control. If the (value weighted) probability of
+> a given node is fraudulent q, then the chance of the attacker getting away with
+> fraud is (1-q)^128 - for q=5% that works out to 0.1%
+> 
+> (Note that the above analysis isn't particularly well done - do a better
+> analysis before implementing this in production!)
+> 
+> 
+> ## Random Beacons and Transaction History Linearization
+> 
+> The Fiat-Shamir transform requires a significant number of samples to defeat
+> grinding attacks; if we have a random beacon available we can significantly
+> reduce the size of our probabilistic proofs. PoW blockchains can themselves act
+> as random beacons, as it is provably expensive for miners to manipulate the
+> hash digests of blocks they produce - to do so requires discarding otherwise
+> valid blocks.
+> 
+> An example where this capability is essential is the author's transaction
+> history linearization technique. In value transfer systems such as Bitcoin, the
+> history of any given coin grows quasi-exponentially as coins are mixed across
+> the entire economy. We can linearize the growth of history proofs by redefining
+> coin validity to be probabilistic.
+> 
+> Suppose we have a transaction with n inputs. Of those inputs, the total value
+> of real inputs is p, and the total claimed value of fake inputs is q. The
+> transaction commits to all inputs in a merkle sum tree, and we define the
+> transaction as valid if a randomly chosen input - weighted by value - can
+> itself be proven valid. Finally, we assume that creating a genuine input is a
+> irrevocable action which irrevocable commits to the set of all inputs, real and
+> fake.
+> 
+> If all inputs are real, 100% of the time the transaction will be valid; if all
+> inputs are fake, 100% of the time the transaction will be invalid. In the case
+> where some inputs are real and some are fake the probability that the fraud
+> will be detected is:
+> 
+>     q / (q + p)
+> 
+> The expected value of the fake inputs is then the sum of the potential upside -
+> the fraud goes detected - and the potential downside - the fraud is detected
+> and the real inputs are destroyed:
+> 
+>     E = q(1 - q/(q + p)) - p(q/(q + p)
+>       = q(p/(q + p)) - p(q/(q + p)
+>       = (q - q)(p/(q + p))
+>       = 0
+> 
+> Thus so long as the random beacon is truly unpredictable, there's no economic
+> advantage to creating fake inputs, and it is sufficient for validity to only
+> require one input to be proven, giving us O(n) scaling for transaction history
+> proofs.
+> 
+> 
+> ### Inflationary O(1) History Proofs
+> 
+> We can further improve our transaction history proof scalability by taking
+> advantage of inflation. We do this by occasionally allowing a transaction proof
+> to be considered valid without validating _any_ of the inputs; every time a
+> transaction is allowed without proving any inputs the size of the transaction
+> history proof is reset. Of course, this can be a source of inflation, but
+> provided the probability of this happening can be limited we can limit the
+> maximum rate of inflation to the chosen value.
+> 
+> For example, in Bitcoin as of writing every block inflates the currency supply
+> by 25BTC, and contains a maximum of 1MB of transaction data, 0.025BTC/KB. If we
+> check the prior input proof with probability p, then the expected value of a
+> transaction claiming to spend x BTC is:
+> 
+>     E = x(1-p)
+> 
+> We can rewrite that in terms of the block reward per-byte R, and the transaction size l:
+> 
+>     lR = x(1-p)
+> 
+> And solving for p:
+> 
+>     p = 1 - lR/x
+> 
+> For example, for a 1KB transaction proof claiming to spending 10BTC we can omit
+> checking the input 0.25% of the time without allowing more monetary inflation
+> than the block reward already does. Secondly, this means that after n
+> transactions, the probability that proof shortening will _not_ happen is p^n,
+> which reaches 1% after 1840 transactions.
+> 
+> In a system like Bitcoin where miners are expected to validate, a transaction
+> proof could consist of just a single merkle path showing that a single-use seal
+> was closed in some kind of TXO commitment - probably under 10KB of data. That
+> gives us a history proof less than 18.4MB in size, 99% of the time, and less
+> than 9.2MB in size 90% of the time.
+> 
+> An interesting outcome of thing kind of design is that we can institutionalize
+> inflation fraud: the entire block reward can be replaced by miners rolling the
+> dice, attempting to create valid "fake" transactions. However, such a pure
+> implementation would put a floor on the lowest transaction fee possible, so
+> better to allow both transaction fee and subsidy collection at the same time.
+> 
+> 
+> # References
+> 
+> [^paypub] https://github.com/unsystem/paypub
+> [^timelock] https://github.com/petertodd/timelock
+> [^zkcp] https://bitcoincore.org/en/2016/02/26/zero-knowledge-contingent-payments-announcement/
+> [^rpow] https://cryptome.org/rpow.htm
+> 
+> 
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
