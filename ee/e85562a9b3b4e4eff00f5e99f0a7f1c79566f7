@@ -1,0 +1,119 @@
+From: alex.mizrahi@gmail.com (Alex Mizrahi)
+Date: Tue, 21 Jun 2016 01:28:48 +0300
+Subject: [bitcoin-dev] Building Blocks of the State Machine Approach to
+	Consensus
+In-Reply-To: <20160620085649.GA29964@fedora-21-dvm>
+References: <20160620085649.GA29964@fedora-21-dvm>
+Message-ID: <CAE28kUTkBmhLm-7rNVtX7Dm2yYABQiepZX0RCYpBn60Uo9=ehA@mail.gmail.com>
+
+> All practical single-use seals will be associated with some kind of
+> condition,
+> such as a pubkey, or deterministic expression, that needs to be satisfied
+> for
+> the seal to be closed.
+
+
+I think it would be useful to classify systems w.r.t. what data is
+available to condition.
+I imagine it might be useful if status of other seals is available.
+
+
+> Secondly, the contents of the proof will be able to
+> commit to new data, such as the transaction spending the output associated
+> with
+> the seal.
+>
+
+So basically a "condition" returns that "new data", right?
+If it commits to a data in a recognizable way, then it's practically a
+function which yields a tuple (valid, new_data).
+If an oracle doesn't care about data then you can convert it to a predicate
+using a simple projection.
+But from point of view of a client, it is a function which returns a tuple.
+
+It might help if you describe a type of the condition function.
+
+Some related work on UTXO-based smart contracts:
+
+1. Typecoin described in the paper
+"Peer-to-peer Affine Commitment using Bitcoin" Karl Crary and Michael J.
+Sullivan Carnegie Mellon University PLDI ?15, Portland June 17, 2015
+
+I don't see the paper in open access and I've lost my copy, but there are
+slides: https://www.msully.net/stuff/typecoin-slides.pdf
+
+The paper is written by programming language researchers, and thus use
+fairly complex constructs.
+The idea is to use the language of linear logic, but it's actually
+implemented using type-oriented programming.
+So, basically, they associate logical propositions with transaction
+outputs. Transactions proof that output-propositions logically follow from
+input-propositions.
+The paper first describes as a colored coin kind of a system, where color
+values are propositions/types.
+But in the implementation part it became more like a metacoin, as it uses a
+complete transaction history.
+A setup with a trusted server is also mentioned.
+
+The interesting thing about Typecoin is that a contract language is based
+on logic, which makes it powerful and -- I guess -- analyzable. However,
+the paper doesn't mention any performance details, and I guess it's not
+good.
+Another problem is that it looks very unusual to people who aren't used to
+type-oriented programming.
+
+2. Generic coins
+Seeing how much Typecoin people had to struggle to describe a Bitcoin-style
+system I decided to describe a generalized Bitcoin-style system, so it can
+be easily referenced in research. Sadly all I got so far is a draft of an
+introduction/definition sections:
+https://github.com/chromaway/ngcccbase/wiki/gc
+
+In the first section I described a transaction graph model which is
+supposed to be general enough to describe any kind of a transaction graph
+system with explicit dependencies and no "spooky action at distance". As it
+turns out, any such system can be defined in terms of few predicate
+functions, however, using these functions directly might be very
+inefficient.
+
+The next section introduces a coin-based model. A coin-based system can be
+described using a single function called coin kernel which is applied to a
+transaction and a list of input coinstates.
+It is then described how to go from a coin-based model to a
+transaction-graph model.
+The reverse should also be possible if we add additional restrictions on a
+transaction-graph model, it's probably enough to define that coin can be
+spent only once. (Partial coin spends were described in Freimarkets.)
+
+There is a fairly shitty prototype in Haskell:
+https://github.com/baldmaster/ColorCoin
+
+3. flexichains
+This is a prototype done by me more recently, the interesting thing about
+it is that it unifies account-based and UTXO-based models in a single model.
+
+We first introduce a notion of record. A record can be of an arbitrary
+type, the only restriction is that it must have a key which must be unique
+within a system.
+Then transaction model can be introduced using two function:
+  txDependencies returns a list of keys of records transaction depends on
+  applyTx takes a transaction and a list of records it depends on and
+returns either a list of records or an error.
+
+A list of records includes
+ * new records which are created by a transaction
+ * updated records will have the same key but different content
+
+A simple account-based system can be implement using tuples (pubkey,
+balance, last_update) as records.
+In an UTXO-based system records are transaction output, and they should
+include a spent flag. (Obviously, records with spent flag can be pruned.)
+A system with custom smart contracts can be implemented by adding some sort
+of a function or bytecode to records.
+
+A Haskell prototype is here:
+https://bitbucket.org/chromawallet/flexichains/src/21059080bed6?at=develop
+(It's kinda broken and incomplete, though.)
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160621/a4d13078/attachment.html>
