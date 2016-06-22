@@ -1,0 +1,358 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 22 Jun 2016 07:10:09 -0400
+Subject: [bitcoin-dev] Closed Seal Sets and Truth Lists for Better Privacy
+ and Censorship Resistance
+Message-ID: <20160622111009.GA10956@fedora-21-dvm>
+
+At the recent coredev.tech meetup in Zurich I spent much of my time discussing
+anti-censorship improvements with Adam Back, building on his idea of blind
+symmetric commitments[^bsc], and my own ideas of client-side verification. Our
+goal here is to combat censorship by ensuring that miners do not have the
+information needed to selectively censor (blacklist) transactions, forcing them
+to adopt a whitelist approach of allowed transactions if they choose to censor.
+
+Back's work achieves that by changing the protocol such that users commit to
+their transaction in advance, in such a way that the commitment doesn't contain
+the information necessary to censor the transaction, although after commitment
+all transactional information becomes available. Here we propose a similar
+scheme with using "smart contract" state machine tooling, with the potential
+for an even better Zerocash-like guarantee that only a subset of data ever
+becomes public, without requiring "moon math" of uncertain security.
+
+
+# The Closed Seal Maps
+
+To implement Single-Use Seals we propose that miners attest to the contents of
+a series of key:value maps of true expressions, with the keys being the
+expressions, and the values being commitments, which along with (discardable)
+witnesses make up the argument to the expression. Once an expression is added
+to the closed seal map, the value associated with it can't be changed.
+
+Periodically - perhaps once a year - the most recent map is archived, and the
+map is started fresh again. Once archived a closed seal map is never changed.
+Miners are expected to keep the contents of the current map, as well as the
+most recent closed seal map - the contents of older maps are proven on demand
+using techniques similar to TXO commitments.
+
+A single-use seal[^sma] implemented with the closed seal maps is then
+identified by the expression and a block height. The seal is open if the
+expression does not exist in any closed seal maps between the creation block
+height and the most recent block height. A witness to the fact that the seal
+has been closed is then a proof that the seal was recorded as closed in one of
+the closed seal maps, and (if needed) proof that the seal was still open in any
+prior maps between its creation and closing.
+
+Similar to the logic in Bitcoin's segregated witnesses proposal, separating the
+commitment and witness arguments to the seal expression ensures that the
+witness attesting to the fact that a given seal was closed does not depend on
+the exact signature used to actually close it.
+
+Here's a very simple example of such a seal expression, in the author's
+Dex[^dex] expression language, for an application that can avoid reusing
+pubkeys:
+
+     (checksig <pubkey> <sig> (hash <committed-value>))
+
+This desugars to the following after all named arguments were replaced by
+explicit destructuring of the expression argument, denoted by the arg symbol:
+
+    (and <nonce>
+         (checksig <pubkey> (cdr arg) (digest (car arg))))
+
+The arguments to the expression are the closed seal map's commitment and
+witness, which are our committed value and signature respectively:
+
+    (<committed-value> . <sig>)
+
+
+## The Truth List
+
+We implement an expression validity oracle by having miners attest to the
+validity of a perpetually growing list of true predicate expressions, whose
+evaluation can in turn depend on depend on previously attested expressions in
+the truth list. SPV clients who trust miners can use the truth list to skip
+validation of old history.
+
+Similar to TXO commitments, we expect miners to have a copy of recent entries
+in the truth list, perhaps the previous year. Older history can be proven on an
+as-needed basis. Unlike TXO commitments, since this is a pure list of valid
+expressions, once an item is added to the list it is never modified.
+
+As the truth list can include expressions that reference previously
+evaluated expressions, expressions of arbitrary depth can be evaluated. For
+example, suppose we have an extremely long linked list of numbers, represented
+as the following sexpr:
+
+    (i_n i_n-1 i_n-2 ... i_1 i_0)
+
+We want to check that every number in the list is even:
+
+    (defun all-even? (l)
+        (match l
+            (nil true)
+            ((n . rest) (if (mod n 2)
+                            false
+                            (all-even? rest)))))
+
+In any real system this will fail for a sufficiently long list, either due to
+stack overflow, or (if tail recursion is supported) due to exceeding the
+anti-DoS limits on cycles executed in one expression; expressing the above may
+even be impossible in expression systems that don't allow unbounded recursion.
+
+A more subtle issue is that in a merkelized expression language, an expression
+that calls itself is impossible to directly represent: doing so creates a cycle
+in the call graph, which isn't possible without breaking the hash function. So
+instead we'll define the special symbol self, which triggers a lookup in the
+truth map instead of actually evaluating directly. Now our expression is:
+
+    (defun all-even? (l)
+        (match l
+            (nil true)
+            ((n . rest) (if (mod n 2)
+                            false
+                            (self rest)))))
+
+We evaluate it in parts, starting with the end of the list. The truth list only
+attests to valid expressions - not arguments - so we curry the argument to form
+the following expression:
+
+    (all-even? nil)
+
+The second thing that is appended to the truth list is:
+
+    (all-even? (0 . #<digest of "nil">))
+
+Note how we haven't actually provided the cdr of the cons cell - it's been
+pruned and replaced by the digest of nil. With an additional bit of metadata -
+the index of that expression within the trust list, and possibly a merkle path
+to the tip if the expression has been archived - we can show that the
+expression has been previously evaluated and is true.
+
+Subsequent expressions follow the same pattern:
+
+    (all-even? (1 . #<digest of "(0)">))
+
+Until finally we reach the last item:
+
+    (all-even? (n_i . #<digest of "(n_i-1 n_i-2 ... 1 0)">))
+
+Now we can show anyone who trusts that the truth list is valid - like a SPV
+client - that evaluating all-even? on that list returns true by extracting a
+merkle path from that item to the tip of the list's MMR commitment.
+
+
+# Transactions
+
+When we spend an output our goal is to direct the funds spent to a set of
+outputs by irrovocably committing single-use seals to that distribution of
+outputs. Equally, to validate an output we must show that sufficient funds have
+been directed assigned to it. However, our anti-censorship goals make this
+difficult, as we'll often want to reveal some information about where funds
+being spend are going immediately - say to pay fees - while delaying when other
+information is revealed as long as possible.
+
+To achieve this we generalize the idea of a transaction slightly. Rather than
+simply having a set of inputs spent and outputs created, we have a set of
+_input splits_ spent, and outputs created. An input split is then a merkle-sum
+map of nonces:values that the particular input has been split into; the
+transaction commits to a specific nonce within that split, and is only valid if
+the seal for that input is closed over a split actually committing to the
+transaction.
+
+Secondly, in a transaction with multiple outputs, we don't want it to be
+immediately possible to link outputs together as seals associated with them are
+closed, even if the transaction ID is known publicly. So we associate each
+output with a unique nonce.
+
+Thus we can uniquely identify a specific transaction output - an outpoint - by
+the following data (remember that the tx would usually be pruned, leaving just
+the digest):
+
+    (struct outpoint
+        (tx     :transaction)
+        (nonce  :digest))
+
+An transaction output is defined as:
+
+    (struct txout
+        (value     :int)    ; value of output
+        (nonce     :digest)
+        (authexpr  :func))  ; authorization expression
+
+An input:
+
+    (struct txin
+        (prevout :outpoint) ; authorization expression
+        (split   :digest)   ; split nonce
+        (value   :int))     ; claimed value of output spent
+
+And a transaction:
+
+    (struct transaction
+        ; fixme: need to define functions to extract sums and keys
+        (inputs   :(merkle-sum-map  (:digest :txin))
+        (outputs  :(merkle-sum-map  (:digest :txout))
+        ; and probably more metadata here)
+
+
+## Spending Outputs
+
+Our single-use seal associated with a specific output is the expression:
+
+    (<auth expr> <outpoint> . arg)
+
+When the seal is closed it commits to the merkle-sum split map, which is
+indexed by split nonces, one per (tx, value) pair committed to.  This means
+that in the general case of an spend authorization expression that just checks
+a signature, the actual outpoint can be pruned and what actually gets published
+in the closed seal set is just:
+
+    (<auth expr> #<digest of <outpoint>> . arg)
+
+Along with the commitment:
+
+    #<digest of split map>
+
+With the relevant data hidden behind opaque digests, protected from
+brute-forcing by nonces, external observers have no information about what
+transaction output was spent, or anything about the transaction spending that
+output. The nonce in the seal commitment prevents that multiple spends for the
+same transaction from being linked together.  Yet at the same time, we're still
+able to write a special-purpose spend auth expressions that do inspect the
+contents of the transaction if needed.
+
+
+## Validating Transactions
+
+When validating a transaction, we want to validate the least amount of data
+possible, allowing the maximum amount of data to be omitted for a given
+recipient. Thus when we validate a transaction we _don't_ validate the outputs;
+we only validate that the inputs spent by the transaction are valid, and the
+sum of (split) inputs spent is correct. We only need to validate outputs when
+they're spent - until then an invalid output is of no relevance. We also don't
+need to validate any outputs other than the ones we're trying to spend - the
+merkle sum tree guarantees that regardless of what's going on with other
+outputs, the funds we're spending are uniquely allocated to us.
+
+This means our function to check that a transaction is valid won't check the
+outputs of the transaction itself, but will check outputs of previous
+transactions:
+
+    (defun valid-tx? (tx)
+        (map-reduce tx.inputs
+            (lambda (txin)
+                (and <input is valid>
+                     <witness is valid>
+                     <split is valid>
+                     (valid-output? txin.prevout)))))
+
+
+# Censorship Resistant Usage
+
+To make use of the separation between seal closure and validation we need to
+pass transaction information from peer to peer. Let's look at what happens when
+Alice pays Bob:
+
+1. Alice picks one or more inputs to spend.
+
+2. For each input she constructs a split, paying part of the funds to a
+per-input fee transaction with no outputs, and committing part of the funds to
+the transaction paying Bob. If she has change left over she'll construct a
+third transaction with just that change as an input.
+
+3. She signs each input, creating valid signatures for the corresponding
+output's seal's authorization expression.
+
+4. She broadcasts the subset of data corresponding to just the fee paying
+transactions and related signatures individually, with a time delay between
+each one. All other data is pruned, leaving just opaque digests.
+
+5. Once all inputs are confirmed, she gives Bob the data corresponding to his
+transaction, including the relevant parts of the merkle trees, and relevant
+closed seal witnesses.
+
+At this point, a whole bunch of seals have been closed, but there's absolutely
+nothing on chain that links them together. Now let's suppose Bob pays Charlie,
+using the funds Alice gave him, and a different input to pay mining fees:
+
+1. Bob constructs a fee paying transaction, splitting some funds from a
+previously revealed output, and depending on the seal for the output Alice gave
+him, but without spending any of that output's funds.
+
+2. Bob broadcasts the above publicly. Miners have to add both seals to the
+closed seal set to collect the fees.
+
+3. Once confirmed, Bob gives Charlie the corresponding transaction information
+for his output, as well as the still-private information it depends on to prove
+that the output Alice created for Bob is itself valid.
+
+Again, nearly none of the information related to the transaction is public, yet
+the funds have moved twice.
+
+
+## Pruning Old History
+
+Over time the proofs that a coin is valid will grow as each additional
+transaction adds more data. We shorten these proofs by publishing some of the
+data in the form of additions to the truth list of valid expressions,
+specifically the is-valid-tx? expressions that determine whether or not a
+transaction (and prior transactions) are valid. This allows SPV clients who
+trust miners to stop validating once they reach that old history.
+
+Secondly, with transaction history linearization[^sma] we can avoid ever
+revealing most of the transaction data, greatly improving privacy. Only one
+input per transaction needs to be proven, so all data related to other inputs
+can be discarded permanently; in practice this will lead to either one or two
+public inputs, including the input made public to pay mining fees.
+
+
+# "Smart Contracts"
+
+Privacy aside, the combination of single-use seal and true expressions list
+enables all known "smart contract" applications, such as the ones Ethereum
+currently targets. After all, the accounts-based Ethereum architecture can
+always be simulated with a series of single-use seal's that explicitly keeps
+track of of an account balance based on actions taken.
+
+
+# Open Questions
+
+1. How does the above architecture interact with scaling proposals, like
+sharding? Fraud proofs?
+
+2. How does the statistical inflation protection of transaction history
+linearization work in a real economy, e.g. if people use it gamble with their
+funds?
+
+3. PoW isn't a perfect random beacon; how do we take that into account when
+designing linearization?
+
+4. How do wallets pass proof data between each other, e.g. offline?
+
+5. How do wallets backup proof data? (similar problem that Lightning has)
+
+
+# References
+
+[^bsc]: "blind symmetric commitment for stronger byzantine voting resilience",
+        Adam Back, May 15th 2013, bitcoin-dev mailing list,
+        https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2013-May/002600.html
+
+[^sma]: "Building Blocks of the State Machine Approach to Consensus",
+        Peter Todd, Jun 20th 2016,
+        https://petertodd.org/2016/state-machine-consensus-building-blocks
+        https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-June/012773.html
+
+[^dex]: "Dex: Deterministic Predicate Expressions for Smarter Signatures",
+        Peter Todd, May 25th 2016,
+        https://github.com/WebOfTrustInfo/ID2020DesignWorkshop/blob/master/topics-and-advance-readings/DexPredicatesForSmarterSigs.md
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160622/bab63bb0/attachment-0001.sig>
