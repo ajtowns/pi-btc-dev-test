@@ -1,0 +1,164 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Wed, 29 Jun 2016 01:31:19 +0200
+Subject: [bitcoin-dev] BIP 151
+In-Reply-To: <5772D8E2.6020007@jonasschnelli.ch>
+References: <87h9cecad5.fsf@rustcorp.com.au>
+	<1E86A00F-0609-4DBC-9543-94AE04CC13C9@voskuil.org>
+	<577234A4.3030808@jonasschnelli.ch>
+	<360EF9B8-A174-41CA-AFDD-2BC2C0B4DECB@voskuil.org>
+	<5772D8E2.6020007@jonasschnelli.ch>
+Message-ID: <A32C431E-A639-40D4-BA2C-BF912D9FEE9D@voskuil.org>
+
+On Jun 28, 2016, at 10:06 PM, Jonas Schnelli <dev at jonasschnelli.ch> wrote:
+
+>>> In my opinion, the question should be "why would you _not_ encrypt".
+>> 
+>> 1) creation of a false sense of security
+> 
+> False sense of security is mostly a communication issue.
+> BIP151 does focus on encryption (not trust).
+> 
+> Are users aware of the fact that ISP/WiFi-Providers can track their
+> bitcoin spending (if they use SPV+BF) and link it with other internet
+> traffic or sell the data to anyone who is interested to do correlation?
+
+The relevant question would be to ask whether encryption would prevent an ISP from doing so (which it would not). This is a good example of false sense of security.
+
+> Are node operators aware of the possibilities that ISPs/Data-Centers,
+> etc. can hold back peers, etc.?
+> 
+> If there is a false sense of security/anonymity, then we are already
+> deep into this territory.
+> BIP151 was designed as a puzzle-pice towards better security and better
+> censorship resistance. You shouldn't project all sorts of "false sense
+> of security" into BIP151. Is a stepping stone towards greater security.
+
+FWIW I was just answering your question comprehensively. Relationship to BIP151 is incidental (though apparently applicable).
+
+Keep in mind my specific concern is not with the design of BIP151, it is with the implication of its dependency on an unspecified authentication proposal.
+
+>> 2) as a tradeoff against anonymity
+> 
+> Can you point out the tradeoffs?
+> BIP151 does not introduce fingerprinting possibilities.
+
+The security tradeoff would arise from widespread deployment of authentication - which is necessary to make encryption useful against envisioned MITM attacks. See my previous discussion of trust zones below.
+
+>> 3) benefit does not justify cost
+> 
+> Can you elaborate the costs?
+> [Extremely simplified]: we need 300 lines of code from openssh
+> (ChaCha20-Poly1305 at openssl) and some ECDH magic (already in
+> Bitcoin-Cores codebase) together with two or three (maybe payed)
+> cryptoanalysis once the implementation is done.
+
+Simply put, any code that is unnecessary does not justify its cost.
+
+>>> There are plenty of other options to solve this problem. stunnel,
+>>> Bernsteins CurveCP, VPN, etc. which are available since years.
+>>> But the reality has shown that most bitcoin traffic is still unencrypted.
+>> 
+>> The question arises from concern over the security of the network in the case where encryption (and therefore authentication) is pervasive.
+>> 
+>> As you point out, anyone can set up a private network of nodes today. These nodes must also connect to the permissionless network to maintain the chain. These nodes constitute a trust zone within Bitcoin. This zone of exclusion operates as a single logical node from the perspective of the Bitcoin security model (one entity controls the validation rules for all nodes).
+>> 
+>> Widespread application of this model is potentially problematic. It is a non-trivial problem to design a distributed system that requires authentication but without identity and without central control. In fact this may be more challenging than Bitcoin itself. Trust on first use (TOFU) does not solve this problem.
+> 
+> Yes. There is no plan to adopt a TUFO scheme. Bip151 does not use TUFO
+> it does not cover "trust" (It just encrypt all traffic).
+
+TOFU (trust on first use) was a reference to what was discussed on IRC as a potential solution to the (deferred) authentication problem. I didn't mean to imply that it was part of BIP151.
+
+> Imaging Bip151 together with a simple form of preshared EC key
+> authentication (nonce signing or similar). You could drastically
+> increase the security/censor-resistance-properties between nodes where
+> owners have preshared identity keys (with nodes I also mean SPV/wallet
+> nodes).
+
+This is a restatement of what I have accepted as a premise - that authentication, and as such, key distribution, will be a necessary part of making any encryption scheme effective. "Preshared" implies a secure side channel for key distribution.
+
+> And I guess there are plenty of awesome identity management system ideas
+> tied or not tied to the Bitcoin blockchain out there.
+> This is also a reason to not cover trust/authentication/identity in BIP151.
+> It is  possible to have multiple authentication schemes.
+
+Whether or not there are multiple schemes is not relevant to the point I have raised. The issue is that authentication is necessary.
+
+>> In my opinion this question has not received sufficient consideration to warrant proceeding with a network encryption scheme (which concerns me as well, but as I consider it premature I won't comment).
+> 
+> Yes. I think nobody have started implementing BIP151. It's a draft BIP
+> and I think it's still okay and great that we have this discussion.
+> 
+> BIP151 hopefully has started some brainwork in how encryption and
+> authentication could work in Bitcoin and I'm happy to deprecate BIP151 if we have found a better solution or if we come to a point where we agree that BIP151 does make the network security worse.
+
+We should contemplate what the distributed permissionless network of anonymous peers looks like once every node authenticates every one of its peers using one or more key distribution side channels.
+
+>>> Example: IIRC non of the available SPV wallets can "speak" on of the
+>>> possible encryption techniques. Encrypting traffic below the application
+>>> layer is extremely hard to set up for non-experienced users.
+>> 
+>> Bloom filters can (and IMO should) be isolated from the P2P protocol. Also, if the proposal creates an insecurity its ease of deployment is moot.
+> 
+> If we assume increasing amount of novice users starting with Bitcoin every day, how should these users run wallets without increasing centralization by using webwallets or client/central-server wallets?
+> (which is OT, but an interesting question)
+
+I fully appreciate the significant security risk arising from the proliferation of web wallets. This can only be resolved by people validating using code under their own control.
+
+Encryption/authentication are orthogonal to this question, assuming people have wallets directly attached to full nodes. Remoting a wallet from a full node does not require use of the P2P protocol, and can use encryption/authentication without the concerns I've raised. It properly places the trust boundary around a wallet and its trusted node(s), as opposed to spanning (independent) nodes.
+
+>>> On top of that, encryption allows us to drop the SHA256 checksum per p2p
+>>> message which should result in a better performance on the network layer
+>>> once BIP151 is deployed.
+>> 
+>> I would not consider this a performance enhancing proposal. Simply dropping the checksum seems like a better option. But again, it is moot if it creates an insecurity.
+>> 
+>>> I agree that BIP151 _must_ be deployed together with an authentication
+>>> scheme (I'm working on that) to protect again MITM during encryption
+>>> initialization.
+>> 
+>> At a minimum I would propose that you modify BIP151 to declare a dependency on a future BIP, making BIP151 incomplete without it. I think we can agree that it would be unadvisable to deploy (and therefore to implement) encryption alone.
+> 
+> I think BIP151 does what it says: encryption and laying groundwork for authentication.
+> You wouldn't probably say BIP32 is incomplete because it does not cover
+> a scheme how to recover funds (or BIP141 [SW consensus] is incomplete
+> because it does not cover p2p [BIP144]).
+
+This is an unfair statement. You have acknowledged that BIP151 requires authentication to accomplish its sole objective.
+
+> The missing MITM protection (solvable over auth) is prominent mentioned in the BIP [1].
+
+As I pointed out.
+
+> (from your other mail):
+>>> I don't see reasons why BIP151 could weaken the security of the P2P network. Can you point out some specific concerns?
+>> 
+>> TOFU cannot prevent MITM attacks (the goal of the encryption). Authentication requires a secure (trusted) side channel by which to distribute public keys. This presents what I consider a significant problem. If widespread, control over this distribution network would constitute control over who can use Bitcoin.
+>> The effort to prevent censorship could actually enable it. I don't think it would get that far. Someone would point this out in the process of vetting the authentication BIP, and the result would be the scrapping of BIP151.
+> 
+> I agree that the secure trusted 2nd channel key-sharing problem can be significant for large networks and/or connecting to unknown identities.
+> 
+> But as said, there could be multiple ways of sharing identity keys.
+> If you want to connect your node to serval other trusted nodes, you can simply physically preshare keys or do it over GPG / Signal App, etc..
+
+Again, it's the fact that authentication is required that produces the issue, not that there are multiple ways to implement it.
+
+> And if I have followed the news correctly, there are some clever guys
+> working on various internet of trust 2.0 proposals...
+
+I don't see how this is relevant.
+
+>>> BIP151 does not rely on identities. BIP151 does not use persisted keys
+>>> (only ephemeral keys).
+>> 
+>> BIP 151 is incomplete without authentication.
+> 
+> I would agree if you would say, _trusted encryption_ is incomplete with
+> authentication. But IMO BIP151 is complete and should be deployed together with one or multiple authentication schemes.
+
+It seems that we are talking past each other. You haven't yet addressed the issue that I have raised.
+
+It is the requirement for authentication of any node that any other node may wish to connect to that is the issue. We end up with something that looks like WoT or PKI. And if not fully controlled by PKI (so using WoT) we will have hybrid nodes that accept untrusted connections and propagate information between trusted and untrusted nodes.
+
+> [1] https://github.com/bitcoin/bips/blob/master/bip-0151.mediawiki#risks
+> 
