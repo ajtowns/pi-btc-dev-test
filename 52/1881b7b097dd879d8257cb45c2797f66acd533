@@ -1,0 +1,117 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sat, 2 Jul 2016 14:43:50 -0400
+Subject: [bitcoin-dev] Code Review: The Consensus Critical Parts of
+ Segwit by Peter Todd
+In-Reply-To: <8AE6D76F-7808-4897-9F44-A83790545EE4@xbt.hk>
+References: <8AE6D76F-7808-4897-9F44-A83790545EE4@xbt.hk>
+Message-ID: <20160702184350.GA16656@fedora-21-dvm>
+
+On Wed, Jun 29, 2016 at 12:22:45AM +0800, Johnson Lau via bitcoin-dev wrote:
+> Thanks for Peter Todd?s detailed report:
+> https://petertodd.org/2016/segwit-consensus-critical-code-review
+> 
+> I have the following response.
+> 
+> >Since the reserve value is only a single, 32-byte value, we?re setting ourselves up for the same problem again7.
+> 
+> Please note that unlimited space has been reserved after the witness commitment:
+> 
+>   block.vtx[0].vout[o].scriptPubKey.size() >= 38
+> 
+>  Which means anything after 38 bytes has no consensus meaning. Any new consensus critical commitments/metadata could be put there. Anyway, there is no efficient way to add a new commitment with softfork.
+
+Sure - equally you could say you could add additional commitments as other
+coinbase txouts.
+
+My point is that the extensible commitment - specifically the thing described
+in the BIP - can't be easily used for the purpose of extending segwit due to a
+design flaw.
+
+> > the fact that we do this has a rather odd result: a transaction spending a witness output with an unknown version is valid even if the transaction doesn?t have any witnesses!
+> 
+> I don?t see any reason to have such check. We simply leave unknown witness program as any-one-can-spend without looking at the witness, as described in BIP141.
+
+It will lead to a special case in code that does things with witness
+transactions, as we can spend a witness output without a witness.
+
+> > Bizzarely segwit has an additonal pay-to-witness-pubkey-hashP2WPKH that lets you use a 160-bit (20 byte) commitment??
+> 
+> Since ~90% of current transactions are P2PKH, we expect many people will keep using this type of transaction in the future. P2WPKH gives the same level of security as P2PKH, and smaller scriptPubKey.
+> 
+> >give users the option instead to choose to accept the less secure 160-bit commitment if their use-case doesn?t need the full 256-bit security level
+> 
+> This is actually discussed on the mailing list. P2WSH with multi-sig is subject to birthday attack, and therefore 256-bit is used to provide 128-bit security. P2WPKH is used as single sig and therefore 160-bit is enough.
+
+I'm aware of that - there are many P2SH scripts where birthday attacks are not
+an issue. In fact, _most_ usage of P2SH right now - multifactor wallets -
+doesn't have a birthday attack problem.
+
+> >Secondly, if you are going to give a 160-bit commitment option, you don?t need the extra level of indirection in the P2SH case: just make the segwit redeemScript be: <version> <serialized witness script>
+> 
+> Something wrong here? In P2WPKH, the witness is <sig> <pubkey>
+
+Huh? That still another level of indirection.
+
+Anyway, the right argument against my proposal for pay-to-pubkey-hash
+functionality, is that taking into account the witness discount, my proposal is
+slightly less efficient. In P2WPKH in P2SH the witness program in the
+redeemScript is 22 bytes:
+
+    <1-byte version> <1-byte length> <20 byte pubkey hash>
+
+And the witness len(sig) + 34 bytes:
+
+    <sig> <1 byte length> <33 bytes pubkey>
+
+Taking into account the discount, that results in 22*4 + 34 + len(sig) = 122 bytes + len(sig)
+
+My proposal would have a 37 byte redeemScript:
+
+    <1-byte version> <1-byte witness script length> {<1-byte pubkey length> <33 byte pubkey> OP_CHECKSIG}
+
+and a len(sig) length witness:
+
+    <sig>
+
+Taking into account the discount, that results in 37*4 + len(sig) = 148 bytes + len(sig)
+Meanwhile for any more complex script, you'd certainly want to use the 256-bit
+hash instead, due to the witness discount.
+
+This suggests an obvious alternative: let users choose to use 160-bit security,
+and make 256-bit and 160-bit witness programm commitments just be different
+hash functions. P2PKH functionality implemented this way would be a single
+extra byte vs. special-casing it.
+
+Thus you could summarize the argument for the P2PKH special case as "We don't
+want to make it possible to use 160-bit commitments for multisig, which _might_
+need 256-bit security. But we do want to special-case pubkeys to save a few
+bytes."
+
+> >The only downside is the serialized witness script is constrained to 520 bytes max
+> 
+> 520 is the original limit. BIP141 tries to mimic the existing behaviour as much as possible. Anyway, normally nothing in the current scripts should use a push with more than 75 bytes
+
+No, you're quite confused at my point: the witness script is otherwise
+constrained to 10,000 bytes, as the first item in the witness is special-cased
+for version 0 to be not be subject to the 520 byte rule.
+
+> >we haven?t explicitly ensured that signatures for the new signature hash can?t be reused for the old signature hash
+> 
+> How could that be? That?d be a hash collision.
+
+Nope. The problem is it might not be a hash collission, if the actual bytes
+signed can be interpreted in two different ways, by different types of
+signature hashes.
+
+This is the same reason the signmessage functionality prepends the message
+being signed with the "Bitcoin Signed Message:\n" magic string.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160702/3df077cb/attachment.sig>
