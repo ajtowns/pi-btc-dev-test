@@ -1,0 +1,52 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Sun, 3 Jul 2016 03:20:42 +0800
+Subject: [bitcoin-dev] Code Review: The Consensus Critical Parts of
+	Segwit by Peter Todd
+In-Reply-To: <20160702184350.GA16656@fedora-21-dvm>
+References: <8AE6D76F-7808-4897-9F44-A83790545EE4@xbt.hk>
+	<20160702184350.GA16656@fedora-21-dvm>
+Message-ID: <9E7B8E07-4F98-42DD-8A35-C55DAF78271F@xbt.hk>
+
+
+> 
+>>> the fact that we do this has a rather odd result: a transaction spending a witness output with an unknown version is valid even if the transaction doesn?t have any witnesses!
+>> 
+>> I don?t see any reason to have such check. We simply leave unknown witness program as any-one-can-spend without looking at the witness, as described in BIP141.
+> 
+> It will lead to a special case in code that does things with witness
+> transactions, as we can spend a witness output without a witness.
+
+It is trivial to softfork a new rule to require the witness must not be empty for a witness output. However, does it really make the code simpler?
+> 
+> Thus you could summarize the argument for the P2PKH special case as "We don't
+> want to make it possible to use 160-bit commitments for multisig, which _might_
+> need 256-bit security. But we do want to special-case pubkeys to save a few
+> bytes.?
+
+Actually I would like to see even shorter hash and pubkey to be used. Storing 1 BTC for a few months does not really require the security level of P2PKH.
+
+> 
+>>> we haven?t explicitly ensured that signatures for the new signature hash can?t be reused for the old signature hash
+>> 
+>> How could that be? That?d be a hash collision.
+> 
+> Nope. The problem is it might not be a hash collission, if the actual bytes
+> signed can be interpreted in two different ways, by different types of
+> signature hashes.
+> 
+> This is the same reason the signmessage functionality prepends the message
+> being signed with the "Bitcoin Signed Message:\n" magic string.
+> 
+
+In BIP143 sig, first 4 bytes is nVersion, and the next 32 bytes (hashPrevouts) is a hash of all prevouts. (in the case of ANYONECANPAY, the bytes following would be zero, as you proposed)
+
+In the original sig, first 4 bytes in nVersion, next 4 bytes is number of inputs, and the next 32 bytes is a txid.
+
+For a signature to be valid for both schemes, the last 28 bytes of the hashPrevouts must also be the first 28 bytes of a valid txid. This is already impossible. And this is just one of the many collisions required. In such case SHA256 would be insecure and adding a zero after the nVersion as you suggest would not be helpful at all.
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 671 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160703/08937db5/attachment.sig>
