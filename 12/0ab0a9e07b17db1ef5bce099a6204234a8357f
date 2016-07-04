@@ -1,0 +1,92 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 4 Jul 2016 19:27:15 -0400
+Subject: [bitcoin-dev] Code Review: The Consensus Critical Parts of
+ Segwit by Peter Todd
+In-Reply-To: <9E7B8E07-4F98-42DD-8A35-C55DAF78271F@xbt.hk>
+References: <8AE6D76F-7808-4897-9F44-A83790545EE4@xbt.hk>
+	<20160702184350.GA16656@fedora-21-dvm>
+	<9E7B8E07-4F98-42DD-8A35-C55DAF78271F@xbt.hk>
+Message-ID: <20160704232715.GA21569@fedora-21-dvm>
+
+On Sun, Jul 03, 2016 at 03:20:42AM +0800, Johnson Lau wrote:
+> >>> the fact that we do this has a rather odd result: a transaction spending a witness output with an unknown version is valid even if the transaction doesn?t have any witnesses!
+> >> 
+> >> I don?t see any reason to have such check. We simply leave unknown witness program as any-one-can-spend without looking at the witness, as described in BIP141.
+> > 
+> > It will lead to a special case in code that does things with witness
+> > transactions, as we can spend a witness output without a witness.
+> 
+> It is trivial to softfork a new rule to require the witness must not be empty for a witness output. However, does it really make the code simpler?
+
+The Bitcoin Core codebase, no, but it does reduce the number of special cases
+other codebases have to contend with.
+
+Probably not worth changing now, but it was I think a weird design choice to
+make.
+
+> > Thus you could summarize the argument for the P2PKH special case as "We don't
+> > want to make it possible to use 160-bit commitments for multisig, which _might_
+> > need 256-bit security. But we do want to special-case pubkeys to save a few
+> > bytes.?
+> 
+> Actually I would like to see even shorter hash and pubkey to be used. Storing 1 BTC for a few months does not really require the security level of P2PKH.
+
+How short? 128 bits? 80 bits? 64 bits?
+
+It's hard to know what's the point where you're going to risk massive losses
+due to theft... and as we've seen with the DAO, those kinds of losses can lead
+to very undesirable pressure for devs to act as a central authority and
+intervene.
+
+> >>> we haven?t explicitly ensured that signatures for the new signature hash can?t be reused for the old signature hash
+> >> 
+> >> How could that be? That?d be a hash collision.
+> > 
+> > Nope. The problem is it might not be a hash collission, if the actual bytes
+> > signed can be interpreted in two different ways, by different types of
+> > signature hashes.
+> > 
+> > This is the same reason the signmessage functionality prepends the message
+> > being signed with the "Bitcoin Signed Message:\n" magic string.
+> > 
+> 
+> In BIP143 sig, first 4 bytes is nVersion, and the next 32 bytes (hashPrevouts) is a hash of all prevouts. (in the case of ANYONECANPAY, the bytes following would be zero, as you proposed)
+> 
+> In the original sig, first 4 bytes in nVersion, next 4 bytes is number of inputs, and the next 32 bytes is a txid.
+> 
+> For a signature to be valid for both schemes, the last 28 bytes of the hashPrevouts must also be the first 28 bytes of a valid txid. This is already impossible. And this is just one of the many collisions required. In such case SHA256 would be insecure and adding a zero after the nVersion as you suggest would not be helpful at all.
+
+Why isn't this carefully documented in the BIPs then?
+
+Again, as I said in my summary:
+
+    In a number of places we either have a belt, or suspenders, when given the
+    importance of this code we?d rather have both a belt and suspenders.
+
+Tagged hashing is an excellent way to absolutely sure that signatures can't be
+reused in different contexts; if it happens to be overkill in a specific
+context, the overhead of hashing another few bytes is trivial; the gain of
+being absolutely sure you haven't missed a vulnerability can't be easily
+dismissed.
+
+Equally, I think in most cases simply XORing the digest obtained by hashing
+with a magic tag prior to using it (e.g. by signing it) should be sufficient
+for signature applications, and the overhead of doing that is ~zero.
+Essentially you can think of the magic tag that's XORed with the raw digest as
+making clear the intent of the signature: "this is why I think I'm signing this
+digest"
+
+However, the XOR option does have one potentially big downside in other
+contexts, like general use in committed data structures: it's incompatible with
+timestamping schemes like OpenTimestamps that rely on all operations being
+cryptographically secure.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160704/8235c4f2/attachment.sig>
