@@ -1,0 +1,103 @@
+From: bram@bittorrent.com (Bram Cohen)
+Date: Fri, 15 Jul 2016 16:00:57 -0700
+Subject: [bitcoin-dev] Merkle trees and mountain ranges
+In-Reply-To: <20160618230143.GA25017@fedora-21-dvm>
+References: <CA+KqGkosGrWQ2Lpg3Ptc+UyidK7H4_HLQ_QWx2DOAFRmLkv4zQ@mail.gmail.com>
+	<20160616001040.GA5026@fedora-21-dvm>
+	<CA+KqGkqAHcU2PzEX6OmorXRBQ22eF_QBYYqUDS1v_ZvevhLCuQ@mail.gmail.com>
+	<20160616032612.GA7792@fedora-21-dvm>
+	<CA+KqGkqA2WnvBEck3kv6p2no-9wzNVCTNA-MGw=Jg=gMGfrxUQ@mail.gmail.com>
+	<20160617043435.GA12800@fedora-21-dvm>
+	<CA+KqGkpRmeKyo6TFpe+uUCdJSina+ARraNd0dkHSb2Hpx5dYuw@mail.gmail.com>
+	<20160618230143.GA25017@fedora-21-dvm>
+Message-ID: <CA+KqGkoxRdCas2hWdbD92Z-HjnS9PTPVQu=oSwUT261S+4y4cw@mail.gmail.com>
+
+On Sat, Jun 18, 2016 at 4:01 PM, Peter Todd <pete at petertodd.org> wrote:
+
+>
+>
+Have you seen how BLAKE2 omits padding when the data to be hashed happens
+> to be
+> exactly one block in size? It's significantly faster than SHA256, and
+> that's a
+> standard part of the algorithm already.
+>
+
+That's very convenient! I didn't know it, but had 'look up how blake2 does
+padding' in my list of stuff to do. I'm leaning heavily towards using
+blake2b at this point, at least for internal hashing.
+
+
+>
+> > At the root there's a branch block. It consists of all nodes up to some
+> > fixed depth - let's say 12 - with that depth set so that it roughly fits
+> > within a single memory page. Branch blocks are arranged with the nodes in
+> > fixed position defined by the prefix they correspond to, and the
+> terminals
+> > have outpointers to other blocks. Because they're all clustered
+> together, a
+> > lookup or update will only require a single
+>
+> A single....?
+>
+
+Okay, I've figured out the root cause of general confusion here. It's
+mostly my fault.
+
+There are a few different media on which data can be stored, with different
+properties in terms of how long it takes to retrieve data from them, and
+how much of a readahead they typically have. I was misreading the l2 cache
+size as the main memory readahead amount, which is... probably wrong? The
+readahead properties of memory aren't well documented and apparently vary a
+lot. On SSDs it typically pulls down a kilobyte at once and they call them
+pages, hence my use of that term above. But since my real point is that my
+implementation should act as a silver bullet which can have acceptable
+performance even on extremely bad devices, I'll give an analysis of how
+well it works when everything is stored on a regular spinning hard drive.
+
+Let's say you're storing 100 million items, which will fit within 10
+gigabytes. If you set the block depths to about 10 bits they'll be about
+32K, and if you set the size of leaf blocks to be about the same then
+memory efficiency will be good because the leaf blocks will store twigs of
+about 2^7 in size while having 2^10 space so they'll fit reasonably. Almost
+everything will be three blocks from root, so updates will generally
+require two disk seeks (plus one more for a write but those are generally
+faster because they get batched.)
+
+For latency numbers, I'm going off these:
+https://gist.github.com/jboner/2841832
+
+If the blockchain is very full of simple transactions and a disk seek takes
+15 milliseconds, then going with the assumption that a block is about 600
+seconds and the blockchain can handle 4 transactions per second and each of
+them is 3 updates (one utxo spent plus two new ones created) that's 15 *
+600 * 4 * 3 * 2 milliseconds per block, or about 200 seconds per block, so
+if the uxto roots trail by a few blocks even a ludicrously underpowered
+node could keep up.
+
+On an SSD keeping up is completely trivial, the problem becomes one of how
+quickly you can validate an entire blockchain history. There a read takes
+about 0.15 milliseconds and you have to do 5 of them instead of 2 because
+the natural memory block size is 4k, so it's about 1 millisecond per
+update, or 600 * 4 * 3 total time for each block, which is about 7 seconds.
+That's large enough that making the utxo root trail by two blocks is still
+a good idea, but small enough that it isn't a big factor in the cost of
+running a node. It's enough that validating a complete block history might
+take a while though, and even validating just the last year would take a
+few days. This is very conservative and it's assuming that *everything* is
+kept on an SSD though. If the numbers work better and a few layers are kept
+in regular memory validating a whole year of history might only take a few
+hours.
+
+Hopefully that all makes a fairly good case that raw merkle tree utxo root
+trailing by a few blocks is a viable strategy. The data structures in the
+MMR proposal are fairly complicated and the analysis of them talks in
+somewhat vague terms about things being fast and slow. A similar analysis
+of the MMR proposal specifying storage media and expectations of latency
+numbers would clarify the reasoning a lot.
+
+(By the way, sorry for the slow response - I got preempted by a bunch of
+other work duties.)
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160715/1202d694/attachment.html>
