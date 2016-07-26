@@ -1,0 +1,202 @@
+From: nickodell@gmail.com (Nick ODell)
+Date: Tue, 26 Jul 2016 16:03:41 -0600
+Subject: [bitcoin-dev] Reasons to add sync flags to Bitcoin
+In-Reply-To: <CACiOHGxpTEOzUBovuJstNEVQOpD+Yv0JivuyeOFsba_jhdyydw@mail.gmail.com>
+References: <CACiOHGxpTEOzUBovuJstNEVQOpD+Yv0JivuyeOFsba_jhdyydw@mail.gmail.com>
+Message-ID: <CANN4kmf32ozV=LGbOHrifRiSPX==Mb1uSnjqa2v2c43=HU3OBg@mail.gmail.com>
+
+Moral,
+
+Mining the sync flag isn't compatible with the payout structure of non
+hot-wallet pools like Eligius or decentralized pools like p2pool.
+Those need the ability to split a reward among multiple parties.
+Instead of giving an address to send the funds to, you could include
+the hash of the transaction allowed to spend the sync flag output.
+You'd have to zero the previous outpoint of the transaction before
+hashing, since you don't know what the hash of the coinbase ten blocks
+from now will be.
+
+
+On Tue, Jul 26, 2016 at 6:47 AM, Moral Agent via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> I posted this to /r/bitcoin yesterday but it got minimal comments. One uses
+> suggested I try the mailing list so here it is:
+>
+> The idea presented here could have the following benefits:
+>
+> 1. Improve mining decentralization
+> 2. Reduce variance in mining profitability
+> 3. Reduce or eliminate SPV mined blocks
+> 4. Reduce or eliminate empty blocks, smoothing out resource usage
+> 5. Reduce or eliminate the latency bottleneck on throughput
+> 6. Make transaction stuffing by miners be either obvious or costly
+> 7. Gives miners something to do while they wait for attractive transactions
+> to appear
+> 8. Can be easily done with a soft fork
+>
+> #Basic idea:
+>
+> Ideally, all miners would begin hashing the next block at exactly the same
+> time. Miners with a head start are more profitable, and the techniques that
+> help miners receive and validate blocks quickly create centralization
+> pressure.
+>
+> What if there was something that acted like the starting flag at a race,
+> which could suddenly wave and cause all of the miners to simultaneously
+> begin hashing the next block?
+>
+> #Implementation:
+>
+> Let a sync flag be a message consisting of:
+>
+> 1. Hash of the previous block.
+> 2. Bitcoin address
+> 3. Nonce
+>
+> This tiny message could propagate through the network at maximum speed. If
+> miners had to include the hash of this flag in the next block, then all
+> miners wait for this flag, and when it suddenly spread through the network,
+> all miners could simultaneously begin hashing the next block.
+>
+> The sync flag should not be produced too quickly. You want to give everyone
+> enough time to be ready to hash the next block. Let's say that the hash of
+> the sync flag is a proof of work that is targeted for 2 minutes.
+>
+> To fund this proof of work, the protocol is modified to demand that the
+> block produced 10 blocks after the sync flag must allocate 25% of the block
+> reward to the address published by the sync flag. In this way, sync flags
+> are produced in 2 minutes, and blocks are produced in 8 minutes, with 10
+> minutes total.
+>
+>
+> Illustration 1: https://s32.postimg.org/wzg0hs8lx/sync_flag.png)
+>
+> Illustration 2: https://s32.postimg.org/vc5y9yz4l/sync_flag2.png
+>
+>
+> #Explanation of reasons:
+>
+> **Improve mining decentralization**
+>
+> One factor driving centralization is the imperative miners have to achieve
+> low latency in receiving and validating blocks. To achieve low latency, it
+> helps a lot if you have expensive low-latency internet connections, curated
+> network topologies, and large pools that have a plausible chance of finding
+> consecutive blocks. If miners are expected (or forced) to validate a block
+> prior to mining on top of it, the rational end game would be to outsource
+> the validation step to a trusted third party specialist who can choose
+> optimal locations on the globe to serve their (multiple?) mining pool
+> clients. These are all less decentralized than the mining situation Satoshi
+> and others imagined.
+>
+> **Reduce variance in mining revenue**
+>
+> Currently, there are about 144 opportunities per day for a pool or solo
+> miner to see any revenue at all. With sync flags, that number doubles to
+> 288. Sync flags are only worth 25% of what a block is worth, but this still
+> represents a significant reduction in variance. This variance is one factor
+> causing solo miners to group into pools, and large pools to be more
+> attractive than small pools.
+>
+> **Reduce or eliminate SPV mined blocks**
+>
+> One way miners have sought to make
+> full-block-transmission-and-validation-latency irrelevant has been through
+> "SPV" mining or "Head-first" mining. There is some evidence that these
+> techniques may be widely used, and that badgering the miners about it is an
+> ineffective strategy to stop them.
+>
+> In SPV mining, a miner would simply accept any block header that shows the
+> correct proof of work. All other validation is entrusted to other miners.
+> This practice is quite dangerous as the SPV miners can wander off on some
+> invalid chain, taking SPV nodes with them. If this occurs during a soft
+> fork, these blind miners can also fool unupgraded fully validating nodes
+> into following them.
+>
+> "Head-first" mining means that miners start hashing as soon as they receive
+> the block header with the correct POW, but they simultaneously validate the
+> block, and abandon it if is not valid. I consider this to be pretty safe, as
+> it strictly limits the length of an invalid chain that can result from
+> mining without validating. However, "Head-first" mining can plausibly
+> generate 2 or 3 confirmations of an invalid block. It would be nice if such
+> confirmations did not happen.
+>
+> The sync flag technique is similar to head-first mining, but rather than
+> hashing the next block while they wait for transmission and validation of
+> the prior block, they hash the sync flag. Nodes can differentiate between
+> sync flags and blocks, and can ignore sync flags when counting
+> confirmations.
+>
+> **Reduce or eliminate empty blocks, smoothing out resource usage**
+>
+> Empty blocks are another consequence of SPV or Headfirst mining, because the
+> miner cannot safely include any transactions in the block they are hashing
+> until they have validated the prior block. By delaying the start of hashing
+> the next block until after validation, miners would not have this reason to
+> mine empty blocks.
+>
+> **Reduce or eliminate the latency bottleneck on throughput**
+>
+> Centralization pressure due to latency issues has been a major preoccupation
+> over the last year. If latency mattered much less, it could represent a
+> scalability improvement that could enable higher throughput.
+>
+> **Make transaction stuffing by miners be either obvious or costly**
+>
+> Currently, the entire block reward goes to the miner who mines it. One
+> unfortunate consequence of this is that it does not cost the miner anything
+> to covertly stuff the block with transactions. These transactions would pay
+> fees and be indistinguishable from ordinary transactions, but the fees are
+> paid by the miner and then immediately returned to the miner.
+>
+> With sync flags, the miner must share these transaction fees with the
+> address contained in the sync flag 10 blocks prior. This means that if the
+> miner gives the transactions a normal looking fee, they will incur a cost
+> that will be paid to the sync flag. If the miner wants to avoid this, they
+> must give their stuffing transactions a zero fee, which provides evidence
+> that they are stuffing.
+>
+> Also, when miners stuff with transactions using a zero fee, they cannot
+> manipulate the perception of how much fee it takes to get into a block.
+>
+> Note that miners could still try to covertly stuff blocks that will pay a
+> sync flag that they themselves created. if this is a big concern, it can be
+> addressed by forcing blocks to pay multiple sync flags.
+>
+> **Gives miners something to do while they wait for attractive transactions
+> to appear**
+>
+> From the Montreal scaling workshop last year, we have [this
+> talk](https://scalingbitcoin.org/montreal2015/presentations/Day1/13-miles-carlsten-Mind-the-Gap.pdf)
+> which worried that as the block subsidy reduced and transactions became a
+> more important fraction of miner revenue, it would be rational for miners to
+> turn off their mining equipment for a "gap" phase after a block is found, to
+> allow time to pass as more lucrative transactions entered the mempool.
+>
+> I don't know whether this will actually happen. The presence of a suitable
+> backlog of transactions would help prevent this dynamic from emerging. But
+> if such idling behavior was the optima mining strategy, it could create a
+> serious vulnerability. Idle hands are the devil's workshop as the saying
+> goes, and idle miners represent a pool of inert hashpower that is available
+> to rent for all kinds of destabilizing purposes. It would be better to put
+> those miners to profitable work mining a sync flag while they wait.
+>
+> Also, this creates a more efficient price discovery mechanism for
+> transactions, because you allow transactions paying high fees time to arrive
+> to the marketplace, rather than take whatever anyone is offering because all
+> the "good" transactions got gobbled up in the prior block.
+>
+> **Can be easily done with a soft fork**
+>
+> Although a hard fork would be more efficient, sync flags could be easily
+> implemented using a soft fork by introducing the following rule:
+>
+> Every block must include a transaction which pays 25% of the block reward to
+> the address given by the 10th previous sync flag, and commits to the hash of
+> the 1st previous sync flag.
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
