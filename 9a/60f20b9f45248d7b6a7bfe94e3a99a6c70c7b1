@@ -1,0 +1,62 @@
+From: truthcoin@gmail.com (Paul Sztorc)
+Date: Sat, 30 Jul 2016 19:18:36 -0400
+Subject: [bitcoin-dev] Holdup on Block Alerts / Fraud Proofs ?
+Message-ID: <1f12e7bd-72d0-3cd9-735c-10689cff29f3@gmail.com>
+
+Dear list,
+
+As we know, it would be desirable for Alice, running an SPV client, to tip (say $5) anyone who can prove to her that a given block has invalid content.
+
+If no one takes these tips, then this is weak evidence that the entire block is valid. Alice gets validation, full nodes can get paid...this idea goes back to Satoshi's whitepaper.
+
+In my view, "alerts" are relatively straightforward: a new OP CODE (details below) st. the txn only succeeds if it references invalid block content on a "pretender block".
+
+However, my background reading seems to reveal that "fraud proofs" (as they are now called) require some kind of tremendous engineering overhaul. Can anyone point me to these large problem(s)?
+
+Regards,
+Paul Sztorc
+
+
+------------------------------------
+
+Fraud Proof, Simple (?)
+
+
+1. "OP FraudProof", which:
+	1. Contains arguments [a] block number (from Alice), [b] block header, and [c] merkle path from header to an invalid transaction*.
+	2. Checks to see if the provided header _is_ in the position which Alice requested.
+	2. Checks to see if the header _is_ valid (ie, has sufficient work).
+	3. Checks to see if the merkle path _does_ lead from the header to "something invalid"*.
+
+2. This OP Code can then be used in a transaction of the form:
+	Inputs:
+		1 from Alice
+		0.2 from X**
+	Output:
+		1.2 to Alice, timelocked
+		(or)
+		1.2 to X, OP FraudProof .
+
+
+3. Alice could sign this txn and circulate it, waiting for "X" to add the second signature. 
+
+"Eric", for example, might sign. As soon as Alice get's Eric's signature, she [1] assumes the block *is* invalid, and [2] stops offering to buy FraudProofs on it.
+
+If Eric does not deliver the fraud proof, Alice gets her money back + 0.2 BTC from Eric (for wasting her time). Alice can't lose -- she either buys a fraud proof for 1, or she gets a free 0.2.
+
+Eric can't lose either. Either he doesn't sign (and nothing happens), or he places himself in a position to trade a FraudProof for 1 BTC.
+
+- FraudProof can use "OP Equal" to request fraud for a certain block.
+- This can all happen through the lightning network.
+
+* "invalid transaction" is defined either [1] as a script which fails, or [2] a double-spend (headers/paths to 2 txns spending the same input). This definition does not catch bad coinbase transactions, but this doesn't concern me. Those outputs aren't spendable for 100 blocks, and anyway, SPV clients could be programmed to never accept them (it would be annoying, but possible).
+
+** For simplicity, I assume that "FraudProof sellers" will pre-identify themselves (and their unspent outputs, etc, by making them "watching only" or whatever).
+
+---
+
+Now, I wouldn't describe this as a "weekend project", but I wouldn't describe it as an "engineering overhaul" either. Just a new OP Code, and code to create / scan for these "Alert Transactions". So, if the idea is 5+ years old, what's the hold up?
+
+I've also heard that segwit will help, but don't understand why.
+
+
