@@ -1,0 +1,417 @@
+From: tomz@freedommail.ch (Tom)
+Date: Mon, 01 Aug 2016 11:30:22 +0200
+Subject: [bitcoin-dev] Introducing Flexible Transactions.
+Message-ID: <1543956.nUE2O3xsdf@garp>
+
+I've been asked one question quite regularly and recently with more force.
+The question is about Segregated Witness and specifically what a hard
+fork based version would look like.
+
+
+This is available online at my blog;
+  http://zander.github.io/posts/Flexible_Transactions/
+
+But I'll publish the actual text here as well, hoping to hear from others in 
+the Bitcoin industry what they think about this approach.
+
+
+
+
+Segregated Witness (or SegWit for short) is complex. It tries to solve
+quite a lot of completely different and not related issues and it tries to
+do this in a backwards compatible manner. Not a small feat!
+
+So, what exactly does SegWit try to solve? We can find info of that in the
+[benefits](https://bitcoincore.org/en/2016/01/26/segwit-benefits/) document.
+
+* Malleability Fixes
+* Linear scaling of sighash operations
+* Signing of input values
+* Increased security for multisig via pay-to-script-hash (P2SH)
+* Script versioning
+* Reducing UTXO growth
+* Compact fraud proofs
+
+As mentioned above, SegWit tries to solve these problems in a backwards
+compatible way. This requirement is there only because the authors of
+SegWit set themselves this requirement. They set this because they wished
+to use a softfork to roll out this protocol upgrade.
+**This post is going to attempt to answer the question if that is indeed
+the best way of solving these problems.**
+
+
+Starting with Malleability, the problem is that a transaction between being
+created by the owner of the funds and being mined in a block is possible to
+change in such a way that it still is valid, but the transaction identifier
+(TX-id) has been changed. But before we dive into the deep, lets have some
+general look at the transaction data first.
+
+If we look at a
+[Transaction](http://bitcoinfactswiki.github.io/Transaction) as it is
+today, we notice some issues.
+
+<table>
+<tr><td colspan=2>Version</td><td>4 bytes</td></tr>
+<tr><td colspan=2>Number of inputs</td><td>VarInt (between 1 and 9 
+bytes)</td></tr>
+<tr><td rowspan=5 class=vertical>inputs</td><td>Prev transaction 
+hash</td><td>32 bytes.
+            <font color="red">Stored in reverse</font></td></tr>
+<tr><td>Prev transaction index</td><td>4 bytes</td></tr>
+<tr><td>TX-in script length</td><td><font color=red>Compact-
+int</font></td></tr>
+<tr><td>TX-in script</td><td>This is the witness data</td></tr>
+<tr><td>Sequence-no/<a 
+href="https://github.com/bitcoin/bips/blob/master/bip-0068.mediawiki">CSV</a>
+  </td><td>4 bytes</td></tr>
+<tr><td colspan=2>Number of outputs</td><td>VarInt (between 1 and 9 
+byte)</td></tr>
+<tr><td rowspan=3 class=vertical>outputs</td><td>Value</td><td>Var 
+int</td></tr>
+<tr><td>TX-out script length</td><td><font color=red>Compact-
+int</font></td></tr>
+<tr><td>TX-out script</td><td>bytearray</td></tr>
+<tr><td colspan=2>NLockTime</td><td>4 bytes</td></tr>
+</table>
+</table>
+
+The original transaction format as designed by
+[Satoshi Nakamoto](http://bitcoinfactswiki.github.io/Satoshi_Nakamoto/)
+had a 4 byte version. This design approach is common in the industry and
+the way that this is used is that a new version is defined whenever any
+field in the data structure needs changing.  In Bitcoin we have not done
+this and we are still at version 1.
+
+What Bitcoin has done instead is make small, semi backwards-compatible, 
+changes.
+For instance the [CHECKSEQUENCEVERIFY]
+(http://bitcoinfactswiki.github.io/Script/#Locktime)
+feature repurposes the sequence field as a way to add data
+that would not break old clients.  Incidentally, this specific change
+(described in BIP68)
+is not backwards compatible in the main clients as it depends on a
+transaction version number being greater than 1, they all check for
+Standard transactions and say that only version 1 is standard.
+
+The design of having a version number implies that the designer wanted to
+use hard forks for changes. A new client is required to know how to parse a
+newly designed data structure, this should be obvious. So the idea is to
+change the version number and so older clients would know they can't parse
+this new transaction version. To keep operating, everyone would have to
+upgrade to a client that supports this new transaction version.
+
+Lets look at why we would want to change the version; I marked some items in
+red that are confusing. Most specifically is that numbers are stored in 3
+different, incompatible formats in transactions. Not really great and
+certainly a source of bugs.
+
+Transactions are cryptographically signed by the owner of the coin so
+others can validate that he is actually allowed to move the coins.
+The signature is stored in the `TX-in-script`.  
+Crypto-geeks may have noticed something weird that goes against any
+textbooks knowledge.  What this is is that a digital
+signature has to be placed outside of the thing it signs. This is because
+a digital signature protects against changes. But a signature itself would
+cause this change. So you have to store the signature outside the thing you
+sign.
+
+Bitcoin's creator did something smart with how transactions are actually
+signed so the signature actually doesn't have to be outside the
+transaction. It works. Mostly. But we want it to work flawlessly
+because currently this being too smart causes the dreaded malleability
+issues where people have been known to lose money.
+
+
+## What about SegWit?
+
+SegWit actually solves only one of these items. It moves the signature out
+of the transaction. SegWit doesn't fix any of the other problems in Bitcoin
+transactions, it also doesn't change the version after making the
+transaction's-meaning essentially unable to be understood by old clients.
+
+Old clients will stop being able to check the SegWit type of transaction,
+because the authors of SegWit made it so that SegWit transactions just have
+a sticker of "All-Ok" on the car while moving the real data to the trailer,
+knowing that the old clients will ignore the trailer.
+
+SegWit wants to keep the data-structure of the transaction unchanged and it
+tries to fix the data structure of the transaction.  This causes friction
+as you can't do both at the same time, so there will be a non-ideal
+situation and hacks are to be expected.
+
+The problem, then, is that SegWit introduces more technical debt, a term
+software developers use to say the system-design isn't done and needs
+significant more work.  And the term 'debt' is accurate as over time
+everyone that uses transactions will have to understand the defects to work
+with this properly. Which is quite similar to paying interest.
+
+Using a Soft fork means old clients will stop being able to validate
+transactions, or even parses them fully. But these old clients are
+themselves convinced they are doing full validation.
+
+## Can we improve on that?
+
+I want to suggest a way to **one-time** change the data-structure of the
+transaction so it becomes much more future-proof and fix the issues it
+gained over time as well. Including the malleability issue. It turns out
+that this new data-structure makes all the other issues that SegWit fixes
+quite trivial to fix.
+
+I'm going to propose an upgrade I called;
+
+> **Flexible Transactions**
+
+Last weekend I wrote a little app (sources [here]
+(http://zander.github.io/scaling/transactions))
+that reads a transaction and then writes it out in a new format I've
+designed for Bitcoin. Its based on ideas I've used for some time in other
+projects as well, but this is the first open source version.
+
+The basic idea is to change the transaction to be much more like modern
+systems like JSON, HTML and XML. Its a 'tag' based format and has various
+advantages over the closed binary-blob format.  
+For instance if you add a new field, much like tags in HTML, your old
+browser will just ignore that field making it backwards compatible and
+friendly to future upgrades.
+
+Further advantages;
+
+* Solving the malleability problem becomes trivial.
+* tag based systems allow you to skip writing of unused or default values.
+* Since we are changing things anyway, we can default to use only var-int
+  encoded data instead of having 3 different types in transactions.
+* Adding a new tag later, (for instance ScriptVersion) is easy and doesn't
+  require further changes to the transaction data structure. All old clients
+  can still make sense of all the known data.
+* The actual transaction turns out to be about 3% shorter average (calculated
+  over 200K transactions)
+* Where SegWit adds a huge amount of technical debt, my Flexible
+  Transactions proposal instead amortizes a good chunk of technical debt.
+
+An average **Flexible Transaction** will look like this;
+
+<table>
+<tr><td colspan=2>TxStart (Version)</td><td>0x04</td>
+<td rowspan=5 class="vertical">TX-ID data</td></tr>
+<tr><td rowspan=2 class=vertical>inputs</td><td>TX-ID I try to spent</td><td>1 
++ 32 bytes</td></tr>
+<tr><td>Index in prev TX-ID</td><td>varint</td></tr>
+<tr><td rowspan=2 class=vertical>outputs</td><td>TX-out Value (in 
+Satoshis)</td><td>VarInt</td></tr>
+<tr><td>TX-out script</td><td>bytearray</td></tr>
+<tr><td>inputs</td><td>TX-in-script (Witness data)<td>bytearray</td>
+    <td rowspan=2 class=vertical>WID-data</td></tr>
+<tr><td colspan=2>TxEnd</td><td>0x2C</td></tr>
+</table>
+
+Notice how the not used tags are skipped. The `NLockTime` and the
+`Sequence` were not used, so they are skipped in the transaction.
+
+The Flexible Transaction proposal uses a list of tags. Like JSON; `"Name:"
+"Value"`. Which makes the content very flexible and extensible. Just
+instead of using text, Flexible Transactions use a binary format.
+
+The biggest change here is that the `TX-in-script` (aka the witness data) is
+moved to be at the end of the transaction. When a wallet generates this new
+type of transaction they will append the witness data at the end but the
+transaction ID is calculated by hashing the data that ends before the
+witness data.
+
+The witness data typically contains a public key as well as a signature.
+In the Flexible Transactions proposal the signature is made by signing exactly
+the same set of data as is being hashed to generate the TX-input. Thereby
+solving the malleability issue. If someone would change the transaction, it
+would invalidate the signature.
+
+I took 187000 recent transactions and checked what this change would do to
+the size of a transaction with my test app I linked to above.
+
+* Transactions went from a average size of 1712 bytes to 1660 bytes and a
+  median size of 333 to 318 bytes.
+* Transactions can be pruned (removing of signatures) after they have been
+  confirmed. Then the size goes down to an average of 450 bytes or a median
+  of 101 bytes
+* In contrary to SegWit new transactions get smaller for all clients with this
+  upgrade.
+* Transactions, and blocks, where signatures are removed can expect up to
+  75% reduction in size.
+
+## Broken OP_CHECKSIG scripting instruction
+
+To actually fix the malleability issues at its source we need to fix this
+instruction. But we can't change the original until we decide to make a
+version 2 of the Script language.  
+This change is not really a good trigger to do a version two, and it
+would be madness to do that at the same time as we roll out a new format of
+the transaction itself. (too many changes at the same time is bound to
+cause issues)
+
+This means that in order to make the Flexible Transaction proposal actually
+work we need to use one of the NOP codes unused in Script right now and
+make it do essentially the same as OP_CHECKSIG, but instead of using the
+overly complicated manner of deciding what it will sign, we just define it
+to sign exactly the same area of the transaction that we also use to create
+the TX-ID. (see right most column in the above table)
+
+This new opcode should be relatively easy to code and it becomes really
+easy to clean up the scripting issues we introduce in a future version of
+script.
+
+## So, how does this compare to SegWit.
+
+First of all, introducing a new version of a transaction doesn't mean we
+stop supporting the current version. So all this is perfectly backwards
+compatible because clients can just continue making old style transactions.
+Naturally, with the problems that had, but nobody will end up stuck.
+
+Using a tagged format for a transaction is a one time hard fork to upgrade
+the protocol and allow many more changes to be made with much lower impact
+on the system in the future.  There are parallels to SegWit, it strives for
+the same goals, after-all. But where SegWit tries to adjust a static
+memory-format by re-purposing existing fields, Flexible transactions presents
+a coherent simple design that removes lots of conflicting concepts.
+
+Most importantly, years after Flexible transactions has been introduced we
+can continue to benefit from the tagged system to extend and fix issues we
+find then we haven't thought of today. In the same, consistent, concepts.
+
+We can fit more transactions in the same (block) space similarly to SegWit, 
+the
+signatures (witness part) can be pruned by full nodes without causing any
+security implications in both solutions.  What SegWit doesn't do is
+allowing unused features to not use space. So if a transaction doesn't use
+NLockTime (which is near 100% of them) they will take space in SegWit but
+not in this proposal. Expect your transactions to be smaller and thus lower
+fee!
+
+On size, SegWit proposes to gain 60% space. Which is by removing the
+signatures minus the overhead introduced.  In my tests Flexible
+transactions showed 75% gain.
+
+SegWit also describes changes how data is stored in the block. It creates
+an extra 'branch' in the merkle tree.  The Flexible Transactions proposal
+is in essence solving the same problem as SegWit and the same solution for
+blocks can be applied.  Which means we can have that merkle tree solution
+as well. No change.
+
+
+At the start of the blog I mentioned a list of advantages that the authors
+of SegWit included.  It turns out that those advantages themselves are
+completely not related to each other and they each have a very separate
+solution to their individual problems. The tricky part is that due to the
+requirement of old clients staying forwards-compatible they are forced to
+push them all into the one 'fix'.
+
+Lets go over them individually;
+
+
+### Malleability Fixes
+
+Using this new version of a transaction data-structure solves all forms of
+known malleability.
+
+### Linear scaling of sighash operations
+
+This has been fixed in the BIP109 2MB hardfork quite some months ago.
+
+### Signing of input values
+
+This is included in this proposal.
+
+### Increased security for multisig via pay-to-script-hash (P2SH)
+
+The *Flexible transactions* proposal outlined in this document makes many
+of the additional changes in SegWit really easy to add at a later time.
+This change is one of them.
+
+Bottom line, changing the security with a bigger hash in SegWit is only
+included in SegWit because SegWit didn't solve the transaction versioning
+problem making it trivial to do separately.  
+With flexible transactions this change can now be done at any time in the
+future with minimal impact.
+
+### Script versioning
+
+Notice that this *only* introduces the versioning byte. It doesn't actually
+introduce a new version of script.  
+This is an excellent example where tagged formats shine brighter than a
+static memory format that SegWit uses because adding such a versioning tag
+is much cleaner and much easier and less intrusive to do with
+flexible transactions. Just add a new tag that defaults to version 1 so the
+old transactions not having the tag stay consistent.
+
+Imagine having to include "body background=white" in each and every html
+page because it was not allowed to leave it out. Thats what SegWit does
+right now. Even though it doesn't actually support changing it yet.
+
+### Reducing UTXO growth
+
+I suggest you read this 
+[point](https://bitcoincore.org/en/2016/01/26/segwit-benefits/#reducing-utxo-growth)
+for yourself, its rather interestingly technical and I'm sure many will not
+fully grasp the idea.  The bottom line of that they are claiming the
+UTXO database will avoid growing because SegWit doesn't allow more
+customers to be served.
+
+I don't even know how to respond to such a solution. Its throwing out the
+baby with the bath water.
+
+Database technology has matured immensely over the last 20 years, the
+database is tiny in comparison to what free and open source databases can
+do today. Granted, the UTXO database is slightly unfit for a normal SQL
+database, but telling customers to go elsewhere has never worked out for
+products in the long term.
+
+### Compact fraud proofs
+
+Again, not really included in SegWit, just started as a basis. The exact
+same basis is suggested for flexible transactions, and as such this is
+identical.
+
+### What do we offer that SegWit doesn't offer?
+
+* A transaction becomes extensible. Future modifications are cheap.
+* A transaction gets smaller. Using less features also takes less space.
+* We only use one instead of 3 types of encodings for integers.
+* We remove technical debt and simplify implementations. SegWit does the
+  opposite.
+
+## Conclusions
+
+SegWit has some good ideas and some needed fixes. Stealing all the good
+ideas and improving on them can be done, but require a hard fork. This post
+shows that the advantages are quite significant and certainly worth it.
+
+We introduced a tagged data structure. Conceptually like JSON and XML in
+that it is flexible, but the proposal is a compact and fast binary format.
+Using the Flexible Transaction data format allows many future
+innovations to be done cleanly in a consistent and, at a later stage, a
+more backwards compatible manner than SegWit is able to do, even if given
+much more time. We realize that separating the fundamental issues that
+SegWit tries to fix all in one go, is possible and each becomes much lower
+risk to Bitcoin as a system.
+
+After SegWit has been in the design stage for a year and still we find
+show-stopping issues, delaying the release, I would argue that dropping
+the requirement of staying backwards compatible should be on the table.
+
+The introduction of the *Flexible Transaction* upgrade has big benefits
+because the transaction design becomes extensible.
+A hardfork is done once to allow us to do soft upgrades in the future.
+
+The Flexible transaction solution lowers the amount of changes required in
+the entire ecosystem. Not just for full nodes. Especially considering that
+many tools and wallets use shared libraries between them to actually create
+and parse transactions.
+
+The Flexible Transaction upgrade proposal should be considered by anyone
+that cares about the protocol stability because its risk of failures
+during or after upgrading is several magnitudes lower than SegWit is and
+it removes technical debt that will allow us to innovate better into the
+future.
+
+Flexible transactions are smaller, giving significant savings after pruning
+over SegWit.
+
+
+Thanks
