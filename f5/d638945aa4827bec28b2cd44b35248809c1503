@@ -1,0 +1,158 @@
+From: nicolas.dorier@gmail.com (Nicolas Dorier)
+Date: Mon, 1 Aug 2016 22:21:49 -0700
+Subject: [bitcoin-dev] BIP Number Request: Open Asset
+In-Reply-To: <CAH+Axy5A-_oDoPjabyzzAF8kVq9DsFwonEYPp9EU+Hf_BP1-DA@mail.gmail.com>
+References: <CA+1nnrmZAdzBn-FMBVMGtp4n7bbG8W0VEGvi1WopS-M49zBXpw@mail.gmail.com>
+	<201605260353.06939.luke@dashjr.org>
+	<20160705174636.GA24068@fedora-21-dvm>
+	<201607060122.20593.luke@dashjr.org>
+	<CAH+Axy5A-_oDoPjabyzzAF8kVq9DsFwonEYPp9EU+Hf_BP1-DA@mail.gmail.com>
+Message-ID: <CA+1nnrmsU5kLxuW=GJSmy8C7s6F3EM8sgFYoXDg1iM-eD2qzsg@mail.gmail.com>
+
+Sorry, I completely forgot about having submitted the BIP as I was busy at
+this time.
+Thanks for the review.
+
+Open Asset is actually not an abandoned project and is a protocol already
+used in production with multiple implementation.
+Wallet: https://www.coinprism.com/
+Implementation C#: https://github.com/NicolasDorier/NBitcoin with heavy
+documentation (
+https://programmingblockchain.gitbooks.io/programmingblockchain/content/other_types_of_asset/colored_coins.html
+)
+Implementation Ruby: https://github.com/haw-itn/openassets-ruby/
+Usage stats: http://opreturn.org/
+
+Concerning whether or not we can put my name in the BIP, I'll ask the
+original author that I know personally.
+
+> Quite a bit ugly, giving a meaning to an input's pubkey script like that.
+> But more problematically: how can this work with other pubkey scripts?
+> Particularly relevant now that this old script format is being deprecated.
+> Another possible problem is that I don't see a way to provably guarantee
+an
+> asset issuance is final.
+
+Yes, with open asset it is not possible to do provably limited issuance.
+The scriptPubKey can be anything, not necessarily P2PK.
+If you can spend the scriptPubkey, then you are the issuer.
+
+> And the assets attached to its inputs are destroyed? Or?
+
+Correct, if you spend a colored output incorrectly, it is effectively
+destroyed.
+
+> Is it intentional that the first case is "parsable", and the second
+"valid"?
+> I think these need to be better specified; for example, it is not so
+clear how
+> to reach if the OAP version number is something other than 1: is that
+> parsable? valid?
+
+The terminology is correct we are parsing PUSHDATA, if there is a parsable
+pushdata, the output is considered valid.
+If there is multiple valid output, then we take the first one.
+
+> What determines the asset id? How would one issue and/or transfer multiple
+> asset ids in the same transaction?
+
+You can't issue more than one asset type in a transaction. (as the asset
+issued is defined by the scriptPubKey of the first input)
+For multiple transfer it is possible, imagine a transaction with the
+following 3 inputs and 6 outputs:
+
+Inputs: {0, 10a, 20b}
+Outputs: {5, OP_RETURN; 7; 3; 11; 9)
+
+Inputs1: 0
+Inputs2: Enqueue 10a in the queue ( {10a} )
+Input3: Enqueue 20b in the queue ( { 20b, 10a} )
+
+Output1: Before OP_RETURN, so is issuance whose color is defined by the
+scriptPubKey of Input1. (say c)
+Output2: No color (marker)
+Output3: Dequeue 7a ( {20b, 3a} ), color output with a.
+Output4: Dequeue 3a ( {20b} ), color output with a
+Output5: Dequeue 11b ( {9b} ), color output with b
+Output5: Dequeue 9b ( {0} ), color output with b
+
+Finally, outputs color are
+Outputs: {5c, OP_RETURN; 7a; 3a; 11b; 9b)
+
+> What if I have a transaction with 5 outputs, the marker output at
+position 3,
+> and all 4 other outputs are to receive assets? Does the marker output get
+> skipped in the list (ie, the list is 4 elements long) or must it be set to
+> zero quantity (ie, the list is 5 elements long)?
+
+Marker output is skipped (explained in the example)
+
+> Addresses are not used for spending bitcoins, only for receiving them.
+The way
+> this BIP uses inputs' pubkey script is extremely unusual and probably a
+bad
+> idea.
+
+Actually there is no "issuance address", just the AssetId is defined by the
+scriptPubKey of the issuer.
+
+> As I understand it, this would require address reuse to setup, which is
+not
+> supported behaviour and insecure.
+
+Yes, it requires address reuse for issuing.
+
+> Won't an older client then accidentally destroy assets?
+
+Correct. Actually we prevent users sending asset to wallet which does not
+support OA via another address scheme described in another document (
+https://github.com/OpenAssets/open-assets-protocol/blob/master/address-format.mediawiki
+)
+
+As said, Open Asset is not a draft proposal and is already used in the wild
+since 2014. We can't easily modify the protocol by now for improving it.
+
+PS:
+https://github.com/OpenAssets/open-assets-protocol/blob/master/specification.mediawiki
+is
+more readable than a mail.
+
+Nicolas,
+
+On Tue, Jul 5, 2016 at 7:14 PM, James MacWhyte <macwhyte at gmail.com> wrote:
+
+> I'm curious to hear the answers to the questions Luke asked earlier. I
+> also read through the documentation and wasn't convinced it was thought out
+> well enough to actually build something on top of, but there's no reason it
+> can't get a number as a work-in-progress.
+>
+> I hope it does continue to get worked on, though. The lack of response or
+> discussion worries me that it might become an abandoned project.
+>
+> On Tue, Jul 5, 2016, 18:32 Luke Dashjr via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> On Tuesday, July 05, 2016 5:46:36 PM Peter Todd wrote:
+>> > On Thu, May 26, 2016 at 03:53:04AM +0000, Luke Dashjr via bitcoin-dev
+>> wrote:
+>> > > On Thursday, May 26, 2016 2:50:26 AM Nicolas Dorier via bitcoin-dev
+>> wrote:
+>> > > >   Author: Flavien Charlon <flavien at charlon.net>
+>> >
+>> > What's the status of this BIP? Will it be assigned?
+>>
+>> I was waiting for clarification on the Author thing, but Nicholas hasn't
+>> responded yet. I am unaware of any reason NOT to assign it, and there
+>> appear
+>> to be no objections, so let's call it BIP 160.
+>>
+>> Luke
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160801/7028265d/attachment.html>
