@@ -1,0 +1,249 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 5 Aug 2016 12:54:16 -0700
+Subject: [bitcoin-dev] Progress On Hardfork Proposals Following The Segwit
+ Blocksize Increase
+Message-ID: <20160805195416.GA1015@fedora-21-dvm>
+
+Repost by request from my blog, apologies for the somewhat screwy formatting!
+
+
+---
+layout: post
+title:  "Progress On Hardfork Proposals Following The Segwit Blocksize Increase"
+date:   2016-08-05
+tags:
+- bitcoin
+- hardfork
+- segwit
+---
+
+With segwit getting close to its initial testnet release in Bitcoin Core
+v0.13.0 - expected to be followed soon by a mainnet release in Bitcoin Core
+v0.13.1 - I thought it'd be a good idea to go over work being done on a
+potential hard-fork to follow it, should the Bitcoin community decide to accept
+the segwit proposal.
+
+First of all, to recap, in addition to many other improvements such as fixing
+transaction malleability, fixing the large transaction signature verification
+DoS attack, providing a better way to upgrade the scripting system in the
+future, etc. segwit increases the maximum blocksize to 4MB. However, because
+it's a soft-fork - a backwards compatible change to the protocol - only witness
+(signature) data can take advantage of this blocksize increase; non-witness
+data is still limited to 1MB total per block. With current transaction patterns
+it's expected that blocks post-segwit won't use all 4MB of serialized data
+allowed by the post-segwit maximum blocksize limit.
+
+Secondly, there's two potential upgrades to the Bitcoin protocol that will
+further reduce the amount of witness data most transactions need: [Schnorr
+signatures](https://bitcoinmagazine.com/articles/the-power-of-schnorr-the-signature-algorithm-to-increase-bitcoin-s-scale-and-privacy-1460642496) and [BLS aggregate signatures](http://diyhpl.us/wiki/transcripts/2016-july-bitcoin-developers-miners-meeting/dan-boneh/).
+Basically, both these improvements allow multiple signatures to be combined,
+the former on a per-transaction level, and the latter on a per-block level.
+
+[Last February](https://medium.com/@bitcoinroundtable/bitcoin-roundtable-consensus-266d475a61ff)
+some of the mining community and some of the developer community got together to discuss potential
+hard-forks, with the aim of coming up with a reasonable proposal to take to the
+wider community for further discussion and consensus building. Let's look at
+where that effort has lead.
+
+## Ethereum: Lessons to be learned
+
+But first, Ethereum. Or as some have quipped, the Etherea:
+
+<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr">The Battle for Etherea. <a href="https://t.co/2ATQRQRXnH">https://t.co/2ATQRQRXnH</a></p>&mdash; Samson Mow (@Excellion) <a href="https://twitter.com/Excellion/status/759677608753627136">July 31, 2016</a></blockquote>
+<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+If you've been following the crypto-currency space at all recently, you
+probably know that the Ethereum community has split in two following a very
+controversial hard-fork to the Ethereum protocol, To make a long story short, a
+unintended feature in a smart-contract called "The DAO" was exploited by a
+as-yet-unknown individual to drain around $50 million worth of the Ethereum
+currency from the contract. While "white-hat attackers" did manage to recover a
+majority of the funds in the DAO, a hard-fork was proposed to rewrite the
+Ethereum ledger to recover all funds - an action that many, [including myself](/2016/ethereum-dao-bailout-vote),
+have described as a bailout.
+
+The result has been a big mess. This isn't the place to talk about all the
+drama that's followed in depth, but I think it's fair to say that the Ethereum
+community found out the hard way that just because you give a new protocol the
+same name as an existing protocol, that doesn't force everyone to use it. As of
+writing, what a month ago was called "Ethereum" - Ethereum Classic - has 20% of
+the hashing power as the bailout chain, and peaked only two or three days ago
+at around 30%. As for market cap, while the combined total for the two chains
+is similar to the one chain pre-fork, this is likely misleading: there's
+probably a lot of coins on both chains that aren't actually accessible and
+don't represent liquid assets on the market. Instead, there's a good chance a
+significant amount of value has been lost.
+
+In particular, both chains have suffered significantly from transaction replay
+issues. Basically, due to the way the Ethereum protocol is designed - in
+particular the fact that Ethereum isn't based on a UTXO model - when the
+Ethereum chain split transactions on one chain were very often valid on another
+chain. Both attacks and accidents can lead to transactions from one chain
+ending up broadcast to others, leading to unintentional spends. This wasn't an
+unexpected problem:
+
+<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr">.<a href="https://twitter.com/petertoddbtc">@petertoddbtc</a> we knew it would happen weeks before launch, we didn&#39;t want to implement replay-protection b.c. of implementation complexity</p>&mdash; Vlad Zamfir (@VladZamfir) <a href="https://twitter.com/VladZamfir/status/759552287157133313">July 31, 2016</a></blockquote>
+<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+...and it's lead to costly losses. Among others Coinbase has lost [an unknown amount of
+funds](https://twitter.com/eiaine/status/758560296017416194) that they may [have to buy back](https://twitter.com/brian_armstrong/status/760991445352386560). Even worse, BTC-e [lost pretty much their entire balance](https://www.reddit.com/r/EthereumClassic/comments/4v2d6j/btce_dear_clients_btces_official_standpoint_on/d5v2f3t)
+of original Ethereum coins - apparently becoming insolvent - and instead of
+returning customer funds, they decided to [declare the original Ethereum chain a scam](https://btc-e.com/news/230) instead.
+
+A particularly scary thing about this kind of problem is that it can lead to
+artificial demand for a chain that would otherwise die: for all we know
+Coinbase has been scrambling behind the scenes to buy replacement ether to make
+up for the ether that it lost due to replay issues.
+
+More generally, the fact that the community split shows the difficulty - and
+unpredictability - of achieving consensus, maintaining consensus, and
+measuring consensus. For instance, while the Ethereum community did do a coin
+vote [as I suggested](/2016/ethereum-dao-bailout-vote), turnout was extremely
+low - around 5% - with a significant minority in opposition (and note that
+exchanges' coins were blacklisted from the vote due to technical reasons).
+Additionally, the miner vote also had low turnout, and again, significant
+minority opposition.
+
+With regard to [drama](https://twitter.com/petertoddbtc/status/761506592827125760) resulting
+from a coin split, something I think not many in the technical community had
+considered, is that exchanges can have perverse incentives to encourage it. The
+split resulted in significant trading volume on the pre-fork, status quo,
+Ethereum chain, which of course is very profitable for exchanges. The second
+exchange to list the status-quo chain was Poloniex, who have over 100
+Bitcoin-denominated markets for a very wide variety of niche currencies - their
+business is normally niche currencies that don't necessarily have wide appeal.
+
+Finally, keep in mind that while this has been bad for Ethereum, it'd be even
+worse for Bitcoin: unlike Ethereum, Bitcoin actually has non-trivial usage in
+commerce, by users who aren't necessarily keeping up to date with the latest
+drama^H^H^H^H^H news. We need to proceed carefully with any
+non-backwards-compatible changes if we're to keep those users informed, and
+protect them from sending and receiving coins on chains that they didn't mean
+too.
+
+
+## Splitting Safely
+
+So how can we split safely? Luke Dashjr has written both a
+[BIP](https://github.com/luke-jr/bips/blob/bip-mmhf/bip-mmhf.mediawiki), and
+[preliminary code](https://github.com/luke-jr/bitcoin/compare/bc94b87?luke-jr:hardfork2016)
+to do a combination of a hard-fork, and a soft-fork.
+
+This isn't a new idea, in fact Luke [posted it](https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-February/012377.html)
+to the bitcoin-dev mailing list last February, and it's been known as an option
+for years prior; I personally mentioned it [on this blog](/2016/forced-soft-forks) last January.
+
+The idea is basically that we do a hard-fork - an incompatible rule change - by
+"wrapping" it in a soft-fork so that all nodes are forced to choose one chain
+or the other. The new soft-forked rule-set is simple: no transactions are
+allowed at all. Assuming that a majority of hashing power chooses to adopt the
+fork, nodes that haven't made a decision are essentially 51% attacked and will
+follow an empty chain, unable to make any transactions at all.
+
+For those who choose not to adopt the hard-fork, they need to themselves do a
+hard-fork to continue transacting. This can be as simple as blacklisting the
+block where the two sides diverged, or something more complex like a
+proof-of-work change.
+
+On the plus side, Luke's proposal maximizes safety in many respects: so long as
+a majority of hashing power adopts the fork no-one will accidentally accept
+funds from a chain that they didn't intend too.
+
+
+### Giving Everyone A Voice
+
+It's notable that what Luke calls a "soft-hardfork" has also been called a
+"forced soft-fork" by myself, as well as an "evil fork" by many others - what
+name you give it is a matter of perspective. From a technical point of view,
+the idea is a 51% attack against those who choose not to support the new
+protocol; it's notable that when I pointed this out to some miners they were
+very concerned about the precedent this could set if done badly.
+
+Interestingly, due to implementation details Ethereum hard-fork was similar to
+Luke's suggestion: pre-fork Ethereum clients would generally fail to start due
+to an implementation flaw - in most cases - so everyone was forced to get new
+software. Yet, Ethereum still split into two economically distinct coins.
+
+This shows that attempting to kill an unwanted side of a split chain via 51%
+attack isn't a panacea: people can and will choose to use the chain they want
+to if there's controversy. So we'd be wise to try to achieve broad community
+consensus first.
+
+Interestingly, Tom Harding's [Hard fork opt-out bits](https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-July/012917.html)
+proposal can also be used to measure consent. Basically, as an anti-replay
+mechanism, wallets could begin (un)setting a nSequence bit in transaction
+inputs that a hard-fork would make _invalid_, while simultaneously a soft-fork
+would make (un)setting a different bit invalid already; the hard-fork would
+make that second bit _valid_ (users of nLockTime would (un)set neither bit,
+making their transactions valid on both chains). This allows us to easily
+measure readiness for a fork by looking at what percentage of transactions are
+setting the anti-replay bit correctly - a sign that their running software that
+is ready for a future hard-fork.
+
+Secondly, I've been working on coming up with more concrete mechanisms based on
+signaling/voting proportional to coins held, in particular, out-of-band
+mechanisms based on signed messages and probabilistic sampling that could
+potentially offer better privacy and censorship resistance, and give "hodlers"
+who aren't necessarily doing frequent transactions a voice as well. My recent
+work on [making TXO commitments more practical](/2016/delayed-txo-commitments)
+is part of that effort.
+
+
+### UTXO Size
+
+Segwit's witness-data-discount has the important effect of discouraging the
+creation of new UTXOs, in favor of spending existing ones, hopefully resulting
+in [reduced UTXO set growth](https://bitcoincore.org/en/2016/01/26/segwit-benefits/#reducing-utxo-growth).
+As a full copy of the UTXO set is (currently) a mandatory requirement for
+running a full node, even with pruning, it's important that we keep UTXO growth
+rates sustainable.
+
+Matt Corallo has been doing work on finding better ways to properly account for
+the cost to the network as a whole of UTXO creation, and he has told me he'll
+be publishing that work soon. In addition, I've been working on a longer-term
+solution in the form of [TXO commitments](/2016/delayed-txo-commitments), which
+hopefully can eliminate the problem entirely, by allowing UTXO's to be
+archived, shifting the burden of storing them to wallets rather than all
+Bitcoin nodes. Additionally, Bram Cohen has been [working on](https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-June/012758.html)
+making the necessary data structures for TXO commitments faster in of
+themselves by optimizing cache access patterns.
+
+
+### Block Propagation Latency
+
+A significant concern with any blocksize increase - including segwit - is that
+the higher bandwidth requirements will encourage centralization of hashing
+power due to the disproportionate effect higher latency has on stale rates
+between large and small miners. Matt Corallo has done a significant amount of
+work recently on mitigating this effect with his [compact blocks](https://bitcoincore.org/en/2016/06/07/compact-blocks-faq/) - to be
+released in v0.13.0 - and his next-gen block relay network
+[FIBRE](http://bluematt.bitcoin.ninja/2016/07/07/relay-networks/).
+
+Additionally, I've been [doing research](http://bluematt.bitcoin.ninja/2016/07/07/relay-networks/) to better
+understanding the limitations of these approaches in adversarial,
+semi-adversarial, and "uncaring" scenarios.
+
+
+### Anti-Replay
+
+I mentioned Tom Harding's work, above; I'll also mention that Gregory Maxwell
+proposed a generic - and very robust - solution to anti-replay: have
+transactions commit to a recent but not too recent (older than ~100 blocks or so) block hash.
+While this has some potential downsides in a large reorg - transactions may
+become permanently invalid due to differing block hashes - so long as the block
+hashes committed too aren't too recently the idea does very robustly fix replay
+attacks across chains, in a way that's completely generic no matter how many
+forks happen. For example, a reasonable way to deploy would be to have wallet's
+refuse to make transactions for the first day or two after a hard-fork, and
+then use a post-fork blockhash in all transactions to ensure they can't be
+replayed on an unwanted chain.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160805/6460c660/attachment.sig>
