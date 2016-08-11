@@ -1,0 +1,65 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Thu, 11 Aug 2016 16:13:19 +0100
+Subject: [bitcoin-dev] BIP Number Request: Addresses over Audio
+In-Reply-To: <CAJowKg+0Oz7+Gdfm=NSO9MqOqSYV8Uo=nOMtkx3CBrsemK+BtQ@mail.gmail.com>
+References: <CAL9WuQUUeR3cuUXHxUfBTNJ-+r0iJ-7Z8KRNub0G3NBujnkqcw@mail.gmail.com>
+	<CABqynxJ3uph-4A+Ynq70CLa2kCCspTRsFWpKo_eP1FmVxZqSwQ@mail.gmail.com>
+	<CALd2G5dERuX2n33MGZJ+mtM8WnvtzZcWDFFUfNFZEGJFkkHLDg@mail.gmail.com>
+	<CAL9WuQUt+CMG2bEX+yv3LrFV7qn-=OSdn02ZxxPQci-3_ykPNQ@mail.gmail.com>
+	<CAL9WuQXsbBJ0UwdS+o=UqJCcsebcPa9Ug5A=uNtc6Z+9CNEFPg@mail.gmail.com>
+	<CAAS2fgR-weACn_Ezg8-uZuSH0QT5dfLEFE5WO2VDi0nx8H1e9g@mail.gmail.com>
+	<CAE-z3OXeJHvjyF_phVh2u9S45_xss=C9ykL=BN=n=BxTx+AbrQ@mail.gmail.com>
+	<CAJowKg+yh+PgTE14=+pPUXFdB_AGrsgk3cNSFnTGDYecsxDP5g@mail.gmail.com>
+	<CAFh0iXOLN6B27Fkc=GXo-j3VwA0hkNggCiQOhR35R52yQGwSwg@mail.gmail.com>
+	<CAL9WuQXH8TAKRabPSrZzMzpFBwmujdv-uSXJLeTt9u3H9WAFGw@mail.gmail.com>
+	<CAJowKgK0N9VJZsm4fbZ5VvteUjoQkh9-xhg1yfcD3NRTuFV78Q@mail.gmail.com>
+	<CAPg+sBi6mPviRRKysbuuOFKoYoyTufpUO_rJxJdB-8=7KGurYw@mail.gmail.com>
+	<CAJowKg+0Oz7+Gdfm=NSO9MqOqSYV8Uo=nOMtkx3CBrsemK+BtQ@mail.gmail.com>
+Message-ID: <CAE-z3OU7XgqivsGLXMyd2_cVRE3Kw2FNLGBU261q39=hq9TnEw@mail.gmail.com>
+
+On Thu, Aug 11, 2016 at 2:55 PM, Erik Aronesty via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Sorr, I thought there was some BIP for a public seed such that someone can
+> generate new random addresses, but cannot trivially verify whether an
+> address was derived from the seed.
+>
+
+If you take a public key and multiply it by k, then the recipient can work
+out the private key by multiplying their master private key by k.
+
+If k is random, then the recipient wouldn't be able to work it out, but if
+it is non-random, then everyone else can work it out.  You need some way to
+get k to the recipient without others figuring it out.
+
+This means either the system is interactive or you use a shared secret.
+
+The info about the shared secret is included in the scriptPubKey (or the
+more socially conscientious option, an OP_RETURN).
+
+The address would indicate the master public key.
+
+master_public = master_private * G
+
+The transaction contains k*G.
+
+Both sides can compute the shared secret.
+
+secret = k*master_private*G = master_private*k*G
+
+<encode(k*G)> DROP DUP HASH160 <hash160(encode(secret + pub key))>
+EQUALVERIFY CHECKSIG
+
+This adds 34 bytes to the scriptPubKey.
+
+This is pretty heavy for scanning for transactions sent to you.  You have
+to check every transaction output to see if it is the given template.  Then
+you have to do an ECC multiply to compute the shared secret.  Once you have
+the shared secret, you need to do an ECC addition and a hash to figure out
+if it matches the public key hash in the output.
+
+This is approx one ECC multiply per output and is similar CPU load to what
+you would need to do to actually verify a block.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160811/7ac1043e/attachment.html>
