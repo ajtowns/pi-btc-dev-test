@@ -1,0 +1,235 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Tue, 16 Aug 2016 16:10:04 +0200
+Subject: [bitcoin-dev] Hardware Wallet Standard
+Message-ID: <57B31EBC.1030806@jonasschnelli.ch>
+
+Hi
+
+Unfortunately, there is no standard in how desktop- or mobile-wallets
+can interact with a hardware device resulting in wallet vendors adding
+plugins with proprietary code for non-standardized interfaces.
+
+I started a BIP (extreme draft, feel free to improve language, grammar
+and content) to address this missing part of the ecosystem.
+
+I think it would be extremely helpful if @ledger, @trezor,
+@voisin/@breadwallet, @electrum, @bitpay (and more?!) would help working
+on a such standard.
+
+The BIP describes two approaches how to communicate (pipe and
+URI-scheme) with the signing-devices app, although, in my opinion, all
+major platform do support the URI approach (maybe we could drop the pipe
+approach then).
+The URI approach means that there is no need to configure the
+application location in order to start a inter-process(-app) communication.
+
+Mediawiki:
+https://github.com/jonasschnelli/bips/blob/8abb51f0b21b6664388f6e88f6fd642c90d25dca/bip-undef-0.mediawiki
+
+</jonas>
+
+
+---- BIP (rough early stage draft)
+
+<pre>
+  BIP: ???
+  Title: Detached Signing
+  Author: Jonas Schnelli <dev at jonasschnelli.ch>
+  Status: Draft (early stage!)
+  Type: Standards Track
+  Created: 2016-08-02
+</pre>
+
+== Abstract ==
+
+This BIP describes a way how wallet applications can decouple sensitive
+privatekeys from the internal keychain and interact with a
+signing-devices (hardware wallet, "cold" storage) over a generic
+interface in order to get signatures.
+
+== Motivation ==
+
+It seems like that the current approach for allowing signing-devices to
+interact with third party wallets is to build a plugin [1][2][3]. Adding
+plugins for each hardware wallet type will increase possible security
+issues and result in multiple proprietary-third-party code within the
+wallet application with very similar structures.
+
+A generic interface how wallets can interact with signing-devices would
+result in better user experience, less critical code and simpler
+adaption for various signing-devices.
+
+== Specification ==
+
+In order to support desktop- and smartphone-wallet-applications, this
+BIP describes two slightly different approaches (process pipe and URI
+call) in how to interact with the signing-devices. If possible, the
+modern URI approach should be chosen.
+
+=== Signing-Device-Controller-Application ===
+
+To allow a generic interface while still allowing different ways how to
+internally communicate with the signing device itself (USB, TCP/IP,
+air-gapped Qr-Code scanning, etc.) a controller-application is required.
+
+=== General signing process ===
+
+The wallets signing process must be according the following principal:
+* Wallet prepares signing-request-object including bitcoin-transaction
+or message together with metadata (scriptPubKey, hd-keypath of the inputs)
+* Wallet passes signing-request-object to the
+signing-device-controller-application
+* Signing-device-controller-application processes
+signing-request-object, eventually shows UI, user can sign or cancel
+* Signing-device-controller-application sends back
+signing-response-object with signatures or an error
+* Wallet processes signing-response-object and completes data-object
+creating process (example: add signatures to transaction and broadcast)
+
+=== Desktop Process Intercommunication ===
+
+Desktop wallets can interact with a signing device over process
+intercommunication (pipe) together with a
+signing-device-controller-application.
+As specified below, the signing-request-object is a URI string passed
+through the pipe. The desktop wallet needs to wait (with a recommended
+timeout between 1 and 5 minutes) until the signing-response-object will
+be sent back by the signing-device-controller-application.
+
+=== Smartphone/URI App Intercommunication ===
+
+Smartphones and modern operating systems are trying to sandbox
+applications and interprocess communication (on pipe level) is mostly
+disallowed.
+On smartphones, we must use URI-schemes.
+The wallet can pass information to the
+signing-device-controller-application by using a predefined URI scheme.
+
+<code>detatchedsigning://<command>?<querystring>&returnurischeme=<returnurischeme://></code>
+
+The <code>querystring</code> must be URI encoded.
+RFC 2616 does not specify a maximum length of URIs (get request). Most
+modern smartphone operating system allow URIs up to serval megabytes.
+Signing complex data-structure is therefore possible.
+
+The <code>returnurischeme</code> must contain a URI schema where the
+result of the signing process should be returned to.
+The returnurischeme must be populated and "opened" once the signing
+process has been completed (or cancled).
+
+=== Signing Request ===
+
+The signing request is a flexible URI-Query-String that will be used by
+the Signing-device-controller-application for user confirmation as well
+as for creating the signature.
+
+The URI-query-string must conform to the following format:
+
+<code>detatchedsigning://sign?type=<bitcoin-p2pkh|bitcoin-p2sh|bitcoin-msg>&data=<raw-transaction|message>&inputscripts=<scriptPubKey-input0>,<scriptPubKey-input1>,...&inputhdkeypath=<hdkeypath0>,<hdkeypath1>,...&returnscheme=<returnurischeme></code>
+
+type = type of the data to sign
+data = raw unsigned bitcoin transaction or text-message
+(optional)inputscripts = scriptPubKey(s) of the inputs in exact order
+(optional)inputhdkeypath = hd-keypath of the inputs in exact order
+(optional)returnscheme = a URI scheme where the response must be sent to
+(smartphone approach)
+
+* inputhdkeypath or inputscripts must be provided.
+
+=== Signing Response ===
+
+The signing response is a flexible URI-Query-String that will be sent
+back to the wallet application and must contain the signatures or an
+error code.
+The URI-query-string can be opened (smartphone approach) or will be sent
+back though the interprocess pipe.
+
+<code><returnurischeme>://signresponse?errorcode=<errorcode>&signatures=<signature-input0>,<signature-input0>,...</code>
+
+In case of ECDSA, the returned signatures must be normalized compact
+signatures with the size of 64bytes (128 hex chars).
+
+==== Possible error code ====
+
+0 = no error
+1 = user canceled
+2 = timeout
+10 = missing key identifier (missing HD keypath or input scriptpubkey)
+11 = unsupported signing type
+12 = could not resolve script
+50 = unknown internal error
+
+
+==== Examples ====
+
+===== Simple p2pkh transaction =====
+Unsigned raw transaction:
+<code>0100000001fd3cd19d0fb7dbb5bff148e6d3e18bc42cc49a76ed2bfd7d760ad1d7907fd9ce0100000000ffffffff0100e1f505000000001976a9149062e542a78d4fe00dcf7cca89c24a8013c381a388ac00000000</code>
+(input ced97f90d7d10a767dfd2bed769ac42cc48be1d3e648f1bfb5dbb70f9dd13cfd
+vout:1, output: P2PKH mtgQ54Uf3iRTc9kq18rw9SJznngvF5ryZn 1 BTC)
+
+signing-request URI must be:
+<code>detatchedsigning://sign?type=bitcoin-p2pkh&data=0100000001fd3cd19d0fb7dbb5bff148e6d3e18bc42cc49a76ed2bfd7d760ad1d7907fd9ce0100000000ffffffff0100e1f505000000001976a9149062e542a78d4fe00dcf7cca89c24a8013c381a388ac00000000&inputscripts=76a914531148ad17fdbffd4bac72d43deea6c7cf0387d088ac&inputhdkeypath=m/0'/0'/1&returnscheme=myapp</code>
+The <code>inputhdkeypath</code> is optional in this case
+
+signing-response URI must be:
+<code>detatchedsigning://signresponse?error=0&signatures=<128hex-chars></code>
+
+===== Simple a bitcoin message =====
+Message: <code>Lorem ipsum dolor sit amet</code>
+
+signing-request URI must be:
+<code>detatchedsigning://sign?type=bitcoinmsg&data=Lorem+ipsum+dolor+sit+amet&inputhdkeypath=m/0'/0'/2</code>
+
+signing-response URI must be:
+<code>detatchedsigning://signresponse?error=0&signatures=<128hex-chars></code>
+
+=== Support for multiple signing-devices ===
+Must operating systems allow only one registered application per
+URI-scheme. To support multiple signing-devices, wallets and
+signing-devices can optional add support for brand based URI-schemes.
+
+In addition to the standard URI scheme,
+signing-devices-controller-applications can register an additional URI
+scheme (with the identical request/response syntax and logic) including
+a brand-identifier.
+
+Registering a brand-identifier based URI scheme without registering the
+default URI scheme is not allowed.
+
+Wallets can detect if a certain brand based URI scheme is supported and
+therefore gives user a selection if multiple signing-devices where
+detected [4][5].
+
+<code>detatchedsigning<brandid>://</code>
+
+Supported brand-identifiers are:
+* trezor
+* ledger
+* keepkey
+* digitalbitbix
+
+== References ==
+[1] https://github.com/spesmilo/electrum/pull/1662
+[2] https://github.com/spesmilo/electrum/pull/1391
+[3] https://github.com/bitpay/copay/pull/3143
+[4]
+https://developer.apple.com/library/ios/documentation/UIKit/Reference/UIApplication_Class/
+[5]
+https://developer.android.com/reference/android/content/pm/PackageManager.html
+== Acknowledgements ==
+
+== Copyright ==
+This work is placed in the public domain.
+
+
+
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 819 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160816/fe4471a9/attachment.sig>
