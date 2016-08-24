@@ -1,0 +1,198 @@
+From: matthew@roberts.pm (Matthew Roberts)
+Date: Thu, 25 Aug 2016 01:37:34 +1000
+Subject: [bitcoin-dev] Capital Efficient Honeypots w/ "Scorched Earth"
+ Doublespending Protection
+In-Reply-To: <20160824014634.GA19905@fedora-21-dvm>
+References: <20160824014634.GA19905@fedora-21-dvm>
+Message-ID: <CAAEDBiEkGtj0HSBVgM1KGfsoLmpwK7QxGCTQE1z7FaCPtG2V6g@mail.gmail.com>
+
+Really nice idea. So its like a smart contract that incentivizes
+publication that a server has been hacked? I also really like how the
+funding has been handled -- with all the coins stored in the same address
+and then each server associated with a unique signature. That way, you
+don't have to split up all the coins among every server and reduce the
+incentive for an attacker yet you can still identify which server was
+hacked.
+
+It would be nice if after the attacker broke into the server that they were
+also incentivized to act on the information as soon as possible (revealing
+early on when the server was compromised.) I suppose you could split up the
+coins into different outputs that could optimally be redeemed by the owner
+at different points in the future -- so they're incentivzed to act lest
+their reward decays even more (this is of course, assuming that the
+monetary reward for this is greater than any possible legal consequences
+for the attacker -- it might not be. Thinking about this some more: it
+would also be somewhat hard to deny that this -wasn't- a honeypot with such
+a complex and unique scheme required for transactions, and I for one
+wouldn't like to reveal that I'd hacked a server if I knew it was all a
+calculated ploy. Don't honeypots rely on subtly?)
+
+What about also proving to an attacker that by breaking into a server they
+would be guaranteed a reward? I know that the use-case for this is proof of
+compromise so incentivizing a security audit would kind of fall more into
+an active invitation to audit but couldn't you also make a cryptocurrency
+that allowed coins to be moved based on a service banner existing at a
+given IP address? Attackers could then break into the server, setup a
+service that broadcasts their public key hash, and then spend coins locked
+at this special contract address to that pub key hash which miners would
+check on redemption (putting aside malicious use-cases for now.)
+
+
+On Wed, Aug 24, 2016 at 11:46 AM, Peter Todd via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Bitcoin-based honeypots incentivise intruders into revealing the fact they
+> have
+> broken into a server by allowing them to claim a reward based on secret
+> information obtained during the intrusion. Spending a bitcoin can only be
+> done
+> by publishing data to a public place - the Bitcoin blockchain - allowing
+> detection of the intrusion.
+>
+> The simplest way to achieve this is with one private key per server, with
+> each
+> server associated with one transaction output spendable by that key.
+> However
+> this isn't capital efficient if you have multiple servers to protect: if we
+> have N servers and P bitcoins that we can afford to lose in the
+> compromise, one
+> key per server gives the intruder only N/P incentive.
+>
+> Previously Piete Wuille proposed(1) tree signatures for honeypots, with a
+> single txout protected by a 1-N tree of keys, with each server assigned a
+> specific key. Unfortunately though, tree signatures aren't yet implemented
+> in
+> the Bitcoin protocol.
+>
+> However with a 2-of-2 multisig and the SIGHASH_SINGLE feature we can
+> implement
+> this functionality with the existing Bitcoin protocol using the following
+> script:
+>
+>     2 <honeypot-pubkey> <distriminator-pubkey> 2 CHECKMULTISIG
+>
+> The honeypot secret key is shared among all N servers, and left on them.
+> The
+> distriminator secret key meanwhile is kept secret, however for each server
+> a
+> unique signature is created with SIGHASH_SINGLE, paying a token amount to a
+> notification address. For each individual server a pre-signed signature
+> created
+> with the distriminator secret key is then left on the associated server
+> along
+> with the honeypot secret key.
+>
+> Recall the SIGHASH_SINGLE flag means that the signature only signs a single
+> transaction input and transaction output; the transaction is allowed to
+> have
+> additional inputs and outputs added. This allows the thief to use the
+> honeypot
+> key to construct a claim transaction with an additional output added that
+> pays
+> an address that they own with the rest of the funds.
+>
+> Equally, we could also use SIGHASH_NONE, with the per-server discriminator
+> being the K value used in the pre-signed transaction.
+>
+> Note that Jeff Coleman deserves credit as co-inventor of all the above.
+>
+>
+> Censorship Resistance
+> =====================
+>
+> A potential disadvantage of using non-standard SIGHASH flags is that the
+> transactions involved are somewhat unusual, and may be flagged by
+> risk analysis at exchanges and the like, a threat to the fungibility of the
+> reward.
+>
+> We can improve on the above concept from Todd/Coleman by using a pre-signed
+> standard transaction instead. The pre-signed transaction spends the
+> honeypot
+> txout to two addresses, a per-server canary address, and a change address.
+> The
+> private key associated with the change addres is also left on the server,
+> and
+> the intruder can then spend that change output to finally collect their
+> reward.
+>
+> To any external observer the result looks like two normal transactions
+> created
+> in the process of someone with a standard wallet sending a small amount of
+> funds to an address, followed by sending a larger amount.
+>
+>
+> Doublespending
+> ==============
+>
+> A subtlety in the the two transactions concept is that the intruder doesn't
+> have the necessary private keys to modify the first transaction, which
+> means
+> that the honeypot owner can respond to the compromise by doublespending
+> that
+> transaction, potentially recovering the honeypot while still learning
+> about the
+> compromise. While this is possible with all honeypots, if the first
+> transaction
+> is signed with the opt-in RBF flags, and CPFP-aware transaction
+> replacement is
+> not implemented by miners, the mechanics are particularly disadvantageous
+> to
+> the intruder, as the honeypot owner only needs to increase the first
+> transaction's fee slightly to have a high chance of recovering their funds.
+> With CPFP-aware transaction replacement the intruder could in-turn respond
+> with
+> a high-fee CPFP second transaction, but currently no such implementation is
+> known.
+>
+>
+> Scorched Earth
+> ==============
+>
+> We can use the "scorched earth" concept to improve the credibility of the
+> honeypot reward by making it costly for the honeypot owner to doublespend.
+> Here
+> a second version of the honeypot pre-signed transaction would also be
+> provided
+> which sepnds the entirety of the honeypot output to fees, and additionally
+> spends a second output to fees. An economically rational intruder will
+> publish
+> the first version, which maximizes the funds they get out of the honeypot.
+> If
+> the owner tries to dishonestly doublespend, they can respond by publishing
+> the
+> "scorched earth" transaction, encouraging the honeypot owner's honesty and
+> making CPFP-aware transaction replacement irrelevant.
+>
+> Of course, miner centralization adds complexity to the above: in many
+> instances
+> honeypot owners and/or intruders will be able to recover funds from
+> altruistic
+> miners. Equally, the additional complexity may discourage intruders from
+> making
+> use of the honeypot entirely.
+>
+> Note that as an implementation consideration CHECKSEQUENCEVERIFY can be
+> used to
+> ensure the honeypot output can only be spent with transaction replacement
+> enabled, as CSV requires nSequence to be set in specific ways in any
+> transation
+> spending the output.
+>
+>
+> References
+> ==========
+>
+> 1) https://blockstream.com/2015/08/24/treesignatures/
+>
+> --
+> https://petertodd.org 'peter'[:-1]@petertodd.org
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160825/9d41f9d8/attachment.html>
