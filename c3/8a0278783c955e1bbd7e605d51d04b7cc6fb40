@@ -1,0 +1,102 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Wed, 31 Aug 2016 16:29:53 +0200
+Subject: [bitcoin-dev] BIP 151
+In-Reply-To: <0932A659-6BE0-441F-AD05-ED846BBE7C80@voskuil.org>
+References: <87h9cecad5.fsf@rustcorp.com.au>
+	<1E86A00F-0609-4DBC-9543-94AE04CC13C9@voskuil.org>
+	<577234A4.3030808@jonasschnelli.ch>
+	<CAAS2fgQFqHBdbym4GMAV-mdcEWR1SdGc3av0mDu65keKP9Ak6g@mail.gmail.com>
+	<AB9C1C8F-7369-42CC-8551-7E03B16D5229@voskuil.org>
+	<CAAS2fgT4V72vj17qTLu7pz5EQ60bqnggeDnTP5ASdwYxpuNpWw@mail.gmail.com>
+	<CB6D8DF2-3EB7-4A12-8861-494D1DBC3D93@voskuil.org>
+	<CAPg+sBigr0BZBiuW9DYpxJ3ytZ4g30k_9B+Eb8QhQv2dC9qQUA@mail.gmail.com>
+	<0932A659-6BE0-441F-AD05-ED846BBE7C80@voskuil.org>
+Message-ID: <CAPg+sBhZaSkRc9yDKHYPjq3oD_bXZ1GsBgzgqOV_Dcd-LZY3BA@mail.gmail.com>
+
+Hello Eric,
+
+I felt like I still owed you a response to the points below.
+
+On Thu, Jun 30, 2016 at 5:10 PM, Eric Voskuil <eric at voskuil.org> wrote:
+> Pieter, these are in my opinion very reasonable positions. I've made some observations inline.
+>
+>> On Jun 30, 2016, at 3:03 PM, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+>>
+>> On Thu, Jun 30, 2016 at 11:57 AM, Eric Voskuil via bitcoin-dev
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>> The proliferation of node identity is my primary concern - this relates to privacy and the security of the network.
+>>
+>> I think this is a reasonable concern.
+>>
+>> However, node identity is already being used widely, and in a very
+>> inadvisable way:
+>> * Since forever there have been lists of 'good nodes' to pass in
+>> addnode= configuration options.
+>> * Various people run multiple nodes in different geographic locations,
+>> peering with each other.
+>> * Various pieces of infrastructure exist that relies on connecting to
+>> well-behaving nodes (miner relay networks, large players peering
+>> directly with each other, ...)
+>
+> Yes, libbitcoin also provides these options on an IP basis.
+>
+>> * Several lightweight clients support configuring a trusted host to connect to.
+>
+> I explicitly exclude client-server behavior as I believe the proper resolution is to isolate clients from the P2P protocol. Libbitcoin does this already.
+
+I think that's a false dichotomy. There is no reason why the P2P
+network consists of purely servers (full nodes) and clients
+(lightweight nodes). Where does a client fit that is SPV at startup,
+but upgrades in the background to a full node? It seems strange that
+such a client would use a 'client protocol' for initial connections,
+but the P2P protocol for syncing with history, when both come from the
+same peers, and transmit the same kind of information.
+
+What would make sense IMHO is a protocol split between the different
+kinds of transmission:
+1) Historical block download
+2) Block synchronization at the tip
+3) Transaction relay
+...
+
+(1) prefers high bandwidth, has no connectivity concerns, and does not
+care about latency and has no privacy concerns. (2) needs
+partition-resistance, low latency and has also no privacy concerns.
+(3) needs moderate latency, reliability of propagation and privacy.
+
+If there were to be separate protocols for these, I would argue that
+(3) should use opportunistic encryption always to increase transaction
+source privacy, and (2) and (3) need authentication when one of the
+peers is not fully validating.
+
+BIP 150/151 give the tools to construct these.
+
+>> Perhaps you deplore that fact, but I believe it is inevitable that different pieces of the network will make different choices here. You can't prevent people from create connections along preexisting trust lines. That does not mean that the network as a whole relies on first establishing trust everywhere.
+>
+> Of course, the network operates just fine without universal trust. My concern is not that it is required, but that it may grow significantly and will have a tendency to gravitate towards more effective registration mechanisms for what is a "good" peer. Even an informal but pervasive web of trust may make it difficult for untrusted parties to connect.
+
+Maybe, but I'm very unconvinced that that will happen more than how
+today IP and DNS-based "authentication" is used already (in very
+inadvisable ways).
+
+>> And I do think there are advantages.
+>>
+>> BIP 151 on its own gives you opportunistic encryption. You're very right to point out that this does not give you protection from active attackers, and that active attacking is relatively easy through sybil attacks. I still prefer my attacker to actually do that over just listening in on my connection.
+
+> I agree, and I doubt this proposal will have much impact on an advanced persistent threat, or even lesser threats. People should understand that there is both a risk and a limited benefit to this proposal.
+
+I believe the risk is only in misunderstanding what it is good for,
+and there significant benefits to a network that encrypts connections
+by default, as it excludes purely passive attackers.
+
+> I believe you have misinterpreted my comments on distributed anonymous credentials (and the like) as commentary on the construction of BIP151 (and a subsequent auth proposal). As such your observation that it is exaggerated would make sense, but it is not what I intended. Encryption and auth are straightforward. Preventing bad nodes from participating in an anonymous distributed system is not.
+
+Preventing bad nodes from participating is a very hard problem, if not
+impossible. That doesn't mean we can't improve the current situation:
+people are relying on node identity already, and doing so in ways that
+have unclear attack vectors (IP spoofing, DNS poisoning, BGP routing
+attacks). Adding optional and non-discoverable cryptographic
+identities can improve this.
+
+-- 
+Pieter
