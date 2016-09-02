@@ -1,0 +1,57 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 2 Sep 2016 00:40:58 -0400 (EDT)
+Subject: [bitcoin-dev] New BIP: Dealing with dummy stack element malleability
+Message-ID: <1317364559.64256.1472791258452@privateemail.com>
+
+https://github.com/bitcoin/bips/pull/440
+https://github.com/bitcoin/bitcoin/pull/8636
+This document specifies proposed changes to the Bitcoin transaction validity rules to fix the malleability of extra stack element for OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY.
+
+The original plan was to do the LOW_S and NULLDUMMY (BIP146) together with segwit in 0.13.1. However, as we discovered some undocumented behavior in LOW_S, we may want to deploy the LOW_S softfork in a later release. https://github.com/bitcoin/bitcoin/pull/8533#issuecomment-243973512
+
+I will edit the BIP146 later.
+
+  BIP: ?
+  Title: Dealing with dummy stack element malleability
+  Author: Johnson Lau <jl2012 at xbt.hk>
+  Status: Draft
+  Type: Standards Track
+  Created: 2016-09-02
+
+Abstract
+
+This document specifies proposed changes to the Bitcoin transaction validity rules to fix the malleability of extra stack element for OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY.
+
+Motivation
+
+Signature malleability refers to the ability of any relay node on the network to transform the signature in transactions, with no access to the relevant private keys required. For non-segregated witness transactions, signature malleability will change the txid and invalidate any unconfirmed child transactions. Although the txid of segregated witness (BIP141) transactions is not third party malleable, this malleability vector will change the wtxid and may reduce the efficiency of compact block relay (BIP152).
+
+A design flaw in OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY makes them consuming an extra stack element ("dummy element") after signature validation. The dummy element is not inspected in any manner, and could be replaced by any value without invalidating the script. This document specifies a new rule to fix this signature malleability.
+
+Specification
+
+To fix the dummy element malleability, a new consensus rule ("NULLDUMMY") is deployed to require that the dummy element MUST be the empty byte array. Anything else makes the script evaluate to false immediately. The NULLDUMMY rule applies to OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY in pre-segregated scripts, and also pay-to-witness-script-hash scripts described in BIP141.
+
+Deployment
+
+This BIP will be deployed by "version bits" BIP9 using the same parameters for BIP141 and BIP143, with the name "segwit" and using bit 1.
+
+For Bitcoin mainnet, the BIP9 starttime is midnight TBD UTC (Epoch timestamp TBD) and BIP9 timeout is midnight TBD UTC (Epoch timestamp TBD).
+
+For Bitcoin testnet, the BIP9 starttime is midnight 1 May 2016 UTC (Epoch timestamp 1462060800) and BIP9 timeout is midnight 1 May 2017 UTC (Epoch timestamp 1493596800).
+
+Compatibility
+
+The reference client has produced compatible signatures from the beginning, and the NULLDUMMY rule has been enforced as relay policy by the reference client since v0.10.0. There has been no transactions violating the requirement being added to the chain since at least August 2015. In addition, every non-compliant signature can trivially be converted into a compliant one, so there is no loss of functionality by this requirement.
+
+Implementation
+
+An implementation for the reference client is available at https://github.com/bitcoin/bitcoin/pull/8636
+
+Acknowledgements
+
+This document is extracted from the previous BIP62 proposal, which was composed by Pieter Wuille and had input from various people.
+
+Copyright
+
+This document is placed in the public domain.
