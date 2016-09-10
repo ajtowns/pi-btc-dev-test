@@ -1,0 +1,79 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Sat, 10 Sep 2016 17:29:50 +0800
+Subject: [bitcoin-dev] Proposed segwit related consensus and policy rules in
+ Bitcoin Core 0.13.1
+Message-ID: <157136e7ad6.122f8dcad4225.6188604322226919947@xbt.hk>
+
+There are several opening pull requests for segwit related consensus and policy rules. This email summarize and explain the rationale.
+
+As a general warning, people must not assume that a script spendable in pre-segwit system would also be spendable as a segwit script. They share much similarity but there are also notable differences, such as BIP143 and those proposals listed below. In any case, test your segwit system on testnet with the standard rules turned on, and a small amount of money after segwit is activated on mainnet.
+
+*******************
+Script Malleability fixes: Segwit (BIP141) fixes the most nasty malleability in Bitcoin: transaction ID malleability. However, due to the flexibility of scripting system, it is still possible for a relay node to insert arbitrary data to the witness without invalidating the transaction. Although segwit makes such attacks much harmless, this could still be annoying as people may write data to the blockchain at others costs.
+
+NULLDUMMY, MINIMALIF, NULLFAIL are fixing this type of problem. NULLDUMMY has been implemented as a policy for more than a year and a softfork is proposed in the upcoming 0.13.1. MINIMALIF and NULLFAIL are both new policy proposed for 0.13.1, and may become softforks in the future. Script designers must pay attention to these potential softforks to avoid creation of unspendable scripts.
+
+Consensus:
+BIP147 "NULLDUMMY" softfork (for both segwit and pre-segwit scripts)
+PR: https://github.com/bitcoin/bitcoin/pull/8636
+Related discussion: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-September/013096.html
+
+Policy:
+"MINIMALIF" Minimal OP_IF/NOTIF argument (segwit scripts only)
+PR: https://github.com/bitcoin/bitcoin/pull/8526
+Related discussion: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-August/013014.html
+
+Policy:
+"NULLFAIL" Null signature for failed CHECK(MULTI)SIG (for both segwit and pre-segwit scripts)
+PR: https://github.com/bitcoin/bitcoin/pull/8634
+Related discussion: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-September/013098.html
+
+*******************
+
+Policy: Resources limit for P2WSH
+PR: https://github.com/bitcoin/bitcoin/pull/8499
+
+For P2WSH, a policy limit is proposed with witnessScript <= 3600 bytes, witness stack item size <= 80 bytes, and witness stack items <= 100
+
+3600 bytes witnessScript and 100 stack items are adequate for a n-of-100 multisig using 100 OP_CHECKSIG, 99 OP_ADD, and 1 OP_EQUAL. Before segwit, the biggest standard mutlisig is n-of-15 with P2SH.
+
+The max size for ECDSA signature is 73 bytes and nothing (except hashing opcodes) should use more than that with the current scripting language.
+
+This is to prevent abuse of witness space, and reduce the risks of DoS attack with some unknown special and big scripts.
+
+The consensus limits described in BIP141 are not changed, as witnessScript <= 10000 bytes and  witness stack item size <= 520 bytes. (There is also an implied limit for witness stack items of 412, see the inline comments in #8499)
+
+*******************
+
+Policy: Public key must be compressed (segwit only)
+PR: https://github.com/bitcoin/bitcoin/pull/8499
+
+It is proposed that only compressed keys (33 bytes starting with 0x02 or 0x03) are allowed in segwit scripts.
+
+This is a policy only and non-compressed keys are still valid in a block. A softfork based on this may be proposed with further risks and benefits analysis
+
+We can't have such policy or softfork in non-segwit scripts since there are many UTXOs being stored that way. Since segwit is a completely new script system, there is no strong reasons to support non-compressed keys.
+
+Wallet developers must pay attention to this policy and must not assume that existing P2PKH hashes or P2SH scripts are spendable in segwit.
+
+The RPC command addwitnessaddress will refuse to return a segwit address if the given key/multi-sig is unknown or is not compressed.
+
+createwitnessaddress will return an address for whatever scripts given, without checking the validity at all. (even an OP_RETURN is provided, it will still return a P2WSH address). We may need to give a warning, or simply remove this command.
+
+*******************
+
+DoS protection: Banning peers for sending certain types of consensus invalid witness
+PR: https://github.com/bitcoin/bitcoin/pull/8499
+
+Peers sending certain types of invalid witness will be banned before fee and SigOp policy are checked. Those are all based on explicit or implicit consensus rules, and will protect P2WPKH and canonical multisigs against the DoS issues described in #8279. The rest of P2WSH scripts will be covered by #8525 by not storing witness txs in rejection cache.
+
+*******************
+
+DoS protection:  Mandatory softfork flags for segwit txs
+PR: https://github.com/bitcoin/bitcoin/pull/8499
+
+Since all segwit-aware nodes must be aware of all existing softforks, including BIP66, 65, 112, 141, and 143, the verification flags for these BIPs will be mandatory for transactions with non-empty witness.  Wallets relaying witness transactions violating these rules will be banned (even if the violation happens in a non-segwit input).
+
+
+
+
