@@ -1,0 +1,88 @@
+From: nickodell@gmail.com (Nick ODell)
+Date: Sat, 17 Sep 2016 16:34:43 -0600
+Subject: [bitcoin-dev] Simple tx ID malleability fix,
+	opcode proposal: OP_TXHASHVERIFY
+In-Reply-To: <CAH2=CKzcNu-jWPr3AKhpTN_cyGVO67oPCMQx2hUrp=Ax_+wvCw@mail.gmail.com>
+References: <CAH2=CKzsHROCXQHRS25i5O8XUPkbwFMDAFC_CO9MD6RuJajA4g@mail.gmail.com>
+	<715F2390-221E-4646-A7F6-3FB937A08764@mattcorallo.com>
+	<CAH2=CKzcNu-jWPr3AKhpTN_cyGVO67oPCMQx2hUrp=Ax_+wvCw@mail.gmail.com>
+Message-ID: <CANN4kmd2N_iguM1KKWO8dgV_ZhO-qkk4bON6vfNySLdYQQjwGg@mail.gmail.com>
+
+Then you have a new problem. Hash1 must contain Hash2 and the
+transaction, but Hash2 must contain Hash1 and the transaction. A
+circular dependency.
+
+--Nick
+
+On Sat, Sep 17, 2016 at 3:14 PM, Rune K. Svendsen via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> I hadn't thought of that... There is a solution, I think, but it makes the
+> operation less simple.
+>
+> If a transaction contains at least two OP_TXHASHVERIFY-protected inputs,
+> signed without ANYONECANPAY, their signatures would cover the other input's
+> OP_TXHASHVERIFY hash, right?
+>
+>
+>             /Rune
+>
+>
+> On Sat, Sep 17, 2016 at 10:56 PM, Matt Corallo <lf-lists at mattcorallo.com>
+> wrote:
+>>
+>> (removing the list)
+>>
+>> Because the tx hash in your construction is not signed, someone wishing to
+>> maleate a transaction may do so by also updating the hash in the scriptSig.
+>>
+>> Matt
+>>
+>> On September 17, 2016 4:45:17 PM EDT, "Rune K. Svendsen via bitcoin-dev"
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>>
+>>> I would really like to be able to create transactions that are immune to
+>>> transaction ID malleability now, so I have been thinking of the simplest
+>>> solution possible, in order to get a BIP through without too much trouble.
+>>>
+>>> An opcode we could call OP_TXHASHVERIFY could be introduced. It would be
+>>> defined to work only if added to a scriptSig as the very first operation,
+>>> and would abort if the hash of the transaction **with all OP_TXHASHVERIFY
+>>> operations (including stack push) removed** does not match what has been
+>>> pushed on the stack.
+>>>
+>>> So, in order to produce a transaction with one or more inputs protected
+>>> against tx ID malleability, one would:
+>>>
+>>> 1. Calculate tx ID of the tx: TX_HASH
+>>> 2. For each input you wish to protect, add "0x32 $TX_HASH
+>>> OP_TXHASHVERIFY" to the beginning of the scriptSig
+>>>
+>>> When evaluating OP_TXHASHVERIFY, we make a copy of the tx in question,
+>>> and remove the "0x32 <32 bytes> OP_TXHASHVERIFY" sequence from the beginning
+>>> of all scriptSigs (if present), and abort if the tx copy hash does not match
+>>> the top stack item.
+>>>
+>>> This is a very simple solution that only adds 34 bytes per input, and
+>>> when something better becomes available (eg. Segwit), we will stop using
+>>> this. But in the meantime it's very valuable to be able to not worry about
+>>> tx ID malleability.
+>>>
+>>> Please let me know what you think.
+>>>
+>>>
+>>>
+>>>             /Rune
+>>>
+>>> ________________________________
+>>>
+>>> bitcoin-dev mailing list
+>>> bitcoin-dev at lists.linuxfoundation.org
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
