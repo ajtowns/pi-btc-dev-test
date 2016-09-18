@@ -1,0 +1,191 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Sun, 18 Sep 2016 00:20:01 -0400
+Subject: [bitcoin-dev] Interpreting nTime for the purpose of
+	Bitcoin-attested timestamps
+Message-ID: <20160918042001.GA9076@fedora-21-dvm>
+
+As part of my recent work(1) on OpenTimestamps I've been putting some thought
+towards how to interpret the nTime fields in block headers, for the purpose of
+timestamping. I'd like to get some peer review on the following scheme I've
+come up with.
+
+
+# Motivation
+
+We want to use the Bitcoin blockchain to provide evidence (the "attestation")
+that a message M existed prior to some point in time T. Exactly how we do this
+is beyond the scope of this post, but suffice to say we show that some block
+header b cryptographically commits to the message, e.g. via a commitment
+operation path proof, as implemented by OpenTimestamps.
+
+A valid timestamp is simply one where T is a point in time where the message
+did in fact exist. Of course, if a timestamp for time T is valid, all
+subsequent T+d are also valid; such timestamps are simply more conservative
+versions of the same statement.
+
+A naively approach - as is implemented by most (all?) existing Bitcoin
+timestamping schemes - is to assume that the block header's nTime field was
+perfectly accurate, and thus M exists prior to the block's nTime. But that
+doesn't take into account malicious miners, who may backdate their blocks.
+
+
+# Threat Model
+
+We assume miners are divided into two categories:
+
+1) Dishonest Miners --- These miners are actively conspiring to create invalid
+timestamps for time's prior to when the message existed. A dishonest miner will
+set the nTime field in blocks they create to the minimum possible value.
+
+2) Honest Miners --- These miners set nTime in blocks they create to
+approximately the current true time. An honest miner may use techniques such as
+nTime-rolling. Additionally, all honest miners may be simultaneously affected
+by systematic misconfigurations.
+
+
+## nTime Rolling
+
+Prior to BIP113, reducing a block's nTime from the work given by a pool by even
+a second could easily render it invalid, as the pool may have included
+nLockTime'd transactions in the block. Thus hashing software was designed to
+only roll nTime in the forward direction, not reverse, even though rolling
+could be done in the reverse direction, up to the limit of the median-time-past
++ 1.
+
+The Stratum mining protocol doesn't even have a way to tell clients what the
+minimum allowed time is, just a single field, nTime, which is defined as "the
+current time". Thus Stratum hashers will only ever increase nTime, which can
+never result in an invalid timestamp if the original, unrolled, nTime would
+have been a valid timestamp.
+
+The getblocktemplate protocol does support telling hashers the minimum time via
+the mintime field, which Bitcoin Core sets to the median-time-past. Regardless,
+it appears that the pools supporting GBT (Eligius) return a much tighter limit
+on mintime than the median-time-past, just 180 seconds, and as of writing,
+don't actually declare that the ntime field is mutable anyway.
+
+>From an implementation point of view, relying on being able to roll nTime
+backwards is unwise anyway, as the amount you can roll it back may be minimal
+(e.g. if multiple blocks were recently found).
+
+Since all miners have an incentive for time to move forward to keep difficulty
+down it's reasonable to assume that the above observed behavior will continue,
+and nTime rolling in the reverse direction will be a minimal effect; we'll
+assume no miner rolls nTime backwards more than 1 hour.
+
+
+## Systematic Errors
+
+1) Botched daylight savings time changes --- While internal clocks should be
+unaffected by timezone changes, it's plausible that some kind of mistake
+related to daylight savings could result in the time being set incorrectly +- 1
+hour. For example, multiple large miners might manually set their clocks, based
+on an incorrect understanding of what time it was.
+
+2) Broken NTP servers --- It's reasonable to assume that many miners are using
+NTP to set their clocks, and it's plausible that they're using the same NTP
+servers. Of course, a broken NTP server could return any time at all! The
+Bitcoin protocol considers blocks to be valid if nTime is set up to 2 hours in
+the future (from the perspective of the local node) so we'll say instead that
+we expect systematic NTP errors to be corrected with high probability if
+they're more than 2 hours in magnitude - more than that and the Bitcoin network
+is broken in a very visible way anyway.
+
+Thus, we'll assume honest miners always create blocks with nTime greater than
+the true time minus two hours, which accounts for both likely daylight savings
+time misconfigurations, and likely NTP server misconfigurations. Additionally,
+two hours is greater than any expected effects from nTime rolling.
+
+
+# Proposed Algorithm
+
+For a timestamp anchored at a block of height x we'll define the time T it
+represents as:
+
+    T = max(block[i].nTime for i in {x, ..., x + N-1}) + max_offset
+
+In short, T is the maximum nTime out of the N blocks that confirmed the
+timestamp, including first block that actually committed the timestamp;
+max_offset is the maximum nTime offset we expect from a block created by an
+honest miner, discussed above.
+
+The dishonest miners can successfully create an invalid timestamp iff all N
+blocks are found by them; if any block is found by an honest miner, the nTime
+field will be set correctly. Of course T may not be the minimum possible value,
+but the timestamp will be at least valid.
+
+So how big should N be? Let q be the ratio of dishonest miners to total hashing
+power. The probability that all N blocks are found by dishonest miners is q^N,
+and thus the probability P that at least one block is found by an honest miner
+is:
+
+    P = 1 - q^N  =>  N = log(1 - P)/log(q)
+
+If the dishonest miners have q>0.5, the situation is hopeless, as they can
+reject blocks from honest miners entirely; the only limit on them setting nTime
+is the median-time-past rule, which only requires blocks timestamps to
+increment by one second per block (steady state). Thus we'll assume q=0.5, the
+worst possible case where a Bitcoin timestamp can still be meaningful evidence:
+
+    P = 97%      => N = 5
+    P = 99%      => N = 7
+    P = 99.9%    => N = 10
+    P = 99.99%   => N = 14
+    P = 99.999%  => N = 17
+    P = 99.9999% => N = 20
+
+The reliability for the higher N is higher than the actual reliability of
+Bitcoin itself. On the other hand, there's no known instance where miners have
+ever created blocks with nTime's significantly less than true time on a wide
+scale; even in the well-known cases where the Bitcoin network has temporarily
+failed due to forks, timestamps produced during those times would be valid, if
+delayed by a few hours.
+
+Similarly, if we assume a lower q, say a single "rogue" 20% mining pool, we
+get:
+
+    q = 0.20, P = 99.99% => N = 6
+
+Another way to think about the choice of N is to compare its contribution to
+how conservative the timestamp is - T as compared to the true time - to the
+effect of the max-honest-miner-offset we choose earlier. For example, 98% of
+the time at least 6 blocks will be found within 2 hours, which means that if we
+pick N=7, 98% of the time the conservatism added by N will be less than the
+contribution of the max offset.
+
+
+# UI Considerations
+
+One problem with the above algorithm is that it will frequently return
+timestamps in the future, from the perspective of the user. A user who sees a
+message like the following at 2:00 pm, immediately after their timestamp
+confirms, is understandably going to be confused:
+
+   Bitcoin: 99% chance that <f> existed prior to 4:00 pm, Jan 1st 2016
+
+A reasonable approach to this problem might just to refrain from displaying
+timestamps at all until the local time is after the timestamp; the UI could
+describe the timestamp as "Not yet confirmed"
+
+It may also be reasonable to round the timestamp up to the nearest day when
+displaying it. However what timezone to use is a tricky issue; people rarely
+expect to see timezones specified alongside dates.
+
+Of course, in some cases a less conservative approach to interpreting the
+timestamp is reasonable; those users however should be reading and
+understanding the calculations in this post!
+
+
+# References
+
+1) https://petertodd.org/2016/opentimestamps-announcement
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160918/4552f035/attachment-0001.sig>
