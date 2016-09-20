@@ -1,0 +1,92 @@
+From: luke@dashjr.org (Luke Dashjr)
+Date: Tue, 20 Sep 2016 21:31:47 +0000
+Subject: [bitcoin-dev] Requesting BIP assignment; Flexible Transactions.
+In-Reply-To: <7844645.RLYLWYmWtM@garp>
+References: <7844645.RLYLWYmWtM@garp>
+Message-ID: <201609202131.49881.luke@dashjr.org>
+
+On Tuesday, September 20, 2016 5:15:45 PM Tom via bitcoin-dev wrote:
+> As the title suggests, I would like to formally request the assignment of a
+> BIP number for my FT spec.
+
+Please open a pull request on the bitcoin/bips repo after this has been 
+discussed a bit on the ML.
+
+Note that at least a basic backwards compatibility section is required for 
+assignment, especially since this appears to be a hard-fork proposal (if it is 
+meant as a soft-fork, please explain how that would work).
+
+> ==Motivation==
+> 
+> Token based file-formats are not new, systems like XML and HTMl use a
+> similar system to allow future growth and they have been quite successful
+> for decades in part because of this property.
+
+There is already a binary-safe format called EBML. Why not use that as the 
+basis for this BIP?
+
+> Next to that this protocol upgrade will re-order the data-fields which
+> allows us to cleanly fix the malleability issue which means that future
+> technologies like Lightning Network will depend on this BIP being deployed.
+
+Note this won't fix malleability entirely, only third-party malleability (much 
+like segwit). The sender can always modify the transaction with more 
+inputs/outputs.
+
+> |TxEnd         ||  0 ||BoolTrue ||  Required    ||A marker that is the last
+> byte in the txid calculation
+
+The last byte in the txid calculation, or the last byte of the entire 
+transaction?
+
+It seems from the later comments, that it is the end of the transaction as a 
+whole. Yet a separator between the txid and non-txid data would probably be 
+valuable, rather than hard-coding txid to skip signature types (which may be 
+unknown to old nodes, when extended).
+
+> The OP_CHECKSIG is the most well known and, as its name implies, it
+> validates a signature.
+> In the new version of 'script' (version 2) the data that is signed is
+> changed to be equivalent to the transaction-id. This is a massive
+> simplification and also the only change between version 1 and version 2 of
+> script.
+
+This seems to be a major regression. What is the replacement for 
+SIGHASH_SINGLE and SIGHASH_ANYONECANPAY?
+
+When revising OP_CHECKSIG, it would also be nice to add the ability to use 
+*only* a hash of the prevout's scriptPubKey in the input, so that *when* the 
+prevtx is malleated, the spending one remains valid. (This use case is 
+currently not supported.)
+
+> === Serialization order===
+> 
+> The tokens defined above have to be serialized in a certain order for the
+> transaction to be well-formatted.  Not serializing transactions in the
+> order specified would allow multiple interpretations of the data which
+> can't be allowed.
+
+What happens if nodes encounter a different order in a block?
+
+> Notice that the token ScriptVersion is currently not allowed because we
+> don't have any valid value to give it. But if we introduce a new script
+> version it would be placed in the outputs segment.
+
+What happens if I put ScriptVersion=1 here?
+
+> === Script v2 ===
+> 
+> TODO: does check-multisig need its own mention?
+
+Does multisig still require a dummy item on the stack?
+
+> === Block-malleability ===
+> 
+> For this reason the merkle tree is extended to include (append) the hash of
+> the v4 transactions (and those alone) where the hash is taken over a
+> data-blob that is build up from:
+
+How should nodes know where in the merkle-tree the txids end, and the v4hashes 
+begin?
+
+Luke
