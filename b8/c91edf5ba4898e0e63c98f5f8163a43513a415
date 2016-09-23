@@ -1,0 +1,63 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 23 Sep 2016 16:02:23 -0400
+Subject: [bitcoin-dev] BIP draft: OP_CHECKBLOCKATHEIGHT
+In-Reply-To: <CAAS2fgTJ9iPoE6fvMBhFB8ruwy-6aTo4Ka5agK+LHjSqGa2-rw@mail.gmail.com>
+References: <201609230957.03138.luke@dashjr.org>
+	<CAMZUoKnY7s1b75Z_0QCb2hh-Q_hCE4-9dZ9tY58HaUQy6=aCbw@mail.gmail.com>
+	<CAAS2fgQGC695mkyze+mVTZZoQN1mh+1y32u-D6Yv1R7nXWPDcg@mail.gmail.com>
+	<CAAS2fgTJ9iPoE6fvMBhFB8ruwy-6aTo4Ka5agK+LHjSqGa2-rw@mail.gmail.com>
+Message-ID: <20160923200223.GA24227@fedora-21-dvm>
+
+On Fri, Sep 23, 2016 at 06:57:57PM +0000, Gregory Maxwell via bitcoin-dev wrote:
+> On Fri, Sep 23, 2016 at 1:43 PM, Russell O'Connor via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > I believe Bitcoin currently enjoys the property that during an "innocent"
+> > re-org, i.e. a reorg in which no affected transactions are being double
+> > spent, all affected transactions can always eventually get replayed, so long
+> > as the re-org depth is less than 100.
+> 
+> > My concern with this proposed operation is that it would destroy this
+> > property.
+> 
+> The reorg safety impact of this proposal could be eliminated and the
+> mempool handling complexity greatly reduced if the transaction was
+> required to be locktimed at least 100 blocks after the block its
+> referencing.
+
+However, by doing that we'd also make the functionality not all that useful for
+this application; by the time you waited 100 blocks for the tx to be minable,
+the chance of a reorg happening is low enough that I can't imagine many - if
+any - wallets would bother using the opcode in the first place, and would
+instead just rely on the fact that a reorg that deep which resulted in the
+double-spent transaction ending up back in the chain is very unlikely.
+
+Specifically I'm referring to the following scenario:
+
+1) Alice pays Bob with tx1a
+2) tx1a gets N confirmations, where N is some small number of confirmations.
+2) Bob pays Charlie from tx1a's output in tx2a
+3) A reorg eliminates the block that tx1a existed, and a conflicting tx1b is
+   mined instead, making tx1a and tx2a invalid.
+4) Bob pays Charlie again with tx2b, whose inputs do not conflict with tx2a
+5) Another reorg eliminates tx1b, allowing tx1a, tx2a, and tx2b to all be
+   mined.
+6) Charlie has now been paid twice.
+
+Since you need _two_ reorgs for this scenario to be applicable, it's much
+easier to just wait for tx1b to be confirmed suffiently deeply in the chain
+that a reorg undoing it - thus allowing tx1a and tx2a to exist - is
+sufficiently unlikely; 100 blocks is a lot more than  most wallets are going to
+consider "sufficiently unlikely", so the featureu just won't get used (assuming
+wallets even bother to handle this case of course!).
+
+Unfortunately I think this is an inherent catch-22 of the idea.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20160923/db03fdfb/attachment.sig>
