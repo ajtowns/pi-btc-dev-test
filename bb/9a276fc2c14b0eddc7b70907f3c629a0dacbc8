@@ -1,0 +1,311 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 30 Sep 2016 18:57:53 +0800
+Subject: [bitcoin-dev] New BIP: Limiting excessive SignatureHash operation
+Message-ID: <1577abe4a84.e9b9c8da3882.6224549273767153798@xbt.hk>
+
+ A new BIP is proposed to prevent excessive O(n^2) SignatureHash operation.
+
+https://github.com/jl2012/bips/blob/sighash/bip-sighash.mediawiki
+https://github.com/bitcoin/bitcoin/pull/8755 (Tight estimation)
+https://github.com/bitcoin/bitcoin/pull/8756 (Loose estimation)
+
+Two methods of sighash size estimation are proposed, with different tradeoff. The tight estimation is more permissive (disabling less txs) but require disabling of OP_CODESEPARATOR, FindAndDelete, and unusual nHashType. The loose estimation is less permissive (may disable more big and strange txs) but does not depend on further policy/consensus rules. With either type of estimation, normal standard txs (<100kB, P2PK, P2PKH, canonical bare or P2SH multisig) are totally unaffected by this BIP.
+
+  BIP: ?
+  Title: Limiting excessive SignatureHash operation
+  Author: Johnson Lau <jl2012 at xbt.hk>
+  Status: Draft
+  Type: Standards Track
+  Created: 2016-09-21
+
+
+Abstract
+
+This proposal defines a new type of block-level resources limit, with several (optional) script restrictions, to prevent excessive SignatureHash operation.
+
+Introduction
+
+There are 4 ECDSA signature verification codes in the Bitcoin script system: CHECKSIG, CHECKSIGVERIFY, CHECKMULTISIG, CHECKMULTISIGVERIFY (?sigops?). According to the SIGHASH type, a transaction digest (sighash) is generated with a double SHA256 of a serialized subset of the transaction, with a function called SignatureHash, and the signature is verified against this sighash with a given public key. Due to a design weakness, the amount of data hashing in SignatureHash is proportional to the size of the transaction. Therefore, data hashing grows in O(n2) as the number of sigops in a transaction increases. While a 1 MB block would normally take 2 seconds to verify with an average computer in 2015, a 1 MB transaction with 5569 sigops may take 25 seconds to verify. [1][2][3]
+
+BIP143 fixes this problem by introducing a new SignatureHash algorithm in segregated witness transactions. However, it would not be able and is not intended to fix the problem of pre-segregated witness transactions. This document proposes a new type of block-level resources limit to prevent excessive SignatureHash operation. However, the calculation of sighash is a complicated process involving several consensus-critical procedures, including the use of OP_CODESEPARATOR, the FindAndDelete function, and the interpretation of nHashType. A correct limitation should be made based on the effects of these procedures.
+
+Specification
+
+Transaction hashable size
+
+Transaction hashable size (TxHashableSize) is defined as the size of a transaction, which:
+
+is serialized without witness data (BIP144), and
+has scriptSig in all inputs replaced by zero-size script
+TxHashableSize is an estimation of the amount of data hashed with a SIGHASH_ALL. Without counting the size of scriptCode and nHashType, it always underestimates the size. However, the difference is negligible since it grows linearly with the number of sigops.
+int64_t GetTransactionHashableSize(const CTransaction& tx)
+{
+    int64_t size = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION | SERIALIZE_TRANSACTION_NO_WITNESS);
+    for (unsigned int i = 0; i < tx.vin.size(); i++) {
+        int64_t scriptSigSize = tx.vin[i].scriptSig.size();
+        size -= scriptSigSize;
+        // If the scriptSig size is larger than 252, 2 bytes compactSize encoding is deducted.
+        if (scriptSigSize > 252)
+            size -= 2;
+        /*
+         * Theoretically, 4 bytes should be deducted if the scriptSig is larger than 65535 bytes,
+         * and 8 bytes should be deducted if it is larger than 4294967295 bytes.
+         * However, scriptSig larger than 10000 bytes is invalid so it is not needed.
+         */
+    }
+    return size;
+}
+SignatureHash equivalent operation
+
+SignatureHash equivalent operation (SigHashOp) is defined as the maximum possible number of times which a sigop would perform SignatureHash at the TxHashableSize. Depends on whether some extra restrictions in script use are enforced, there are 2 ways to estimate the SigHashOp:
+
+Loose estimation: A loose SigHashOp estimation does not depend on any extra script restrictions. It assumes that SignatureHash is performed not more than once for every ECDSA signature passing to a sigop. It looks for all sigops in a transaction (even in an unexecuted conditional branch), in scriptSig, in scriptPubKey of the outputs being spent, and in redeemScript of P2SH transactions. Each OP_CHECKSIG or CHECKSIGVERIFY is counted as 1 SigHashOp. Each OP_CHECKMULTISIG or CHECKMULTISIGVERIFY is counted as 20 SigHashOp, unless all the following conditions are satisfied:
+
+The OP_CHECKMULTISIG or CHECKMULTISIGVERIFY is immediately preceded by a value push as OP_n (1 ? n ? 16), denoting the number of public keys (n).
+The n opcodes preceding the OP_n must be push type (i.e. 0x00 ? opcode ? 0x60), as the public key(s)
+The opcodes preceding the public key(s) is a OP_m, with 1 ? m ? 16 and m ? n, denoting the number of signatures (m)
+If all these conditions are met, the OP_CHECKMULTISIG or CHECKMULTISIGVERIFY is counted as m SigHashOp.
+SigHashOp of a transaction is the sum of SigHashOp of each of its inputs.
+
+unsigned int CScript::GetSigHashOpCount() const
+{
+    unsigned int n = 0;
+    const_iterator pc = begin();
+    std::vector<opcodetype> pushOpcodes;
+    while (pc < end())
+    {
+        opcodetype opcode;
+        if (!GetOp(pc, opcode))
+            break; // The script is invalid
+        if (opcode == OP_CHECKSIG || opcode == OP_CHECKSIGVERIFY)
+            n++;
+        else if (opcode == OP_CHECKMULTISIG || opcode == OP_CHECKMULTISIGVERIFY) {
+            unsigned int nKey = 0;
+            unsigned int nSig = 0;
+            // We assume a CHECKMULTISIG will hash the transaction for 20 times, unless it is in some canonical form.
+            n += 20;
+            // The number of keys must be k = 1 to 16 denoted by OP_k
+            if (pushOpcodes.size() >= 3 && pushOpcodes.back() >= OP_1 && pushOpcodes.back() <= OP_16) {
+                nKey = DecodeOP_N(pushOpcodes.back());
+                // All the k + 2 opcodes before the CHECKMULTISIG must be push only
+                if (pushOpcodes.size() >= nKey + 2) {
+                    opcodetype nSigCode = pushOpcodes.at(pushOpcodes.size() - nKey - 2);
+                    // The number of signatures must be k = 1 to 16 denoted by OP_k, and not larger than number of keys
+                    if (nSigCode >= OP_1 && nSigCode <= OP_16) {
+                        nSig = DecodeOP_N(nSigCode);
+                        if (nSig <= nKey)
+                            // We use the number of signatures as the SigOpCount of this CHECKMULTISIG
+                            n = n - 20 + nSig;
+                    }
+                }
+            }
+        }
+
+        if (opcode <= OP_16)
+            pushOpcodes.push_back(opcode);
+        else
+            pushOpcodes.clear();
+    }
+    return n;
+}
+Tight estimation: An tight SigHashOp estimation depends on these extra consensus rules for pre-segregated witness scripts:
+
+nHashType is confined to only 6 types: 0x01 for SIGHASH_ALL, 0x02 for SIGHASH_NONE, 0x03 for SIGHASH_SINGLE, 0x81 for SIGHASH_ALL|SIGHASH_ANYONECANPAY, 0x82 for SIGHASH_NONE|SIGHASH_ANYONECANPAY, and 0x83 for SIGHASH_SINGLE|SIGHASH_ANYONECANPAY. A signature with other nHashType is invalid.
+Script with OP_CODESEPARATOR, even in an unexecuted conditional branch, is invalid.
+Script that involves non-zero FindAndDelete results is invalid.
+It also assumes that SignatureHash is performed not more than once in each script for each nHashType.
+SigHashOp is counted in the same way as the loose estimation. However, if the SigHashOp for a script is found to be larger than 3, it is counted as only 3 SigHashOp.[4] The SigHashOp of a transaction is the sum of SigHashOp of each of its inputs.
+
+SigHashOp of the generating transaction is defined to be 0.
+
+SignatureHash size
+
+SignatureHash size (SigHashSize) of a transaction is the product of TxHashableSize and SigHashOp.
+
+SigHashSize of a block is the sum of SigHashSize of all transactions in the block.
+
+Consensus and policy limits for SigHashSize
+
+A new consensus rule is enforced to require that SigHashSize of a block MUST NOT be larger than 500,000,000 (500MB). Consequently, SigHashSize of a valid transaction MUST NOT be larger than 500MB.
+
+A new relay and mempool policy is recommended to reject any unconfirmed transaction that has a SigHashSize to Transaction weight ratio larger than 90. This policy limit is equivalent to 36MB SigHashSize for a 100kB non-segregated witness transaction, or 360MB for a full block of such transactions.
+
+Rationale
+
+Static analysis
+
+This proposal employs a static analysis approach to estimate SigHashSize of transactions and blocks. This allows early rejection of violating transactions and blocks without executing the scripts at all. Despite that the size of scriptCode and nHashType are not considered in the estimation, the difference is negligible comparing with size of the main transaction body, since the overheads grows linearly with the number of sigops, which is mostly restricted by the 80,000 sigop limit (BIP141). [5]
+
+Loose SigHashOp estimation
+
+The loose SigHashOp estimation assumes that SignatureHash is performed not more than once for every ECDSA signature passing to a sigop. This assumption is obviously correct for OP_CHECKSIG and CHECKSIGVERIFY since they would never perform SignatureHash more than once, while no SignatureHash would be performed if they happen in an unexecuted conditional branch, or if the signature is an empty vector. This assumption is also correct for OP_CHECKMULTISIG and CHECKMULTISIGVERIFY with appropriate code refactoring. While a signature may be verified against multiple public keys, the sighash for this signature must remain unchanged across the whole operation and therefore could be reused. Therefore, SigHashOp of a OP_CHECKMULTISIG and CHECKMULTISIGVERIFY is equal to the number of signatures.
+
+Tight SigHashOp estimation with extra script restrictions
+
+The tight SigHashOp estimation is based on more assumptions. It assumes that the scriptCode serialized within SignatureHash is a constant value for all sigops in an transaction input. For this assumption to be true, we must disable any process that may modify the scriptCode, which are OP_CODESEPARATOR and FindAndDelete. Transactions involving OP_CODESEPARATOR and FindAndDelete are extremely rare in the main network, and arguably all of those were performed for testing purpose. Removal of these operations would have next to no functional loss, significantly simply the consensus-critical logic, and reduce the risks of unintentional consensus forks. [6]
+
+The tight SigHashOp estimation also assumes that only 6 nHashType are allowed. This is a relay policy in reference implementation since v0.?, and transactions with violating signatures are extremely rare in the main network. However, at consensus level, SigHashOp could be any value from 0 to 255, and a SIGHASH type could be encoded in multiple ways. For example, there are 116 ways to denote SIGHASH_ALL. Since nHashType is serialized inside SignatureHash, the sighash produced by different nHashType are not the same, even if all of them were SIGHASH_ALL.
+
+With all these extra consensus rules implemented, we could be assured that SignatureHash is performed not more than once in each script for each nHashType, due to the invariability of scriptCode. The 6 nHashType limitation further guarantees that each script, with whatever number of sigops, would never perform SignatureHash for more than approximately 3 times of TxHashableSize (excluding some linearly growing overhead), as shown below:
+
+TxHashableSize could be divided into 3 parts: size of inputs, size of outputs, and size of overhead including nVersion, nLockTime, and maybe some CompactSize encoding. The size of overhead grows linearly with the number of sigops, and is negligible.
+SIGHASH_ALL would hash all inputs and outputs of the transaction.
+SIGHASH_NONE would hash all inputs of the transaction, but no output is hashed.
+SIGHASH_SINGLE would hash all inputs of the transaction. It also hashes the scriptPubKey of output with matching index, and all outputs with lower indexes with empty scriptPubKey. With the famous Gauss summation formula, it could be shown that if a transaction has the same number of inputs and outputs, and all inputs use a SIGHASH_SINGLE, the worst case would be hashing approximately 50% of all outputs of the transaction.
+nHashType with SIGHASH_ANYONECANPAY would hash only one input, which scales linearly and is negligible. Therefore,
+SIGHASH_ALL|SIGHASH_ANYONECANPAY would hash all outputs.
+SIGHASH_NONE|SIGHASH_ANYONECANPAY is negligible.
+SIGHASH_SINGLE|SIGHASH_ANYONECANPAY would hash approximately 50% of all outputs in the worst case.
+By adding up the effects of 6 nHashType, it could be shown that the total amount of data hashed would be equal to 3 times of input size and 3 times of output size. Therefore, in the worst case, a script may perform SignatureHash for up to approximately 3 times of TxHashableSize.
+SigHashSize policy limit
+
+A policy limit for SigHashSize to Transaction weight ratio is recommended as 90, which is equivalent to 36MB SigHashSize for a 100kB non-segregated witness transaction. This limit is chosen based on the concept of normal transaction.
+
+A transaction is normal if each SigHashOp consumes at least 70 bytes of space in scriptSig on average. According to BIP66, the maximum size of an ECDSA signature is 73 bytes, which should consume 74 bytes of scriptSig space including the push opcode. Using the low S value, the maximum signature size becomes 72 bytes. It could be shown that with 99.6% of chance, a randomly generated low S signature would be at least 69 bytes (consuming 70 bytes of space in scriptSig).
+
+In actual use, the scriptSig size associated to a SigHashOp is often much more than 70 bytes. For example, pay-to-public-key-hash transactions and OP_CHECKMULTISIG inside P2SH would consume extra scriptSig space with their public keys. In such cases, more than 100 bytes of scriptSig would be consumed by a SigHashOp.
+
+If a transaction is performing many SigHashOp with disproportionately small scriptSig, very likely it employed some strange scripts, such as using OP_DUP to copy a signature.
+
+The size of scriptSig is important in determining the SigHashSize limit, since it is deducted from the transaction size for the TxHashableSize. Comparing 2 transactions of the same size, the one with more SigHashOp may have smaller SigHashSize due to the smaller TxHashableSize. With the 100kB standard transaction size limit, it could be shown that the maximum SigHashSize happens when there are 714 SigHashOp, consuming at least 714 * 70 = 49.98kB of scriptSig. With the resulting TxHashableSize = 100 - 49.98 = 50.02kB, the SigHashSize is 50.02kB * 714 = 35.7MB, which is just below the recommended policy limit.
+
+Despite the limit is determined based on normal transactions, abnormal transactions may still be accepted as long as they are not too big. For example, if the transaction size is 10kB, a transaction may remain standard with the recommended policy limit even if each SigHashOp is associated with only 7 bytes of scriptSig.
+
+SigHashSize consensus limit
+
+The consensus limit of 500MB SigHashSize per block is based on the policy limit of SigHashSize to Transaction weight ratio. It is set above the policy limit, to make sure that a miner enforcing the policy limit would never produce a block violating the consensus rules. The 500MB limit is compromise between avoiding loss of functionality (as it may disable some very big transactions) and the harm of intentional or unintentional sighash attack initiated by a miner.
+
+Deployment
+
+This is a softfork to be deployed with BIP9.
+
+Backward compatibility
+
+Impact of the recommended policy limit
+
+No matter the loose or the tight SigHashOp estimation is employed, this softfork with recommended policy limit should be completely transparent to users of normal standard transactions, including pay-to-public-key, pay-to-public-key-hash, and P2SH m-of-n OP_CHECKMULTISIG with 1 ? m ? n ? 15. A complete scan up to block 430368 showed that the transaction 7b587808a7f6b135ef91011be9b42fcbb0892da50963822e47a5827ced8653ce was the normal standard transaction with highest SigHashSize to weight ratio. With a ratio of 80.1, it is still well below the policy limit of 90. Should this policy had been deployed since genesis block, all normal standard transactions should still have been accepted.
+
+If the loose estimation had been employed, a few abnormal standard transactions would have been rejected by policy, but were still valid by consensus. This is a full list of the affected transactions:
+
+    bea1c2b87fee95a203c5b5d9f3e5d0f472385c34cb5af02d0560aab973169683
+    24b16a13c972522241b65fbb83d09d4bc02ceb33487f41d1f2f620b047307179
+    53666009e036171b1aee099bc9cd3cb551969a53315410d13ad5390b8b4f3bd0
+    ffc178be118bc2f9eaf016d1c942aec18441a6c5ec17c9d92d1da7962f0479f6
+    2f1654561297114e434c4aea5ca715e4e3f10be0be8c1c9db2b6f68ea76dae09
+    62fc8d091a7c597783981f00b889d72d24ad5e3e224dbe1c2a317aabef89217e
+    d939315b180d3d73b5e316eb57a18f8137a3f5943aef21a811660d25f1080a3f
+    8a6bfaa78828a81147e4848372d491aa4e9048631982a670ad3a61402a4ec327
+    02cc78789cc070125817189ec378daa750355c8b22bbce982ed96aa549facb1f
+    b97a16ae2e8ae2a804ed7965373b42055f811653f4628e4bef999145d4b593bc
+    c51ffaf08188859669571f897f119b6d39ea48a9334212f554bf4927401b71f3
+    324456fe9ec97a380effba0a0205a226e380790b93e7366d39f2a416a44d2a34
+These transactions all used a large number of sigops, and obviously were made for testing purpose. However, they would have gone through if the tight estimation had been used.
+
+Impact of the block-level consensus limit
+
+With the block-level consensus limit of 500MB SigHashSize, transactions with SigHashSize above 500MB would also become invalid. Up to block 430368, 49 transactions would have become invalid with this limit (with either loose or tight estimation):
+
+    Transaction ID                                                       SigHashSize
+    9c667c64fcbb484b44dcce638f69130bbf1a4dd0fbb4423f58ceff92af4219ec	 2,215,084,200
+    9fdbcf0ef9d8d00f66e47917f67cc5d78aec1ac786e2abb8d2facb4e4790aad6	 2,215,076,850
+    5d8875ed1707cfee2221741b3144e575aec4e0d6412eeffe1e0fa07335f61311	 1,271,892,772
+    cb550c9a1c63498f7ecb7bafc6f915318f16bb54069ff6257b4e069b97b367c8	 1,271,892,772
+    14dd70e399f1d88efdb1c1ed799da731e3250d318bfdadc18073092aa7fd02c2	 1,271,892,772
+    a684223716324923178a55737db81383c28f055b844d8196c988c70ee7075a9a	 1,271,892,772
+    bb41a757f405890fb0f5856228e23b715702d714d59bf2b1feb70d8b2b4e3e08	 1,271,820,375
+    5b0a05f12f33d2dc1507e5c18ceea6bb368afc51f00890965efcc3cb4025997d	 1,091,954,040
+    bb75a8d10cfbe88bb6aba7b28be497ea83f41767f4ee26217e311c615ea0132f	 1,025,295,000
+    5e640a7861695fa660343abde52cfe10b5a97dd8fc6ad3c5e4b2b4bb1c8c3dd9	 1,025,295,000
+    dd49dc50b54b4bc1232e4b68cfdd3d349e49d3d7fe817d1041fff6dd583a6eaf	 1,025,230,000
+    3d724f03e8bcc9e2e3ea79ebe4c6cffca86d85e510742cd6d3ac29d420787a34	 1,025,210,000
+    8bcf8e8d8265922956bda9b651d2a0e993072c9dca306f3a132dcdb95c7cee6e	 1,025,210,000
+    54bf51be42ff45cdf8217b07bb233466e18d23fd66483b12449cd9b99c3a0545       995,042,075
+    6bb39576292c69016d0e0c1fe7871640aab12dd95874d67c46cf3424822f8dfd	   988,589,147
+    d38417fcc27d3422fe05f76f6e658202d7fa394d0c9f5b419fef97610c3c49f1	   923,884,836
+    66b614e736c884c1a064f7b0d6a9b0abd97e7bb73ac7e4b1b92b493d558a0711	   902,501,490
+    d985c42bcd704aac88b9152aede1cca9bbb6baee55c8577f84c42d600cfec8e4	   898,372,800
+    e32477636e47e1da5fb49090a3a87a3b8ff637d069a70cd5b41595da225e65b4	   893,548,487
+    bf40393fedc45a1b347957124ef9bb8ae6a44feecee10ef2cc78064fabf8125f	   891,859,369
+    1d93bfe18bc05b13169837b6bc868a92da3c87938531d6f3b58eee4b8822ecbf	   888,420,676
+    79e30d460594694231f163dd79a69808904819e2f39bf3e31b7ddc4baa030a04	   877,542,875
+    4eba5deb2bbf3abf067f524484763287911e8d68fb54fa09e1287cf6cd6d1276	   874,353,609
+    c3f2c2df5388b79949c01d66e83d8bc3b9ccd4f85dbd91465a16fb8e21bf8e1b	   869,060,209
+    446c0a1d563c93285e93f085192340a82c9aef7a543d41a86b65e215794845ef	   833,655,283
+    e0c5e2dc3a39e733cf1bdb1a55bbcb3c2469f283becf2f99a0de771ec48f6278	   802,433,929
+    2e7c454cfc348aa220f53b5ba21a55efa3d36353265f085e34053c4efa575fda	   789,067,716
+    01d23d32bccc04b8ca5a934be16da08ae6a760ccaad2f62dc2f337eee7643517	   785,833,449
+    9f8cc4496cff3216608c2f2177ab360bd2d4f58cae6490d5bc23312cf30e72e0	   775,457,104
+    1e700d8ce85b17d713cad1a8cae932d26740e7c8ab09d2201ddfe9d1acb4706c	   757,230,231
+    9db4e0838c55ef20c5eff271fc3bf09a404fff68f9cdad7df8eae732500b983d	   756,319,396
+    763e13f873afa5f24cd33fc570a178c65e0a79c05c88c147335834fc9e8f837b	   734,988,489
+    b8ba939da1babf863746175b59cbfb3b967354f04db41bd13cb11da58e43d2a8	   732,906,849
+    f62f2c6a16b5da61eaae36d30d43bb8dd8932cd89b40d83623fa185b671c67f9	   723,659,859
+    6e278c0ca05bf8e0317f991dae8a9efa141b5a310a4c18838b4e082e356ef649	   703,394,401
+    e3de81a5817a3c825cf44fbf8185e15d446393615568966a6e3fc22cba609c7d	   697,632,336
+    b5ca68205e6d55e87bd6163b28467da737227c6cbcc91cb9f6dc7b400163a12b	   665,208,049
+    9c972a02db30f9ee91cc02b30733d70d4e2d759b5d3c73b240e5026a8a2640c4	   653,370,601
+    02313ac62ca8f03930cdc5d2e437fabc05aea60a31ace18a39678c90b45d32bd	   622,323,625
+    e245f6c3c6b02dc81ea1b6694735565cc535f603708783be027d0e6a94ac3bd5	   609,926,656
+    1cf52f9ef89fa43bb4f042cbd4f80e9f090061e466cbe14c6b7ba525df0e572e	   607,214,327
+    461308024d89ea4231911df4ef24e65e60af2a9204c8282a6b67f4214c1714e7	   606,137,296
+    fa5a58f787f569f5b8fab9dadb2447161fac45b36fb6c2c0f548ed0209b60663	   589,853,184
+    905df97982a2904d6d1b3dfc272435a24d705f4c7e1fc4052798b9904ad5e597	   546,737,250
+    d85ce71f583095a76fb17b5bb2a1cbf369e2a2867ca38103aa310cbb2aaf2921	   546,737,250
+    1b604a075075197c82d33555ea48ae27e3d2724bc4c3f31650eff79692971fb7	   531,511,200
+    ba31c8833b7417fec9a84536f32fcb52d432acb66d99b9be6f3899686a269b2b	   531,511,200
+    92f217ec13ab309240adc0798804b3418666344a5cbfff73fb7be8192dad5261	   509,443,536
+    22e861ee83c3d23a4823a3786460119425d8183783068f7ec519646592fac8c2	   506,268,969
+Extra consensus rules required by tight SigHashOp estimation
+
+Transactions in the main network, up to block 430368, that would have been affected by the extra consensus rules are listed below:
+
+Transactions with OP_CODESEPARATOR:
+
+    eb3b82c0884e3efa6d8b0be55b4915eb20be124c9766245bcc7f34fdac32bccb
+    055707ce7fea7b9776fdc70413f65ceec413d46344424ab01acd5138767db137
+    6d36bc17e947ce00bb6f12f8e7a56a1585c5a36188ffa2b05e10b4743273a74b
+    bc179baab547b7d7c1d5d8d6f8b0cc6318eaa4b0dd0a093ad6ac7f5a1cb6b3ba
+    4d932e00d5e20e31211136651f1665309a11908e438bb4c30799154d26812491
+    0157f2eec7bf856d66714856182a146998910dc6fa576bec200a9fa8039459e7
+    ddd070541bf2fddaa5e08a9d93126f73211fe15291beb897c762908949420ad9
+    d4a27d10404d87ee0b8a05fb700e55f9f83f80a59ebf87af2fbf87e5c9546177
+    492cdb3c95c1fe0c597d8dc847adb5459d403ea083f4b5e706300d437c84748f
+    b3e977a2c48145255d84e1c82d4ea07522528991d50ead1cf3a783559d9733e3
+Transactions with non-zero FindAndDelete results:
+
+    5df1375ffe61ac35ca178ebb0cab9ea26dedbd0e96005dfcee7e379fa513232f
+    ded7ff51d89a4e1ec48162aee5a96447214d93dfb3837946af2301a28f65dbea
+    307b173ef009b970c1a0dd67166a8ce3e91fc5551b8950d2d17f1fe0eaa07358
+Transactions with abnormal nHashType:
+
+    c99c49da4c38af669dea436d3e73780dfdb6c1ecf9958baa52960e8baee30e73
+    0ad07700151caa994c0bc3087ad79821adf071978b34b8b3f0838582e45ef305
+    7c451f68e15303ab3e28450405cfa70f2c2cc9fa29e92cb2d8ed6ca6edb13645
+    a6c116351836d9cc223321ba4b38d68c8f0db53661f8c2229acabbc269c1b2c8
+    f5efee46ccfa4191ccd9d9f645e2f5d09bbe195f95ef5608e992d6794cd653cd
+    904bda3a7d3e3b8402793334a75fb1ce5a6ff5cf1c2d3bcbd7bd25872d0e8c1e
+    8ac76995ce4ac10dd02aa819e7e6535854a2271e44f908570f71bc418ffe3f02
+    e218970e8f810be99d60aa66262a1d382bc4b1a26a69af07ac47d622885db1a7
+    ba4f9786bb34571bd147448ab3c303ae4228b9c22c89e58cc50e26ff7538bf80
+    38df010716e13254fb5fc16065c1cf62ee2aeaed2fad79973f8a76ba91da36da
+Reference Implementation
+
+Policy only:
+
+https://github.com/bitcoin/bitcoin/pull/8755 (Tight estimation)
+https://github.com/bitcoin/bitcoin/pull/8756 (Loose estimation)
+References
+
+^ CVE-2013-2292
+^ New Bitcoin vulnerability: A transaction that takes at least 3 minutes to verify
+^ The Megatransaction: Why Does It Take 25 Seconds?
+^ It should be noted that since sigops may exist in both scriptSig (non-standard and extremely rare) and scriptPubKey, in theory an input may have up to 6 SigHashOp
+^ Not totally, since it does not count the sigops inside the scriptPubKey of the outputs being spent, while inappropriately counting sigops in scriptPubKey of the current transaction.
+^ https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2014-November/006878.html
+Copyright
+
+This document is placed in the public domain.
+
+
+
+
