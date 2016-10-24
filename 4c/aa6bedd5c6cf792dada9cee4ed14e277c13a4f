@@ -1,0 +1,71 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Tue, 25 Oct 2016 01:37:12 +0800
+Subject: [bitcoin-dev] Drivechain proposal using OP_COUNT_ACKS
+In-Reply-To: <CAKzdR-rsy1m-H4fYFuCim5+YJi_C2kgjxymM8A7_nEuqsZoO+g@mail.gmail.com>
+References: <CAKzdR-rsy1m-H4fYFuCim5+YJi_C2kgjxymM8A7_nEuqsZoO+g@mail.gmail.com>
+Message-ID: <157f7c47e65.afdd12df33806.8370403107286597157@xbt.hk>
+
+Some comments and questions
+
+1. In the BIP you mentioned scriptSig 3 times, but I don't think you are really talking about scriptSig. Especially, segwit has aborted the use of scriptSig to fix malleability. From the context I guess you mean redeemScript (see BIP141)
+
+2. It seems that 51% of miners may steal all money from the peg, right? But I think this is unavoidable for all 2-way-peg proposals. To make it safer you still need notaries.
+
+3. Instead of using a OP_NOPx, I suggest you using an unused code such as 0xba. OP_NOPx should be reserved for some simple "VERIFY"-type codes that does not write to the stack.
+
+4. I don't think you should simply replace "(witversion == 0)" with "((witversion == 0) || (witversion == 1))". There are only 16 available versions. It'd be exhausted very soon if we use a version for every new opcode. As a testing prototype this is fine, but the actual softfork should not waste a witversion this way. We need a better way to coordinate the use of new witness version. BIP114 suggests an additional field in the witness to indicate the script version (https://github.com/bitcoin/bips/blob/master/bip-0114.mediawiki)
+
+5. It seems this is the first BIP in markdown format, not mediawiki (but this is allowed by BIP1)
+
+6. The coinbase space is limited to 100 bytes and is already overloaded by many different purposes. I think any additional consensus critical message should go to a dummy scriptPubKey like the witness commitment. You may consider to  have a new OP_RETURN output like BIP141, with different magic bytes. However, please don't make this output mandatory (cf. witness commitment output is optional if the block does not have witness tx)
+
+6a. "..........due to lack of space to include the proper ack tag in a block": this shouldn't happen if you use a OP_RETURN output
+
+7.  "It can be the case that two different secondary blockchains specify the same transaction candidate, but **at least** one of them will clearly be unauthentic."
+
+8. Question: is an ack-poll valid only for 1 transaction? When the transaction is confirmed, could full nodes prune the corresponding ack-poll data? (I think it has to be prunable after spending because ack-poll data is effectively UTXO data) 
+
+9. No matter how you design a softfork, "Zero risk of invalidating a block" couldn't be true for any softfork. For example, even if a miner does not include any txs with OP_COUNT_ACKS, he may still build on top of blocks with invalid OP_COUNT_ACKS operations.
+
+ ---- On Sun, 02 Oct 2016 23:49:08 +0800 Sergio Demian Lerner via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote ---- 
+ > Since ScalingBitcoin is close, I think this is a good moment to publish our proposal on drivechains. This BIP proposed the drivechain we'd like to use in RSK (a.k.a. Rootstock) two-way pegged blockchain and see it implemented in Bitcoin. Until that happens, we're using a federated approach. 
+ > I'm sure that adding risk-less Bitcoin extensibility through sidechains/drivechains is what we all want, but it's of maximum importance to decide which technology will leads us there.
+ > We hope this work can also be the base of all other new 2-way-pegged blockchains that can take Bitcoin the currency to new niches and test new use cases, but cannot yet be realized because of current limitations/protections.
+ > 
+ > The full BIP plus a reference implementation can be found here:
+ > 
+ > BIP (draft):
+ > https://github.com/rootstock/bips/blob/master/BIP-R10.md
+ > 
+ > Code & Test cases:
+ > https://github.com/rootstock/bitcoin/tree/op-count-acks_devel
+ > (Note: Code is still unaudited)
+ > 
+ > As a summary, OP_COUNT_ACKS is a new segwit-based and soft-forked opcode that counts acks and nacks tags in coinbase fields, and push the resulting totals in the script stack.
+ > 
+ > The system was designed with the following properties in mind:
+ > 
+ > 1. Interoperability with scripting system 
+ > 2. Zero risk of invalidating a block
+ > 3. No additional computation during blockchain management and re-organization
+ > 4. No change in Bitcoin security model
+ > 5. Bounded computation of poll results
+ > 6. Strong protection from DoS attacks
+ > 7. Minimum block space consumption
+ > 8. Zero risk of cross-secondary chain invalidation
+ > 
+ > Please see the BIP draft for a more-detailed explanation on how we achieve these goals.
+ > 
+ > I'll be in ScalingBitcoin in less than a week and I'll be available to discuss the design rationale, improvements, changes and ideas any of you may have.
+ > 
+ > Truly yours, 
+ > Sergio Demian Lerner
+ > Bitcoiner and RSK co-founder
+ >  
+ >  _______________________________________________ 
+ > bitcoin-dev mailing list 
+ > bitcoin-dev at lists.linuxfoundation.org 
+ > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev 
+ > 
+
+
