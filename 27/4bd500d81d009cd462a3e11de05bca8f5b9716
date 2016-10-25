@@ -1,0 +1,53 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Wed, 26 Oct 2016 01:45:20 +0800
+Subject: [bitcoin-dev] Drivechain proposal using OP_COUNT_ACKS
+In-Reply-To: <CAKzdR-pDduY_iLkGJVvux2MkP15T5CSZa6HTTqHPBULYKGNxqA@mail.gmail.com>
+References: <CAKzdR-rsy1m-H4fYFuCim5+YJi_C2kgjxymM8A7_nEuqsZoO+g@mail.gmail.com>
+	<157f7c47e65.afdd12df33806.8370403107286597157@xbt.hk>
+	<CAKzdR-pDduY_iLkGJVvux2MkP15T5CSZa6HTTqHPBULYKGNxqA@mail.gmail.com>
+Message-ID: <157fcf24e9b.cdc5ade3150218.1244531551655145590@xbt.hk>
+
+
+ >  3. Instead of using a OP_NOPx, I suggest you using an unused code such as 0xba. OP_NOPx should be reserved for some simple "VERIFY"-type codes that does not write to the stack.
+ > 
+ > Ok. I'm not sure, but if everyone agrees to it, I will. Also Segwit versioning allows to create new opcode multiplexing opcodes, so I was thinking about adding an "opcode index" to a more generic OP_OPERATE. But that prevents using all NOP space, but prevents easily counting OP_ACK_COUNT for checksig block limit.
+ 
+The other reason not to touch NOPx is they are shared by SIGVERSION_BASE and SIGVERSION_WITNESS_V0. If we later decide to introduce new opcodes to legacy versions, we may still use this space.
+
+And yes, I think you should keep OP_ACT_COUNT easily countable for block sigop limit.
+
+ >  
+ >  4. I don't think you should simply replace "(witversion == 0)" with "((witversion == 0) || (witversion == 1))". There are only 16 available versions. It'd be exhausted very soon if we use a version for every new opcode. As a testing prototype this is fine, but the actual softfork should not waste a witversion this way. We need a better way to coordinate the use of new witness version. BIP114 suggests an additional field in the witness to indicate the script version (https://github.com/bitcoin/bips/blob/master/bip-0114.mediawiki)
+ >  
+ > Good. But currently that version is not enforced, so this BIP cannot make use of it. I can use (witversion == 1) but add the BIP114 version field so that the next BIP can make use of it.
+ 
+Probably BIP114 would never be deployed. I don't know. But I think we should try to move the script version to witness, as it is cheaper. The major witness version could be reserved for some fundamental changes in language.
+
+  
+ >  6. The coinbase space is limited to 100 bytes and is already overloaded by many different purposes. I think any additional consensus critical message should go to a dummy scriptPubKey like the witness commitment. You may consider to  have a new OP_RETURN output like BIP141, with different magic bytes. However, please don't make this output mandatory (cf. witness commitment output is optional if the block does not have witness tx)
+ >  
+ >  6a. "..........due to lack of space to include the proper ack tag in a block": this shouldn't happen if you use a OP_RETURN output
+ >  
+ > I'm not sure about this. The fact that the space for acknowledge and proposal is short has been seen by other developers a benefit and not a drawback. It prevent hundreds of sidechains to be offered, which might hurt solo miners. 70 bytes allows for approximately 10 active polls.
+
+That's 1 active poll per minute on average, which sounds very small if it ever gets really popular. Have you made any forecast? I could foresee people have to bid for the coinbase space for their ack-poll, and they will yell at the devs asking for more poll space (well.....)
+
+We used an OP_RETURN output for segwit as some miners wanted to retain the coinbase space for other purpose like advertisement.  Even if you want to set an artificial limit, you could still use an OP_RETURN output. It just means you will need a OP_COUNT_ACKS2 softfork when you want to expand the space.  Since polls are not fixed size, if an artificial limit is desired, maybe it makes more sense to limit the number of polls, instead of number of bytes.
+
+
+ >  8. Question: is an ack-poll valid only for 1 transaction? When the transaction is confirmed, could full nodes prune the corresponding ack-poll data? (I think it has to be prunable after spending because ack-poll data is effectively UTXO data)
+ >  
+ > Yes, there is no ack-poll data stored except for the coinbase field cache, which periodically cleans itself by using a FIFO approach.
+ 
+If the target tx of a ack-poll is never confirmed on the blockchain, I guess you need to keep the data of the poll forever?  It's like creating an unspendable and unprunable UTXO (just want you to clarify. People are spamming the UTXO already so your proposal won't make it worse anyway)
+ 
+ >   9. No matter how you design a softfork, "Zero risk of invalidating a block" couldn't be true for any softfork. For example, even if a miner does not include any txs with OP_COUNT_ACKS, he may still build on top of blocks with invalid OP_COUNT_ACKS operations.
+ >  
+ > I'm not sure. I assumed that transactions redeeming a script using OP_COUNT_ACKS  would be non-standard, so the the problem you point out would only happen if the block including the transaction would be mined specifically for the purpose to defeat subsequent miners. A honest pre-fork miner would never include a redeemScript that that verifies an OP_COUNT_ACKS, since that transaction would never be received by the p2p protocol (it could if the miner accepts non-standard txs by a different channnel).   
+ > 
+ > But I must check this in the BIP source code if OP_COUNT_ACKS is really non-standard as I designed it to be.
+ 
+It must be non-standard because witversion != 0 are non-standard already. I mean, you proposal is probably as safe as OP_CSV, but no one sold OP_CSV as "zero risk".
+
+Johnson
+
