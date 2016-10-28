@@ -1,0 +1,141 @@
+From: achow101@gmail.com (Andrew C)
+Date: Fri, 28 Oct 2016 11:28:35 -0400
+Subject: [bitcoin-dev] The Soft Fork Deception
+In-Reply-To: <CAL8tG=mfRHidipraCbG7m6V18khf_czWbe=zZN7F6=Ksdae8AQ@mail.gmail.com>
+References: <CAL8tG=mfRHidipraCbG7m6V18khf_czWbe=zZN7F6=Ksdae8AQ@mail.gmail.com>
+Message-ID: <7991eb2d-015c-cedc-518c-988821a2d03f@gmail.com>
+
+
+On 10/27/2016 11:38 AM, Andrew via bitcoin-dev wrote:
+> I have been reading recently through the history of soft forks
+> provided by Bitcoin Core:
+> https://bitcoin.stackexchange.com/questions/43538/where-can-i-find-a-record-of-blockchain-soft-forks.
+>
+> It has led me to think that there is a deceiving notion that soft
+> forks do not force Bitcoin users to upgrade software. Yes, it's true
+> that the past soft forks still allow old nodes to accept blocks under
+> the tighter rules as valid, but what about miners who are still using
+> old software? What about users who want to make a transaction using
+> the old rules? Those people are no longer able to do those things. And
+> if they want to do those things, a hard fork will result.
+A soft fork means that a transaction using the old rules will still
+work. Look at segwit, you can still make the original style of
+transactions with P2PK, P2PKH, and P2SH outputs. There is nothing here
+to cause a hard fork.
+
+> Remember what happened when BIP 66 was activated? Luckily, it was
+> short lived, but this is just the beginning. If you keep tightening
+> the rules, you are building up more and more pressure for a split in
+> the network to occur. You can call this split a "hard fork" or just a
+> "fork", but it is dangerous either way, and it leads to basically the
+> creation of two coins when before we just had one, people instantly
+> lose value, and the trust in Bitcoin's store of value dies.
+BIP 66's hard fork was not due to the soft fork making transactions
+invalid. Rather it was because miners were not properly validating
+blocks before building on top of them. That fork was because a
+non-upgraded miner created a block invalid under the new rules and
+upgraded miners did not check the block and built on top of it. That
+invalid block was only invalid because the isSuperMajority mechanism
+specified that the new version number must be used otherwise the block
+was invalid, and that was what happened: the invalid block had the old
+version number. This is not an issue for BIP 9 Versionbits soft forks
+because no such rule exists.
+>
+> Obviously every one can debate about what should be the definition of
+> a soft fork, but whatever that is, I think it is unacceptable how
+> sloppily the past soft forks have been deployed.
+In what way have these forks been sloppily deployed? The fork caused by
+previous a soft forks (there was only one that caused that had an actual
+chain split issue) was due to the isSuperMajority mechanism which is not
+a good mechanism for deployment. It has been superseded by BIP 9
+Versionbits. Furthermore, that fork was not due to "sloppy deployment"
+by the devs but rather due to greedy miners who were SPV mining.
+> I can think of many ways in which we could have these new features
+> that the soft forks provided, but without forcing the new rules, and
+> simply making them features that can be used on an individual miner or
+> transaction signer basis. Is there a document from Bitcoin Core that
+> outlines the philosophy of soft forks and why it is acceptable to
+> force the tightening of rules and cause such risks? And please give me
+> another reason other than "it removes a few if statements from the code".
+Can you explain what other risks you think there are with soft forks?
+>
+> Now that Segregated witness is scheduled to be deployed on November
+> 15, we should take a look at this "soft fork" as well. I like the idea
+> of Segregated Witness, but from conversations on Reddit and IRC, I see
+> people saying that this soft fork will be like the others: requiring a
+> hard fork in order to revert it. Is this true?
+If you are reading r/btc, you are doing something wrong.
+
+Like with all soft forks, the only way to revert them is by a hard fork.
+Soft forks make previously valid things invalid, hard forks make
+previously invalid things valid. In order to revert a soft fork which
+made something invalid, you need to hard fork to make it valid again.
+> I am getting conflicting messages by reading the BIP. It says that if
+> all transactions are non-segwit, then a node will validate the block
+> as before. But if we pass the threshhold (usually 95 % for 1000
+> blocks) will miners mining non-segwit blocks be ignored? This is not
+> good... I really think we should make it optional. Miners will have an
+> incentive to mine segwit blocks, since it allows for more transactions
+> per block, so why force them?
+No. This is incorrect. There is no requirement to include the witness
+commitment in the coinbase if no transactions in the block contain
+witnesses. Because transactions that contain witnesses are considered
+non-standard transactions by the old rules, if a miner who did not
+upgrade continues to follow those standardness rules, their blocks will
+not be invalid and they are not forced to upgrade.
+> What if we want to slightly modify the Segwit protocol in the future?
+> What if we want to replace segwit with something much different? We
+> will be forced to do a hard fork in order to do that.
+Not necessarily, it depends on the change. Most changes (such as
+sighashing, new opcodes, different scripts, etc.) can be done via
+another soft fork because segwit introduces script versioning. A new
+script version would be created with the necessary changes and that can
+be soft forked in.
+>
+> Now, we can't go back in time and fix the deployment of the soft
+> forks, but I do propose one clean way to fix things: Remove all the
+> previously "soft forked" rules for non segwit transactions, and
+> require them only for segwit transactions. But make segwit optional!
+> In addition to what I talked about above, this may also relieve some
+> tensions of people who are not comfortable with segwit and are
+> thinking of joining a hard fork like the Bitcoin Unlimited project.
+Segwit already is optional. If you don't want to use segwit, you don't
+have to. If you don't want to mine segwit blocks, you don't have to.
+
+As for removing all previously soft forked things, then you would be
+removing a ton of functionality, various fixes, and potentially break a
+large number of transactions that already exists but are not confirmed
+yet. This would require a hard fork.
+
+As for what is would be reverted, you would be reverting P2SH (multisig
+addresses, you still want those right?), OP_CLTV, OP_CSV, block height
+requirement in Coinbase, the value overflow incident, removal of
+dangerous opcodes, reduction of block size limit, etc. As you can see, a
+lot of functionality and various bug fixes would be lost be reverting
+every single soft fork.
+>
+> Unless people can give me a good explanation as to why we are
+> deploying soft forks in such forceful manner,
+As I have said throughout this response, soft forks are not deployed in
+a forceful manner which forces people to upgrade.
+> or Bitcoin Core accepts my proposal, then I will have no choice but to
+> create a new client (I'm thinking to call it Bitcoin Authentic), that
+> will be just as Bitcoin Core but will always follow the chain with the
+> most work regardless of whether soft fork rules are respected, and I
+> would put at least CHECKLOCKTIMEVERIFY as mandatory within segwit
+> transactions.
+Great, go ahead. Honestly, I don't think anyone cares about your
+"ultimatum". You are a random person on the internet.
+>
+> -- 
+> PGP: B6AC 822C 451D 6304 6A28  49E9 7DB7 011C D53B 5647
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20161028/72db51a8/attachment-0001.html>
