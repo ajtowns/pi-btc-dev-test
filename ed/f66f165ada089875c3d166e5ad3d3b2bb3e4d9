@@ -1,0 +1,123 @@
+From: tim.ruffing@mmci.uni-saarland.de (Tim Ruffing)
+Date: Fri, 04 Nov 2016 15:35:51 +0100
+Subject: [bitcoin-dev] Implementing Covenants with
+ OP_CHECKSIGFROMSTACKVERIFY
+In-Reply-To: <CAD438HsZRZcRWu=++3kuvyA5Ns9cU360utJMCyc6bROT-fdcHg@mail.gmail.com>
+References: <CAMZUoKkG0AqwsTE=opTcsD=xqWsoVxqPVCzFbcSz8zJT1wiFPg@mail.gmail.com>
+	<E8BB95A5-09B3-443C-B197-29DA3C4767D8@xbt.hk>
+	<CAMZUoKmnkk=q7GkkvA+Q4-r64JCQ+kPRPdoEN8bnAwd2YGMH+Q@mail.gmail.com>
+	<CAD438HsZRZcRWu=++3kuvyA5Ns9cU360utJMCyc6bROT-fdcHg@mail.gmail.com>
+Message-ID: <1478270151.1662.6.camel@mmci.uni-saarland.de>
+
+Not a covenant but interesting nevertheless: _One_ of OP_CAT and
+OP_CHECKSIGFROMSTACKVERIFY alone is enough to implement "opt-in miner
+takes double-spend" [1]:
+
+You can create an output, which is spendable by everybody if you ever
+double-spend the output with two different transactions. Then the next
+miner will probably take your money (double-spending against your two
+or more contradicting transactions again).
+
+If you spend such an output, then the recipient may be willing to
+accept a zero-conf transaction, because he knows that you'll lose the
+money when you attempt double-spending (unless you are the lucky
+miner). See the discussion in [1] for details. 
+
+The implementation using OP_CHECKSIGFROMSTACKVERIFY is straight-
+forward. You add a case to the script which allows spending if two
+valid signatures on different message under the public key of the
+output are given.
+
+What is less known I think:
+The same functionality can be achieved in a simpler way just using
+OP_CAT, because it's possible to turn Bitcoin's ECDSA to an "opt-in
+one-time signature scheme". With OP_CAT, you can create an output that
+is only spendable using a signature (r,s) with a specific already fixed
+first part r=x_coord(kG). Basically, the creator of this output commits
+on r (and k) already when creating the output. Now, signing two
+different transaction with the same r allows everybody to extract the
+secret key from the two signatures.
+
+The drawbacks of the implementation with OP_CAT is that?it's not
+possible to make a distinction between legitimate or illegitimate
+double-spends (yet to be defined) but just every double-spend is
+penalized. Also, it's somewhat hackish and the signer must store k (or
+create it deterministically but that's a good idea anyway).
+
+[1] https://www.mail-archive.com/bitcoin-development at lists.sourceforge.net/msg07122.html
+
+Best,
+Tim
+
+On Thu, 2016-11-03 at 07:37 +0000, Daniel Robinson via bitcoin-dev
+wrote:
+> Really cool!
+> 
+> How about "poison transactions," the other covenants use case
+> proposed by M?ser, Eyal, and Sirer? (I think
+> OP_CHECKSIGFROMSTACKVERIFY will also make it easier to check fraud
+> proofs, the other prerequisite for poison transactions.)
+> 
+> Seems a little wasteful to do those two "unnecessary" signature
+> checks, and to have to construct the entire transaction data
+> structure, just to verify a single output in the transaction. Any
+> plans to add more flexible introspection opcodes to Elements, such as
+> OP_CHECKOUTPUTVERIFY?
+> 
+> Really minor nit: "Notice that we have appended 0x83 to the end of
+> the transaction data"?should this say "to the end of the signature"?
+> 
+> On Thu, Nov 3, 2016 at 12:28 AM Russell O'Connor via bitcoin-dev <bit
+> coin-dev at lists.linuxfoundation.org> wrote:
+> > Right.? There are minor trade-offs to be made with regards to that
+> > design point of OP_CHECKSIGFROMSTACKVERIFY.? Fortunately this
+> > covenant construction isn't sensitive to that choice and can be
+> > made to work with either implementation of
+> > OP_CHECKSIGFROMSTACKVERIFY.
+> > 
+> > On Wed, Nov 2, 2016 at 11:35 PM, Johnson Lau <jl2012 at xbt.hk> wrote:
+> > > Interesting. I have implemented?OP_CHECKSIGFROMSTACKVERIFY in a
+> > > different way from the Elements. Instead of hashing the data on
+> > > stack, I directly put the 32 byte hash to the stack. This should
+> > > be more flexible as not every system are using double-SHA256
+> > > 
+> > > https://github.com/jl2012/bitcoin/commits/mast_v3_master
+> > > 
+> > > 
+> > > 
+> > > > On 3 Nov 2016, at 01:30, Russell O'Connor via bitcoin-dev <bitc
+> > > > oin-dev at lists.linuxfoundation.org> wrote:
+> > > > 
+> > > > Hi all,
+> > > > 
+> > > > It is possible to implement covenants using two script
+> > > > extensions: OP_CAT and OP_CHECKSIGFROMSTACKVERIFY.? Both of
+> > > > these op codes are already available in the Elements Alpha
+> > > > sidechain, so it is possible to construct covenants in Elements
+> > > > Alpha today.? I have detailed how the construction works in a
+> > > > blog post at <https://blockstream.com/2016/11/02/covenants-in-e
+> > > > lements-alpha.html>.? As an example, I've constructed scripts
+> > > > for the Moeser-Eyal-Sirer vault.
+> > > > 
+> > > > I'm interested in collecting and implementing other useful
+> > > > covenants, so if people have ideas, please post them.
+> > > > 
+> > > > If there are any questions, I'd be happy to answer.??
+> > > > 
+> > > > --?
+> > > > Russell O'Connor
+> > > > _______________________________________________
+> > > > bitcoin-dev mailing list
+> > > > bitcoin-dev at lists.linuxfoundation.org
+> > > > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> > 
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> > 
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
