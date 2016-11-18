@@ -1,0 +1,88 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 18 Nov 2016 22:43:03 +0800
+Subject: [bitcoin-dev] BIP30 and BIP34 interaction (was Re: [BIP
+	Proposal] Buried Deployments)
+In-Reply-To: <11B3C69E-5F1B-4D25-86CE-E5F3B603266F@voskuil.org>
+References: <CABm2gDr2-MCiaFFjgUFP5Xc0fQfuqJ3=ZkrzjHqmOiwRZ50CBw@mail.gmail.com>
+	<d58ee114-00fd-23c8-9ca7-9a4b28c26f27@voskuil.org>
+	<CAE-z3OX5vak25UWcmBSe63OmoOVoGB394WmwyWwUcSxWeDOLhw@mail.gmail.com>
+	<e0e6679f-aec6-a579-667d-b5b58ea2360b@voskuil.org>
+	<CAE-z3OXfJa3Lewtrafm25bdfPa=eiarOAXBNbgc3ccTi7Qoe6A@mail.gmail.com>
+	<5ef23296-5909-a350-ab11-e717f8fffc41@voskuil.org>
+	<CAPWm=eW9X77+qQZGHkAOjN-k7KFwq06gKS6HOVOTE1+SmYBhWA@mail.gmail.com>
+	<34949746-c0c9-7f14-0e92-69d5a7d44b04@voskuil.org>
+	<FA128F93-7E79-47FE-8270-225D07DD6FEF@xbt.hk>
+	<8d92ae05-ac6a-30b7-5ef3-f7aa1298e46d@voskuil.org>
+	<632B36D5-74AF-41E2-8E21-359F02645066@xbt.hk>
+	<59D27CC6-120C-4673-9F20-6B5E95EA60C6@voskuil.org>
+	<6F2B3EA2-4245-4A0E-8E19-12D02A871815@xbt.hk>
+	<11B3C69E-5F1B-4D25-86CE-E5F3B603266F@voskuil.org>
+Message-ID: <169CC80A-3B63-4D58-8E8C-0D1D9489E891@xbt.hk>
+
+In this case I don?t understand how your implementation won?t be DoS-ed. An attacker could keep sending you inv for the same block / transaction. Since you don?t assume the hash is unique, each time you have to download the block/tx again before you could tell if that is the same one you have already known. Otherwise, you are implementing the ?first seen? rule.
+
+Also, you can?t ban a peer just because you get an invalid tx from him, because he might be referring to a hash-colliding UTXO that you don?t know. In that case you need to request for the parent tx to verify. I wonder if you are really doing that.
+
+> On 18 Nov 2016, at 11:20, Eric Voskuil <eric at voskuil.org> wrote:
+> 
+> You are suggesting that, since a node implements a denial of service policy that actually denies itself otherwise valid blocks, those blocks are conditionally invalid. And that, since the validity condition is based on order of arrival and therefore independently unverifiable, Bitcoin consensus is broken in the face of a hash collision.
+> 
+> I am aware of two other hash collision scenarios that cause Core to declare blocks invalid based on ordering. The block hash duplicate check (it's not fork-point relative) and signature verification caching. Like the "block banning" issue above, the latter is related to an internal optimization. I would categorize the former as a simple oversight that presumably goes way back.
+> 
+> What then is the consequence of validity that is unverifiable? You believe this means that Bitcoin consensus is broken. This is incorrect. First understand that it is not possible for consensus rules to invalidate blocks based on order of arrival. As such any *implementation* that invalidates blocks based on order of arrival is broken. It is an error to claim that these behaviors are part of consensus, despite being implemented in the satoshi node(s).
+> 
+> Validity must be verifiable independent of the state of other nodes. Consensus is a function of block history and time alone. Time is presumed to be universally consistent. To be a consensus rule all nodes must be able to independently reach the same validity conclusion, given the same set of blocks, independent of order. If this is not the case the behavior is not a consensus rule, it is simply a bug. 
+> 
+> Deviating from such bugs is not a break with consensus, since such non-rules cannot be part of consensus. One node implementation can behave deterministically while others are behaving non-deterministically, with the two nodes remaining consistent from a consensus standpoint (deterministic produces a subset of non-deterministic results). But, unlike arbitrary nodes, deterministic nodes will not cause disruption on the network.
+> 
+> You imply that these determinism bugs are necessary, that there is no fix. This is also incorrect.
+> 
+> The block banning hash collision bug is avoided by not using non-chain/clock state to determine validity. Doing otherwise is clearly a bug. The hash of a block is not the block itself, a logically-correct ban would be to compare the wire serialization of the block as opposed to the hash, or not maintain the feature at all.
+> 
+> The signature verification caching hash collision bug is the same problem, an optimization based on an invalid assumption. A full serialization comparison (true identity), or elimination of the feature resolves the  bug.
+> 
+> The block hash check collision bug is trivially resolved by checking at the fork point as opposed to the tip. This prevents arbitrary (and irrational) invalidity based on conflict with irrelevant blocks that may or may not exist above the fork point.
+> 
+> Libbitcoin is deterministic in all three cases (although the third issue is not made consistent until v3). I am not aware of any other non-determinism in Core, but I don't spend a lot of time there. There is no need to study other implementations to ensure determinism, as that can be verified independently.
+> 
+> Any situation in which a node cannot provide deterministic validation of unordered blocks constitutes a non-consensus bug, as the behavior is not consistently verifiable by others under any conditions. Fixing/preventing these bugs is responsible development behavior, and does not require forks or BIPs, since Bitcoin doesn't inherently contain any such bugs. They are the consequence of incorrect implementation, and in two of the three cases above have resulted from supposed optimizations. But any code that creates non-determinism in exchange for speed, etc. is not an optimization, it's a bug. A node must implement its optimizations in a manner that does not alter consensus.
+> 
+> The BIP30 regression hard fork is not a case of non-determinism. This will produce deterministic results (apart from the impact of unrelated bugs). However the results are both a clear break from previous (and documented) consensus but also produce a very undesirable outcome - destruction of all unspent outputs in the "replaced" transaction for starters. So this is a distinct category, not a determinism bug but a hard fork that produces undesired consequences.
+> 
+> The BIP30 regression hard fork actually enables the various pathological scenarios that you were describing, where no such issues existed in Bitcoin consensus previously. It is now possible to produce a block that mutates another arbitrarily deep block, and forces a reorg all the way back to the mutated block. This was done to save microseconds per block. Despite the improbability of hash collisions, I find this deplorable and the lack of public discussion on the decision concerning.
+> 
+> With respect to the original post, the point at issue is the introduction of another hard fork, with some odd behaviors, but without any justification apart from tidying up the small amount of necessary code. These issues are related in that they are both consensus forks that have been introduced as supposed optimizations, with no public discussion prior to release (or at least merging to master with the presumption of shipping in the latter case). Two of the three hash collision issues above are also related in that they are bugs introduced by a desire to optimize internals.
+> 
+> The engineering lesson here should be clear - watch out for developers bearing optimizations. A trade against correctness is not an optimization, it's a break. Satoshi was clearly a fan of the premature optimization. FindAndDelete is a howler. So this is a tradition in Bitcoin. My intent is not to sling mud but to improve the situation.
+> 
+> It is very possible to produce straightforward and deterministic code that abides consensus and materially outperforms Core, without any of the above optimization breaks, even avoiding the utxo set optimization. Even the tx (memory) and block (orphan) pools are complex store denormalizations implemented as optimizations. Optimizing before producing a clean conceptual model architecture and design is a software development anti-pattern (premature optimization). The proposed fork is a premature optimization. There are much more significant opportunities to better organize code (and improve performance). I cannot support the decision to advance it.
+> 
+> I was unaware Core had regressed BIP30. Given that the behavior is catastrophic and that it introduces the *only* hash-collision consensus misbehavior (unless we consider a deep reorg sans the otherwise necessary proof of work desirable behavior), I strongly recommend it be reverted, with a post-mortem BIP.
+> 
+> Finally I recommend people contemplate the difference between unlikely and impossible. The chance of random collision is very small, but not zero. Colliding hashes is extremely difficult, but not impossible. But Bitcoin does not rely on impossibility for correct behavior. It relies of difficulty. This is a subtle but important distinction that people are missing.
+> 
+> Difficulty is a knowable quantity - a function of computing power.  If hash operations remain difficult, Bitcoin is undeterred. Collisions will have no impact, even if they happen with unexpected frequency (which would still be vanishingly infrequent). If the difficulty of producing a collision is reduced to the point where people cannot rely on addresses (for example), then Bitcoin has a problem, as it has become a leaky ship (and then there's mining). But with the unnecessary problems described above, a single hash collision can be catastrophic. Unlike difficulty, which is known, nobody can know when a single collision will show up. Betting Bitcoin, and potentially the world's money, on the unknowable is poor reasoning, especially given that the cost of not doing so is so very low.
+> 
+> e
+> 
+>> On Nov 17, 2016, at 10:08 AM, Johnson Lau <jl2012 at xbt.hk> wrote:
+>> 
+>> The fact that some implementations ban an invalid block hash and some do not, suggests that it?s not a pure p2p protocol issue. A pure p2p split should be unified by a bridge node. However, a bridge node is not helpful in this case. Banning an invalid block hash is an implicit ?first seen? consensus rule.
+>> 
+>> jl2012
+>> 
+>>> On 18 Nov 2016, at 01:49, Eric Voskuil <eric at voskuil.org> wrote:
+>>> 
+>>> Actually both possibilities were specifically covered in my description. Sorry if it wasn't clear.
+>>> 
+>>> If you create a new valid block out of an old one it's has potential to cause a reorg. The blocks that previously built on the original are still able to do so but presumably cannot build forever on the *new* block as it has a different tx. But other new blocks can. There is no chain split due to a different interpretation of valid, there are simply two valid competing chains.
+>>> 
+>>> Note that this scenario requires not only block and tx validity with a tx hash collision, but also that the tx be valid within the block. Pretty far to reach to not even get a chain split, but it could produce a deep reorg with a very low chance of success. As I keep telling people, deep reorgs can happen, they are just unlikely, as is this scenario.
+>>> 
+>>> If you create a new invalid block it is discarded by everyone. That does not invalidate the hash of that block. Permanent blocking as you describe it would be a p2p protocol design choice, having nothing to do with consensus. Libbitcoin for example does not ban invalidated hashes at all. It just discards the block and drops the peer.
+>>> 
+>>> e
+>> 
+>> 
+
+
