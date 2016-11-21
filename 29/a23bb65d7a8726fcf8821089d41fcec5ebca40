@@ -1,0 +1,65 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Mon, 21 Nov 2016 10:54:19 -0500
+Subject: [bitcoin-dev] Flexible Transactions.
+Message-ID: <CAMZUoKm3RXs_HAzGT3gz60kiB6FQnjpGRhfu6biwZ5a_TcPeaA@mail.gmail.com>
+
+Hi Tom,
+
+On Tue, Sep 20, 2016 at 1:15 PM, Tom via bitcoin-dev <bitcoin-dev at lists.
+linuxfoundation.org> wrote:
+
+>
+> The OP_CHECKSIG is the most well known and, as its name implies, it
+> validates a signature.
+> In the new version of 'script' (version 2) the data that is signed is
+> changed to be equivalent to the transaction-id. This is a massive
+> simplification and also the only change between version 1 and version 2 of
+> script.
+>
+
+I'm a fan of simplicity too; Unfortunately, your proposal above to change
+the semantics of OP_CHECKSIG is too naive.
+
+The SIGHASH data used in both the original Bitcoin script and in Segwit
+script contains data indicating which input is being signed.  In Bitcoin
+script, the input is being signed is indicated by the input that has a
+non-empty scriptSig field.  In the Segwit script, the outpoint
+corresponding to the input being signed is explicitly included in the
+signature data. By signing only the transaction id, your proposed signature
+does not include the data that tells which input of the transaction is
+being signed.  Thus if different inputs share the same public key due to
+key reuse, then the signatures on those different inputs will be
+identical.  Your Flexible Transactions proposal opens up a new line of
+attack against Bitcoin that doesn't currently exist.
+
+Consider the following simple example, suppose you and I are jointly
+preparing a transaction to mix our coins, or perhaps we are jointly funding
+some purchase.  We jointly prepare a transaction with one input from you
+and another input from me.  We each sign the transaction and hand the
+signature data over to each other so we can produce a completed
+transaction.  But oh no! I lied to you. I didn't use my own input to the
+transaction.  "My input" was actually the outpoint from one of *your*
+transactions; one that has the same public key as the input you have
+chosen.  Now I copy your signature you have provided in your input to cover
+"my input", which is really your coins.  Surprise, it turns out you are
+funding both inputs to our "jointly" funded purchase.  Other protocols are
+likely similarly broken by your Flexible Transactions proposal.
+
+I personally rate this flaw as about the same caliber as the transaction
+malleability you are trying to fix.  Sure, with enough vigilance, perhaps
+you can detect and avoid this trap.  However, it requires a bunch of
+unexpected work.  You must always examine every other input to a
+transaction you are about to sign to make sure that it isn't one of your
+inputs, which means you probably need a copy of the UXTO set to lookup
+outpoints, which is a huge burden, especially if you are a hardware
+wallet.  If you are not vigilante, your funds may end up stolen. Surely it
+is better not to open this line of attack.
+
+For the most part, the SIGHASH works the way it does in Bitcoin for a
+reason. You cannot simply throw away the parts you don't understand or
+appreciate.  You should take the time to learn why things are the way they
+are, and then, only once you are certain that some aspects are not, or no
+longer, needed then can you propose removing them.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20161121/4af91442/attachment.html>
