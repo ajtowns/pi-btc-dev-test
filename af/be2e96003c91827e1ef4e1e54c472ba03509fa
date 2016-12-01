@@ -1,0 +1,162 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 2 Dec 2016 01:20:31 +0800
+Subject: [bitcoin-dev] New BIP: Hardfork warning system
+Message-ID: <08F5E788-8680-4BBE-8871-73FF022C52DB@xbt.hk>
+
+This BIP defines a change in consensus rules regarding to block nVersion, and define a concept of generalized block header to implement a hardfork warning system for full nodes and light nodes.
+
+For better formatting, visit github
+https://github.com/jl2012/bips/blob/hfwarning/bip-hfwarning.mediawiki
+
+
+
+BIP: ?
+Title: Hardfork warning system
+Author: Johnson Lau <jl2012 at xbt.hk>
+Status: Draft
+Type: Standard
+Created: 2016-12-01
+
+Abstract
+
+This BIP defines a change in consensus rules regarding to block nVersion, and define a concept of generalized block header to implement a hardfork warning system for full nodes and light nodes.
+
+Motivation
+
+Softfork and hardfork are the 2 majors categories of consensus rules change. Generally, softforks make some previously valid blocks invalid, while hardforks make some previously invalid blocks valid. Bitcoin has successfully introduced a number of new functions through softforks. A built-in warning system is also available in many implementations to warn users for the activation of any unknown softforks.
+
+Some features, however, may not be easily introduced with a softfork. Examples include expanding maximum block resources limits, and changing the average block time interval. When such features are implemented with a hardfork, existing full node implementations would consider such blocks as invalid, and may even ban a peer for relaying such blocks. They are effectively blind to such hardfork rule changes, leaving users to unknowingly transact on a system with potentially different token value. On the other hand, light nodes may blindly follow a hardfork with unknown rule changes and lose the right to choose the previous system.
+
+This BIP defines a change in consensus rules regarding to block nVersion, and define a concept of generalized block header to implement a hardfork warning system for full nodes and light nodes.
+
+Definitions
+
+Valid block
+A block that satisfies all the consensus rules being enforced by a bitcoin protocol implementation. An implementation may intentionally (e.g. a light node) or unintentionally (e.g. unaware of a softfork) not enforcing any part of the current netwrok rules.
+
+Valid blockchain
+A blockchain constituting of only valid blocks.
+
+Best valid blockchain
+The valid blockchain with highest total proof-of-work.
+
+Valid blockchain fork
+A valid blockchain sharing a common ancestral block with the best valid blockchain, but with less total proof-of-work
+
+Generalized block header
+Any serialized hexadecimal data with exactly 80 bytes (byte 0 to byte 79). The bytes 4 to 35 are the double-SHA256 hash of another generalized block header. The bytes 72 to 75 are nBits, the target of this generalized block header encoded in the same way as normal bitcoin block header. The 2 most significant bits of the byte 3 are the hardfork notification bits. The semantics of other data in a generalized block header is not defined in any general way. It should be noted that a normal bitcoin block header is a special case of generalized block header.
+
+Generalized block header chain
+A chain of generalized block header. A header chain of valid blocks is a special case of a generalized block header chain.
+
+
+Specifications
+
+
+Block nVersion softfork
+
+A softfork is deployed to restrict the valid value of block nVersion. Upon activation, any block with the second highest nVersion bit set becomes invalid (nVersion & 0x40000000)
+
+This softfork will be deployed by "version bits" BIP9 with the name "hfbit" and using bit 2.
+
+For Bitcoin mainnet, the BIP9 starttime will be midnight TBC UTC (Epoch timestamp TBC) and BIP9 timeout will be midnight TBC UTC (Epoch timestamp TBC).
+
+For Bitcoin testnet, the BIP9 starttime will be midnight TBC UTC (Epoch timestamp TBC) and BIP9 timeout will be midnight TBC UTC (Epoch timestamp TBC).
+
+Any bitcoin implementation (full nodes and light nodes) supporting this softfork should also implement a hardfork warning system described below.
+
+
+Validation of generalized block header
+
+A bitcoin protocol implementation should consider a generalized block header as valid if it satisfies all of the following criteria:
+
+	? It is a descendant of the header of a valid block in a valid blockchain (the best valid blockchain or a valid blockchain fork).
+	? It satisfies the proof-of-work requirement: its double-SHA256 value MUST be smaller than its target (encoded as nBits).
+	? Its target MUST NOT be greater than the target of its last ancestral valid block by more than 1024 times. An implementation may decide to use a different threshold (or dynamic threshold), depending on its tolerance against potential DoS attacks by generating many low difficulty headers. However, if the value is set too low, a hardfork with lower difficulty may not be detected.[1]
+In general, a bitcoin protocol implementation should keep an index of all known generalized block header chains, along with the valid blockchain(s). However, if a generalized block header chain is grown on top of a very old valid block, with total proof-of-work much lower than the current best valid bloackchain, it may be safely discarded.
+
+
+Hardfork warning system in full nodes
+
+Hardfork with unknown rules
+If a generalized block header chain with non-trivial total proof-of-work is emerging, and is not considered as a valid blockchain, a hardfork with unknown rules may be happening.
+
+A wallet implementation should issue a warning to its users and stop processing incoming and outgoing transactions, until further instructions are given. It should not attempt to conduct transactions on or otherwise interpreting any block data of the hardfork with unknown rules.
+
+A mining implementation should issue a warning to its operator. Until further instructions are given, it may either stop mining, or ignore the hardfork with unknown rules. It should not attempt to confirm a generalized block header with unknown rules.
+
+Setting of one or both hardfork notification bits is, as defined by BIP34 and this BIP, a hardfork, and should be considered as an indication of a planned hardfork. If a hardfork with unknown rules is happening without any hardfork notification bits set, it is probably an accidental consensus failure, such as the March 2013 fork due to a block database bug (BIP50), and the July 2015 fork following the BIP66 activation.[2]
+
+
+Hardfork with multiple valid blockchains
+If a valid blockchain fork is emerging with non-trivial total proof-of-work, a consensus disagreement may be happening among different miners.
+
+A wallet implementation should issue a warning to its users and stop processing incoming and outgoing transactions, until further instructions are given.
+
+A mining implementation should issue a warning to its operator. Until further instructions are given, it may either stop mining, or mine on top of the best valid chain by its own standard.
+
+Hardfork warning system in light nodes
+
+Light node (usually wallet implementations) is any bitcoin protocol implementations that intentionally not fully enforcing the network rules. As an important part of the hardfork warning system, a light node should observe the hardfork notification bits in block header, along with any other rules it opts to validate. If any of the hardfork notification bits is set, it should issue a warning to its users and stop processing incoming and outgoing transactions, until further instructions are given. It should not attempt to conduct transactions on or otherwise interpreting any block data of the hardfork blockchain, even if it might be able to decode the block data.
+
+
+Applications
+
+Hardfork notification bits
+There are 2 hardfork notification bits defined in this BIP. The higher bit has been forbidden since BIP34, and the lower bit is disabled by this BIP. For nodes supporting this BIP, the semantics of the 2 bits are the same: a hardfork is happening. For legacy node, however, setting the higher bit would make them fail to follow the hardforking chain. In a soft-hardfork design (described below), the lower notification bit should be used.
+The hardfork warning system is able to detect the following types of hardforks:
+
+Soft-hardfork (with the lower hardfork notification bit)
+A soft-hardfork is a technique to implement a hardfork by pretending to create blocks with only a zero output value coinbase transaction, and commit the real transaction Merkle root in the coinbase scriptSig field. With the lower hardfork notification bit set, a node following this BIP will consider this as a hardfork and enter the safe mode, while a legacy node not following this BIP will be effectively broken due to seeing the continuously empty blockchain.
+
+Redefining the nTime field
+As the warning system does not interpret the nTime field, redefining it through a hardfork would be detectable. For example, overflow may be allowed to overcome the year 2106 problem.
+
+Redefining the Merkle root hash field and changing block content validation rules
+The 32-byte Merkle root hash could be redefined, for example, with a different hashing algorithm. Any block resources limitation and transaction validation rules may also be changed. All such hardforks would be detected by the warning system.
+
+Changing average block interval or difficulty reset
+Since the warning system is not bound to a particular proof-of-work target adjustment schedule, a hardfork changing the average block interval or resetting the difficulty will be detectable.
+
+Introducing secondary proof-of-work
+Introducing secondary proof-of-work (with non-SHA256 algorithm or fixing the block withholding attack against mining pools) may be detectable, as long as the generalized block header format is preserved.
+
+Accidental hardfork
+An accidental hardfork may be detectable, if the generalized block headers in both forks are valid but no hardfork notification bit is set.
+
+
+Limitations
+
+The only function of this system is to inform the users that a hardfork might be happening and prompt for further instructions. It does not guarantee that the hardfork will be successful and not end up with two permanent incompatible forks. This requires broad consensus of the whole community and is not solvable with technical means alone.
+
+The following types of hardfork are not detectable with this warning system:
+
+	? Changing of proof-of-work algorithm
+	? Changing the encoding of previous block header hash or nBits
+	? A coercive soft-hardfork without setting any hardfork notification bit
+
+
+Backward compatibility
+
+The softfork described in the BIP would only affect miners. As the disabled nVersion bit is never used in the main network, it is unlikely that any miner would unintentionally find an invalid block due to the new rules.
+
+BIP9 is disabled when any of the hardfork notification bits is set, which may interrupt any ongoing softfork support signalling process. Developers should pay attention to this when desinging a hardfork. For example, they may redefine the counting of signal, or move the signalling bitfield to a different location.
+
+Legacy nodes would not be benefited from this softfork and warning system. However, no additional risks are introduced to legacy node either.
+
+
+Reference implementation
+
+To be done
+
+
+Footnotes
+
+
+	? ^ Please note that a hardfork may have lower difficulty but higher total proof-of-work, such as by decreasing the average block interval.
+	? ^ In the March 2013 fork, pre-0.8 full nodes would see that as a hardfork with unknown rules, while light nodes and 0.8.0 full nodes would see that as multiple valid blockchains. In the July 2015 fork, BIP66-complying full nodes would see that as a hardfok with unknown rules, while legacy full nodes would see that as multiple valid blockchains.
+
+
+Copyright
+
+This document is placed in the public domain.
