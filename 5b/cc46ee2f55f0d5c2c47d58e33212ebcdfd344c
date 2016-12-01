@@ -1,0 +1,88 @@
+From: luke@dashjr.org (Luke Dashjr)
+Date: Thu, 1 Dec 2016 20:44:06 +0000
+Subject: [bitcoin-dev] New BIP: Hardfork warning system
+In-Reply-To: <08F5E788-8680-4BBE-8871-73FF022C52DB@xbt.hk>
+References: <08F5E788-8680-4BBE-8871-73FF022C52DB@xbt.hk>
+Message-ID: <201612012044.07574.luke@dashjr.org>
+
+On Thursday, December 01, 2016 5:20:31 PM Johnson Lau via bitcoin-dev wrote:
+> Any bitcoin implementation (full nodes and light nodes) supporting this
+> softfork should also implement a hardfork warning system described below.
+
+I think this "should" needs to be a "must" be make this useful.
+
+> Hardfork with unknown rules
+> If a generalized block header chain with non-trivial total proof-of-work is
+> emerging, and is not considered as a valid blockchain, a hardfork with
+> unknown rules may be happening.
+> 
+> A wallet implementation should issue a warning to its users and stop
+> processing incoming and outgoing transactions, until further instructions
+> are given. It should not attempt to conduct transactions on or otherwise
+> interpreting any block data of the hardfork with unknown rules.
+
+This seems too unclear. Specifically, if an invalid chain with *equivalent or 
+better* work than the best valid chain exists, nodes ought to treat all blocks 
+following the common chain (between the better-invalid and best-valid chains) 
+as suspect.
+
+So if we have two chains:
+
+    A->B->C->D (valid)
+    A->B->X->Y (invalid)
+
+The node should consider block B as the tip until the valid chain becomes and 
+stays longer than the invalid one.
+
+> A mining implementation should issue a warning to its operator. Until
+> further instructions are given, it may either stop mining, or ignore the
+> hardfork with unknown rules. It should not attempt to confirm a
+> generalized block header with unknown rules.
+
+I think we need to decide more specifically which behaviour is sane here.
+
+> Hardfork warning system in light nodes
+> 
+> Light node (usually wallet implementations) is any bitcoin protocol
+> implementations that intentionally not fully enforcing the network rules.
+> As an important part of the hardfork warning system, a light node should
+> observe the hardfork notification bits in block header, along with any
+> other rules it opts to validate. If any of the hardfork notification bits
+> is set, it should issue a warning to its users and stop processing
+> incoming and outgoing transactions, until further instructions are given.
+> It should not attempt to conduct transactions on or otherwise interpreting
+> any block data of the hardfork blockchain, even if it might be able to
+> decode the block data.
+
+Light nodes should probably not be specified here differently than full nodes. 
+If they detect an invalid block through *any* means, they should react the 
+same as a full node would.
+
+> Redefining the Merkle root hash field and changing block content validation
+> rules The 32-byte Merkle root hash could be redefined, for example, with a
+> different hashing algorithm. Any block resources limitation and
+> transaction validation rules may also be changed. All such hardforks would
+> be detected by the warning system.
+
+Note, some changes may be needed to current nodes for this to work. I think at 
+this time this would cause a "deserialisation" error, and not accept NOR 
+reject the block...
+
+> Introducing secondary proof-of-work
+> Introducing secondary proof-of-work (with non-SHA256 algorithm or fixing
+> the block withholding attack against mining pools) may be detectable, as
+> long as the generalized block header format is preserved.
+
+Not necessarily. A secondary PoW might drastically change the measurement of 
+work. Fixing block withholding may result in block hashes that meet a preimage 
+rather than bits directly. I think it may be important to fix the latter 
+problem for this BIP.
+
+> Accidental hardfork
+> An accidental hardfork may be detectable, if the generalized block headers
+> in both forks are valid but no hardfork notification bit is set.
+
+Probably best to not call this a hardfork, since it is a break without 
+consensus.
+
+Luke
