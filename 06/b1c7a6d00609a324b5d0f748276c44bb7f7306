@@ -1,0 +1,128 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Fri, 2 Dec 2016 07:35:36 +0100
+Subject: [bitcoin-dev] New BIP: Hardfork warning system
+In-Reply-To: <201612020418.23011.luke@dashjr.org>
+References: <08F5E788-8680-4BBE-8871-73FF022C52DB@xbt.hk>
+	<CABm2gDoQ8_Wpc+zCwf-sbUhLYYy-cjdO2dgvzADQX9PAq+yYnw@mail.gmail.com>
+	<201612020418.23011.luke@dashjr.org>
+Message-ID: <CABm2gDqwtG-7yeT4CesSh=-CPuwpDy99E8qNO0Rz3C=MirNr7Q@mail.gmail.com>
+
+On Fri, Dec 2, 2016 at 5:18 AM, Luke Dashjr <luke at dashjr.org> wrote:
+> On Friday, December 02, 2016 1:42:46 AM Jorge Tim?n via bitcoin-dev wrote:
+>> We can already warn users of a hardfork when a block is invalid (at
+>> least) because of the highest bit in nVersion (as you say, because it
+>> is forbidden since bip34 was deployed).
+>
+> The difference is that right now, full nodes will happily follow a shorter
+> best-valid chain. This BIP would require them to hold back at the best-common
+> block between the best-valid chain and the invalid chain, forcing the user to
+> make a decision whether to reject the invalid chain permanently, or upgrade to
+> a version which can understand that chain as valid.
+
+Ok, so the goal of the softfork then is to hold on is there is to
+"hold on" on the most-work valid chain while there's an even-more-work
+invalid chain and for new nodes force a response from the user. This
+could be clearer in the motivation section.
+
+We can still notify and force a response from the user with a single
+invalid block (or N, or W accumulated work). Note that we don't need
+to "hold on" while waiting for the user's response. Therefore I insist
+there could be a PIB with all the recommended warnings but not
+softfork (which this one could extend from).
+
+Thinking as a full node user, I'm not sure I want my node to "hold on"
+on validating new valid blocks just because there's some "longest"
+invalid chain out there and I may chose to follow that instead later.
+Before paying or copying another address to receive, I would
+definitely would want the warning though.
+
+Particularly as a miner (not that I'm one), I think validationless
+mining shows us that some miners prefer to throw energy to the abyss
+of validation uncertainty rather than stop their mining hardware.
+What if when I give the response to the system I decide to pass on the
+HF but it means my hardware have been not mining in the valid chain
+for hours?
+I would account that as "money lost thanks to a 'friendly' interface".
+Specially if we're talking about a controversial hardfork.
+
+If we're talking about an uncontroversial hardfork, I would definitely
+prefer BIP9 coordination.
+I would prefer to receive the warning when, say, 30% of the hashrate
+is supporting an unknown change to the consensus rules (regardless of
+it being a softfork or a hardfork, which I don't know yet until the hf
+bit is used because the change is unknown to me), way before I need to
+decide what branch to mine.
+
+In fact, if I was a miner but not a user at the same time, after
+knowing about the unknown hardfork and if I consider the hardfork to
+be potentially controversial, I would try to coordinate with exchanges
+(and pools if no solo mining) to be able to write a program that
+chooses the chain likely to be most profitable depending on difficulty
+and price feeds for every block.
+
+In the case of a SHF, even more reason to keep mining on the old
+chain, perhaps I mine one empty block (assuming that's a rule in the
+SHF) out of luck, or maybe I should just start mining empty blocks
+whenever I see the SHF bit active for a block whose chain keeps
+growing.
+Perhaps for a SHF we should use a valid bit instead of an invalid one
+(clearing all possible fears with old and older nodes perceiving SHFs
+differently as HFs and SFs respectively). We can trivially make old an
+older nodes coincide in their perception of good-willing SHFs as
+either HFs or SFs as we wish. Choosing divergence of perception from
+the 2 versions we're considering makes no sense to me.
+I'm reserving my judgement for which one I prefer just in case there's
+actually an advantage in this divergence, but I've missed it.
+
+>> It seems the softfork serves only to warn about soft-hardforks, assuming it
+>> chooses to use this mechanism (which a malicious soft hardfork may not do).
+>
+> Note: a malicious "SHF" is not a SHF at all, but an "evil fork".
+
+Terminology, I think you get my point. I'm all for formalizing
+definitions but please let's not slow down discussion unnecessarily.
+I'm fine saying "evil fork" instead of "malicious SHF" if you prefer
+that, but they're just the same thing.
+
+>> In fact, you could reuse another of the prohibited bits to signal a soft-
+>> hardfork while distinguishing it from a regular hardfork. And this will also
+>> serve for old nodes that have not upgraded to the softfork. But, wait,
+>> if you signal a soft-hardfork with an invalid bit, it's not a
+>> soft-hardfork anymore, is it? It's simply a hardfork.
+>
+> Nodes implementing this BIP will see it as a simple hardfork, but will
+> intentionally provide equivalent behaviour as older nodes which see it as a
+> soft-hardfork. In other words, all [compatible] hardforks will now behave like
+> a soft-hardfork without any special DMMS design.
+
+Right, and those same mechanisms could be implemented using one of the
+already prohibited bits (for example, just like the higher weight bit
+in nHeight, the lowest value one was prohibited when BIP34 was
+activated).
+There's no need to invalidate another bit in the softfork (repeat: bit
+1 got invalidated when bip34 was activated as well; or we could just
+use a valid bit for SHFs).
+
+> If Bitcoin's eventual hardfork is far enough down the road (such that no nodes
+> remain from before this BIP are adopted), the SHF design could be safely done
+> away with entirely. And either way, it makes it easier to resist an un-
+> consented-to hardfork.
+
+Right, I'm also under the assumption that a HF (or a SHF) would give
+plenty of/enough time (to be defined, I suggest at least 1 year but we
+really shouldn't get into this in this thread) in their
+BIP9Deployment::nStartTime (or equivalent if BIP9 is not reused for
+HF/SHF). Otherwise I would consider any HF or SHF controversial in
+itself regardless of what it does (for not giving enough time to users
+to adapt).
+Therefore we can assume that all the warnings would be deployed in
+advance to any HF or SHF, with or without a previous softfork.
+
+I strongly disagree that the proposed softfork "[makes] it easier to
+resist an un-consented-to hardfork". If anything, it makes it easier
+to disrupt the old network if it doesn't fully consent to the HF. For
+"un-consented-to SHFs" (or "evil HFs" if you prefer) I don't think
+it's a safe to assume they will use an invalid bit to signal their
+intend. At least if I was an "evil softhardforker" just interested in
+disruption, I wouldn't do it (just like if I was an "evil hardforker"
+I wouldn't use the normal hardfork bit).
