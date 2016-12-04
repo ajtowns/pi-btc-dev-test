@@ -1,0 +1,53 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Mon, 5 Dec 2016 03:34:00 +0800
+Subject: [bitcoin-dev] Forcenet: an experimental network with a new header
+	format
+Message-ID: <FB8593E6-3CD7-46D5-8FC8-A73A0EF1AE9A@xbt.hk>
+
+Based on Luke Dashjr?s code and BIP: https://github.com/luke-jr/bips/blob/bip-mmhf/bip-mmhf.mediawiki , I created an experimental network to show how a new header format may be implemented.
+
+Basically, the header hash is calculated in a way that non-upgrading nodes would see it as a block with only the coinbase tx and zero output value. They are effectively broken as they won?t see any transactions confirmed. This allows rewriting most of the rules related to block and transaction validity. Such technique has different names like soft-hardfork, firmfork, evil softfork, and could be itself a controversial topic. However, I?d rather not to focus on its soft-hardfork property, as that would be trivial to turn this into a true hardfork (e.g. setting the sign bit in block nVersion, or setting the most significant bit in the dummy coinbase nLockTime)
+
+Instead of its soft-HF property, I think the more interesting thing is the new header format. The current bitcoin header has only 80 bytes. It provides only 32bits of nonce space and is far not enough for ASICs. It also provides no room for committing to additional data. Therefore, people are forced to put many different data in the coinbase transaction, such as merge-mining commitments, and the segwit commitment. It is not a ideal solution, especially for light wallets.
+
+Following the practice of segwit development of making a experimental network (segnet), I made something similar and call it the Forcenet (as it forces legacy nodes to follow the post-fork chain)
+
+The header of forcenet is mostly described in Luke?s BIP, but I have made some amendments as I implemented it. The format is (size in parentheses; little endian):
+
+Height (4), BIP9 signalling field (4), hardfork signalling field (3), merge-mining hard fork signalling field (1), prev hash (32), timestamp (4), nonce1 (4), nonce2 (4), nonce3 (compactSize + variable), Hash TMR (32), Hash WMR (32), total tx size (8) , total tx weight (8), total sigops (8), number of tx (4), merkle branches leading to header C (compactSize + 32 bit hashes)
+
+In addition to increasing the max block size, I also showed how the calculation and validation of witness commitment may be changed with a new header. For example, since the commitment is no longer in the coinbase tx, we don?t need to use a 0000?.0000 hash for the coinbase tx like in BIP141.
+
+Something not yet done:
+1. The new merkle root algorithm described in the MMHF BIP
+2. The nTxsSigops has no meaning currently
+3. Communication with legacy nodes. This version can?t talk to legacy nodes through the P2P network, but theoretically they could be linked up with a bridge node
+4. A new block weight definition to provide incentives for slowing down UTXO growth
+5. Many other interesting hardfork ideas, and softfork ideas that works better with a header redesign
+
+For easier testing, forcenet has the following parameters:
+
+Hardfork at block 200
+Segwit is always activated
+1 minutes block with 40000 (prefork) and 80000 (postfork) weight limit
+50 blocks coinbase maturity
+21000 blocks halving
+144 blocks retarget
+
+How to join: codes at https://github.com/jl2012/bitcoin/tree/forcenet1 , start with "bitcoind ?forcenet" .
+Connection: I?m running a node at 8333.info with default port (38901)
+Mining: there is only basic internal mining support. Limited GBT support is theoretically possible but needs more hacking. To use the internal miner, writeup a shell script to repeatedly call ?bitcoin-cli ?forcenet generate 1?
+New RPC commands: getlegacyblock and getlegacyblockheader, which generates blocks and headers that are compatible with legacy nodes.
+
+This is largely work-in-progress so expect a reset every couple weeks
+
+jl2012
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 671 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20161205/126aae21/attachment.sig>
