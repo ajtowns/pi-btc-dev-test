@@ -1,0 +1,72 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Wed, 14 Dec 2016 23:45:37 +0800
+Subject: [bitcoin-dev] Forcenet: an experimental network with a new
+	header format
+In-Reply-To: <CAE-z3OWEkwuxu+LiT1VsWDBnnoi5pQHDDiiKpi7i8oDOtPrB4A@mail.gmail.com>
+References: <FB8593E6-3CD7-46D5-8FC8-A73A0EF1AE9A@xbt.hk>
+	<CAE-z3OUpbUA2yviYoZouuZ0fp1WbbVdehWwNCd3juNsN-u9csA@mail.gmail.com>
+	<201612102141.58206.luke@dashjr.org>
+	<CAE-z3OX5QW0jy_ZvU7=onaVoynJrsuyeCdc=q7wj=d5O4XLO7Q@mail.gmail.com>
+	<02E75CD7-24A8-4E2F-9466-B5497D0B77F8@xbt.hk>
+	<CAE-z3OWEkwuxu+LiT1VsWDBnnoi5pQHDDiiKpi7i8oDOtPrB4A@mail.gmail.com>
+Message-ID: <DB6F4DDF-1424-4FC4-84B3-5D16963E8589@xbt.hk>
+
+I think that?s too much tech debt just for softforkability.
+
+The better way would be making the sum tree as an independent tree with a separate commitment, and define a special type of softfork (e.g. a special BIP9 bit). When the softfork is activated, the legacy full node will stop validating the sum tree. This doesn?t really degrade the security by more than a normal softfork, as the legacy full node would still validate the total weight and nSigOp based on its own rules. The only purpose of the sum tree is to help SPV nodes to validate. This way we could even completely redefine the structure and data committed in the sum tree.
+
+I?d like to combine the size weight and sigOp weight, but not sure if we could. The current size weight limit is 4,000,000 and sigop limit is 80,000. It?s 50:1. If we maintain this ratio, and define
+weight = n * (total size +  3 * base size) + sigop , with n = 50
+a block may have millions of sigops which is totally unacceptable.
+
+On the other hand, if we make n too low, we may allow either too few sigop, or a too big block size.
+
+Signature aggregation will make this a bigger problem as one signature may spend thousands of sigop
+
+
+
+> On 14 Dec 2016, at 20:52, Tier Nolan <tier.nolan at gmail.com> wrote:
+> 
+> 
+> 
+> On Wed, Dec 14, 2016 at 10:55 AM, Johnson Lau <jl2012 at xbt.hk <mailto:jl2012 at xbt.hk>> wrote:
+> In a sum tree, however, since the nSigOp is implied, any redefinition requires either a hardfork or a new sum tree (and the original sum tree becomes a placebo for old nodes. So every softfork of this type creates a new tree)
+> 
+> That's a good point.
+>  
+> The only way to fix this is to explicitly commit to the weight and nSigOp, and the committed value must be equal to or larger than the real value. Only in this way we could redefine it with softfork. However, that means each tx will have an overhead of 16 bytes (if two int64 are used)
+> 
+> The weight and sigop count could be transmitted as variable length integers.  That would be around 2 bytes for the sigops and 3 bytes for the weight, per transaction.
+> 
+> It would mean that the block format would have to include the raw transaction, "extra"/tree information and witness data for each transaction.
+> 
+> On an unrelated note, the two costs could be combined into a unified cost.  For example, a sigop could have equal cost to 250 bytes.  This would make it easier for miners to decide what to charge.
+> 
+> On the other hand, CPU cost and storage/network costs are not completely interchangeable.
+> 
+> Is there anything that would need to be summed fees, raw tx size, weight and sigops that the greater or equal rule wouldn't cover?
+> 
+> On 12 Dec 2016, at 00:40, Tier Nolan via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org <mailto:bitcoin-dev at lists.linuxfoundation.org>> wrote:
+>> 
+>> On Sat, Dec 10, 2016 at 9:41 PM, Luke Dashjr <luke at dashjr.org <mailto:luke at dashjr.org>> wrote:
+>> On Saturday, December 10, 2016 9:29:09 PM Tier Nolan via bitcoin-dev wrote:
+>> > Any new merkle algorithm should use a sum tree for partial validation and
+>> > fraud proofs.
+>> 
+>> PR welcome.
+>> 
+>> Fair enough.  It is pretty basic.
+>> 
+>> https://github.com/luke-jr/bips/pull/2 <https://github.com/luke-jr/bips/pull/2>
+>> 
+>> It sums up sigops, block size, block cost (that is "weight" right?) and fees.
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org <mailto:bitcoin-dev at lists.linuxfoundation.org>
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev <https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev>
+> 
+> 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20161214/14889378/attachment.html>
