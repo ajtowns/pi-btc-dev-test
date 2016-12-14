@@ -1,0 +1,44 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Wed, 14 Dec 2016 18:55:39 +0800
+Subject: [bitcoin-dev] Forcenet: an experimental network with a new
+	header format
+In-Reply-To: <CAE-z3OX5QW0jy_ZvU7=onaVoynJrsuyeCdc=q7wj=d5O4XLO7Q@mail.gmail.com>
+References: <FB8593E6-3CD7-46D5-8FC8-A73A0EF1AE9A@xbt.hk>
+	<CAE-z3OUpbUA2yviYoZouuZ0fp1WbbVdehWwNCd3juNsN-u9csA@mail.gmail.com>
+	<201612102141.58206.luke@dashjr.org>
+	<CAE-z3OX5QW0jy_ZvU7=onaVoynJrsuyeCdc=q7wj=d5O4XLO7Q@mail.gmail.com>
+Message-ID: <02E75CD7-24A8-4E2F-9466-B5497D0B77F8@xbt.hk>
+
+I think the biggest problem of sum tree is the lack of flexibility to redefine the values with softforks. For example, in the future we may want to define a new CHECKSIG with witness script version 1. That would be counted as a SigOp. Without a sum tree design, that?d be easy as we could just define new SigOp through a softfork (e.g. the introduction of P2SH SigOp, and the witness v0 SigOp). In a sum tree, however, since the nSigOp is implied, any redefinition requires either a hardfork or a new sum tree (and the original sum tree becomes a placebo for old nodes. So every softfork of this type creates a new tree)
+
+Similarly, we may have secondary witness in the future, and the tx weight would be redefined with a softfork. We will face the same problem with a sum tree
+
+The only way to fix this is to explicitly commit to the weight and nSigOp, and the committed value must be equal to or larger than the real value. Only in this way we could redefine it with softfork. However, that means each tx will have an overhead of 16 bytes (if two int64 are used)
+
+You could find related discussion here: https://github.com/jl2012/bitcoin/commit/69e613bfb0f777c8dcd2576fe1c2541ee7a17208 <https://github.com/jl2012/bitcoin/commit/69e613bfb0f777c8dcd2576fe1c2541ee7a17208>
+
+Maybe we could make this optional: for nodes running exactly the same rules, they could omit the weight and nSigOp value in transmission. To talk to legacy nodes, they need to transmit the newly defined weight and nSigOp. But this makes script upgrade much complex.
+
+
+> On 12 Dec 2016, at 00:40, Tier Nolan via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org <mailto:bitcoin-dev at lists.linuxfoundation.org>> wrote:
+> 
+> On Sat, Dec 10, 2016 at 9:41 PM, Luke Dashjr <luke at dashjr.org <mailto:luke at dashjr.org>> wrote:
+> On Saturday, December 10, 2016 9:29:09 PM Tier Nolan via bitcoin-dev wrote:
+> > Any new merkle algorithm should use a sum tree for partial validation and
+> > fraud proofs.
+> 
+> PR welcome.
+> 
+> Fair enough.  It is pretty basic.
+> 
+> https://github.com/luke-jr/bips/pull/2 <https://github.com/luke-jr/bips/pull/2>
+> 
+> It sums up sigops, block size, block cost (that is "weight" right?) and fees.
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org <mailto:bitcoin-dev at lists.linuxfoundation.org>
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20161214/3efb104f/attachment.html>
