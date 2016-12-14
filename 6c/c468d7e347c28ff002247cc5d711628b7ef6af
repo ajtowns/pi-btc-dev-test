@@ -1,0 +1,161 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Wed, 14 Dec 2016 16:26:58 +0000
+Subject: [bitcoin-dev] Forcenet: an experimental network with a new
+	header format
+In-Reply-To: <DB6F4DDF-1424-4FC4-84B3-5D16963E8589@xbt.hk>
+References: <FB8593E6-3CD7-46D5-8FC8-A73A0EF1AE9A@xbt.hk>
+	<CAE-z3OUpbUA2yviYoZouuZ0fp1WbbVdehWwNCd3juNsN-u9csA@mail.gmail.com>
+	<201612102141.58206.luke@dashjr.org>
+	<CAE-z3OX5QW0jy_ZvU7=onaVoynJrsuyeCdc=q7wj=d5O4XLO7Q@mail.gmail.com>
+	<02E75CD7-24A8-4E2F-9466-B5497D0B77F8@xbt.hk>
+	<CAE-z3OWEkwuxu+LiT1VsWDBnnoi5pQHDDiiKpi7i8oDOtPrB4A@mail.gmail.com>
+	<DB6F4DDF-1424-4FC4-84B3-5D16963E8589@xbt.hk>
+Message-ID: <CAE-z3OXeV34SbE4AKknOVVcwEGDq22WO4iqfkQ2v3DCen1sP-Q@mail.gmail.com>
+
+On Wed, Dec 14, 2016 at 3:45 PM, Johnson Lau <jl2012 at xbt.hk> wrote:
+
+> I think that?s too much tech debt just for softforkability.
+>
+> The better way would be making the sum tree as an independent tree with a
+> separate commitment, and define a special type of softfork (e.g. a special
+> BIP9 bit).
+>
+
+One of the problems with fraud proofs is withholding by miners.  It is
+important that proof of publication/archive nodes check that the miners are
+actually publishing their blocks.
+
+If you place the data in another tree, then care needs to be taken that the
+merkle path information can be obtained for that tree.
+
+If an SPV node asks for a run of transactions from an archive node, then
+the archive node can give the merkle branch for all of those transactions.
+The archive node inherently has to check that tree.
+
+The question is if there is a way to show that data is not available, but
+without opening up the network to DOS.  If enough people run full nodes
+then this isn't a problem.
+
+>
+> When the softfork is activated, the legacy full node will stop validating
+> the sum tree. This doesn?t really degrade the security by more than a
+> normal softfork, as the legacy full node would still validate the total
+> weight and nSigOp based on its own rules. The only purpose of the sum tree
+> is to help SPV nodes to validate. This way we could even completely
+> redefine the structure and data committed in the sum tree.
+>
+
+Seems reasonable.  I think the soft-fork would have to have a timeout
+before actually activating.  That would give SPV clients time to switch
+over.
+
+That could happen before the vote though, so it isn't essential.  The SPV
+clients would have to support both trees and then switch mode.  Ensuring
+that SPV nodes actually bother would be helped by proving that the network
+actually intends to soft fork.
+
+The SPV client just has to check that every block has at least one of the
+commitments that it accepts so that it can understand fraud proofs.
+
+
+>
+> I?d like to combine the size weight and sigOp weight, but not sure if we
+> could. The current size weight limit is 4,000,000 and sigop limit is
+> 80,000. It?s 50:1. If we maintain this ratio, and define
+> weight = n * (total size +  3 * base size) + sigop , with n = 50
+> a block may have millions of sigops which is totally unacceptable.
+>
+
+You multiplied by the wrong term.
+
+weight = total size +  3 * base size + n * sigop , with n = 50
+
+weight for max block = 8,000,000
+
+That gives a maximum of 8,000,000 / 50 = 160,000 sigops.
+
+To get that you would need zero transaction length.  You could get close if
+you have transactions that just repeat OP_CHECKSIG over and over (or maybe
+something with OP_CHECKMULTISIG).
+
+
+>
+> On the other hand, if we make n too low, we may allow either too few
+> sigop, or a too big block size.
+>
+> Signature aggregation will make this a bigger problem as one signature may
+> spend thousands of sigop
+>
+>
+>
+> On 14 Dec 2016, at 20:52, Tier Nolan <tier.nolan at gmail.com> wrote:
+>
+>
+>
+> On Wed, Dec 14, 2016 at 10:55 AM, Johnson Lau <jl2012 at xbt.hk> wrote:
+>
+>> In a sum tree, however, since the nSigOp is implied, any redefinition
+>> requires either a hardfork or a new sum tree (and the original sum tree
+>> becomes a placebo for old nodes. So every softfork of this type creates a
+>> new tree)
+>>
+>
+> That's a good point.
+>
+>
+>> The only way to fix this is to explicitly commit to the weight and
+>> nSigOp, and the committed value must be equal to or larger than the real
+>> value. Only in this way we could redefine it with softfork. However, that
+>> means each tx will have an overhead of 16 bytes (if two int64 are used)
+>>
+>
+> The weight and sigop count could be transmitted as variable length
+> integers.  That would be around 2 bytes for the sigops and 3 bytes for the
+> weight, per transaction.
+>
+> It would mean that the block format would have to include the raw
+> transaction, "extra"/tree information and witness data for each transaction.
+>
+> On an unrelated note, the two costs could be combined into a unified
+> cost.  For example, a sigop could have equal cost to 250 bytes.  This would
+> make it easier for miners to decide what to charge.
+>
+> On the other hand, CPU cost and storage/network costs are not completely
+> interchangeable.
+>
+> Is there anything that would need to be summed fees, raw tx size, weight
+> and sigops that the greater or equal rule wouldn't cover?
+>
+> On 12 Dec 2016, at 00:40, Tier Nolan via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>
+> On Sat, Dec 10, 2016 at 9:41 PM, Luke Dashjr <luke at dashjr.org> wrote:
+>
+>> On Saturday, December 10, 2016 9:29:09 PM Tier Nolan via bitcoin-dev
+>> wrote:
+>> > Any new merkle algorithm should use a sum tree for partial validation
+>> and
+>> > fraud proofs.
+>>
+>> PR welcome.
+>>
+>
+> Fair enough.  It is pretty basic.
+>
+> https://github.com/luke-jr/bips/pull/2
+>
+> It sums up sigops, block size, block cost (that is "weight" right?) and
+> fees.
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+>
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20161214/9774c7f0/attachment-0001.html>
