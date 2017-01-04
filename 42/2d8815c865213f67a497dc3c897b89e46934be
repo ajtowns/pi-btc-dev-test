@@ -1,0 +1,177 @@
+From: bfd@cock.lu (bfd at cock.lu)
+Date: Tue, 03 Jan 2017 16:10:14 -0800
+Subject: [bitcoin-dev] Committed bloom filters for improved wallet
+ performance and SPV security
+In-Reply-To: <CACq0ZD5WV7ORmEJgGSquyRzndH_XP9FrLbwSNKQC5Zuh08NVDw@mail.gmail.com>
+References: <71d822e413ac457a530e1c367811cc24@cock.lu>
+	<77b6dd25-0603-a0bd-6a9e-38098e5cb19d@jonasschnelli.ch>
+	<74aeb4760316b59a3db56c0d16d11f28@cock.lu>
+	<CACq0ZD7XT_h8ADptKA0uBT7617fvvgh3uGndkc08RZUSQM2yQg@mail.gmail.com>
+	<CAKEeUhiQiUA_E6JF22foV11-WnGZH+kEzfUhROm=gvVN1qMr4A@mail.gmail.com>
+	<CACq0ZD5WV7ORmEJgGSquyRzndH_XP9FrLbwSNKQC5Zuh08NVDw@mail.gmail.com>
+Message-ID: <22b7d05fb2b8a7a0f1c2fa0b6b375f7e@cock.lu>
+
+Unfortunately a non validating SPV wallet has absolutely no idea if
+the information about an unconfirmed transaction they are seeing is
+anything but properly formatted. They are connecting to an easily
+manipulated, sybil attacked, and untrusted network and then asking
+them for financial information. Seeing an unconfirmed transaction in a
+wallet that's not also fully validating is at best meaningless.
+
+
+On 2017-01-03 15:46, Aaron Voisine wrote:
+> If the sender doesn't control the receiver's network connection, then
+> the information the receiver gains by watching the mempool is if the
+> transaction has propagated across the bitcoin network. This is useful
+> to know in all kinds of situations.
+> 
+> Aaron Voisine
+> co-founder and CEO
+> breadwallet [2]
+> On Tue, Jan 3, 2017 at 3:06 PM, adiabat <rx at awsomnet.org> wrote:
+> 
+>> Mempool transactions have their place, but "unconfirmed" and "SPV"
+>> don't belong together.  Only a full node can tell if a transaction
+>> may get confirmed, or is nonsense.  Unfortunately all the light /
+>> SPV wallets I know of show mempool transactions, which makes it hard
+>> to go back... (e.g. "why doesn't your software show 0-conf! your
+>> wallet is broken!", somewhat akin to people complaining about RBF)
+>> 
+>> So, this is easy, just don't worry about mempool filtering.  Why are
+>> light clients looking at the mempool anyway?  Maybe if there were
+>> some way to provide SPV proofs of all inputs, but that's a bit of a
+>> mess for full nodes to do.
+>> 
+>> Without mempool filtering, I think the committed bloom filters would
+>> be a great improvement over the current bloom filter setup,
+>> especially for lightning network use cases (with lightning, not
+>> finding out about a transaction can make you lose money).  I want to
+>> work on it and may be able to at some point as it's somewhat related
+>> to lightning.
+>> 
+>> Also, if you're running a light client, and storing the filters the
+>> way you store block headers, there's really no reason to go all the
+>> way back to height 0.  You can start grabbing headers at some point
+>> a while ago, before your set of keys was generated.  I think it'd be
+>> very worth it even with GB-scale disk usage.
+>> 
+>> -Tadge
+>> 
+>> On Tue, Jan 3, 2017 at 5:18 PM, Aaron Voisine via bitcoin-dev
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> 
+>> Unconfirmed transactions are incredibly important for real world
+>> use. Merchants for instance are willing to accept credit card
+>> payments of thousands of dollars and ship the goods despite the fact
+>> that the transaction can be reversed up to 60 days later. There is a
+>> very large cost to losing the ability to have instant transactions
+>> in many or even most situations. This cost is typically well above
+>> the fraud risk.
+>> 
+>> It's important to recognize that bitcoin serves a wide variety of
+>> use cases with different profiles for time sensitivity and fraud
+>> risk.
+>> 
+>> Aaron
+>> 
+>> On Tue, Jan 3, 2017 at 12:41 PM bfd--- via bitcoin-dev
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> The concept combined with the weak blocks system where miners commit
+>> 
+>> to potential transaction inclusion with fractional difficulty blocks
+>> 
+>> is possible. I'm not personally convinced that unconfirmed
+>> transaction
+>> 
+>> display in a wallet is worth the privacy trade-off. The user has
+>> very
+>> 
+>> little to gain from this knowledge until the txn is in a block.
+>> 
+>> On 2017-01-01 13:01, Jonas Schnelli via bitcoin-dev wrote:
+>> 
+>>> Hi
+>> 
+>>>> We introduce several concepts that rework the lightweight Bitcoin
+>> 
+>>>> client model in a manner which is secure, efficient and privacy
+>> 
+>>>> compatible.
+>> 
+>>>> 
+>> 
+>>>> The BFD can be used verbatim in replacement of BIP37, where the
+>> filter
+>> 
+>>>> can be cached between clients without needing to be recomputed.
+>> It can
+>> 
+>>>> also be used by normal pruned nodes to do re-scans locally of
+>> their
+>> 
+>>>> wallet without needing to have the block data available to scan,
+>> or
+>> 
+>>>> without reading the entire block chain from disk.
+>> 
+>>> I started exploring the potential of BFD after this specification.
+>> 
+>>> 
+>> 
+>>> What would be the preferred/recommended way to handle
+>> 0-conf/mempool
+>> 
+>>> filtering ? if & once BDF would have been deployed (any type,
+>> 
+>>> semi-trusted oracles or protocol-level/softfork)?
+>> 
+>>> 
+>> 
+>>> From the user-experience perspective, this is probably pretty
+>> important
+>> 
+>>> (otherwise the experience will be that incoming funds can take
+>> serval
+>> 
+>>> minutes to hours until they appear).
+>> 
+>>> Using BIP37 bloom filters just for mempool filtering would
+>> obviously
+>> 
+>>> result in the same unwanted privacy-setup.
+>> 
+>>> 
+>> 
+>>> </jonas>
+>> 
+>>> 
+>> 
+>>> 
+>> 
+>>> _______________________________________________
+>> 
+>>> bitcoin-dev mailing list
+>> 
+>>> bitcoin-dev at lists.linuxfoundation.org
+>> 
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev [1]
+>> 
+>> _______________________________________________
+>> 
+>> bitcoin-dev mailing list
+>> 
+>> bitcoin-dev at lists.linuxfoundation.org
+>> 
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev [1]
+>> 
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev [1]
+> 
+> 
+> 
+> Links:
+> ------
+> [1] https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> [2] http://breadwallet.com
