@@ -1,0 +1,170 @@
+From: jlrubin@mit.edu (Jeremy)
+Date: Thu, 5 Jan 2017 11:22:34 -0500
+Subject: [bitcoin-dev] Script Abuse Potential?
+In-Reply-To: <CABm2gDr-8h6EszsKRpJq6OCNnTUjmPvN_K3pYzyeNT3z2Lu94w@mail.gmail.com>
+References: <mailman.11263.1483391161.31141.bitcoin-dev@lists.linuxfoundation.org>
+	<400152B9-1838-432A-829E-13E4FC54320C@gmail.com>
+	<CAD5xwhjHFzFzKws10TG-XioZoRVZ_oZbMF_xDOy5xNWtzFTsEw@mail.gmail.com>
+	<6A91D4E4-750D-42C0-B593-3D5014B8A3F7@xbt.hk>
+	<CAD5xwhg3QeHZF1Oepo3dnCAth0EO3wCqyeT4a21gQ2uxZ5dTfQ@mail.gmail.com>
+	<CAMZUoK=-3dGapPQTfKdd4oMQukiTyN1v123Yjo4ihO6YOHuBZQ@mail.gmail.com>
+	<CABm2gDr-8h6EszsKRpJq6OCNnTUjmPvN_K3pYzyeNT3z2Lu94w@mail.gmail.com>
+Message-ID: <CAD5xwhh0RKqS0odeN1inoNFBUaVDmO_gt7rCV88kGn6VQrNBuQ@mail.gmail.com>
+
+@Russell: Appreciate the historical note, but as that op code was
+simultaneously disabled in that patch I don't think we can look back to how
+it was non-functionally changed (that number means nothing... maybe Satoshi
+was trying it out with 520 bytes but then just decided to all-out disable
+it and accidentally included that code change? Hard to say what the intent
+was.).
+
+@Jorge:
+That's one part of it that is worth hesitation and consideration. I'm not a
+fan of the 520 byte limit as well. My gut feeling is that the "right"
+answer is to compute the memory weight of the entire stack before/after
+each operation and reasonably bound it.
+
+Below text is from the chain core documentation:
+
+"""
+Most instructions use only the data stack by removing some items and then
+placing some items back on the stack. For these operations, we define the
+standard memory cost applied as follows:
+
+Instruction?s memory cost value is set to zero.
+For each item removed from the data stack, instruction?s memory cost is
+decreased by 8+L where L is the length of the item in bytes.
+For each item added to the data stack the cost is increased by 8+L where L
+is the length of the item in bytes.
+?----?
+Every instruction has a cost that affects VM run limit. Total instruction
+cost consists of execution costand memory cost. Execution cost always
+reduces remaining run limit, while memory usage cost can be refunded
+(increasing the run limit) when previously used memory is released during
+VM execution.
+"""
+
+?Is there a reason to favor one approach over the other? I think one reason
+to favor a direct limit on op_cat is it favors what?
+?
+? I'll dub "context free" analysis, where the performance doesn't depend on
+what else is on the stack (perhaps by passing very large arguments to a
+script you can cause bad behavior with a general memory limit?).? On the
+other hand, the reason I prefer the general memory limit is it solves the
+problem for all future memory-risky opcodes (or present day memory risks!).
+Further, OP_CAT is also a bit leaky, in that you could be catting onto a
+passed in large string.  The chief argument I'm aware of against a general
+memory limit argument is that it is tricky to make a non-implementation
+dependent memory limit (e.g., can't just call DynamicMemoryUsage on the
+stack), but I don't think this is a strong argument for several
+(semi-obvious? I can go into them if need be) reasons.
+
+
+--
+@JeremyRubin <https://twitter.com/JeremyRubin>
+<https://twitter.com/JeremyRubin>
+
+On Wed, Jan 4, 2017 at 9:45 AM, Jorge Tim?n <jtimon at jtimon.cc> wrote:
+
+> I would assume that the controversial part of op_cat comes from the fact
+> that it enables covenants. Are there more concerns than that?
+>
+> On 4 Jan 2017 04:14, "Russell O'Connor via bitcoin-dev" <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> For the record, the OP_CAT limit of 520 bytes was added by Satoshi
+>> <https://github.com/bitcoin/bitcoin/commit/4bd188c4383d6e614e18f79dc337fbabe8464c82#diff-8458adcedc17d046942185cb709ff5c3R425>
+>> on the famous August 15, 2010 "misc" commit, at the same time that OP_CAT
+>> was disabled.
+>> The previous limit was 5000 bytes.
+>>
+>> On Tue, Jan 3, 2017 at 7:13 PM, Jeremy via bitcoin-dev <
+>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>
+>>> Sure, was just upper bounding it anyways. Even less of a problem!
+>>>
+>>>
+>>> RE: OP_CAT, not as OP_CAT was specified, which is why it was disabled.
+>>> As far as I know, the elements alpha proposal to reenable a limited op_cat
+>>> to 520 bytes is somewhat controversial...
+>>>
+>>>
+>>>
+>>> --
+>>> @JeremyRubin <https://twitter.com/JeremyRubin>
+>>> <https://twitter.com/JeremyRubin>
+>>>
+>>> On Mon, Jan 2, 2017 at 10:39 PM, Johnson Lau <jl2012 at xbt.hk> wrote:
+>>>
+>>>> No, there could only have not more than 201 opcodes in a script. So you
+>>>> may have 198 OP_2DUP at most, i.e. 198 * 520 * 2 = 206kB
+>>>>
+>>>> For OP_CAT, just check if the returned item is within the 520 bytes
+>>>> limit.
+>>>>
+>>>> On 3 Jan 2017, at 11:27, Jeremy via bitcoin-dev <
+>>>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>>>
+>>>> It is an unfortunate script, but can't actually
+>>>> ?do
+>>>>  that much
+>>>> ? it seems?
+>>>> . The MAX_SCRIPT_ELEMENT_SIZE = 520 Bytes.
+>>>> ? Thus, it would seem the worst you could do with this would be to (10000-520*2)*520*2
+>>>> bytes  ~=~ 10 MB.
+>>>>
+>>>> ?Much more concerning would be the op_dup/op_cat style bug, which under
+>>>> a similar script ?would certainly cause out of memory errors :)
+>>>>
+>>>>
+>>>>
+>>>> --
+>>>> @JeremyRubin <https://twitter.com/JeremyRubin>
+>>>> <https://twitter.com/JeremyRubin>
+>>>>
+>>>> On Mon, Jan 2, 2017 at 4:39 PM, Steve Davis via bitcoin-dev <
+>>>> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>>>
+>>>>> Hi all,
+>>>>>
+>>>>> Suppose someone were to use the following pk_script:
+>>>>>
+>>>>> [op_2dup, op_2dup, op_2dup, op_2dup, op_2dup, ...(to limit)...,
+>>>>> op_2dup, op_hash160, <addr_hash>, op_equalverify, op_checksig]
+>>>>>
+>>>>> This still seems to be valid AFAICS, and may be a potential attack
+>>>>> vector?
+>>>>>
+>>>>> Thanks.
+>>>>>
+>>>>>
+>>>>> _______________________________________________
+>>>>> bitcoin-dev mailing list
+>>>>> bitcoin-dev at lists.linuxfoundation.org
+>>>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>>>
+>>>>>
+>>>> _______________________________________________
+>>>> bitcoin-dev mailing list
+>>>> bitcoin-dev at lists.linuxfoundation.org
+>>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>>
+>>>>
+>>>>
+>>>
+>>> _______________________________________________
+>>> bitcoin-dev mailing list
+>>> bitcoin-dev at lists.linuxfoundation.org
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>
+>>>
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170105/c28f6e09/attachment-0001.html>
