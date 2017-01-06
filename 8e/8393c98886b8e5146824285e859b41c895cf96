@@ -1,0 +1,158 @@
+From: erik@q32.com (Erik Aronesty)
+Date: Fri, 6 Jan 2017 17:07:36 -0500
+Subject: [bitcoin-dev] Committed bloom filters for improved wallet
+ performance and SPV security
+In-Reply-To: <307a1ca0-5554-a14e-fd3b-aace7d7c2233@LeoWandersleb.de>
+References: <71d822e413ac457a530e1c367811cc24@cock.lu>
+	<20160511200648.GQ20063@mcelrath.org>
+	<20160511202933.GR20063@mcelrath.org>
+	<307a1ca0-5554-a14e-fd3b-aace7d7c2233@LeoWandersleb.de>
+Message-ID: <CAJowKgLvZQxGqB6U5RiEizjkNXd1OYuTaRqXONTWTQ0VvX7FGA@mail.gmail.com>
+
+ - N \log_2 \epsilon * 1.44
+
+N = 41000 blocks
+epsilon = 1/41000 (fp rate)
+
+= 904689.8bits
+
+~ 1 MB
+
+
+On Thu, Jul 28, 2016 at 5:07 PM, Leo Wandersleb via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> gmaxwell just made me aware of this mail thread [0]. Some days ago I had
+> independently and naively started implementing "something similar" [1].
+>
+> My version totally ignored the commitment and signing part but I'm pretty
+> sure
+> that 12GB is overkill. My code is currently broken and I have no time to
+> work on
+> it much but I thought it might be helpful to chime in.
+>
+> At this point in time the difference between 80GB and 3GB (as my current
+> 1.5GB
+> of only outputs would suggest if I had covered the inputs) or even 12GB
+> makes
+> the difference of being able to store it on a phone, vs. not being able
+> to. 80GB
+> "compressed" to 3GB is not that bad at all. Unfortunately, with segWit
+> this will
+> be worse, with the higher transaction count per MB.
+>
+> Regards,
+>
+> Leo
+>
+> [0]
+> https://www.reddit.com/r/Bitcoin/comments/4v28jl/how_
+> have_fungiblity_problems_affected_you_in/d5ux6aq
+> [1] https://github.com/Giszmo/TransactionFinder
+>
+> On 05/11/2016 10:29 PM, Bob McElrath via bitcoin-dev wrote:
+> > Eerrrr....let me revise that last paragraph.  That's 12 *GB* of filters
+> at
+> > today's block height (at fixed false-positive rate 1e-6.  Compared to
+> block
+> > headers only which are about 33 MB today.  So this proposal is not really
+> > compatible with such a wallet being "light"...
+> >
+> > Damn units...
+> >
+> > Bob McElrath via bitcoin-dev [bitcoin-dev at lists.linuxfoundation.org]
+> wrote:
+> >> I like this idea, but let's run some numbers...
+> >>
+> >> bfd--- via bitcoin-dev [bitcoin-dev at lists.linuxfoundation.org] wrote:
+> >>> A Bloom Filter Digest is deterministically created of every block
+> >> Bloom filters completely obfuscate the required size of the filter for
+> a desired
+> >> false-positive rate.  But, an optimal filter is linear in the number of
+> elements
+> >> it contains for fixed false-positive rate, and logarithmic in the
+> false-positive
+> >> rate.  (This comment applies to a RLL encoded Bloom filter Greg
+> mentioned, but
+> >> that's not the only way)  That is for N elements and false positive rate
+> >> \epsilon:
+> >>
+> >>     filter size = - N \log_2 \epsilon
+> >>
+> >> Given that the data that would be put into this particular filter is
+> *already*
+> >> hashed, it makes more sense and is faster to use a Cuckoo[1] filter,
+> choosing a
+> >> fixed false-positive rate, given expected wallet sizes.  For Bloom
+> filters,
+> >> multiply the above formula by 1.44.
+> >>
+> >> To prevent light clients from downloading more blocks than necessary,
+> the
+> >> false-positive rate should be roughly less than 1/(block height).  If
+> we take
+> >> the false positive rate to be 1e-6 for today's block height ~ 410000,
+> this is
+> >> about 20 bits per element.  So for todays block's, this is a 30kb
+> filter, for a
+> >> 3% increase in block size, if blocks commit to the filter.  Thus the
+> required
+> >> size of the filter commitment is roughly:
+> >>
+> >>     filter size = N \log_2 H
+> >>
+> >> where H is the block height.  If bitcoin had these filters from the
+> beginning, a
+> >> light client today would have to download about 12MB of data in
+> filters.  My
+> >> personal SPV wallet is using 31MB currently.  It's not clear this is a
+> bandwidth
+> >> win, though it's definitely a win for computing load on full nodes.
+> >>
+> >>
+> >> [1] https://www.cs.cmu.edu/~dga/papers/cuckoo-conext2014.pdf
+> >>
+> >> --
+> >> Cheers, Bob McElrath
+> >>
+> >> "For every complex problem, there is a solution that is simple, neat,
+> and wrong."
+> >>     -- H. L. Mencken
+> >>
+> >>
+> >>
+> >> !DSPAM:5733934b206851108912031!
+> >
+> >
+> >> _______________________________________________
+> >> bitcoin-dev mailing list
+> >> bitcoin-dev at lists.linuxfoundation.org
+> >> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >>
+> >>
+> >> !DSPAM:5733934b206851108912031!
+> > --
+> > Cheers, Bob McElrath
+> >
+> > "For every complex problem, there is a solution that is simple, neat,
+> and wrong."
+> >     -- H. L. Mencken
+> >
+> >
+> >
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170106/6199b1c2/attachment.html>
