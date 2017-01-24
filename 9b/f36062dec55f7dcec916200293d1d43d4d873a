@@ -1,0 +1,52 @@
+From: runesvend@gmail.com (Rune K. Svendsen)
+Date: Tue, 24 Jan 2017 19:57:59 +0100
+Subject: [bitcoin-dev] Separating mining from tx verification by enabling
+ paying to valid POW header
+Message-ID: <CAH2=CKzssBAUP1CfiVNxWRK-S7FvZtbMdwVWmvU62CG9hU96WQ@mail.gmail.com>
+
+As mining works now, miners have to verify all Bitcoin transactions in the
+blocks they mine, because they would otherwise risk producing an invalid
+block. This is problematic because many miners are Chinese, and thus have
+poor Internet connectivity, so it would be preferable to separate the task
+of creating valid proof-of-work from the task of collecting valid
+transactions.
+
+This could be made possible by adding an opcode that checks whether the
+top-most stack item is a valid block header, we could call it
+OP_VALID_HEADER(VERIFY), thus allowing miners to be paid for a valid block
+header through a regular Bitcoin transaction, rather than through the
+coinbase transaction only. This allows a different group to simply act as
+collectors of transactions, and create OP_VALID_HEADER-transactions that
+pay to block headers with a merkle root that includes all the highest-fee
+transactions.
+
+So, these collectors would accumulate as many connections as possible
+within the Bitcoin P2P network, and collect all the highest fee
+transactions they can find. Then construct a block which includes all these
+transactions, and a coinbase tx that pays the block reward plus fees to the
+collector.
+
+With this block the collector would then create a Bitcoin transaction, with
+a OP_VALID_HEADER-output that can be redeemed by supplying the block header
+in the script but with a modified nonce/timestamp such that the
+proof-of-work+timestamp is valid. Miners would then only have to look for
+these Bitcoin transactions from the collectors, and mine on whichever
+header pays them the most, without having to care about whether the block
+in question includes invalid transactions, because the miner is paid for
+just a valid proof-of-work hash. When the miner finds a solution, it
+publishes the transaction, the collector see this transaction, gets it
+valid header, and publishes the block.
+
+A side bonus of this is that botnet miners can now participate on basically
+equal footing with traditional miners: they just listen to the P2P network
+for the transaction from the collector who pays them the most, which will
+include as many transactions as possible to earn the most in fees, thus
+verifying transactions without having to do the work.
+
+
+
+
+      /Rune
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170124/61599ef3/attachment-0001.html>
