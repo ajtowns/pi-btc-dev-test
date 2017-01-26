@@ -1,0 +1,210 @@
+From: cp368202@ohiou.edu (Chris Priest)
+Date: Wed, 25 Jan 2017 23:03:23 -0800
+Subject: [bitcoin-dev] Anti-transaction replay in a hardfork
+In-Reply-To: <93ac7433-470c-d59e-e085-29f0f1613676@mattcorallo.com>
+References: <A182F080-F154-4F05-B2F1-21B90E469267@xbt.hk>
+	<93ac7433-470c-d59e-e085-29f0f1613676@mattcorallo.com>
+Message-ID: <CAAcC9ys4dH3hFzXJon7ho_TP3YwOd=SB2DB0oW5-NnNY5Q19Cw@mail.gmail.com>
+
+I don't think the solution should be to "fix the replay attack", but
+rather to "force the replay effect". The fact that transactions can be
+relayed should be seen as a good thing, and not something that should
+be fixed, or even called an "attack".
+
+The solution should be to create a "bridge" that replays all
+transactions from one network over to the other, and vice-versa. A
+fork should be transparent to the end-user. Forcing the user to choose
+which network to use is bad, because 99% of people that use bitcoin
+don't care about developer drama, and will only be confused by the
+choice. When a user moves coins mined before the fork date, both
+blockchains should record that transaction. Also a rule should be
+introduced that prevents users "tainting" their prefork-mined coins
+with coins mined after the fork. All pre-fork mined coins should
+"belong" to the network with hashpower majority. No other networks
+should be able to claim pre-forked coins as being part of their
+issuance (and therefore part of market cap). Market cap may be
+bullshit, but it is used a lot in the cryptosphere to compare coins to
+each other.
+
+The advantage of pre-fork coins being recorded on both forks is that
+if one fork goes extinct, no one loses any money. This setup
+encourages the minority chain to die,and unity returned. If pre-fork
+coins change hands on either fork (and not on the other), then holders
+have an incentive to not let their chain die, and the networks will be
+irreversibly split forever. The goal should be unity not permanent
+division.
+
+On 1/25/17, Matt Corallo via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> "A. For users on both existing and new fork, anti-replay is an option,
+> not mandatory"
+>
+> To maximize fork divergence, it might make sense to require this. Any
+> sensible proposal for a hard fork would include a change to the sighash
+> anyway, so might as well make it required, no?
+>
+> Matt
+>
+> On 01/24/17 14:33, Johnson Lau via bitcoin-dev wrote:
+>> This is a pre-BIP. Just need some formatting to make it a formal BIP
+>>
+>> Motivation:
+>>
+>> In general, hardforks are consensus rule changes that make currently
+>> invalid transactions / blocks valid. It requires a very high degree of
+>> consensus and all economic active users migrate to the new rules at the
+>> same time. If a significant amount of users refuse to follow, a
+>> permanent ledger split may happen, as demonstrated by Ethereum (?DAO
+>> hardfork"). In the design of DAO hardfork, a permanent split was not
+>> anticipated and no precaution has been taken to protect against
+>> transaction replay attack, which led to significant financial loss for
+>> some users.
+>>
+>> A replay attack is an attempt to replay a transaction of one network on
+>> another network. It is normally impossible, for example between Bitcoin
+>> and Litecoin, as different networks have completely different ledgers.
+>> The txid as SHA256 hash guarantees that replay across network is
+>> impossible. In a blockchain split, however, since both forks share the
+>> same historical ledger, replay attack would be possible, unless some
+>> precautions are taken.
+>>
+>> Unfortunately, fixing problems in bitcoin is like repairing a flying
+>> plane. Preventing replay attack is constrained by the requirement of
+>> backward compatibility. This proposal has the following objectives:
+>>
+>> A. For users on both existing and new fork, anti-replay is an option,
+>> not mandatory.
+>>
+>> B. For transactions created before this proposal is made, they are not
+>> protected from anti-replay. The new fork has to accept these
+>> transactions, as there is no guarantee that the existing fork would
+>> survive nor maintain any value. People made time-locked transactions in
+>> anticipation that they would be accepted later. In order to maximise the
+>> value of such transactions, the only way is to make them accepted by any
+>> potential hardforks.
+>>
+>> C. It doesn?t require any consensus changes in the existing network to
+>> avoid unnecessary debate.
+>>
+>> D. As a beneficial side effect, the O(n^2) signature checking bug could
+>> be fixed for non-segregated witness inputs, optionally.
+>>
+>> Definitions:
+>>
+>> ?Network characteristic byte? is the most significant byte of the
+>> nVersion field of a transaction. It is interpreted as a bit vector, and
+>> denotes up to 8 networks sharing a common history.
+>>
+>> ?Masked version? is the transaction nVersion with the network
+>> characteristic byte masked.
+>>
+>> ?Existing network? is the Bitcoin network with existing rules, before a
+>> hardfork. ?New network? is the Bitcoin network with hardfork rules. (In
+>> the case of DAO hardfork, Ethereum Classic is the existing network, and
+>> the now called Ethereum is the new network)
+>>
+>> ?Existing network characteristic bit? is the lowest bit of network
+>> characteristic byte
+>>
+>> ?New network characteristic bit? is the second lowest bit of network
+>> characteristic byte
+>>
+>> Rules in new network:
+>>
+>> 1. If the network characteristic byte is non-zero, and the new network
+>> characteristic bit is not set, this transaction is invalid in the new
+>> network. (softfork)
+>>
+>> 2. If the network characteristic byte is zero, go to 4
+>>
+>> 3. If the network characteristic byte is non-zero, and the new network
+>> characteristic bit is set, go to 4, regardless of the status of the
+>> other bits.
+>>
+>> 4. If the masked version is 2 or below, the new network must verify the
+>> transaction with the existing script rules. (no change)
+>>
+>> 5. If the masked version is 3 or above, the new network must verify the
+>> signatures with a new SignatureHash algorithm (hardfork). Segwit and
+>> non-segwit txs will use the same algorithm. It is same as BIP143, except
+>> that 0x2000000 is added to the nHashType before the hash is calculated.
+>>
+>> Rules in the existing network:
+>>
+>> 6. No consensus rule changes is made in the existing network.
+>>
+>> 7. If the network characteristic byte is non-zero, and the existing
+>> network characteristic bit is not set, this transaction is not relayed
+>> nor mined by default (no change)
+>>
+>> 8. If the network characteristic byte is zero, no change
+>>
+>> 9. If the network characteristic byte is non-zero, and the existing
+>> network characteristic bit is set, the masked version is used to
+>> determine whether a transaction should be mined or relayed (policy
+>> change)
+>>
+>> 10. Wallet may provide an option for setting the existing network
+>> characteristic bit.
+>>
+>>
+>> Rationales (by rule number):
+>>
+>> 1. This makes sure transactions with only existing network
+>> characteristic bit set is invalid in the new network (opt-in anti-replay
+>> for existing network transactions on the new network, objective A)
+>>
+>> 2+4. This makes sure time-locked transactions made before this proposals
+>> are valid in the new network (objective B)
+>>
+>> 2+5. This makes sure transactions made specifically for the new network
+>> are invalid in the existing network (anti-replay for new network
+>> transactions on the old network); also fixing the O(n^2) bug (objectives
+>> A and D)
+>>
+>> 3. This is to prepare for the next hardfork from the new network
+>> (objective A)
+>>
+>> 6, 7, 8. These minimise the change to the existing network (objective C)
+>>
+>> 9, 10. These are not strictly needed until a hardfork is really
+>> anticipated. Without a significant portion of the network and miners
+>> implement this policy, however, no one should create such transactions.
+>> (objective A)
+>>
+>>
+>> Limitations:
+>>
+>> * It is not possible to protect transactions made before the proposal.
+>> To avoid a replay of such transactions, users should first spend at
+>> least a relevant UTXO on the new network so the replay transaction would
+>> be invalidated.
+>>
+>> * It is up to the designer of a hardfork to decide whether this proposal
+>> is respected. As the DAO hardfork has shown how harmful replay attack
+>> could be, all hardfork proposals (except trivial and totally
+>> uncontroversial ones) should take this into account
+>>
+>> * The size of network characteristic byte is limited to 8 bits. However,
+>> if we are sure that some of the networks are completely abandoned, the
+>> bits might be reused.
+>>
+>>
+>> Reference implementation:
+>>
+>> A demo is available in my forcenet2
+>> branch:
+>> https://github.com/jl2012/bitcoin/commit/7c2593946c4f3e210683110782d82f55473c682a
+>> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013472.html
+>>
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
