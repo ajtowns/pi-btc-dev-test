@@ -1,0 +1,70 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Sat, 28 Jan 2017 04:36:03 +0800
+Subject: [bitcoin-dev] Consensus critical limits in Bitcoin protocol and
+ proposed block resources limit accounting
+Message-ID: <7FA94C9F-970F-4526-AD83-C04078FEDA60@xbt.hk>
+
+There are many consensus critical limits scattered all over the Bitcoin protocol. The first part of this post is to analyse what the current limits are. These limits could be arranged into different categories:
+
+1. Script level limit. Some limits are restricted to scripts, including size (10000 bytes), nOpCount (201), stack plus alt-stack size (1000), and stack push size (520). If these limits are passed, they won?t have any effects on the limits of the other levels.
+
+2. Output value limit: any single output value must be >=0 and <= 21 million bitcoin
+
+3. Transaction level limit: The only transaction level limit we have currently, is the total output value must be equal to or smaller than the total input value for non-coinbase tx.
+
+4. Block level limit: there are several block level limits:
+a. The total output value of all txs must be equal to or smaller than the total input value with block reward.
+b. The serialised size including block header and transactions must not be over 1MB. (or 4,000,000 in terms of tx weight with segwit)
+c. The total nSigOpCount must not be over 20,000 (or 80,000 nSigOpCost with segwit)
+
+There is an unavoidable layer violation in terms of the block level total output value. However, all the other limits are restricted to its level. Particularly, the counting of nSigOp does not require execution of scripts. BIP109 (now withdrawn) tried to change this by implementing a block level SigatureHash limit and SigOp limit by counting the accurate value through running the scripts.
+
+So currently, we have 2 somewhat independent block resources limits: weight and SigOp. A valid block must not exceed any of these limits. However, for miners trying to maximise the fees under these limits, they need to solve a non-linear equation. It?s even worse for wallets trying to estimate fees, as they have no idea what txs are miners trying to include. In reality, everyone just ignore SigOp for fee estimation, as the size/weight is almost always the dominant factor.
+
+In order to not introduce further non-linearity with segwit, after examining different alternatives, we decided that the block weight limit should be a simple linear function:  3*base size + total size, which allows bigger block size and provides incentives to limit UTXO growth. With normal use, this allows up to 2MB of block size, and even more if multi-sig becomes more popular. A side effect is that allows a theoretical way to fill up the block to 4MB with mostly non-transaction data, but that?d only happen if a miner decide to do it due to non-standardness. (and this is actually not too bad, as witness could be pruned in the future)
+
+Some also criticised that the weight accounting would make a ?simple 2MB hardfork? more dangerous, as the theoretical limits will be 8MB which is too much. This is a complete straw man argument, as with a hardfork, one could introduce any rules at will, including revolutionising the calculation of block resources, as shown below.
+
+?????????
+Proposal: a new block resources limit accounting
+
+Objectives: 
+1. linear fee estimation
+2. a single, unified, block level limit for everything we want to limit
+3. do not require expensive script evaluation
+
+Assumptions:
+1. the maximum base block size is about 1MB (for a hardfork with bigger block, it just needs to upscale the value)
+2. a hardfork is done (despite some of these could also be done with a softfork)
+
+Version 1: without segwit
+The tx weight is the maximum of the following values:
+? Serialised size in byte
+? accurate nSigOpCount * 50 (statical counting of SigOp in scriptSig, redeemScript, and previous scriptPubKey, but not the new scriptPubKey)
+The block level limit is 1,000,000
+
+Although this looks similar to the existing approach, this actually makes the fee estimation a linear problem. Wallets may now calculate both values for a tx and take the maximum, and compare with other txs on the same basis. On the other hand, the total size and SigOpCount of a block may never go above the existing limits (1MB and 20000) no matter how the txs look like. (In some edge cases, the max block size might be smaller than 1MB, if the weight of some transactions is dominated by the SigOpCount)
+
+Version 2: extending version 1 with segwit
+The tx weight is the maximum of the following values:
+? Serialised size in byte * 2
+? Base size * 3 + total size
+? accurate SigOpCount * 50 (as a hardfork, segwit and non-segwit SigOp could be counted in the same way and no need to scale) 
+The block level limit is 4,000,000
+
+For similar reasons the fee estimation is also a linear problem. An interesting difference between this and BIP141 is this will limit the total block size under 2MB, as 4,000,000 / 2 (the 2 as the scaling factor for the serialised size). If the witness inflation really happens (which I highly doubt as it?s a miner initiated attack), we could introduce a similar limit just with a softfork.
+
+Version 3: extending version 2 to limit UTXO growth:
+The tx weight is the maximum of the following values:
+? Serialised size in byte * 2
+? Adjusted size = Base size * 3 + total size + (number of non-OP_RETURN outputs - number of inputs) * 4 * 41
+? accurate SigOpCount * 50
+
+I have explained the rationale for the adjusted size in an earlier post but just repeat here. ?4? in the formula is the witness scale factor, and ?41? is the minimum size of transaction input (32 hash + 4 index + 4 sequence + 1 for empty scriptSig). This requires everyone to pay a significant portion of the spending fee when they create a UTXO, so they pay less when it is spent. For transactions with 1:1 input and output ratios, the effect is cancelled out and won?t actually affect the weight estimation. When spending becomes cheaper, even UTXOs with lower value might become economical to spend, which helps cleaning up the UTXO. Since UTXO is the most expensive aspect, I strongly believe that any block size increase proposal must somehow discourage further growth of the set.
+
+Version 4: including a sighash limit
+This is what I actually implemented in my experimental hardfork network: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013472.html <https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013472.html>
+I?m not repeating here, but it shows how further limits might be added on top of the old ones through a softfork. Basically, you just add more metrics, and always take to maximum one.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170128/84d6df5e/attachment.html>
