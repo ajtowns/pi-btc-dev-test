@@ -1,0 +1,220 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Sat, 28 Jan 2017 00:35:55 +0000
+Subject: [bitcoin-dev] Extension block softfork proposal
+In-Reply-To: <5B69C153-4623-4664-9C4B-4E0396FF021A@xbt.hk>
+References: <5B69C153-4623-4664-9C4B-4E0396FF021A@xbt.hk>
+Message-ID: <79b7c393-aed5-a5b1-dd5f-f8181dcea9f4@mattcorallo.com>
+
+Hey Johnson,
+
+As you know I've always been a rather large critic of this approach.
+
+First a bit of background. Pieter's excellent post on the security of
+soft forks [1] covers pretty well why soft forks are preferable to hard
+forks by debunking much of the "soft forks are less secure" arguments.
+While those arguments apply readily to your proposal, what wasn't
+covered are the "soft forks are coercive" arguments. Indeed, many of
+those arguments are also bogus. After all, soft forks are not "forks"
+without buy-in from the economically relevant community running nodes
+which enforce the new rules (ie fork-by-miner-censorship isn't all that
+much of a fork at all, and has security properties which I would be
+hesitant to use for anything but the smallest of value).
+
+That said, when we start talking about extension blocks, I believe we
+start to rapidly enter this "coerciveness" territory. With segwit, we've
+seen pretty clearly that the community, much to its detriment, can be
+easily made unwilling to speak up for or against a fork, making
+consensus an incredibly murky thing.
+
+Luckily, as noted in Pieter's original post, there isn't much harm in
+the passive observer not making their voice heard and going along and
+enforcing SegWit. SegWit maintains UTXO compatibility and transactions
+continue to work as normal, only hiding information necessary to apply
+the soft fork's rules from old nodes. This is not significantly
+different from any other softfork, where declining to enforce its rules
+results in you missing information (only in this case in the form of
+additional validity rules instead of signatures themselves, which you
+otherwise don't know what to do with). Even better, the bandwidth
+increases for fully-validating nodes have been more than offset by other
+technology upgrades.
+
+Much of this goes out the window with extension blocks. Instead of the
+extra data being reasonable to ignore if you choose to not enforce the
+soft fork's rules, all of a sudden a majority (or at least significant
+chunk) of transactions on the network are happening in the data you've
+chosen to ignore. Instead of being able to reasonably walk back
+transaction history to identify risk based on potential
+censorship-enforced-transactions (ie transactions in a soft fork you're
+not aware of, potentially that only miners are enforcing), all
+transactions will look risky. Instead of being able to enforce
+fundamental network rules like the 21 million coin limit, you're left to
+trust that what is happening on the extension block (which all miners
+are largely forced to mine due to the fee revenue opportunity cost).
+This ultimately makes it a social cost, not an individual trust problem
+- instead of opting into a soft fork's security (or lack thereof) for
+your own transaction, the entire network is forced to trust the
+extension block.
+
+Finally, this sets us up for some pretty terrible precedent. As we noted
+in a footnote of the original sidechains paper, the idea that miners
+will start soft-forking in sidechains is a massive risk - it allows
+individual large miners and individual economic users to force others to
+switch to new consensus rules, with potentially little consensus or review.
+
+[1]
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-December/012014.html
+
+On January 26, 2017 4:39:43 AM EST, Johnson Lau via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+>This is a pre-BIP which allows extra block space through a soft-fork.
+>It is completely transparent to existing wallets (both send and
+>receive), but new wallets taking advantage of the extra block space
+>will have a very different user experience.
+>
+>I?m sure this is controversial but I think it?s an interesting academic
+>topic. If we?d ever have any fully consensus enforced 2-way-peg side
+>chain design, that?d be something like this.
+>
+>Objectives:
+>
+>1. Provide more block space through a soft forks
+>2. Completely transparent to existing wallets
+>3. Not breaking any current security assumptions
+>
+>
+>Specification and Terminology:
+>
+>Main block / block: the current bitcoin block (with witness if BIP141
+>is activated)
+>
+>Main transaction / tx: txs in the current bitcoin network (with
+>witness)
+>
+>Main UTXO / UTXO: the normal UTXO
+>
+>Extension transaction / xtx: transactions with a format same as the
+>witness tx format described in BIP141, without scriptSig field, and the
+>?flag? as 0x02. Only witness program are allowed for scriptPubKey of
+>xtx
+>
+>Extension block / xblock: xblock is a collection of xtx. Each block may
+>have 0 or 1 xblock when this softfork is activated.
+>
+>Extension UTXO / xUTXO: the UTXO set for of the extension block.
+>
+>Bridging witness program: A new type of witness program is defined. The
+>witness script version is OP_2. The program length could be 4 to 40.
+>The first byte ("direction flag?[note 1]) must be 0x00 (indicating
+>block->xblock) or 0x01 (indicating xblock->block). Like P2WPKH and
+>P2WSH, the bridging program could be wrapped by P2SH. There are 2 ways
+>to spend this program type on the main block:
+>1) Spend it like a usual witness program with a tx. For example, if the
+>bridging program is OP_2 <0x000014{20 bytes}>, it could be spent like a
+>version-0 20bytes programme, i.e. P2WPKH. Nothing special would happen
+>in this case
+>2) Spend it like a usual witness program with a special xtx, the
+>genesis xtx. In this case, the miner including this xtx will need to do
+>more as described below.
+>
+>Integrating UTXO: a special UTXO with a value >= the total value of all
+>existing xUTXO and scriptPubKey is OP_1. (to make the spec easier to
+>read, here we assume that now we have a zero value UTXO with its
+>outpoint hardcoded as the initial integrating UTXO. In practice we may
+>have the first miner making xblock to create the initial integrating
+>UTXO)
+>
+>Integrating transaction: if a block has an xblock, the second
+>transaction in the block must be the integrating transaction. The
+>inputs include the spent UTXO of all the genesis xtx in this xblock. If
+>it is a bare witness program, the witness must be empty. If it is a
+>P2SH witness program, the scriptSig must be the bridging witness
+>program and the witness must be empty. The last input must be the
+>original integrating UTXO, with empty witness and scriptSig. If no one
+>is trying to send money back from the xblock to the main block, the
+>only output is the updated integrating UTXO, which the value must be >=
+>the total value of all xUTXO
+>
+>????
+>Up to now, I have described how we could send bitcoins from the main
+>UTXO to the xUTXO. Simply speaking, people send money to a new form of
+>witness programme. They have the flexibility to spend it in the main
+>block or xblock. Nothing special would happen if they send to the main
+>block. If they send to the xblock, the value of such UTXO will be
+>collected by the integrating UTXO.
+>
+>After people sent money to xblock, they could trade inside the xblock
+>just like in the main block. Since xblock is invisible to the
+>pre-softfork users, we could have whatever size limit for the xblock,
+>which is not a topic of this proposal.
+>
+>The tricky part is sending from xblock to main block.
+>
+>Returning transaction: returning transaction is a special xtx, sending
+>money to a bridging witness program, with a direction flag of 0x01.
+>These bridging witness program won?t be recorded in the xUTXO set.
+>Instead, an output is added to the integrating tx, with the bridging
+>witness program and corresponding value, called the ?returning UTXO?.
+>The returning UTXOs are not spendable until confirmed by 100 blocks.
+>The updated integrating UTXO is the last output, and is not restricted
+>by the 100-block requirement
+>
+>Fees collection in xblock: Same as normal tx, people pay fee in xblock
+>by making output value < input value. Since the value of the
+>integrating UTXO is >= the total value of all existing xUTXO, if fees
+>are paid in the xblock, that will reduce the value of the integrating
+>UTXO, and miners are paid through the usual coinbase tx as fee.
+>
+>xblock commitment: 2 xblock merkle root, with and without witness, are
+>placed exactly after the witness commitment in the coinbase tx.(maybe
+>we could use the coinbase reserved witness value, details TBD). If
+>there is no xblock commitment, xblock must be empty and integrating tx
+>is not allowed.
+>
+>????
+>Same as any 2-way-peg proposal, sending money from the side chain to
+>the main chain is always the most tricky part. Different from other
+>side chain proposals like Rootstock, extension block is fully consensus
+>enforced, and has the same security level as existing bitcoin
+>transactions. To ensure this, an 100-block maturity is needed for the
+>returning UTXO, as the TXID of the integrating transaction is *very*
+>likely to change after a reorg, which will break the transaction chains
+>coming from it. The 100-block maturity requirement bring us back to the
+>usual assumption that txs become permanent after 100 confirmations.
+>
+>Please note that this drastically changes the user experience, as no
+>current users (expect miners) would expect such 100-block freezing.
+>That?s why I don?t allow the returning UTXO to have an arbitrary
+>scriptPubKey, as users of current wallet would never expect such
+>freezing. Using a special output scriptPubKey guarantees that the
+>recipient must understand the implications. Users of the new wallet
+>should be warned that despite they may enjoy lower fees in the xblock,
+>it may be difficult for them to send money to legacy wallets. This is a
+>huge limitation.
+>
+>Maybe we could have some decentralised market (using simple
+>hash-time-locked txs) allowing people to exchange value between block
+>and xblock, bypassing the 100 block requirement. This is actually
+>cheaper, because a full returning is a 2-step process, while p2p
+>exchange is only 1-step.
+>
+>????
+>
+>Questions:
+>
+>1. Is it possible to simplify the design, without compromising
+>security?
+>2. Is it acceptable to do it without the 100-block maturity
+>requirement, thus breaking some long-held assumptions? (This would
+>vastly improve the usability, until a reorg happens)
+>3. Even with maturity requirement, is 100-block an overkill? We never
+>had a fork over maybe 20 blocks. Also, breaking of transaction chain
+>due to reorg is already possible, as people may double spend during a
+>reorg.
+>
+>[note 1] the direction flag is needed to make sure a recipient won?t be
+>paid with a returning transaction, unless explicitly requested. It
+>might be combined with the serialised witness version to save one byte.
+>_______________________________________________
+>bitcoin-dev mailing list
+>bitcoin-dev at lists.linuxfoundation.org
+>https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
