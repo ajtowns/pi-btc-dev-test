@@ -1,0 +1,182 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Sat, 28 Jan 2017 15:28:14 +0800
+Subject: [bitcoin-dev] Forcenet: an experimental network with a new
+ header format
+In-Reply-To: <cfc013e5-2e29-e967-9f7a-fff3e44e14ce@mattcorallo.com>
+References: <FB8593E6-3CD7-46D5-8FC8-A73A0EF1AE9A@xbt.hk>
+	<5CDE542F-204F-4988-838F-F438D30C7D99@xbt.hk>
+	<cfc013e5-2e29-e967-9f7a-fff3e44e14ce@mattcorallo.com>
+Message-ID: <A1AB77D7-7F70-4045-BAB1-96625020A988@xbt.hk>
+
+
+> On 28 Jan 2017, at 10:32, Matt Corallo <lf-lists at mattcorallo.com> wrote:
+> 
+> Looks cool, though I have a few comments inline.
+> 
+> One general note - it looks like you're letting complexity run away from
+> you a bit here. If the motivation for something is only weak, its
+> probably not worth doing! A hard fork is something that must be
+> undertaken cautiously because it has so much inherent risk, lets not add
+> tons to it.
+> 
+
+I think the following features are necessary for a hardfork. The rest are optional:
+
+1. A secondary header
+2. Anti-replay
+3. SigHash limit for old scripts
+4. New tx weight accounting
+
+Optional:
+1. New coinbase format is nice but not strictly needed. But this can?t be reintroduced later with softfork due to the 100 block maturity requirement
+2. Smooth halving: could be a less elegant softfork
+3. Mekle sum tree: definitely could be a softfork
+
+> Matt
+> 
+> On 01/14/17 21:14, Johnson Lau via bitcoin-dev wrote:
+>> I created a second version of forcenet with more experimental features
+>> and stopped my forcenet1 node.
+>> 
+>> 1. It has a new header format: Height (4), BIP9 signalling field (4),
+>> hardfork signalling field (2), Hash TMR (32), Hash WMR (32), Merkle sum
+>> root (32), number of tx (4), prev hash (32), timestamp (4), nBits (4),
+>> nonce1 (4), nonce2 (4), nonce3 (compactSize + variable), merkle branches
+>> leading to header C (compactSize + 32 bit hashes)
+> 
+> In order of appearance:
+> 
+> First of all lets try to minimize header size. We really dont want any
+> more space taken up here than we absolutely need to.
+> 
+> I'm super unconvinced that we need more than one merkle tree for
+> transactions. Lets just have one merkle tree who's leaves are
+> transactions hashed 2 ways (without witnesses and only witnesses).
+> 
+> Why duplicate the nBits here? shouldn't the PoW proof be the
+> responsibility of the parent header?
+> 
+
+Without nBits in the header, the checking of PoW become contextual and I think that may involve too much change. The saving of these 4 bytes, if it is really desired, might be done on a p2p level 
+
+> I have to agree with Tadge here, variable-length header fields are evil,
+> lets avoid them.
+> 
+> Why have merkle branches to yet another header? Lets just leave it as an
+> opaque commitment header (32).
+> 
+> Finally, lets not jump through hoops here - the transaction merkle root
+> of the "old-style" (now PoW) header should simply be the hash of the new
+> header. No coinbase transaction, just the hash of the secondary header.
+> This saves space without giving up utility - SPV nodes are already not
+> looking at the coinbase transaction, so no harm in not having one to give.
+
+
+Regarding the header format, a big question we never came into consensus is the format of the hardfork. Although I designed forcenet to be a soft-hardfork, I am now more inclined to suggest a simple hardfork, given that the warning system is properly fixed (at the minimum: https://github.com/bitcoin/bitcoin/pull/9443 <https://github.com/bitcoin/bitcoin/pull/9443>)
+
+Assuming a simple hardfork is made, the next question is whether we want to keep existing light wallets functioning without upgrade, cheating them by hiding the hash of the new header somewhere in the transaction merkle tree.
+
+We also need to think about the Stratum protocol. Ideally we should not require firmware upgrade.
+
+For the primary 80 bytes header, I think it will always be a fixed size. But for the secondary header, I?m not quite sure. Actually, one may argue that we already have a secondary header (i.e. coinbase tx), and it is not fixed size.
+
+>> 
+>> 4. A totally new way to define tx weight. Tx weight is the maximum of
+>> the following metrics:
+>> a. SigHashSize (see the bip in point 3)
+>> b. Witness serialised size * 2 * 90
+>> c. Adjusted size * 90. Adjusted size = tx weight (BIP141) + (number of
+>> non-OP_RETURN outputs - number of inputs) * 41 * 4
+>> d. nSigOps * 50 * 90. All SigOps are equal (no witness scaling). For
+>> non-segwit txs, the sigops in output scriptPubKey are not counted, while
+>> the sigops in input scriptPubKey are counted.
+> 
+> This is definitely too much. On the one hand its certainly nice to be
+> able to use max() for limits, and nice to add all the reasonable limits
+> we might want to, but on the other hand this can make things like coin
+> selection super complicated - how do you take into consideration the 4
+> different limits? Can we do something much, much simpler like
+> max(serialized size with some input discount, nSigOps * X) (which is
+> what we effectively already have in our mining code)?
+> 
+
+The max() is at transaction level, not block level. Unless your wallet is full of different types of UTXOs, coin selection would not be more difficult than current.
+
+Among the 4 limits, the SigHash limit is mostly a safety limit that will never be hit by a tx smaller than 100kB. As part of the replay attack fix, a linear SigHash may be optionally used. So wallets may just ignore this limit in coin selection
+
+Similarly, the SigOp limit is also unlikely to be hit, unless you are using a very big multi-sig. Again, this is very uncommon and wallets primarily dealing with signal sig may safely ignore this
+
+Finally, an important principle here is to encourage spending of UTXO, and limiting creation of UTXO. This might be a bit difficult to fully optimise for this, but I think this is necessary evil.
+
+More discussion at: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013504.html <https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013504.html>
+
+>> 
+>> 
+>> 5. Smooth halving: the reward of the last 2016 blocks in a halving cycle
+>> will be reduced by 25%, which is contributed to the first 2016 blocks of
+>> the new halving cycle. (different parameters for forcenet) This makes a
+>> more graceful transition but we will lose some fun around halving.
+> 
+> Hum, not sure this is sufficient. Its still stair-stepping at big enough
+> jumps that we could conceivably see super slow block times around
+> halvings in the distant future. Maybe instead of 100%-75%-75%-50% (I
+> believe that's what you're proposing here?),
+> 100%-87.5%-75%-75%-62.5%-50% might be smoother?
+> 
+
+Yes, but maybe we just don?t need this at all. This could also be done with a softfork using OP_CSV, just a bit ugly.
+
+>> 6. A new coinbase tx format. BIP34 is removed. Coinbase tx may have more
+>> than 1 input. The prevout hash of first input must be the hash of
+>> previous block, and index must be 0xffffffff.
+> 
+> I'm not necessarily opposed to this, but what is the justification for it?
+
+This allows people to sign an input, to be part of a coinbase tx, but limited to a particular previous block hash. This is currently not possible, but through a later softfork we could introduce a new SigHash function that allows something between SIGHASH_ALL and SIGHASH_ANYONECANPAY, so people may sign its own input and another input, while ignoring the rests of input. (in other words: change the name SIGHASH_ANYONECANPAY to SIGHASH_SINGLE_INPUT, and we introduce SIGHASH_DUAL_INPUT. But we don?t need to do this in this hardfork)
+
+
+>> The other inputs (if any)
+>> must come from UTXOs with valid signatures. Spending of previous
+>> coinbase outputs in a coinbase tx is exempted from the 100 block
+>> maturity requirement. Therefore, miners of an earlier block may pay
+>> other miners to convince them to confirm their blocks.
+> 
+> Sounds good.
+> 
+>> 7. Merkle sum tree: it allows generating of fraud-proof for fee and
+>> weight. A special softfork (bit 15) is defined. When this softfork is
+>> activated, the full node will not validate the sum tree. This is needed
+>> because when the definition of tx weight is changed through a softfork
+>> (e.g. a new script version introducing new sigop), olds nodes won?t know
+>> the new rules and will find the sum tree invalid. Disabling the sum tree
+>> validation won?t degrade the security of a full node by more than an
+>> usual softfork, because the full node would still validate all other
+>> known rules.
+>> 
+>> However, it is still not possible to create fraud proof for spending of
+>> non-existing UTXO. This requires commitment of the block height of
+>> inputs, and the tx index in the block. I?m not quire sure how this could
+>> be implemented because a re-org may change such info (I think validation
+>> is easy but mining is more tricky)
+> 
+> If we cant build wholesale proofs, then lets not jump through hoops and
+> add special bits to build partial ones? Its not clear to me that it
+> would be any reduction in soft-fork-ability later down the road to not
+> have this - if you're changing the definition of tx weight, you're
+> likely doing something like segwit where you're adding something else,
+> not trying to re-adjust weights.
+
+This is just a demo, and I agree this could be added through a softfork later. But even if we add this as a softfork, we have to have the ability to disable it through a special softfork. I think I have explained the reason but let me try again.
+
+Here, when I talking about ?tx weight?, it?s the ?tx weight? defined in point 4, which covers not only size, but also other limits like SigOp. For a fraud proof to be really useful, it has to cover every type of block level limits. One feature of segwit is the script versioning, which allows introduction of new scripts. In the process, we will change the definition of SigOp: previous 0 SigOp scripts now carries some amount of SigOp. This is by itself a softfork (we did this type of softfork twice already: P2SH and segwit). However, if we have a merkle sum root covering the SigOp, old nodes won?t count these new SigOps, and they will fail to validate the sum root.
+
+Without a backdoor to disable the sum tree validation in old nodes, the only way would be keeping the original sum tree untouched, while create another sum tree, every time we have a new script version. This is not acceptable at all.
+
+But even such backdoor would not be harmful to the security of full nodes because they will still fully verify the tx and witness merkle root.
+
+I?d argue that any fraud proof related commitment: sum tree, delayed UTXO commitment etc will require such a backdoor to disable. Maybe we should just remove this from here and make this a new topic. We could even do this as a softfork today.
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170128/dff3b78c/attachment-0001.html>
