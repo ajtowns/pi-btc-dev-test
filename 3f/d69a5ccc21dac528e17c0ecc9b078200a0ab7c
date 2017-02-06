@@ -1,0 +1,189 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Mon, 6 Feb 2017 20:39:21 +0800
+Subject: [bitcoin-dev] Spoonnet: another experimental hardfork
+Message-ID: <15A0A5F0-726F-4E8F-9F16-F33D5A30C5F4@xbt.hk>
+
+Finally got some time over the Chinese New Year holiday to code and write this up. This is not the same as my previous forcenet ( https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013472.html ). It is much simpler. Trying to activate it on testnet will get you banned. Trying to activate it on mainnet before consensus is reached will make you lose money.
+
+This proposal includes the following features:
+
+1. A fixed starting time. Not dependent on miner signalling. However, it requires at least 51% of miners to actually build the new block format in order to get activated.
+
+2. It has no mechanism to prevent a split. If 49% of miners insist on the original chain, they could keep going. Split prevention is a social problem, not a technical one.
+
+3. It is compatible with existing Stratum mining protocol. Only pool software upgrade is needed
+
+4. A new extended and flexible header is located at the witness field of the coinbase transaction
+
+5. It is backward compatible with existing light wallets
+
+6. Dedicated space for miners to put anything they want, which bitcoin users could completely ignore. Merge-mining friendly.
+
+7. Small header space for miners to include non-consensus enforced bitcoin related data, useful for fee estimation etc.
+
+8. A new transaction weight formula to encourage responsible use of UTXO
+
+9. A linear growth of actual block size until certain limit
+
+10. Sighash O(n^2) protection for legacy (non-segwit) outputs
+
+11. Optional anti-transaction replay
+
+12. A new optional coinbase tx format that allows additional inputs, including spending of immature previous coinbase outputs
+
+
+
+Specification [Rationales]:
+
+
+Activation:
+
+* A "hardfork signalling block" is a block with the sign bit of header nVersion is set [Clearly invalid for old nodes; easy opt-out for light wallets]
+
+* If the median-time-past of the past 11 blocks is smaller than the HardForkTime (exact time to be determined), a hardfork signalling block is invalid.
+
+* Child of a hardfork signalling block MUST also be a hardfork signalling block
+
+* Initial hardfork signalling is optional, even if the HardForkTime has past [requires at least 51% of miners to actually build the new block format]
+
+* HardForkTime is determined by a broad consensus of the Bitcoin community. This is the only way to prevent a split.
+
+
+Extended header:
+
+* Main header refers to the original 80 bytes bitcoin block header
+
+* A hardfork signalling block MUST have a additional extended header
+
+* The extended header is placed at the witness field of the coinbase transaction [There are 2 major advantages: 1. coinbase witness is otherwise useless; 2. Significantly simply the implementation with its stack structure]
+
+* There must be exactly 3 witness items (Header1; Header2 ; Header3)
+**Header1 must be exactly 32 bytes of the original transaction hash Merkle root.
+**Header2 is the secondary header. It must be 36-80 bytes. The first 4 bytes must be little-endian encoded number of transactions (minimum 1). The next 32 bytes must be the witness Merkle root (to be defined later). The rest, if any, has no consensus meaning. However, miners MUST NOT use this space of non-bitcoin purpose [the additional space allows non-censensus enforced data to be included, easily accessible to light wallets]
+**Header3 is the miner dedicated space. It must not be larger than 252 bytes. Anything put here has no consensus meaning [space for merge mining; non-full nodes could completely ignore data in this space; 252 is the maximum size allowed for signal byte CompactSize]
+
+* The main header commitment is H(Header1|H(H(Header2)|H(Header3)))  H() = dSHA256() [The hardfork is transparent to light wallets, except one more 32-byte hash is needed to connect a transaction to the root]
+
+* To place the ext header, segwit becomes mandatory after hardfork
+
+
+A ?backdoor? softfork the relax the size limit of Header 2 and Header 3:
+
+* A special BIP9 softfork is defined with bit-15. If this softfork is activated, full nodes will not enforce the size limit for Header 2 and Header 3. [To allow header expansion without a hardfork. Avoid miner abuse while providing flexibility. Expansion might be needed for new commitments like fraud proof commitments]
+
+
+Anti-tx-replay:
+
+* Hardfork network version bit is 0x02000000. A tx is invalid if the highest nVersion byte is not zero, and the network version bit is not set.
+
+* Masked tx version is nVersion with the highest byte masked. If masked version is 3 or above, sighash for OP_CHECKSIG alike is calculated using BIP143, except 0x02000000 is added to the nHashType (the nHashType in signature is still a 1-byte value) [ensure a clean split of signatures; optionally fix the O(n^2) problem]
+
+* Pre-hardfork policy change: nVersion is determined by the masked tx version for policy purpose. Setting of Pre-hardfork network version bit 0x01000000 is allowed.
+
+* Details: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013473.html
+
+
+Sighash limitation:
+
+* Sighash impact is estimated by ?Loose estimation? in https://github.com/jl2012/bips/blob/065ea7429035d43ff90965f42b086fb7e1517291/bip-sighash.mediawiki
+
+* Only txs with masked version below 3 are counted. [because they are fixed by the BIP-143 like signature]
+
+* Each SigHashSize is defined as 1 tx weight (defined later).
+
+* SIGHASH_SCALE_FACTOR is 90 (see the BIP above)
+
+
+New tx weight definition:
+
+* Weight of a transaction is the maximum of the 4 following metrics:
+
+** The total serialised size * 2 * SIGHASH_SCALE_FACTOR  (size defined by the witness tx format in BIP144)
+
+** The adjusted size = (Transaction weight by BIP141 - (number of inputs - number of non-OP_RETURN outputs) * 41) * SIGHASH_SCALE_FACTOR
+
+** nSigOps * 50 * SIGHASH_SCALE_FACTOR. All SigOps are equal (no witness scaling). For non-segwit txs, the sigops in output scriptPubKey are not counted, while the sigops in input scriptPubKey are counted.
+
+** SigHashSize defined in the last section
+
+Translating to new metric, the current BIP141 limit is 360,000,000. This is equivalent to 360MB of sighashing, 2MB of serialised size, 4MB of adjusted size, or 80000 nSigOp.
+
+See rationales in this post: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013472.html
+
+
+Block weight growing by time:
+
+* Numbers for example only. Exact number to be determined.
+
+* Block weight at HardForkTime is (5,000,000 * SIGHASH_SCALE_FACTOR)
+
+* By every 16 seconds growth of the median-time-past, the weight is increased by (1 * SIGHASH_SCALE_FACTOR)
+
+* The growth stops at (16,000,000 * SIGHASH_SCALE_FACTOR)
+
+* The growth does not dependent on the actual hardfork time. It?s only based on median-time-past [using median-time-past so miners have no incentive to use a fake timestamp]
+
+* The limit for serialized size is 2.5 to 8MB in about 8 years. [again, numbers for example only]
+
+
+New coinbase transaction format:
+
+* Existing coinbase format is allowed, except the new extended header in the coinbase witness. No OP_RETURN witness commitment is needed.
+
+* A new coinbase format is defined. The tx may have 1 or more inputs. The outpoint of the first input MUST have an n value of 0xffffffff, and use the previous block hash as the outpoint hash [This allows paying to the child of a particular block by signing the block hash]
+
+* ScriptSig of the first (coinbase) input is not executed. The size limit increased from 100 to 252 (same for old coinbase format)
+
+* Additional inputs MUST provide a valid scriptSig and/or witness for spending
+
+* Additional inputs may come from premature previous coinbase outputs [this allows previous blocks paying subsequent blocks to encourage confirmations]
+
+
+Witness merkle root:
+
+* If the coinbase is in old format, the witness merkle root is same as BIP141 by setting the witness hash of the coinbase tx as 0 (without the 32 byte witness reserved value)
+
+* If the coinbase is in new format, the witness hash of the coinbase tx is calculated by first removing the extended header
+
+* The witness merkle root is put in the extended header 2, not as an OP_RETURN output in coinbase tx.
+
+* The witness merkle root becomes mandatory. (It was optional in BIP141)
+
+
+Other consensus changes:
+
+* BIP9 will ignore the sign bit. [Setting the sign bit now is invalid so this has no real consensus impact]
+
+========
+
+An experimental implementation of the above spec could be found at https://github.com/jl2012/bitcoin/tree/spoonnet1
+
+Not the same as my previous effort on the ?forcenet?, the ?spoonnet? is a full hardfork that will get you banned on the existing network.
+
+Haven?t got the time to test the codes yet, not independently reviewed. But it passes all existing tests in Bitcoin Core. No one should use this in production, but I *think* it works fine on testnet like a normal bitcoind (as long as it is not activated)
+
+Things not implemented yet:
+
+1. Automated testing
+
+2. Post-hardfork support for old light wallets
+
+3. Wallet support, especially anti-tx-replay
+
+4. New p2p message to transmit secondary header (lower priority)
+
+5. Full mining and mempool support (not my priority)
+
+========
+
+Potential second stage change:
+
+Relative to the actual activation time, there could be a second stage with more drastic changes to fix one or both of the following problems:
+
+1. SHA256 shortcut like ASICBoost. All fixes to ASICBoost are not very elegant. But the question is, is it acceptable to have bitcoin-specific patent in the consensus protocol? Still, I believe the best way to solve this problem is the patent holder(s) to kindly somehow release the right to the community. 
+
+2. Providing more nonce space in the 80-byte main header. However, this depends on ASICBoost being a free technology.
+
+3. Block withholding attack. There are pros and cons, but I generally agree with the analysis by Peter Todd at https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2015-December/012046.html . One point he didn?t mention is that only small really needs pool mining, for the purpose of variance reduction. Big miners using pools are just lazy, and they work well without pool. That means only big solo miners are able to attack pools (i.e. small miners), while pools cannot do any counterattack. This obviously shows why fixing this is pro-small-miners. Also, with same hash rate, block withholding attack is more effective against a smaller pool than a big pool.
+
+All of these changes involve a header change and require light wallets to upgrade. They also require firmware upgrade for all existing miners (change 2 doesn?t). I think these shouldn?t happen at least 2 years after the actual activation of the hardfork so people will have enough time to upgrade.
