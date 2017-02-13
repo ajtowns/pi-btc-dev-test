@@ -1,0 +1,107 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Mon, 13 Feb 2017 12:14:01 +0100
+Subject: [bitcoin-dev] BIP151 protocol incompatibility
+In-Reply-To: <638deacd-c117-f1a7-10de-a7e36a47c3c7@voskuil.org>
+References: <ba422d5e-8e96-3475-2a29-80d89fd67322@voskuil.org>
+	<CAPg+sBhDjVuN6=tdvUcSY5OCdJD7s3Jp90K1qx0iRX+2WppUQQ@mail.gmail.com>
+	<dde5349d-c430-ad57-30c7-77954ff1a94d@voskuil.org>
+	<ff7c24ba-7c70-efaf-a319-b1aebfd8a3bd@jonasschnelli.ch>
+	<638deacd-c117-f1a7-10de-a7e36a47c3c7@voskuil.org>
+Message-ID: <e153823d-e38e-b4b6-01d5-b9d981381e01@jonasschnelli.ch>
+
+
+>> Look at feefilter BIP 133
+>> (https://github.com/bitcoin/bips/blob/master/bip-0133.mediawiki#backward-compatibility)
+>> or sendheaders BIP130
+>> (https://github.com/bitcoin/bips/blob/master/bip-0130.mediawiki#backward-compatibility)
+>> Isn't it the same there?
+> No. This is what I was referring to. These messages are enabled by
+> protocol version. If they are received by a node below the version at
+> which they are activated, they are unknown messages, implying an invalid
+> peer. The above messages cannot be sent until *after* the version is
+> negotiated. BIP151 violates this rule by allowing the new control
+> message to be sent *before* the version handshake.
+This indeed is not ideal for compatibility checks, but increases security.
+I could not find a protocol specification that said communication must
+be terminated when messages are transmitted before the version handshake
+has been done. I mostly looked into Bitcoin-Cores implementation (which
+means also into BitcoinXT/UT, where this is allowed).
+
+Also. BIP151 clearly says that the requesting peer needs to initiate the
+encryption (encinit).
+In case of light clients not supporting BIP151 connecting to peers
+supporting BIP151, there should never be transmission of new message
+types specified in BIP151.
+>
+>> Once BIP151 is implemented, it would make sense to bump the protocol
+>> version, but this needs to be done once this has been
+>> implemented/deployed.
+> There are already nodes out there breaking connections based on the BIP.
+It could very likely be possible that the initial responding peer tries
+to initiate a encryption session which would mean that BIP151 was not
+implemented correctly.
+Correct me if I'm wrong please.
+>
+>> Or do I make a mistake somewhere?
+> Yes, the ordering of the messages. New messages can only be added after
+> the handshake negotiates the higher version. Otherwise the handshake is
+> both irrelevant (as Pieter is implying) and broken (for all existing
+> protocol versions).
+I could not find evidence of the protocol specification that would
+forbid (=terminate connection) such messages and I think allowing
+unknown-messages before the version handshake makes the protocol flexible.
+
+Are there any reasons we should drop peers if they send us unknown, but
+correctly formatted p2p packages (magic, checksum, etc.) before the
+version handshake, ... but not drop them if we have received unknown
+messages after the version handshake?
+
+I can't see that a such spec. would reduce the DOS attack vector?
+
+>
+>>> As for DOS, waste of bandwidth is not something to be ignored. If a peer
+>>> is flooding a node with addr message the node can manage it because it
+>>> understands the semantics of addr messages. If a node is required to
+>>> allow any message that it cannot understand it has no recourse. It
+>>> cannot determine whether it is under attack or if the behavior is
+>>> correct and for proper continued operation must be ignored.
+>> How do you threat any other not known message types?
+> You may be more familiar with non-validating peers. If a message type is
+> not known it is an invalid message and the peer is immediately dropped.
+> We started seeing early drops in handshakes with bcoin nodes because of
+> this issue.
+If this had happened, it's very likely because the responding peer tried
+to initiate a encryption session which is against BIP151 specs.
+>
+>> Any peer can send you any type of message anytime.
+> Sure, a peer can do what it wants. It can send photos. But I'm not sure
+> what makes you think it would be correct to maintain the connection when
+> an *invalid* message is received.
+Check:
+https://github.com/bitcoin/bitcoin/blob/a06ede9a138d0fb86b0de17c42b936d9fe6e2158/src/net_processing.cpp#L2595
+I think it was a wise implementation decision to allow unknown (not
+invalid) messages.
+This had allowed us to deploy stuff like compact blocks, feefilter, etc.
+without breaking backward compatibility.
+IMO, without a such flexibility, the deployment complexity would be
+irresponsible high without really solving the DOS problem.
+>
+>> Why would your implementation how you threat unknown messages be
+> different for messages specified in BIP151?
+>
+> Because it properly validates the protocol.
+For feefilter or compact block or sendheaders?
+You can't link a (unimplemented) specification (improvement process) to
+a protocol version before deployment. Or can you?
+Once it has been widely deployed, we should set a protocol minversion
+for BIP151, right.
+
+</jonas>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 833 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170213/ec9da1fb/attachment-0001.sig>
