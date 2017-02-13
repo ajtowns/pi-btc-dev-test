@@ -1,0 +1,82 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Mon, 13 Feb 2017 02:30:14 -0800
+Subject: [bitcoin-dev] BIP151 protocol incompatibility
+In-Reply-To: <ff7c24ba-7c70-efaf-a319-b1aebfd8a3bd@jonasschnelli.ch>
+References: <ba422d5e-8e96-3475-2a29-80d89fd67322@voskuil.org>
+	<CAPg+sBhDjVuN6=tdvUcSY5OCdJD7s3Jp90K1qx0iRX+2WppUQQ@mail.gmail.com>
+	<dde5349d-c430-ad57-30c7-77954ff1a94d@voskuil.org>
+	<ff7c24ba-7c70-efaf-a319-b1aebfd8a3bd@jonasschnelli.ch>
+Message-ID: <638deacd-c117-f1a7-10de-a7e36a47c3c7@voskuil.org>
+
+On 02/13/2017 02:07 AM, Jonas Schnelli via bitcoin-dev wrote:
+>> All adopted BIPs to date have followed this
+>> pattern. This is not the same and it is not helpful to imply that it is
+>> just following that pattern.
+> 
+> Look at feefilter BIP 133
+> (https://github.com/bitcoin/bips/blob/master/bip-0133.mediawiki#backward-compatibility)
+> or sendheaders BIP130
+> (https://github.com/bitcoin/bips/blob/master/bip-0130.mediawiki#backward-compatibility)
+> Isn't it the same there?
+
+No. This is what I was referring to. These messages are enabled by
+protocol version. If they are received by a node below the version at
+which they are activated, they are unknown messages, implying an invalid
+peer. The above messages cannot be sent until *after* the version is
+negotiated. BIP151 violates this rule by allowing the new control
+message to be sent *before* the version handshake.
+
+> Once BIP151 is implemented, it would make sense to bump the protocol
+> version, but this needs to be done once this has been
+> implemented/deployed.
+
+There are already nodes out there breaking connections based on the BIP.
+
+> Or do I make a mistake somewhere?
+
+Yes, the ordering of the messages. New messages can only be added after
+the handshake negotiates the higher version. Otherwise the handshake is
+both irrelevant (as Pieter is implying) and broken (for all existing
+protocol versions).
+
+>> As for DOS, waste of bandwidth is not something to be ignored. If a peer
+>> is flooding a node with addr message the node can manage it because it
+>> understands the semantics of addr messages. If a node is required to
+>> allow any message that it cannot understand it has no recourse. It
+>> cannot determine whether it is under attack or if the behavior is
+>> correct and for proper continued operation must be ignored.
+
+> How do you threat any other not known message types?
+
+You may be more familiar with non-validating peers. If a message type is
+not known it is an invalid message and the peer is immediately dropped.
+We started seeing early drops in handshakes with bcoin nodes because of
+this issue.
+
+> Any peer can send you any type of message anytime.
+
+Sure, a peer can do what it wants. It can send photos. But I'm not sure
+what makes you think it would be correct to maintain the connection when
+an *invalid* message is received.
+
+> Why would your implementation how you threat unknown messages be
+different for messages specified in BIP151?
+
+Because it properly validates the protocol.
+
+More than that it supports a configurable protocol range. So by setting
+the min protocol (below which the node won't connect) and the max
+protocol (at which it desires to connect) we can observe the behavior of
+the network at any protocol levels (currently between 31402 and 70013).
+This is very helpful for a development stack as it allows one to easily
+test against each protocol level that one wishes to support.
+
+e
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170213/7fd2b845/attachment.sig>
