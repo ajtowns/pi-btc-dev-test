@@ -1,0 +1,166 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Tue, 14 Feb 2017 21:58:54 +0100
+Subject: [bitcoin-dev] BIP151 protocol incompatibility
+In-Reply-To: <17f2f92c-68fc-7a7d-c015-9bad810365e3@voskuil.org>
+References: <ba422d5e-8e96-3475-2a29-80d89fd67322@voskuil.org>
+	<CAPg+sBhDjVuN6=tdvUcSY5OCdJD7s3Jp90K1qx0iRX+2WppUQQ@mail.gmail.com>
+	<dde5349d-c430-ad57-30c7-77954ff1a94d@voskuil.org>
+	<ff7c24ba-7c70-efaf-a319-b1aebfd8a3bd@jonasschnelli.ch>
+	<638deacd-c117-f1a7-10de-a7e36a47c3c7@voskuil.org>
+	<e153823d-e38e-b4b6-01d5-b9d981381e01@jonasschnelli.ch>
+	<17f2f92c-68fc-7a7d-c015-9bad810365e3@voskuil.org>
+Message-ID: <2c059f3c-620e-4324-0726-4c56dfab0b43@jonasschnelli.ch>
+
+
+>> This indeed is not ideal for compatibility checks, but increases security.
+> The issue I raised is that it is not backward compatible. It sounds like
+> you agree but consider it a fair trade. My suggesting was that the BIP
+> be updated to reflect the lack of compatibility.
+It's still backward compatible. All (?) SPV clients and full node
+implementation would still work if BIP151 has been implemented.
+Isn't that backward compatibility?
+>> I could not find a protocol specification that said communication must
+>> be terminated when messages are transmitted before the version handshake
+>> has been done.
+> It doesn't need to be specified, most of Bitcoin is unspecified. The
+> version handshake establishes the negotiated version. It is not possible
+> to determine if a message is of the negotiated version before the
+> version is negotiated. All messages apart from this one have followed
+> that rule.
+Yes. But encryption negotiation must be done before the version
+handshake (security).
+>
+>> Also. BIP151 clearly says that the requesting peer needs to initiate the
+>> encryption (encinit).
+> An incoming connection will be dropped due to invalid protocol and
+> potentially banned depending on the implementation.
+This is not true. If the connecting peer (assume the SPV client) will
+not request encryption, the responding peer (the node) will not enforce
+or ask for encryption.
+This is clearly written in the BIP.
+>> It could very likely be possible that the initial responding peer tries
+>> to initiate a encryption session which would mean that BIP151 was not
+>> implemented correctly.
+>> Correct me if I'm wrong please.
+> I did consider the possibility, but there's this:
+>
+> "Encryption initialization must happen before sending any other messages
+> to the responding peer (encinit message after a version message must be
+> ignored)."
+>
+> https://github.com/bitcoin/bips/blob/master/bip-0151.mediawiki#specification
+>
+> The BIP does not define "responding" and "requesting" peers, but:
+>
+> "A peer that supports encryption must accept encryption requests from
+> all peers... The responding peer accepts the encryption request by
+> sending a encack message."
+>
+> This implies the requesting peer is the peer that sends the message. You
+> seem to be saying that the requesting peer is the one that initiated
+> the connection and the responding peer is the connection receiver. If
+> this is the case it should be more clearly documented. But in the
+> case I experienced the "requester" of an encrypted session was also
+> the "receiver" of the connection.
+I think the BIP makes this very clear. IMO you are trying to hide your
+standpoint behind a wired interpretations of the BIP.
+
+>From the BIP:
+?To request encrypted communication, the requesting peer generates an EC
+ephemeral-session-keypair and sends an encinit message to the responding
+peer and waits for a encack message. The responding node must do the
+same encinit/encack interaction for the opposite communication direction.?
+
+This seems to be pretty clear to me. You can interpret the "requesting
+peer" and "responding peer" per message interaction. But then the whole
+BIP would make no sense.
+
+I'm happy if you can do a PR on the BIP that makes the wording better.
+This would actually be a productive step.
+>
+>>>> Or do I make a mistake somewhere?
+>>> Yes, the ordering of the messages. New messages can only be added after
+>>> the handshake negotiates the higher version. Otherwise the handshake is
+>>> both irrelevant (as Pieter is implying) and broken (for all existing
+>>> protocol versions).
+>> I could not find evidence of the protocol specification that would
+>> forbid (=terminate connection) such messages and I think allowing
+>> unknown-messages before the version handshake makes the protocol flexible.
+> Flexible is certainly one word for it. Another way to describe it is
+> dirty. Allowing invalid messages in a protocol encourages protocol
+> incompatibility. You end up with various implementations and eventually
+> have no way of knowing how they are impacted by changes. There could be
+> a range of peers inter-operating with the full network while running
+> their own sub-protocols. Given the network is public and strong
+> identification of peers is undesirable, the invalid messages would
+> reasonably just get sent to everyone. So over time, what is the
+> protocol? Due to certain "flexibility" it is already a hassle to
+> properly implement.
+Then you would have to go after all BIPs deployed this way. This
+argument has nothing to do with BIP151 it questions the whole new
+protocol features deployment.
+Again, check this code part:
+
+https://github.com/bitcoin/bitcoin/blob/a06ede9a138d0fb86b0de17c42b936d9fe6e2158/src/net_processing.cpp#L2595
+
+
+>
+>> Are there any reasons we should drop peers if they send us unknown, but
+>> correctly formatted p2p packages (magic, checksum, etc.) before the
+>> version handshake, ... but not drop them if we have received unknown
+>> messages after the version handshake?
+> There is no reason to treat invalid messages differently based on where
+> they occur in the communication. After the handshake the agreed version
+> is known to both peers. As a result there is never a reason for an
+> invalid message to be sent. Therefore it is always proper to drop a peer
+> that sends an invalid message.
+That's up to the implementation. But the current flexibility exists
+because we not drop.
+Again, see above.
+>> I can't see that a such spec. would reduce the DOS attack vector?
+> This was previously addressed (immediately below).
+No. I'd like to hear from you why the DOS attack vector would be larger
+if the encryption neg. would be after the version handshake.
+>
+>>>>> As for DOS, waste of bandwidth is not something to be ignored. If a peer
+>>>>> is flooding a node with addr message the node can manage it because it
+>>>>> understands the semantics of addr messages. If a node is required to
+>>>>> allow any message that it cannot understand it has no recourse. It
+>>>>> cannot determine whether it is under attack or if the behavior is
+>>>>> correct and for proper continued operation must be ignored.
+>>>> How do you threat any other not known message types?
+>>> You may be more familiar with non-validating peers. If a message type is
+>>> not known it is an invalid message and the peer is immediately dropped.
+>>> We started seeing early drops in handshakes with bcoin nodes because of
+>>> this issue.
+> Yes, this is the purpose of version negotiation, which is why there are
+> version and verack messages. And this is also why, in the satoshi
+> client, two of the above messages are sent from the verack handler. The
+> feefilter message is sent dynamically but only if the peer's version
+> allows it.
+
+Again. Encryption ? for the sake of security ? must be the first
+interaction.
+This is exceptional for BIP151 and I'd like to hear the real downsides
+of doing that.
+>
+>> You can't link a (unimplemented) specification (improvement process) to
+>> a protocol version before deployment. Or can you?
+> I'm not sure I follow your question. The BIP should presumably declare a
+> version number if one is necessary.
+What? You want to define protocol version number in draft improvement
+specifications?
+How should that be possible?
+It's like defining a new HTML version number if you propose/draft a new
+video streaming format.
+
+
+</jonas>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 833 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170214/0b660431/attachment.sig>
