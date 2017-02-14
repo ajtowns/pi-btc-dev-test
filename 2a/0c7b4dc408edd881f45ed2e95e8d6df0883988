@@ -1,0 +1,154 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Tue, 14 Feb 2017 17:10:15 +0100
+Subject: [bitcoin-dev] BIP150/151 concerns and some comments
+Message-ID: <c949a1a2-ca6c-1fa8-6712-0846c5519f66@jonasschnelli.ch>
+
+
+Hi
+
+Recently I read some concerns about BIP150/151 and its ?identity system?.
+I think we should take those concerns seriously and I wrote some
+comments for some of the concerns I'm aware of. In my opinion, most of
+these worries are unfounded.
+
+
+Concern 1: BIP150 introduces a identity system that could partition the
+network
+
+###############################################################################
+
+- Users already filtering/authenticate peers by IP tables, ?addnode?
+command, peer banning in app-layer. Fast block relay is a good example
+(example: FIBRE).
+- BIP150 allows to switch from IP based authentication (which is
+obviously not ideal) to a secure form of authentication with pre-shared
+keys (ECDH).
+- We can?t stop peer operators to selectively manage peers and there are
+valid reasons to do that
+
+Concern 2: But BIP150 makes it simpler and increase the risk of network
+partitioning
+
+####################################################################################
+
+- What is simpler, presharing a pubkey over a secure channel (PGP /
+Signal) and store in on both peers or calling a ?addnode <ip>?, or
+?iptables-DROP <ip>??
+
+Concern 3: Identity is not something we want in Bitcoin
+
+#######################################################
+
+- BIP150 introduces an **optional** authentication over a EC pubkey. The
+EC pubkey can be changed. It?s different per network interface. You only
+reveal it to peers that already have proven the know your identity.
+- IP addresses are also a form of identity and way more inflexible and
+different to hide.
+
+
+Concern 4: But peers can fingerprint my node and ban me after BIP150 has
+been deployed
+
+######################################################################################
+
+- They can?t fingerprint you over BIP150 messages, it does not reveal
+your identity unless the responding peer has proven he knows your identity.
+
+
+Concern 5: BIP150/151 is not necessary, we have already Tor and STunnel,
+etc.
+
+#############################################################################
+
+- Tor is an alternative, right. But do we want to depend on those
+technologies? Using tor for a single secure channel seems like using
+a sledgehammer to crack a nut.
+
+- How many SPV users have encrypted channels to trusted nodes today? Is
+it accessible for the novice user? 
+
+- Peer operators who depend on designated connections (with addnode),
+what security do they have today (IP address, really?)?
+
+- I think tor is great, it can be an alternative or an additional
+security enhancement (encrypt twice). IMO the focus of Tor is not on
+securing single channels (it's rather onion routing / anonymity).
+
+ 
+
+Concern 6: BIP151 gives a false sense of security and has no MITM detection
+
+###########################################################################
+
+- BIP151 (pure encryption) has no MITM detection, correct.
+
+- Without BIP151 encryption, everyone can hook into the stream and read
+what?s going on. With BIP151, an attacker needs to actively substitute
+ephemeral keys in both direction. This attack is A) more complex to
+achieve and B) it?s an active attack (no excuse of ?I just made some
+statistics?), C) it requires the attacker to accept the risk of being
+detected.
+
+- C) is true because an optional authentication (can be BIP150 or
+different) would reveal the attack.
+
+- Some attacks are worthless if you have to take the risk mentioned in C)
+
+ 
+
+Concern 7: But Bitcoin traffic is trustless, why the hell you want to
+encrypt it?
+
+#################################################################################
+
+- If you use one of the todays available SPV clients, you will reveal
+your complete wallet content (?~all your addresses") to every network
+observer between you and the node you have connected to. This means, if
+you pay for a coffee (while being on the owners WIFI), the coffee owner
+and all the involved ISPs can correlate your wallet with your other
+internet behavior. Same is true for your cellphone provider if you use
+cellular.
+
+- They still can, if you don?t have a trusted node, by performing the
+attack that involves the risk mentioned in Concern 6.
+
+ 
+
+Concern 8: If you want to have a light client, you should use a
+different channel to communicate with your full node then the p2p layer
+
+#######################################################################################################################################
+
+- From a design perspective, this could make sense
+
+- From an end user?s perspective, this is undesirable (enabled different
+port, lack of a (RPC / ZMQ, etc.) standard, no fallback option if the
+trusted node is down, hard to setup)
+
+- Using the p2p channel as the todays SPV do, seems very reasonable to
+me. Keep the users on the p2p layer! If we don?t want the users on that
+channel, we automatically form a different layer, the wallet-com wild-west.
+
+- Keeping the users on the p2p layer also allows future changes where
+they can help the network in some ways.
+
+- Using the p2p layer for a trusted connection also allows to fallback
+anytime to non-trusted nodes (if your trusted node is no longer
+reachable). If your SPV peer needs to catch up a couple of hours while
+your trusted peer was done, fine, download full blocks or change your
+bloom filters FP rate significant (or sacrifices your privacy in this case).
+
+
+
+</jonas>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170214/8559c0c1/attachment-0001.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 833 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170214/8559c0c1/attachment-0001.sig>
