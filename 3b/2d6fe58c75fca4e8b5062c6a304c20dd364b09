@@ -1,0 +1,382 @@
+From: belcher@riseup.net (Chris Belcher)
+Date: Fri, 17 Feb 2017 00:28:59 +0000
+Subject: [bitcoin-dev] Committed bloom filters for improved wallet
+ performance and SPV security
+In-Reply-To: <71d822e413ac457a530e1c367811cc24@cock.lu>
+References: <71d822e413ac457a530e1c367811cc24@cock.lu>
+Message-ID: <f8511114-4bcd-32a0-f654-414a723781fa@riseup.net>
+
+I believe this proposal still suffers from one problem that bip37 did,
+albiet by a much lesser extent. Combining the partial information from
+the block downloads with the transaction subgraph information from the
+blockchain can in some cases still reveal which addresses belong to the
+wallet. Nonetheless this proposal still has many benefits and is well
+worth working on.
+
+==BIP37==
+
+As a recap, probably the biggest and most problematic way that bip37 was
+broken was by combining the partial wallet information from the bloom
+filter with the transaction subgraph information from the blockchain
+
+Suppose a wallet synchronizes it's history, if it spent a coin from its
+address A, it must also also add the change address B to the bloom
+filter, which is connected to A directly on transaction graph.
+
+As an example, consider five typical transactions that consume one input
+each and produce two outputs.
+A, B, C, D, E refer to transactions. A1, A2, etc refer to addresses
+within those transactions
+
+          -> C1
+A1 -> B2  -> C2
+   -> B2  -> D1
+          -> D2 -> E1
+                -> E2
+
+If a bip37 bloom filter matches addresses A1, B2, D2, E1 then it can be
+seen that they form a "peel chain" [this terminology comes from
+https://cseweb.ucsd.edu/~smeiklejohn/files/imc13.pdf]
+
+          -> X
+A1 -> X   -> X
+   -> B2  -> X
+          -> D2 -> E1
+                -> X
+
+The same five transactions with non-matching addresses replaced by X.
+The peel chain is visible, it's clear that B2, D2, E1 are change
+addresses which belong to the same wallet as A1.
+
+For a given false-positive rate fp and given length of peel chain C, the
+odds of a false positive peel chain happening by chance is fp^C which
+rapidly gets very small as the wallet makes more transactions (increases C).
+
+If only one address was matched from the above group (for example B2)
+then it likely to be a false positive by the fact that it doesn't make
+any transactions to another address that also matches the bloom filter.
+Another possibility is that the address is a payment output that the
+wallet received but hasn't spent yet, but the wallet cant spend it
+without adding the change address to the bloom filter and thus revealing
+itself to the spy.
+
+I believe the committed bloom filter proposal is vulnerability to this
+same kind of attack because it still leaks information about which
+addresses the wallet is interested in.
+
+==Committed Bloom Filter Maths==
+
+I'll try to analyze this now. I'll find the expectation value of the
+number of transaction subgraphs in those blocks that appear just by
+chance. If this expectation goes to zero, then the only transaction
+subgraph left will be the real one that the wallet is actually
+interested in. In that case it will be possible to spy on the wallet.
+
+Assuming outputs have the same probability of being spent in each time
+interval (i.e. they are spent in a Poisson process) This is
+approximately true, see the graphs from
+[https://letstalkbitcoin.com/blog/post/rise-of-the-zombie-bitcoins].
+This means we can assign
+a single probability P that an output is spent in each block.
+
+Assume every transaction has one change address only and spending of
+unconfirmed change doesn't happen (its more efficient to use RBF to add
+additional outputs anyway)
+
+Number of transactions per block = Q (about 1800 today)
+Number of outputs per block = Z = 2*Q (approximately)
+Length of peel chain = Number of transactions in wallet = C
+Average time an output is unspent for = T (about 1 month, very roughly
+estimating from the above blog post)
+Probability an output being spent in any particular later block = P =
+10minutes/T
+
+Assume no false positive blocks
+Say wallet downloaded two blocks and they are ordered by block height
+The expected number of tx subgraphs between them, E(#G)
+E(#G) = number of outputs created in block 1 that get spent in block 2
+      = Z*P
+
+Say the wallet downloaded three blocks
+Expected number of subgraphs going through them all
+E(#G) = number of outputs created in block 1 get spent in block 2, that
+create a change address which gets spent in block 3
+      = Z*P*P
+
+Say the wallet downloaded C blocks
+Expected number of tx subgraphs going through all the blocks by chance
+E(#G) = Z*P^C
+which gets small quickly as C goes up, because P < 1
+
+Now drop the assumption about no false positive blocks.
+
+Let the number of candidate blocks be D.
+This is how many blocks the wallet scans, it's related to how far in the
+past the wallet's keys was created. At one extreme wallet was created at
+genesis block and so D = ~450000, at other extreme created now so D = 0.
+Note that D = 0 must also imply C = 0
+
+Expected number of false positive blocks downloaded = F = fp*D
+
+In all these situations the blocks are sorted by block height
+
+Suppose have C=2, F=1, and false one is in the middle.
+I want to find E(#G|CF), the expected number of transaction subgraphs
+that appear just by chance, given C and F.
+E(#G|CF) = how many outputs which are created in block 1 get spent in
+block 3
+         = Z*P
+
+Same situation, but false one at the start instead of middle.
+E(#G|CF) = how many outputs which are created in block 2 get spent in
+block 3
+         = Z*P
+
+Same situation but false one could be anywhere, result in the sum of the
+probability for any false block position
+E(#G|CF) = C(3, 1)*Z*P = 3*Z*P
+
+where C() is the number of order-independent ways of choosing 1 element
+out of a set of 3 elements, also known as the binomial coefficient
+
+Now suppose C=3 and F=1
+The same argument leads to
+E(#G|CF) = C(4, 1)*Z*P^2 = 4*Z*P^2
+
+
+Now suppose C=3 and F=2, with fp blocks at the end
+E(#G|CF)
+= how many outputs are created in block 1, are spent in block 2 and
+change address spent in block 3
+= Z*P^2
+
+Same situation but fp blocks can be anywhere, add up all the possible
+combinations of them within the rest
+E(#G|CF) = C(5, 2)*Z*P^2 = 5*Z*P^2
+
+With these same rules, its clear the general expression for any F and C
+E(#G|CF) = C(F + C, F)*Z*P^(C - 1)
+
+A more interesting value might be the time evolution of E(#G)
+Let B be the blocks in the blockchain since the wallet creation date, as you
+know it increases at an average rate of one every ten minutes
+
+w = wallet transaction creation rate, expressed per-block
+C = w * B
+F = fp * B
+
+J = average blocks between wallet transactions = 1440 (10 days)
+w = 1/J
+
+E(#G|B) = C((fp + w)*B, fp*B)*Z*P^(w*B - 1)
+
+This goes to zero as B becomes big, although choosing very high values
+of fp makes it go to zero slower.
+
+This is only approximate maths, in actuality you cannot take the number
+of false positive blocks to be fp*B, you have to sum over all blocks
+weighted by probability. And outputs might not be spent in an exact
+Poisson process so you cant just multiply by P each time. Plus if your
+false positive rate is very high then some of your false positive blocks
+will actually contain your real transactions, this analysis
+double-counts them.
+
+Using some reasonable values and plotting E(#G|B) against B can show how
+quickly it drops and therefore leaves only the true transaction subgraph.
+
+(note: in LibreOffice Math and Microsoft Excel the binomial coefficient
+function is COMBIN)
+
+==Notes==
+
+*) The expected number of transaction subgraphs that happen by chance
+goes to zero eventually as the blockchain steps ahead. Unless the fp
+rate is very high (close to 1) and time between wallet transaction very
+long, in which case the binomial coefficient term gets larger more
+quicker than the exponential decay P^B term gets smaller.
+*) fp rate doesn't help in most cases that much compared to the
+exponential drop-off from time ticking ahead requiring more downloading
+of blocks
+*) its good for privacy if bitcoin outputs are spent more frequently so
+P is higher, because that creates more transaction subgraphs in the
+anonymity set.
+*) its good for privacy if more outputs are made per block, although
+still only linearly which is no match for the exponential reduction from
+the P^B term.
+*) its good for privacy to make less of your own transactions (increase
+J and reduce w), for low-activity users the privacy of committed bloom
+filters can be actually pretty good, for high-activity users who use
+bitcoin's blockchain all the time it's not very good
+*) For the reasonable values I tried for a once-a-month user with fp=1%,
+their chance-transaction-subgraph-count drops below 1 in about eight months.
+*) Because of the exponential nature, E(#G) goes from "billions of
+billions" to "about 10" fairly quickly.
+
+==Discussion of ways to mitigate this==
+
+One way is to not use change outputs. This is unrealistic, doesn't match
+people's behavior and money must be divisible.
+
+A better way to mitigate this is to not leak the information that all
+those blocks are interesting to the same wallet. Don't download all
+blocks from the same archival node. If you download blocks from many
+different nodes, it gives an incentive for surveillance startups to
+create lots of sybil nodes they control and can then correlate together
+block downloads with the wallet IP address. Many such startups are
+already doing this today to try to detect the origin IP address of
+broadcasted transactions.
+
+Another solution could be to download a few blocks from different nodes
+with new tor circuits used. This would delink the wallet IP address from
+the downloads and would help a lot. This has the issue that tor is
+slower (but still not as slow as downloading the entire blockchain)
+
+Another way a wallet could be correlated with its block downloads is
+timing correlations. At any one time only a certain number of peers
+would be downloading blocks which narrows down which wallets are
+downloading what. However even today Bitcoin Core downloads blocks in
+parallel from many nodes so there's probably quite a large anonymity set
+for lightweight wallets using committed bloom filters. Plus timing
+correlation can be reduced simply by waiting longer. Wallets are not
+sync'd from backup very often so it might be okay to wait.
+
+Another way to improve privacy could be for the wallet to choose random
+transaction subgraphs and download all the blocks related to them as well.
+
+Wallet developers might choose to allow the user to configure their own
+fp rate. This is probably not a good idea since the relationship between
+fp rate and anonymity set is non-obvious. It might be better to ask the
+user how often they expect to make transactions.
+
+==Conclusion==
+
+I think this committed bloom filter idea is very good and much better
+than bip37, but for good privacy for when bitcoin is used often still
+requires certain behavior namely downloading blocks
+from many different peers with new tor circuits.
+
+Note that I've been dealing with counting transaction subgraphs but
+actually finding them from blocks might also be computationally
+infeasible. Although a Bayesian approach worked very
+well for similar transaction subgraph linking
+[https://arxiv.org/pdf/1612.06747v3.pdf]
+
+It would also be interesting to analyze what information a spy can get
+if they are missing some blocks that the wallet downloaded.
+
+For the long term, private and high-volume bitcoin use will be best
+served by off-chain transactions. They will probably be a huge win just
+because the large and public blockchain is such a non-private
+way of doing things.
+
+On 09/05/16 09:26, bfd--- via bitcoin-dev wrote:
+> We introduce several concepts that rework the lightweight Bitcoin
+> client model in a manner which is secure, efficient and privacy
+> compatible.
+> 
+> Thea properties of BIP37 SPV [0] are unfortunately not as strong as
+> originally thought:
+> 
+>     * The expected privacy of the probabilistic nature of bloom
+>       filters does not exist [1][2], any user with a BIP37 SPV wallet
+>       should be operating under no expectation of privacy.
+>       Implementation flaws make this effect significantly worse, the
+>       behavior meaning that no matter how high the false positive
+>       rate (up to simply downloading the whole blocks verbatim) the
+>       intent of the client connection is recoverable.
+> 
+>     * Significant processing load is placed on nodes in the Bitcoin
+>       network by lightweight clients, a single syncing wallet causes
+>       (at the time of writing) 80GB of disk reads and a large amount
+>       of CPU time to be consumed processing this data. This carries
+>       significant denial of service risk [3], non-distinguishable
+>       clients can repeatedly request taxing blocks causing
+>       reprocessing on every request. Processed data is unique to every
+>       client, and can not be cached or made more efficient while
+>       staying within specification.
+> 
+>     * Wallet clients can not have strong consistency or security
+>       expectations, BIP37 merkle paths allow for a wallet to validate
+>       that an output was spendable at some point in time but does not
+>       prove that this output is not spent today.
+> 
+>     * Nodes in the network can denial of service attack all BIP37 SPV
+>       wallet clients by simply returning null filter results for
+>       requests, the wallet has no way of discerning if it has been
+>       lied to and may be made simply unaware that any payment has been
+>       made to them. Many nodes can be queried in a probabilistic manor
+>       but this increases the already heavy network load with little
+>       benefit.
+> 
+> 
+> 
+> We propose a new concept which can work towards addressing these
+> shortcomings.
+> 
+> 
+> A Bloom Filter Digest is deterministically created of every block
+> encompassing the inputs and outputs of the containing transactions,
+> the filter parameters being tuned such that the filter is a small
+> portion of the size of the total block data. To determine if a block
+> has contents which may be interesting a second bloom filter of all
+> relevant key material is created. A binary comparison between the two
+> filters returns true if there is probably matching transactions, and
+> false if there is certainly no matching transactions. Any matched
+> blocks can be downloaded in full and processed for transactions which
+> may be relevant.
+> 
+> The BFD can be used verbatim in replacement of BIP37, where the filter
+> can be cached between clients without needing to be recomputed. It can
+> also be used by normal pruned nodes to do re-scans locally of their
+> wallet without needing to have the block data available to scan, or
+> without reading the entire block chain from disk.
+> 
+> -
+> 
+> For improved probabilistic security the bloom filters can be presented
+> to lightweight clients by semi-trusted oracles. A client wallet makes
+> an assumption that they trust a set, or subset of remote parties
+> (wallet vendors, services) which all all sign the BFD for each block.
+> The BFD can be downloaded from a single remote source, and the hash of
+> the filters compared against others in the trust set. Agreement is a
+> weak suggestion that the filter has not been tampered with, assuming
+> that these parties are not conspiring to defraud the client.
+> 
+> The oracles do not learn any additional information about the client
+> wallet, the client can download the block data from either nodes on
+> the network, HTTP services, NTTP, or any other out of band
+> communication method that provides the privacy desired by the client.
+> 
+> -
+> 
+> The security model of the oracle bloom filter can be vastly improved
+> by instead committing a hash of the BFD inside every block as a soft-
+> fork consensus rule change. After this, every node in the network would
+> build the filter and validate that the hash in the block is correct,
+> then make a conscious choice discard it for space savings or cache the
+> data to disk.
+> 
+> With a commitment to the filter it becomes impossible to lie to
+> lightweight clients by omission. Lightweight clients are provided with
+> a block header, merkle path, and the BFD. Altering the BFD invalidates
+> the merkle proof, it's validity is a strong indicator that the client
+> has an unadulterated picture of the UTXO condition without needing to
+> build one itself. A strong assurance that the hash of the BFD means
+> that the filters can be downloaded out of band along with the block
+> data at the leisure of the client, allowing for significantly greater
+> privacy and taking load away from the P2P Bitcoin network.
+> 
+> Committing the BFD is not a hard forking change, and does not require
+> alterations to mining software so long as the coinbase transaction
+> scriptSig is not included in the bloom filter.
+> 
+> 
+> [0] https://github.com/bitcoin/bips/blob/master/bip-0037.mediawiki
+> [1] https://eprint.iacr.org/2014/763.pdf
+> [2] https://jonasnick.github.io/blog/2015/02/12/privacy-in-bitcoinj/
+> [3] https://github.com/petertodd/bloom-io-attack
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
