@@ -1,0 +1,237 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 23 Feb 2017 02:23:10 -0500
+Subject: [bitcoin-dev] TXO commitments do not need a soft-fork to be
+ useful
+In-Reply-To: <20170223011147.GB905@savin.petertodd.org>
+References: <20170223011147.GB905@savin.petertodd.org>
+Message-ID: <20170223072310.GA3122@savin.petertodd.org>
+
+On Wed, Feb 22, 2017 at 08:11:47PM -0500, Peter Todd via bitcoin-dev wrote:
+> 5) By *not* committing the TXO commitment in the block itself, we obsolete my
+> concept of delayed TXO commitments: you don't need to have calculated the TXO
+> commitment digest to validate a block anyway!
+
+Thinking about this a bit more, by not being forced to calculate a TXO
+commitment for every block, we may be able to do significantly better than
+delayed TXO commitments by lazily hashing.
+
+Suppose we have the following perfect merkle tree, which we're using as a
+key-value map. We'll represent inner nodes for which we've calculated digests
+with "0"'s to represent what version of the tree they correspond too:
+
+               0
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         0           0
+        / \         / \
+       /   \       /   \
+      0     0     0     0
+     / \   / \   / \   / \
+    a   b c   d e   f g   h
+
+If a value is updated, digests above it become out of date and need to be
+recalculated:
+
+
+               1
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         0           1
+        / \         / \
+       /   \       /   \
+      0     0     0     1
+     / \   / \   / \   / \
+    a   b c   d e   f g   H
+
+               2
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         0           2
+        / \         / \
+       /   \       /   \
+      0     0     2     1
+     / \   / \   / \   / \
+    A   b c   d e   F g   H
+
+               3
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         0           3
+        / \         / \
+       /   \       /   \
+      0     0     2     3
+     / \   / \   / \   / \
+    a   b c   d e   F G   H
+
+Suppose however that your implementation does lazy hashing; after the 3rd
+update your state will be:
+
+               .
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         0           .
+        / \         / \
+       /   \       /   \
+      0     0     .     .
+     / \   / \   / \   / \
+    a   b c   d e   F G   H
+
+Basically all the digests on the right side is out of date and need to be
+recalculated. Now, first of all it's obviously possible for your implementation
+to keep updating values in the tree given their keys - you've essentially
+regressed to a bog standard binary tree.
+
+But what happens if you discard part of your dataset? Let's suppose you've
+discarded the left half:
+
+               .
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         0           .
+                    / \
+                   /   \
+                  .     .
+                 / \   / \
+                e   F G   H
+
+Note how you still have sufficient information to calculate the current merkle
+tip commitment: the left side hasn't changed yet. But what happens when someone
+gives you an update proof? Specifically, suppose they want to change b -> B.
+That requires them to provide you with the part of the merkle tree proving that
+position #1 is b. Now you might think that's this data:
+
+               3
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         0           3
+        / \
+       /   \
+      0     0
+     / \
+    a   b
+
+But the inner node digests marked "3" are useless to you: you haven't
+calculated those digests yet so you can't compare them to anything. What you
+can compare is the following:
+
+         0
+        / \
+       /   \
+      0     0
+     / \
+    a   b
+
+With that extra data your local knowledge is now:
+
+               .
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         0           .
+        / \         / \
+       /   \       /   \
+      0     0     .     .
+     / \         / \   / \
+    a   b       e   F G   H
+
+Allowing you to apply the update:
+
+               .
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         .           .
+        / \         / \
+       /   \       /   \
+      .     0     .     .
+     / \         / \   / \
+    a   B       e   F G   H
+
+If you want to again prune that data, simply recalculate the digests so you
+can verify a copy given to you by a peer in the future:
+
+               .
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         4           .
+        / \         / \
+       /   \       /   \
+      4     0     .     .
+     / \         / \   / \
+    a   B       e   F G   H
+
+And prune, leaving you with:
+
+               .
+              / \
+             /   \
+            /     \
+           /       \
+          /         \
+         4           .
+                    / \
+                   /   \
+                  .     .
+                 / \   / \
+                e   F G   H
+
+
+So tl;dr: the reason this works is that we can substitute commitments for
+pointers: our merkle tree can also be viewed as a binary tree. So a reasonable
+real-world implementation would be to delay computation of digests for anything
+we have in RAM, and only compute digests as in-RAM data is flushed to disk.
+Equally, on disk we can use standard time-space tradeoffs to only store a
+subset of the digests, recalculating the rest on the fly. Given that'd we could
+effectively combine both a cryptographic data structure and a standard
+pointer-based data structure in one, I suspect we can get good performance out
+of this.
+
+The main subtlety of this approach will be how exactly to handle the proofs:
+the level of verification possible depends on what digests a given node has
+calculated, and we want to avoid making network splitting attacks possible by
+attackers deliberately giving nodes proofs with upper digests that are
+incorrect, something only some nodes can detect. Not sure yet exactly what's
+the right approach there.
+
+Finally, notice how this entire approach depends on schemes like MMR's where
+the overall structure of the tree does not change as nodes are added and
+updated; it would be much harder to implement this idea for something like a
+merklized red-black tree where the structure changes as the tree is rebalanced.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170223/9d5d9e70/attachment.sig>
