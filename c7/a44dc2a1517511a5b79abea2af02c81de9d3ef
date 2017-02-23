@@ -1,0 +1,52 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 22 Feb 2017 20:15:06 -0500
+Subject: [bitcoin-dev] A Better MMR Definition
+Message-ID: <20170223011506.GC905@savin.petertodd.org>
+
+Reposting something that came up recently in a private discussion with some
+academics:
+
+Concretely, let's define a prunable MMR with the following grammar. This
+definition is an improvement on whats in the python-proofmarshal by committing
+to the number of items in the tree implicitly; an obvious max-log2(n)-sized
+proof-of-tree-size can be obtained by following the right-most nodes:
+
+    Maybe(T) := UNPRUNED <T> | PRUNED <Commitment(T)>
+
+    FullNode(0) := <Value>
+    FullNode(n) := <Maybe(FullNode(n-1)> <Maybe(FullNode(n-1))>
+
+    PartialNode(0) := SOME <FullNode(0)> | NONE
+    PartialNode(n) := <Maybe(FullNode(n-1))> <Maybe(PartialNode(n-1))>
+
+    MMR := FULL <N> <FullNode(n)> | PARTIAL <N> <PartialNode(n)>
+
+Basically we define it in four parts. First we define Maybe(T) to represent
+pruned and unpruned (hash only) data. Secondly we define full nodes within 2^n
+sized trees. Third we define partial nodes. And finally we define the MMR
+itself as being either a full or partial node.
+
+First of all, with pruning we can define a rule that if any operation (other
+than checking commitment hashes) attempts to access pruned data, it should
+immediately fail. In particular, no operation should be able to determine if
+data is or isn't pruned. Equally, note how an implementation can keep track of
+what data was accessed during any given operation, and prune the rest, which
+means a proof is just the parts of the data structure accessed during one or
+more operations.
+
+With that, notice how proving the soundness of the proofs becomes trivial: if
+validation is deterministic, it is obviously impossible to construct two
+different proofs that prove contradictory statements, because a proof is simply
+part of the data structure itself. Contradiction would imply that the two
+proofs are different, but that's easily rejected by simply checking the hash of
+the data.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170222/1412af52/attachment.sig>
