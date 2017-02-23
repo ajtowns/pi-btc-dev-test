@@ -1,0 +1,83 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 23 Feb 2017 02:41:37 -0500
+Subject: [bitcoin-dev] A Better MMR Definition
+In-Reply-To: <CA+KqGkqXmWgyU+4ZaR9w7e3xVBUyWwAixVAEzT9hT8V_1kwnuw@mail.gmail.com>
+References: <20170223011506.GC905@savin.petertodd.org>
+	<CA+KqGkqXmWgyU+4ZaR9w7e3xVBUyWwAixVAEzT9hT8V_1kwnuw@mail.gmail.com>
+Message-ID: <20170223074137.GA3395@savin.petertodd.org>
+
+On Wed, Feb 22, 2017 at 07:07:08PM -0800, Bram Cohen wrote:
+> On Wed, Feb 22, 2017 at 5:15 PM, Peter Todd via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> >
+> > With that, notice how proving the soundness of the proofs becomes trivial:
+> > if
+> > validation is deterministic, it is obviously impossible to construct two
+> > different proofs that prove contradictory statements, because a proof is
+> > simply
+> > part of the data structure itself. Contradiction would imply that the two
+> > proofs are different, but that's easily rejected by simply checking the
+> > hash of
+> > the data.
+> >
+> 
+> My code works this way. Proofs are serialization of a subset of the tree,
+> and to validate a proof you ask a single function whether a particular
+> value is included in that tree subset, and it answers yes or no, so
+> obviously it's impossible for a single value to both validate and not
+> validate. The proof code was quite terrifying before I made this change
+> (which I did on your suggestion), and it's much cleaner and simpler now. It
+> also in principle supports compact proofs of multiple inclusions and
+> exclusions in the same serialization of a subset of the tree because the
+> upper branches won't have to be repeated. I haven't written code for
+> generating those, but the validation code will happily accept them.
+
+That's an improvement, but I think we can do even better if we think of missing
+pruned data as analogous to virtual memory: pruned data is the same as a page
+that has been swapped to disk, with the magical property that hashing allows us
+to swap it back in from an untrusted source.
+
+Thus a proof should actually be whatever data we expect our counterparty to
+have flushed, ranging from none at all, to 100% (modulo a root hash). An
+implementation should then do operations as normal, using parts of the proof on
+an as-needed basis where pruned data is encountered.
+
+Thus if you have a key-value map and do a get() operation, you'd expect the
+proof to *not* be what the get operates on, but rather be a *context* argument
+to the get() operation. The other way around is actually an example of doing
+computations on untrusted data, and bad API design!
+
+> I'm not sure what you mean by MMRs though. Are you talking about MMRs where
+> each mountain is a set of diffs to the old things and are periodically
+> consolidated? Or do later mountains refer to internals of earlier ones? Or
+> do they have 'maybe' values which mean that the earlier mountain should be
+> referred to? Are these patricia tries or something flatter and more fixed
+> depth?
+
+I'm talking about these MMR's: https://github.com/proofchains/python-proofmarshal/blob/master/proofmarshal/mmr.py
+
+Notably I'm talking about an insertion ordered list, indexed by position, that
+supports append and update operations, but *not* insertions; this is different
+than what you've recently published re: UTXO commitments. That's a full
+key-value map, something MMR's are delibrately are not doing.
+
+Draw out a MMR based on the formal definition you're replying too and you'll
+see the new structure.
+
+> My code doesn't keep track of tree size, by the way. It would be trivial to
+> add that functionality to the library, and including it in the hashing
+> creates complexity and doesn't seem to have any benefit over sending that
+> data in a side channel.
+
+Like I say above, you're solving a different problem than MMR's solve.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170223/91289920/attachment-0001.sig>
