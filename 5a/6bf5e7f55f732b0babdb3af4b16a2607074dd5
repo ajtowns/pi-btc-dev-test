@@ -1,0 +1,78 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Thu, 23 Feb 2017 18:51:05 -0500
+Subject: [bitcoin-dev] A Better MMR Definition
+In-Reply-To: <CA+KqGkrUneGe4yORi=JAAWzoO0UftMUuJm3S-__W5sBh-+T1vQ@mail.gmail.com>
+References: <20170223011506.GC905@savin.petertodd.org>
+	<CAAcC9ys5sUxVfOjogFiF3gzk51D_L=QQkOYevTH=qbh_RkA3Hw@mail.gmail.com>
+	<CA+KqGkrUneGe4yORi=JAAWzoO0UftMUuJm3S-__W5sBh-+T1vQ@mail.gmail.com>
+Message-ID: <20170223235105.GA28497@savin.petertodd.org>
+
+On Thu, Feb 23, 2017 at 03:13:43PM -0800, Bram Cohen wrote:
+> On Thu, Feb 23, 2017 at 9:53 AM, Chris Priest via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> >
+> > What problem does this try to solve, and what does it have to do with
+> > bitcoin?
+> >
+> 
+> I can't speak to MMRs (they look a bit redundant with the actual blockchain
+> history to my eye) but circling back to utxo commitments, the benefits are
+
+In what way do you see MMRs as redundant?
+
+Remember that with UTXO commitments because access patterns are uniform, you'll
+over time have a lot more "redundancy" in the form of lost-coins evenly spread
+out across the whole keyspace.
+
+> that it enables actual proofs of non-fraud: You can prove the validity of a
+> block based on just the previous block (and maybe some previous headers
+> because of mining rewards) and can prove to a light node that a utxo hasn't
+> been spent yet.
+>
+> A major factor in the way of getting utxo commitments in blocks is
+> performance. The txo set is of course vastly larger and more unwieldy. If
+
+That statement is incorrect with pruning: you can maintain a commitment to the
+TXO set, without actually storing the entire TXO set, because you don't need to
+store anything for nodes that have already been spent.
+
+Concretely, this can be done with nothing more than adding a FullySpent node
+type to the MMR definition I published earlier, with the rule being that only a
+left or right child of an inner node be a FullySpent node, not both; if both
+sides are spent, the inner node itself becomes FullySpent. Equally, I think you
+can re-use the Empty node for this, but I need to think a little about the
+implications re: partial inner nodes.
+
+Regardless, with a generalized commitment scheme, the serialization/commitment
+to an Empty node is simply '0', the encoding of an unspent txout surrounded by
+spent txouts will be similar in size to a position integer followed by the
+txout...
+
+
+A subtlety of this construction is that you can only prove that a specific
+txout # is unspent, but that's actually sufficient, as you can also prove what
+# a txout txid corresponds too with a previous version of the MMR.
+
+> you make the utxo commitments trail by a small fixed number of blocks
+> (between 2 and 5) their latency problems shouldn't be a big deal as long as
+> the overall performance is good enough. My thesis is that with appropriate
+> format and implementation tricks it's possible to get performance good
+> enough to no longer be a gating factor to deployment.
+> 
+> Disappointingly there hasn't been any feedback about my implementation,
+> just discussion about merkle sets generally.
+
+Well, I think at this point there's still discussion over whether or not a UTXO
+set commitment is the right approach to begin with; if it's not your
+implementation isn't relevant.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170223/7dfb1ea7/attachment.sig>
