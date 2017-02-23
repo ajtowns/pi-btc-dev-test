@@ -1,0 +1,102 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 22 Feb 2017 20:11:47 -0500
+Subject: [bitcoin-dev] TXO commitments do not need a soft-fork to be useful
+Message-ID: <20170223011147.GB905@savin.petertodd.org>
+
+Something I've recently realised is that TXO commitments do not need to be
+implemented as a consensus protocol change to be useful. All the benefits they
+provide to full nodes with regard to allowing for old UTXO data to be pruned -
+and thus solving the UTXO bloat problem - can be implemented even without
+having miners commit to the TXO commitment itself. This has a significant
+deployment advantage too: we can try out multiple TXO commitment schemes, in
+production, without the need for consensus changes.
+
+
+# Reasoning
+
+1) Like any other merkelized data structure, a TXO commitment allows a data set
+- the TXO set - to be securely provided by an untrusted third party, allowing
+the data itself to be discarded. So if you have a valid TXO commitment, you can
+discard the TXO data itself, and rely on untrusted entities to provide you that
+data on demand.
+
+2) The TXO set is a super-set of the UTXO set; all data in the UTXO set is also
+present in the TXO set. Thus a TXO commitment with spent TXO's pruned is
+equivalent to a UTXO set, doubly so if inner nodes in the commitment tree
+commit to the sum-unspent of their children.
+
+3) Where a outpoint-indexed UTXO set has a uniform access pattern, an
+insertion-ordered TXO set has a delibrately *non-uniform* access pattern: not
+only are new entries to the TXO set always appended to the end - an operation
+that requires a known, log2(n), sized set of merkle tips - but due to lost
+coins alone we can guarantee that older entries in the TXO set will be less
+frequently updated than newer entries.
+
+4) Thus a full node that doesn't have enough local storage to maintain the full
+UTXO set can instead keep track of a TXO commitment, and prune older UTXO's
+from it that are unlikely to be spent. In the event those UTXO's are spent,
+transactions and blocks spending them can trustlessly provide the necessary
+data to temporarily fill-in the node's local TXO set database, allowing the
+next commitment to be calculated.
+
+5) By *not* committing the TXO commitment in the block itself, we obsolete my
+concept of delayed TXO commitments: you don't need to have calculated the TXO
+commitment digest to validate a block anyway!
+
+
+# Deployment Plan
+
+1) Implement a TXO commitment scheme with the ability to efficiently store the
+last n versions of the commitment state for the purpose of reorgs (a
+reference-counted scheme naturally does this).
+
+2) Add P2P support for advertising to peers what parts of the TXO set you've
+pruned.
+
+3) Add P2P support to produce, consume, and update TXO unspentness proofs as
+part of transaction and block relaying.
+
+4) Profit.
+
+
+# Bootstrapping New Nodes
+
+With a TXO commitment scheme implemented, it's also possible to produce
+serialized UTXO snapshots for bootstrapping new nodes. Equally, it's obviously
+possible to distribute those snapshots, and have people you trust attest to the
+validity of those snapshots.
+
+I argue that a snapshot with an attestation from known individuals that you
+trust is a *better* security model than having miners attest to validity: the
+latter is trusting an unknown set of unaccountable, anonymous, miners.
+
+This security model is not unlike the recently implemented -assumevalid
+scheme(1), in that auditing the validity of the assumed valid TXO commitments
+is something anyone can do provided they have a full node. Similarly, we could
+ship Bitcoin nodes with an assumed-valid TXO commitment, and have those nodes
+fill in the UTXO data from their peers.
+
+However it is a weaker security model, in that a false TXO commitment can more
+easily be used to trick a node into accepting invalid transactions/blocks;
+assumed valid blocks requires proof-of-work to pull off this attack. A
+compromise may be to use assumed valid TXO commitments, extending my partial
+UTXO set(2) suggestion of having nodes validate the chain backwards, to
+eventually validate 100% of the chain.
+
+
+# References
+
+1) https://github.com/bitcoin/bitcoin/pull/9484
+2) [Bitcoin-development] SPV bitcoind? (was: Introducing BitcoinKit.framework),
+   Peter Todd, Jul 17th 2013, Bitcoin development mailing list,
+   https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2013-July/002917.html
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170222/70a0a773/attachment.sig>
