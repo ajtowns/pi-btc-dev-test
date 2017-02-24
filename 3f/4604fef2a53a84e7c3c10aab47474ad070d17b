@@ -1,0 +1,204 @@
+From: bram@bittorrent.com (Bram Cohen)
+Date: Fri, 24 Feb 2017 14:20:19 -0800
+Subject: [bitcoin-dev] A Better MMR Definition
+In-Reply-To: <20170224043613.GA32502@savin.petertodd.org>
+References: <CAAcC9ys5sUxVfOjogFiF3gzk51D_L=QQkOYevTH=qbh_RkA3Hw@mail.gmail.com>
+	<CA+KqGkrUneGe4yORi=JAAWzoO0UftMUuJm3S-__W5sBh-+T1vQ@mail.gmail.com>
+	<20170223235105.GA28497@savin.petertodd.org>
+	<CA+KqGkowxEZeAFYa2JJchBDtRkg1p3YZNocivzu3fAtgRLDRBQ@mail.gmail.com>
+	<20170224010943.GA29218@savin.petertodd.org>
+	<CA+KqGkrOK76S3ffPJmpqYcBwtSeKESqN16yZsrwzDR6JZZmwFA@mail.gmail.com>
+	<20170224025811.GA31911@savin.petertodd.org>
+	<CA+KqGkq7gavAnAk-tcA+gxL2sWpv3ENhEmHrQHaPdyAsKrLjGg@mail.gmail.com>
+	<20170224031531.GA32118@savin.petertodd.org>
+	<CA+KqGkrfhg3GnbWwvKXHQ2NWuCnfzYyTPUxRhzYMuDBiNQR4eA@mail.gmail.com>
+	<20170224043613.GA32502@savin.petertodd.org>
+Message-ID: <CA+KqGkpi4GvgU-K6vt-U5ZN4AkpjZ0rruzddoJS4-V0TcnyqUQ@mail.gmail.com>
+
+So your idea is to cluster entries by entry time because newer things are
+more likely to leave and updating multiple things near each other is
+cheaper?
+
+That can be done with my tool. Instead of using hashes for the values being
+stored, you use position entries. The first entry gets a value of all
+zeros, the next one a one followed by all zeros, then the next two
+correspond to the first two with the second bit flipped to one, then the
+next four the first four with the third bit flipped to one, etc. It
+probably performs a little bit better to do it two bits at a time instead
+of one so that the entries are 00, 01, 10, 11, 0001, 0010, 0011, 0101,
+0110, 0111, 1001, etc. If you were to really use this you'd probably want
+to to add some optimizations to use the fact that the terminals fit in 64
+bits instead of 256, but it mostly works unchanged, and gets whatever
+benefits there are to this clustering plus the high performance
+implementation tricks I've built which I keep complaining that nobody's
+giving feedback on.
+
+I'm not sold on this being a win: The empirical access patterns are
+unknown, it requires an extra cache miss per lookup to find the entry
+number, it may be that everything is optimized well enough without it for
+there to be no meaningful gains, and it's a bunch of extra complexity. What
+should be done is that a plain vanilla UTXO set solution is optimized as
+well as it can be first, and then the insertion ordering trick is tried as
+an optimization to see if it's an improvement. Without that baseline
+there's no meaningful basis for comparison, and I'm quite confident that a
+naive implementation which just allocates individual nodes will
+underperform the thing I've come up with, even without adding optimizations
+related to fitting in 64 bits.
+
+On Thu, Feb 23, 2017 at 8:36 PM, Peter Todd <pete at petertodd.org> wrote:
+
+> On Thu, Feb 23, 2017 at 07:32:43PM -0800, Bram Cohen wrote:
+> > On Thu, Feb 23, 2017 at 7:15 PM, Peter Todd <pete at petertodd.org> wrote:
+> >
+> > >
+> > > Glad we're on the same page with regard to what's possible in TXO
+> > > commitments.
+> > >
+> > > Secondly, am I correct in saying your UTXO commitments scheme requires
+> > > random
+> > > access? While you describe it as a "merkle set", obviously to be
+> merkelized
+> > > it'll have to have an ordering of some kind. What do you propose that
+> > > ordering
+> > > to be?
+> > >
+> >
+> > The ordering is by the bits in the hash. Technically it's a Patricia
+> Trie.
+> > I'm using 'merkle tree' to refer to basically anything with a hash root.
+>
+> The hash of what? The values in the set?
+>
+> > > Maybe more specifically, what exact values do you propose to be in the
+> set?
+> > >
+> > >
+> > That is unspecified in the implementation, it just takes a 256 bit value
+> > which is presumably a hash of something. The intention is to nail down a
+> > simple format and demonstrate good performance and leave those semantics
+> to
+> > a higher layer. The simplest thing would be to hash together the txid and
+> > output number.
+>
+> Ok, so let's assume the values in the set are the unspent outpoints.
+>
+> Since we're ordering by the hash of the values in the set, outpoints will
+> be
+> distributed uniformly in the set, and thus the access pattern of data in
+> the
+> set is uniform.
+>
+> Now let's fast-forward 10 years. For the sake of argument, assume that for
+> every 1 UTXO in the set that corresponds to funds in someone's wallet that
+> are
+> likely to be spent, there are 2^12 = 4096 UTXO's that have been permanently
+> lost (and/or created in spam attacks) and thus will never be spent.
+>
+> Since lost UTXO's are *also* uniformly distributed, if I'm processing a new
+> block that spends 2^12 = 4096 UTXO's, on average for each UTXO spent, I'll
+> have to update log2(4096) = 12 more digests than I would have had those
+> "dead"
+> UTXO's not existed.
+>
+> Concretely, imagine our UTXO set had just 8 values in it, and we were
+> updating
+> two of them:
+>
+>                #
+>               / \
+>              /   \
+>             /     \
+>            /       \
+>           /         \
+>          #           #
+>         / \         / \
+>        /   \       /   \
+>       #     .     .     #
+>      / \   / \   / \   / \
+>     .   X .   . .   . X   .
+>
+> To mark two coins as spent, we've had to update 5 inner nodes.
+>
+>
+> Now let's look at what happens in an insertion-ordered TXO commitment
+> scheme.
+> For sake of argument, let's assume the best possible case, where every UTXO
+> spent in that same block was recently created. Since the UTXO's are
+> recently
+> created, chances are almost every single one of those "dead" UTXO's will
+> have
+> been created in the past. Thus, since this is an insertion-ordered data
+> structure, those UTXO's exist in an older part of the data structure that
+> our
+> new block doesn't need to modify at all.
+>
+> Concretely, again let's imagine a TXO commitment with 8 values in it, and
+> two
+> of them being spent:
+>
+>                #
+>               / \
+>              /   \
+>             /     \
+>            /       \
+>           /         \
+>          .           #
+>         / \         / \
+>        /   \       /   \
+>       .     .     .     #
+>      / \   / \   / \   / \
+>     .   . .   . .   . X   X
+>
+> To mark two coins as spent, we've only had to update 3 inner nodes; while
+> our
+> tree is higher with those lost coins, those extra inner nodes are amortised
+> across all the coins we have to update.
+>
+>
+> The situation gets even better when we look at the *new* UTXO's that our
+> block
+> creates. Suppose our UTXO set has size n. To mark a single coin as spent,
+> we
+> have to update log2(n) inner nodes. We do get to amortise this a bit at
+> the top
+> levels in the tree, but even if we assume the amortisation is totally free,
+> we're updating at least log2(n) - log2(m) inner nodes "under" the amortised
+> nodes at the top of the tree for *each* new node.
+>
+> Meanwhile with an insertion-ordered TXO commitment, each new UTXO added to
+> the
+> data set goes in the same place - the end. So almost none of the existing
+> data
+> needs to be touched to add the new UTXOs. Equally, the hashing required
+> for the
+> new UTXO's can be done in an incremental fashion that's very L1/L2 cache
+> friendly.
+>
+>
+> tl;dr: Precisely because access patterns in TXO commitments are *not*
+> uniform,
+> I think we'll find that from a L1/L2/etc cache perspective alone, TXO
+> commitments will result in better performance than UTXO commitments.
+>
+>
+> Now it is true that Bitcoin's current design means we'll need a map of
+> confirmed outpoints to TXO insertion order indexes. But it's not
+> particularly
+> hard to add that "metadata" to transactions on the P2P layer in the same
+> way
+> that segwit added witnesses to transactions without modifying how txids
+> were
+> calculated; if you only connect to peers who provide you with TXO index
+> information in blocks and transactions, you don't need to keep that map
+> yourself.
+>
+> Finally, note how this makes transactions *smaller* in many circumstances:
+> it's
+> just a 8-byte max index rather than a 40 byte outpoint.
+>
+> --
+> https://petertodd.org 'peter'[:-1]@petertodd.org
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170224/63ab2731/attachment-0001.html>
