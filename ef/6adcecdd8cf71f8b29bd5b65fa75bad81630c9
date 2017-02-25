@@ -1,0 +1,120 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Fri, 24 Feb 2017 23:12:02 -0500
+Subject: [bitcoin-dev] A Better MMR Definition
+In-Reply-To: <CA+KqGkpi4GvgU-K6vt-U5ZN4AkpjZ0rruzddoJS4-V0TcnyqUQ@mail.gmail.com>
+References: <20170223235105.GA28497@savin.petertodd.org>
+	<CA+KqGkowxEZeAFYa2JJchBDtRkg1p3YZNocivzu3fAtgRLDRBQ@mail.gmail.com>
+	<20170224010943.GA29218@savin.petertodd.org>
+	<CA+KqGkrOK76S3ffPJmpqYcBwtSeKESqN16yZsrwzDR6JZZmwFA@mail.gmail.com>
+	<20170224025811.GA31911@savin.petertodd.org>
+	<CA+KqGkq7gavAnAk-tcA+gxL2sWpv3ENhEmHrQHaPdyAsKrLjGg@mail.gmail.com>
+	<20170224031531.GA32118@savin.petertodd.org>
+	<CA+KqGkrfhg3GnbWwvKXHQ2NWuCnfzYyTPUxRhzYMuDBiNQR4eA@mail.gmail.com>
+	<20170224043613.GA32502@savin.petertodd.org>
+	<CA+KqGkpi4GvgU-K6vt-U5ZN4AkpjZ0rruzddoJS4-V0TcnyqUQ@mail.gmail.com>
+Message-ID: <20170225041202.GA11152@savin.petertodd.org>
+
+On Fri, Feb 24, 2017 at 02:20:19PM -0800, Bram Cohen wrote:
+> So your idea is to cluster entries by entry time because newer things are
+> more likely to leave and updating multiple things near each other is
+> cheaper?
+
+Yes, exactly.
+
+> That can be done with my tool. Instead of using hashes for the values being
+> stored, you use position entries. The first entry gets a value of all
+> zeros, the next one a one followed by all zeros, then the next two
+> correspond to the first two with the second bit flipped to one, then the
+> next four the first four with the third bit flipped to one, etc. It
+> probably performs a little bit better to do it two bits at a time instead
+> of one so that the entries are 00, 01, 10, 11, 0001, 0010, 0011, 0101,
+> 0110, 0111, 1001, etc. If you were to really use this you'd probably want
+> to to add some optimizations to use the fact that the terminals fit in 64
+> bits instead of 256, but it mostly works unchanged, and gets whatever
+
+So to be clear, what you're proposing there is to use the insertion order as
+the index - once you go that far you've almost entirely re-invented my
+proposal!
+
+In fact, when I was working my proofchains/proofmarshal libraries I put some
+thought into whether or not I could leave out the MMR merkelized list
+implementation and use only the key-value map I also wrote. I decided to
+include both as they aren't quite the same datastructure - using a list for a
+list has advantages.
+
+> benefits there are to this clustering plus the high performance
+> implementation tricks I've built which I keep complaining that nobody's
+> giving feedback on.
+
+Your merkle-set implementation is 1500 lines of densely written Python with
+almost no comments, and less than a 100 lines of (also uncommented) tests. By
+comparison, my Python MMR implementation is 300 lines of very readable Python
+with lots of comments, a 200 line explanation at the top, and 200 lines of
+(commented) tests. Yet no-one is taking the (still considerable) effort to
+understand and comment on my implementation. :)
+
+Fact is, what you've written is really daunting to review, and given it's not
+in the final language anyway, it's unclear what basis to review it on anyway. I
+suspect you'd get more feedback if the codebase was better commented, in a
+production language, and you have actual real-world benchmarks and performance
+figures.
+
+In particular, while at the top of merkle_set.py you have a list of advantages,
+and a bunch of TODO's, you don't explain *why* the code has any of these
+advantages. To figure that out, I'd have to read and understand 1500 lines of
+densely written Python. Without a human-readable pitch, not many people are
+going to do that, myself included.
+
+> I'm not sold on this being a win: The empirical access patterns are
+> unknown,
+
+Lost coins alone guarantees that access patterns will be biased towards new
+coins being more likely to be spent. That basis alone is sufficient to justify
+an insertion-ordered data structure. Additionally, people have done graphs of
+the average age of UTXO's when spent, and that data clearly shows that newer
+coins are more likely to be spent than older coins.
+
+> unknown, it requires an extra cache miss per lookup to find the entry
+> number,
+
+Like I mentioned in the email you're replying to, that extra lookup can be
+easily avoided with a change to how transactions/blocks are serialized; if all
+your peers support TXO commitments you can even discard the lookup database
+entirely, as it's only a backwards compatibility measure.
+
+> it may be that everything is optimized well enough without it for
+> there to be no meaningful gains, and it's a bunch of extra complexity. What
+
+Optimization is itself extra complexity. If you're data structure has worse
+inherent performance, and you have to make up the different with a highly
+optimized implementation, that's likely to lead to more overall complexity than
+using a data structure with better inherent performance.
+
+Your current merkle-set implementation definitely _is_ very complex. An
+apples-to-apples comparison is with my merkelized key:value tree(1), also a
+patricia tree, which like the MMR is only about 300 lines of well-commented and
+straight-forward code.
+
+1) https://github.com/proofchains/python-proofmarshal/blob/master/proofmarshal/merbinnertree.py
+
+> should be done is that a plain vanilla UTXO set solution is optimized as
+> well as it can be first, and then the insertion ordering trick is tried as
+> an optimization to see if it's an improvement. Without that baseline
+> there's no meaningful basis for comparison, and I'm quite confident that a
+> naive implementation which just allocates individual nodes will
+> underperform the thing I've come up with, even without adding optimizations
+> related to fitting in 64 bits.
+
+To be clear, "insertion ordering" isn't a simple trick, it's a fundamental
+change to what the data structure is. Once you do that, you're talking about my
+proposal.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170224/9ad10e61/attachment-0001.sig>
