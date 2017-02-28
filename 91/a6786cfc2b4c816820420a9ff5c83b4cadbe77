@@ -1,0 +1,155 @@
+From: g.andrew.stone@gmail.com (G. Andrew Stone)
+Date: Tue, 28 Feb 2017 11:43:29 -0500
+Subject: [bitcoin-dev] A Better MMR Definition
+In-Reply-To: <CA+KqGkqs8F1hK6y-JnLFRpqhQ5i8i+MXVmtGUQBYmE5d1OCAAg@mail.gmail.com>
+References: <20170223235105.GA28497@savin.petertodd.org>
+	<CA+KqGkowxEZeAFYa2JJchBDtRkg1p3YZNocivzu3fAtgRLDRBQ@mail.gmail.com>
+	<20170224010943.GA29218@savin.petertodd.org>
+	<CA+KqGkrOK76S3ffPJmpqYcBwtSeKESqN16yZsrwzDR6JZZmwFA@mail.gmail.com>
+	<20170224025811.GA31911@savin.petertodd.org>
+	<CA+KqGkq7gavAnAk-tcA+gxL2sWpv3ENhEmHrQHaPdyAsKrLjGg@mail.gmail.com>
+	<20170224031531.GA32118@savin.petertodd.org>
+	<CA+KqGkrfhg3GnbWwvKXHQ2NWuCnfzYyTPUxRhzYMuDBiNQR4eA@mail.gmail.com>
+	<20170224043613.GA32502@savin.petertodd.org>
+	<CA+KqGkpi4GvgU-K6vt-U5ZN4AkpjZ0rruzddoJS4-V0TcnyqUQ@mail.gmail.com>
+	<20170225041202.GA11152@savin.petertodd.org>
+	<CA+KqGkqs8F1hK6y-JnLFRpqhQ5i8i+MXVmtGUQBYmE5d1OCAAg@mail.gmail.com>
+Message-ID: <CAHUwRvtseXUx_ShfHd9r9LW1_8cJYcofQ4s1vEpkpKJEniDTzA@mail.gmail.com>
+
+I can understand how Bram's transaction double sha256 hashed UTXO set
+patricia trie allows a client to quickly validate inputs because the inputs
+of a transaction are specified in the same manner.  So to verify that an
+input is unspent the client simply traverses the patricia trie.
+
+It also makes sense that if transaction inputs were specified by a [block
+height, tx index, output index] triple we'd have a much more size-efficient
+transaction format.  This format would make look up pretty simple in
+Peter's pruned time-ordered TXO merkle mountain range, although you'd have
+translate the triple to an index, which means we'd have to at a minimum
+keep track of the number of TXOs in each block, and then probably do a
+linear search starting from the location where the block's TXOs begin in
+the MMR.  (The ultimate option I guess is to specify transaction inputs by
+a single number which is essentially the index of the TXO in a (never
+actually created) insertion-ordered TXO array...)
+
+But since transactions' prevouts are not specified by [block height, tx
+index, output index] or by TXO index, I don't understand how an insertion
+ordered TXO tree can result in efficient lookups.  Can you help me
+understand this?
+
+
+
+On Sat, Feb 25, 2017 at 1:23 AM, Bram Cohen via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> On Fri, Feb 24, 2017 at 8:12 PM, Peter Todd <pete at petertodd.org> wrote:
+>
+>>
+>> So to be clear, what you're proposing there is to use the insertion order
+>> as
+>> the index - once you go that far you've almost entirely re-invented my
+>> proposal!
+>>
+>
+> I'm not 'proposing' this, I'm saying it could be done simply but I'm
+> skeptical of the utility. Probably the most compelling argument for it is
+> that the insertion indexed values are much smaller so they can be compacted
+> down a lot resulting in using less memory and more locality and fewer
+> hashes, but your implementation doesn't take advantage of that.
+>
+>
+>> Your merkle-set implementation is 1500 lines of densely written Python
+>
+>
+> The reference implementation which is included in those 1500 lines is less
+> than 300 lines and fairly straightforward. The non-reference implementation
+> always behaves semantically identically to the reference implementation, it
+> just does so faster and using less memory.
+>
+>
+>> with
+>> almost no comments,
+>
+>
+> The comments at the top explain both the proof format and the in-memory
+> data structures very precisely. The whole codebase was reviewed by a
+> coworker of mine and comments were added explaining the subtleties which
+> tripped him up.
+>
+>
+>> and less than a 100 lines of (also uncommented) tests.
+>
+>
+> Those tests get 98% code coverage and extensively hit not only the lines
+> of code but the semantic edge cases as well. The lines which aren't hit are
+> convenience functions and error conditions of the parsing code for when
+> it's passed bad data.
+>
+>
+>> By
+>> comparison, my Python MMR implementation is 300 lines of very readable
+>> Python
+>> with lots of comments, a 200 line explanation at the top, and 200 lines of
+>> (commented) tests. Yet no-one is taking the (still considerable) effort to
+>> understand and comment on my implementation. :)
+>>
+>
+> Given that maaku's Merkle prefix trees were shelved because of performance
+> problems despite being written in C and operating in basically the same way
+> as your code and my reference code, it's clear that non-optimized Python
+> won't be touching the bitcoin codebase any time soon.
+>
+>
+>>
+>> Fact is, what you've written is really daunting to review, and given it's
+>> not
+>> in the final language anyway, it's unclear what basis to review it on
+>> anyway.
+>
+>
+> It should reviewed based on semantic correctness and performance.
+> Performance can only be accurately and convincingly determined by porting
+> to C and optimizing it, which mostly involves experimenting with different
+> values for the two passed in magic numbers.
+>
+>
+>> I
+>> suspect you'd get more feedback if the codebase was better commented, in a
+>> production language, and you have actual real-world benchmarks and
+>> performance
+>> figures.
+>>
+>
+> Porting to C should be straightforward. Several people have already
+> expressed interest in doing so, and it's written in intentionally C-ish
+> Python, resulting in some rather odd idioms which is a bit part of why you
+> think it looks 'dense'. A lot of that weird offset math should be much more
+> readable in C because it's all structs and x.y notation can be used instead
+> of adding offsets.
+>
+>
+>> In particular, while at the top of merkle_set.py you have a list of
+>> advantages,
+>> and a bunch of TODO's, you don't explain *why* the code has any of these
+>> advantages. To figure that out, I'd have to read and understand 1500
+>> lines of
+>> densely written Python. Without a human-readable pitch, not many people
+>> are
+>> going to do that, myself included.
+>>
+>
+> It's all about cache coherence. When doing operations it pulls in a bunch
+> of things which are near each other in memory instead of jumping all over
+> the place. The improvements it gets should be much greater than the ones
+> gained from insertion ordering, although the two could be accretive.
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170228/0d77e5d7/attachment.html>
