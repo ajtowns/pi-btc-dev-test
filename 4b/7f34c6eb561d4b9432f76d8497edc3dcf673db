@@ -1,0 +1,89 @@
+From: praxeology_guy@protonmail.com (praxeology_guy)
+Date: Tue, 07 Mar 2017 16:28:49 -0500
+Subject: [bitcoin-dev] A Commitment-suitable UTXO set "Balances" file data
+	structure
+Message-ID: <_Z0S6yfN2uS1b0SYoZzU9LMo3QQ967dyn0e12ep_aXJ8cNw8wTovQWED6mKg3PH0hb2yKEG-5Cv0xH3IC2cG5rczP5qo-xLtrjJMXW1uCss=@protonmail.com>
+
+A Commitment-suitable UTXO set "Balances" file data structure
+- Allows pruned nodes to satisfy SPV nodes
+- Allows pruned nodes to trustlessly start synchronizing at a Balances file's block height instead of the genesis block
+- Allows all nodes in the network to verify their UTXO set's data integrity
+
+For this to work, Bitcoin would need a new policy:
+- A UTXO commitment is made every "Balances/UTXO Commitment Period" (BCP) blocks. The UTXO commitment is made on the state of the UTXO at BCP blocks ago. For example, if BCP is 5000, and we are creating block 20,000, then block 20,000 would contain a commitment on what the state of the UTXO was at block 15,000, right before any changes due to block 15,001.
+- The commitment is made on the state of the UTXO "BCP blocks ago" instead of the UTXO state at the tip because: 1. Such a commitment can be made in a background thread and not delay mining/synchronizing node operations; 2. The work of creating the commitment doesn't have to be redone in the case of a fork.
+- The file/commitment is made in a background thread, starting at least BCP/2 blocks after the last block containing a utxo commitment.
+
+Balances file summary:
+{
+Header: 48 bytes
+{
+File Type: 4 bytes
+File version: 4 bytes
+size of balances: 8 bytes
+root hash: 32 bytes
+}
+balances: "size of balances" bytes
+balance index: "piece count" * (N + 4) bytes, N=4 proposed
+merkle tree hashes: ~ 2 * "piece count" * 32 bytes
+}
+
+balances: is a list of balances sorted by txid:
+{
+length: 4 bytes
+txid: 32 bytes
+CCoins: variable length, depends on UTXO size
+}
+
+A "piece" is like in bittorrent's piece. I propose piece size = 32*1024 bytes. 2GB of balance data would then be divided into 65536 pieces.
+
+transaction index is an array (with "piece count" elements) of:
+{
+txix: the first N bytes of a txid. I'm proposing N = 4
+piece offset: 4 bytes, location of the first balance in the piece.
+}
+
+merkle tree hashes:
+- array of "piece count" leaf hashes, hashing the balance pieces
+- array of "(child layer count + 1)/2" node hashes, hashing pairs of child hashes, or copying up if only one child
+- repeat ^ until the root hash is written
+... except reverse the layer order. In other words, it should be breadth first.
+
+==========
+
+Data structure design notes:
+- Most of the file's space is used by the balances. For example, given a 32kB piece size and 2GB balances, the non-balances data only consumes about 4.5MB. If N was increased to 32, ~6.5MB.
+- piece size should be small enough that not that much effort is wasted when invalid pieces are received.
+- piece size should also be small in the case that this data structure is used instead of block history for SPV proof. Then pruned nodes can satisfy SPV clients.
+- The child count = 2 merkle tree structure is only necessary for if this data structure is to be used to satisfy SPV clients. If not used for such a purpose, then technically the root hash could have the leaf hashes as it's direct children. But practically this doesn't make a difference: merkle tree size is nothing compared to sizeof(balances).
+- The only purpose of the balance index is to support SPV clients
+- txix is a truncation of txid to reduce memory usage for a fully in-memory index to support SPV nodes. Maybe this truncation isn't worthwhile.
+
+Other notes:
+- We could make BCP 4383 blocks, which would be 12 times per year, given block period was exactly 10 minutes. But since block period is not exactly 10 minutes, and file names generated with period 4283 are much less comprehensible than file names generated with period 5000... I propose 5000.
+- Having a shorter BCP period would result in more frequent checks on UTXO set integrity, and permit new pruning nodes to start synching closer to the tip. But it may require nodes to keep more copies of the balances file to satisfy the same backup period, and require more background work of creating more balances files.
+
+===========
+
+Suggested design change to the chainstate "CCoinsViewDB" utxo database:
+- As it is designed now, the above proposal would require maintaining a duplicate but lagging UTXO database.
+- I propose changing the "CCoins" data structure so that it can keep track of spends that shouldn't be included in the commitment. Maybe call it "vtipspends".
+
+Then the process for updating the CCoinsViewDB would be:
+1. Mark a txo as spent by adding the vout_ix to vtipspends.
+2. SetNull() and Cleanup() during the background thread that creates Balances commitments. vtipspends would also need to be cleaned.
+- The method for checking whether a txo was spent would need to be changed to check vtipspends.
+
+At the same time, I know there is currently a lot of code complexity with handling forks and txo spends. Let me propose something to handle this better too:
+- vtipspends could hold {vout_ix, blockhash } instead of just vout_ix.
+- Checking whether a txo is spent will then require a parameter that specifies the "fork tip hash" or "fork chain"
+
+Then in the case of a fork, no work has to be done to update the utxo database... it is immediately ready to handle answering spend questions for a different fork.
+
+Feedback welcome. FYI I have coded up the creation of such a file already... So I am working on the implementation, not just the spec. I'd really like to hear what you guys think about my proposed changes to CCoins.
+
+Cheers,
+Praxeology
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170307/fabd9633/attachment-0001.html>
