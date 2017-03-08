@@ -1,0 +1,55 @@
+From: bram@bittorrent.com (Bram Cohen)
+Date: Tue, 7 Mar 2017 17:55:18 -0800
+Subject: [bitcoin-dev] A Commitment-suitable UTXO set "Balances" file
+	data structure
+In-Reply-To: <_Z0S6yfN2uS1b0SYoZzU9LMo3QQ967dyn0e12ep_aXJ8cNw8wTovQWED6mKg3PH0hb2yKEG-5Cv0xH3IC2cG5rczP5qo-xLtrjJMXW1uCss=@protonmail.com>
+References: <_Z0S6yfN2uS1b0SYoZzU9LMo3QQ967dyn0e12ep_aXJ8cNw8wTovQWED6mKg3PH0hb2yKEG-5Cv0xH3IC2cG5rczP5qo-xLtrjJMXW1uCss=@protonmail.com>
+Message-ID: <CA+KqGkp7hLDNFjzWUTU7_FSCnHBAw+79SURAFo8V62BaMpdzhQ@mail.gmail.com>
+
+On Tue, Mar 7, 2017 at 1:28 PM, praxeology_guy via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+>
+> merkle tree hashes:
+> - array of "piece count" leaf hashes, hashing the balance pieces
+> - array of "(child layer count + 1)/2" node hashes, hashing pairs of child
+> hashes, or copying up if only one child
+> - repeat ^ until the root hash is written
+> ... except reverse the layer order. In other words, it should be breadth
+> first.
+>
+
+A big yuck on that format. It should be something based on a patricia trie
+to support incremental updates. Also if the things being stored are output
+transaction + output number then those two can be hashed together to make a
+consistent size identifier and be put into the merkle set format I
+proposed, which is exactly the intended usage:
+https://github.com/bramcohen/MerkleSet
+
+- We could make BCP 4383 blocks, which would be 12 times per year, given
+> block period was exactly 10 minutes.  But since block period is not exactly
+> 10 minutes, and file names generated with period 4283 are much less
+> comprehensible than file names generated with period 5000...  I propose
+> 5000.
+>
+
+If it's of that order it should be synched up with the work difficulty
+reset interval of 2016. If the format supports incremental updates it would
+of course be possible to require them more frequently later.
+
+
+> - Having a shorter BCP period would result in more frequent checks on UTXO
+> set integrity, and permit new pruning nodes to start synching closer to the
+> tip.  But it may require nodes to keep more copies of the balances file to
+> satisfy the same backup period, and require more background work of
+> creating more balances files.
+>
+
+With a patricia based format it would be possible to make much more common
+utxo commitments, possibly as often as every block only trailing by a few,
+and the cost of updating wouldn't be onerous and reorgs could be handled by
+simply undoing the last few transactions in the set and and then rolling
+forward.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170307/79914478/attachment.html>
