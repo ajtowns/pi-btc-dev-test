@@ -1,0 +1,106 @@
+From: achow101-lists@achow101.com (Andrew Chow)
+Date: Thu, 23 Mar 2017 23:38:21 -0400
+Subject: [bitcoin-dev] Issolated Bitcoin Nodes
+In-Reply-To: <3fd9846c-6c57-9b57-0b6e-e5958e644e1d@achow101.com>
+References: <SC1P152MB1648D0F9DF4279C49D755233F53F0@SC1P152MB1648.LAMP152.PROD.OUTLOOK.COM>
+	<3fd9846c-6c57-9b57-0b6e-e5958e644e1d@achow101.com>
+Message-ID: <2caa270f-9feb-4720-9b68-eff458cdc956@achow101.com>
+
+A correction to my previous email (because people are quoting me on
+r/btc and what I wrote was wrong)
+
+This statement is incorrect:
+
+> Given that Testnet has a smaller number of nodes and less difficulty,
+this could result in some miners using 0.13.0+ mining blocks which do
+not propagate well and thus causing multiple chain splits and reorgs as
+other miners find blocks for the same height before receiving a block
+for that height.
+
+Miners using 0.13.0+ will produce blocks that propagate well. This is
+because 0.12.x- nodes will accept those blocks, and so will 0.13.0+.
+Furthermore Core 0.13.0+ will use its outbound connections to connect to
+segwit enabled peers so that it will be relaying segwit blocks to
+someone. However Bitcoin Core 0.13.0+ will not request blocks from peers
+that are not segwit enabled (because with segwit, they will be receiving
+blocks without witnesses which are invalid to a segwit node), so they
+will not receive blocks mined by a 0.12.x- node. This means that 0.12.x-
+mined blocks propagate poorly, even though are valid. Because of the
+poor propagation, a 0.13.0+ miner can find a block at the same height
+which is more likely to get built upon. However, the poorly propagated
+block can still reach other 0.12.x- miners who can build upon it due to
+the low difficulty and difficulty resets, thus causing multiple chains
+to exist, particularly among pockets of 0.12.x- nodes. The reorgs happen
+when either the 0.12.x- nodes hear of the segwit blockchain that is
+presumably longer because it has the majority hashrate, or when people
+run bridges which allow 0.12.x- nodes relay blocks to 0.13.0+ nodes.
+
+On 3/23/2017 7:14 PM, Andrew Chow wrote:
+>
+> The issue is due to Segwit blocks since Testnet has already activated
+> Segwit. 0.12.x- nodes will receive a Segwit block with all of the
+> witnesses stripped. When they relay this block to a 0.13.0+ node, the
+> block will be rejected because those have Segwit functionality and
+> require the witnesses to be in the block. Given that Testnet has a
+> smaller number of nodes and less difficulty, this could result in some
+> miners using 0.13.0+ mining blocks which do not propagate well and
+> thus causing multiple chain splits and reorgs as other miners find
+> blocks for the same height before receiving a block for that height.
+>
+>
+> On 3/23/2017 6:37 PM, Juan Garavaglia via bitcoin-dev wrote:
+>>
+>> We notice some reorgs in Bitcoin testnet, while reorgs in testnet are
+>> common and may be part of different tests and experiments, it seems
+>> the forks are not created by a single user and multiple blocks were
+>> mined by different users in each chain.  My first impression was that
+>> the problem was related to network issues but some Bitcoin explorers
+>> were following one chain while others follow the other one. 
+>> Nonetheless, well established explorers like blocktrail.com or
+>> blockr.io were following different chains at different heights which
+>> led to me to believe that it was not a network issue. After some
+>> time, a reorg occurs and it all comes to normal state as a single chain.
+>>
+>> We started investigating more and we identified that the fork occurs
+>> with nodes 0.12; in some situations, nodes 0.12 has longer/different
+>> chains. The blocks in both chains are valid so something must be
+>> occurring in the communication between nodes but not related with the
+>> network itself.
+>>
+>> Long story short, when nodes 0.13+ receive blocks from 0.13+ nodes
+>> all is ok, and those blocks propagate to older nodes with no issues.
+>> But when a block tries to be propagated from bitcoind 0.12.+ to newer
+>> ones those blocks are NOT being propagated to the peers with newer
+>> versions while these newer blocks are being propagated to peers with
+>> older versions with no issues.
+>>
+>> My conclusion is that we have a backward compatibility issue between
+>> 0.13.X+ and older versions.
+>>
+>> The issue is simple to replicate, first, get latest version of
+>> bitcoind, complete the IBD after is at current height, then force it
+>> to use exclusively one or more peers of versions 0.12.X and older,
+>> and you will notice that the latest version node will never receive a
+>> new block.
+>>
+>> Probably some alternative bitcoin implementations act as bridges
+>> between these two versions and facilitate the chain reorgs.
+>>
+>> I have not yet found any way where/how it can be used in a malicious
+>> way or be exploited by a miner but in theory Bitcoin 0.13.X+ should
+>> remain compatible with older ones, but a 0.13+ node may become
+>> isolated by 0.12 peers, and there is not notice for the node owner.
+>>
+>>  
+>>
+>>
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170323/74d42235/attachment-0001.html>
