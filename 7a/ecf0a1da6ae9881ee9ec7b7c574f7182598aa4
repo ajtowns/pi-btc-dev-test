@@ -1,0 +1,281 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Fri, 31 Mar 2017 21:22:10 +0000
+Subject: [bitcoin-dev] Segwit2Mb - combined soft/hard fork - Request
+	For	Comments
+In-Reply-To: <CAKzdR-oN6tGvGSb04_awCf=Jsf3wgKJN5xUhCr8G2D2W9YgJww@mail.gmail.com>
+References: <CAKzdR-oN6tGvGSb04_awCf=Jsf3wgKJN5xUhCr8G2D2W9YgJww@mail.gmail.com>
+Message-ID: <1CF1FD5D-8D29-4783-823F-B3F588D5C5CE@mattcorallo.com>
+
+Hey Sergio,
+
+You appear to have ignored the last two years of Bitcoin hardfork
+research and understanding, recycling instead BIP 102 from 2015. There
+are many proposals which have pushed the state of hard fork research
+much further since then, and you may wish to read some of the posts on
+this mailing list listed at https://bitcoinhardforkresearch.github.io/
+and make further edits based on what you learn. Your goal of "avoid
+technical changes" appears to not have any basis outside of perceived
+compromise for compromise sake, only making such a hardfork riskier
+instead.
+
+At a minimum, in terms of pure technical changes, you should probably
+consider (probably among others):
+
+a) Utilizing the "hard fork signaling bit" in the nVersion of the block.
+b) Either limiting non-SegWit transactions in some way to fix the n**2
+sighash and FindAndDelete runtime and memory usage issues or fix them by
+utilizing the new sighash type which many wallets and projects have
+already implemented for SegWit in the spending of non-SegWit outputs.
+c) Your really should have replay protection in any HF. The clever fix from
+Spoonnet for poor scaling of optionally allowing non-SegWit outputs to
+be spent with SegWit's sighash provides this all in one go.
+d) You may wish to consider the possibility of tweaking the witness
+discount and possibly discounting other parts of the input - SegWit went
+a long ways towards making removal of elements from the UTXO set cheaper
+than adding them, but didn't quite get there, you should probably finish
+that job. This also provides additional tuneable parameters to allow you
+to increase the block size while not having a blowup in the worst-case
+block size.
+e) Additional commitments at the top of the merkle root - both for
+SegWit transactions and as additional space for merged mining and other
+commitments which we may wish to add in the future, this should likely
+be implemented an "additional header" ala Johnson Lau's Spoonnet proposal.
+
+Additionally, I think your parameters here pose very significant risk to
+the Bitcoin ecosystem broadly.
+
+a) Activating a hard fork with less than 18/24 months (and even then...)
+from a fully-audited and supported release of full node software to
+activation date poses significant risks to many large software projects
+and users. I've repeatedly received feedback from various folks that a
+year or more is likely required in any hard fork to limit this risk, and
+limited pushback on that given the large increase which SegWit provides
+itself buying a ton of time.
+
+b) Having a significant discontinuity in block size increase only serves
+to confuse and mislead users and businesses, forcing them to rapidly
+adapt to a Bitcoin which changed overnight both by hardforking, and by
+fees changing suddenly. Instead, having the hard fork activate technical
+changes, and then slowly increasing the block size over the following
+several years keeps things nice and continuous and also keeps us from
+having to revisit ye old blocksize debate again six months after activation.
+
+c) You should likely consider the effect of the many technological
+innovations coming down the pipe in the coming months. Technologies like
+Lightning, TumbleBit, and even your own RootStock could significantly
+reduce fee pressure as transactions move to much faster and more
+featureful systems.
+
+Commitments to aggressive hard fork parameters now may leave miners
+without much revenue as far out as the next halving (which current
+transaction growth trends are indicating we'd just only barely reach 2MB
+of transaction volume, let alone if you consider the effects of users
+moving to systems which provide more features for Bitcoin transactions).
+This could lead to a precipitous drop in hashrate as miners are no
+longer sufficiently compensated.
+
+Remember that the "hashpower required to secure bitcoin" is determined
+as a percentage of total Bitcoins transacted on-chain in each block, so
+as subsidy goes down, miners need to be paid with fees, not just price
+increases. Even if we were OK with hashpower going down compared to the
+value it is securing, betting the security of Bitcoin on its price
+rising exponentially to match decreasing subsidy does not strike me as a
+particularly inspiring tradeoff.
+
+There aren't many great technical solutions to some of these issues, as
+far as I'm aware, but it's something that needs to be incredibly
+carefully considered before betting the continued security of Bitcoin on
+exponential on-chain growth, something which we have historically never
+seen.
+
+Matt
+
+
+On March 31, 2017 5:09:18 PM EDT, Sergio Demian Lerner via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>Hi everyone,
+>
+>Segwit2Mb is the project to merge into Bitcoin a minimal patch that
+>aims to
+>untangle the current conflict between different political positions
+>regarding segwit activation vs. an increase of the on-chain blockchain
+>space through a standard block size increase. It is not a new solution,
+>but
+>it should be seen more as a least common denominator.
+>
+>Segwit2Mb combines segwit as it is today in Bitcoin 0.14+ with a 2MB
+>block
+>size hard-fork activated ONLY if segwit activates (95% of miners
+>signaling), but at a fixed future date.
+>
+>The sole objective of this proposal is to re-unite the Bitcoin
+>community
+>and avoid a cryptocurrency split. Segwit2Mb does not aim to be best
+>possible technical solution to solve Bitcoin technical limitations.
+>However, this proposal does not imply a compromise to the future
+>scalability or decentralization of Bitcoin, as a small increase in
+>block
+>size has been proven by several core and non-core developers not to
+>affect
+>Bitcoin value propositions.
+>
+>In the worst case, a 2X block size increase has much lower economic
+>impact
+>than the last bitcoin halving (<10%), which succeeded without problem.
+>
+>On the other side, Segwit2Mb primary goal is to be minimalistic: in
+>this
+>patch some choices have been made to reduce the number of lines
+>modified in
+>the current Bitcoin Core state (master branch), instead of implementing
+>the
+>most elegant solution. This is because I want to reduce the time it
+>takes
+>for core programmers and reviewers to check the correctness of the
+>code,
+>and to report and correct bugs.
+>
+>The patch was built by forking the master branch of Bitcoin Core,
+>mixing a
+>few lines of code from Jeff Garzik's BIP102,  and defining a second
+>versionbits activation bit (bit 2) for the combined activation.
+>
+>The combined activation of segwit and 2Mb hard-fork nVersion bit is 2
+>(DEPLOYMENT_SEGWIT_AND_2MB_BLOCKS).
+>
+>This means that segwit can still be activated without the 2MB hard-fork
+>by
+>signaling bit 1 in nVersion  (DEPLOYMENT_SEGWIT).
+>
+>The tentative lock-in and hard-fork dates are the following:
+>
+>Bit 2 signaling StartTime = 1493424000; // April 29th, 2017
+>
+>Bit 2 signaling Timeout = 1503964800; // August 29th, 2017
+>
+>HardForkTime = 1513209600; // Thu, 14 Dec 2017 00:00:00 GMT
+>
+>
+>The hard-fork is conditional to 95% of the hashing power has approved
+>the
+>segwit2mb soft-fork and the segwit soft-fork has been activated (which
+>should occur 2016 blocks after its lock-in time)
+>
+>For more information on how soft-forks are signaled and activated, see
+>https://github.com/bitcoin/bips/blob/master/bip-0009.mediawiki
+>
+>This means that segwit would be activated before 2Mb: this is
+>inevitable,
+>as versionbits have been designed to have fixed activation periods and
+>thresholds for all bits. Making segwit and 2Mb fork activate together
+>at a
+>delayed date would have required a major re-write of this code, which
+>would
+>contradict the premise of creating a minimalistic patch. However, once
+>segwit is activated, the hard-fork is unavoidable.
+>
+>Although I have coded a first version of the segwit2mb patch (which
+>modifies 120 lines of code, and adds 220 lines of testing code), I
+>would
+>prefer to wait to publish the source code until more comments have been
+>received from the community.
+>
+>To prevent worsening block verification time because of the O(N^2)
+>hashing
+>problem, the simple restriction that transactions cannot be larger than
+>1Mb
+>has been kept. Therefore the worse-case of block verification time has
+>only
+>doubled.
+>
+>Regarding the hard-fork activation date, I want to give enough time to
+>all
+>active economic nodes to upgrade. As of Fri Mar 31 2017,
+>https://bitnodes.21.co/nodes/ reports that 6332 out of 6955 nodes (91%)
+>have upgraded to post 0.12 versions. Upgrade to post 0.12 versions can
+>be
+>used to identify economic active nodes, because in the 0.12 release
+>dynamic
+>fees were introduced, and currently no Bitcoin automatic payment system
+>can
+>operate without automatic discovery of the current fee rate. A pre-0.12
+>would require constant manual intervention.
+>Therefore I conclude that no more than 91% of the network nodes
+>reported by
+>bitnodes are active economic nodes.
+>
+>As Bitcoin Core 0.12 was released on February 2016, the time for this
+>91%
+>to upgrade has been around one year (under a moderate pressure of
+>operational problems with unconfirmed transactions).
+>Therefore we can expect a similar or lower time to upgrade for a
+>hard-fork,
+>after developers have discussed and approved the patch, and it has been
+>reviewed and merged and 95% of the hashing power has signaled for it
+>(the
+>pressure not to upgrade being a complete halt of the operations).
+>However I
+>suggest that we discuss the hard-fork date and delay it if there is a
+>real
+>need to.
+>
+>Currently time works against the Bitcoin community, and so is delaying
+>a
+>compromise solution. Most of the community agree that halting the
+>innovation for several years is a very bad option.
+>
+>After the comments collected by the community, a BIP will be written
+>describing the resulting proposal details.
+>
+>If segwit2mb locks-in, before hard-fork occurs all bitcoin nodes should
+>be
+>updated to a Segwit2Mb enabled node to prevent them to be forked-away
+>in a
+>chain with almost no hashing-power.
+>
+>The proof of concept patch was made for Bitcoin Core but should be
+>easily
+>ported to other Bitcoin protocol implementations that already support
+>versionbits. Lightweight (SPV) wallets should not be affected as they
+>generally do not check the block size.
+>
+>I personally want to see the Lightning Network in action this year, use
+>the
+>non-malleability features in segwit, see the community discussing other
+>exciting soft-forks in the scaling roadmap, Schnorr sigs, drivechains
+>and
+>MAST.
+>
+>I want to see miners, developers and industry side-by-side pushing
+>Bitcoin
+>forward, to increase the value of Bitcoin and prevent high transaction
+>fees
+>to put out of business use-cases that could have high positive social
+>impact.
+>
+>I believe in the strength of a unified Bitcoin community. If you're a
+>developer, please give your opinion, suggest changes, audit it, and
+>take a
+>stand with me to unlock the current Bitcoin deadlock.
+>
+>Contributions to the segwit2mb project are welcomed and awaited. The
+>only
+>limitation is to stick to the principle that the patch should be as
+>simple
+>to audit as possible. As an example, I wouldn't feel confident if the
+>patch
+>modified more than ~150 lines of code.
+>
+>Improvements unrelated to a 2 Mb increase or segwit, as beneficial as
+>it
+>may be to Bitcoin, should not be part of segwit2Mb.
+>
+>This proposal should not prevent other consensus proposals to be
+>simultaneously merged: segwit2mb is a last resort solution in case we
+>can
+>not reach consensus on anything better.
+>
+>Again, the proposal is only a starting point: community feedback is
+>expected and welcomed.
+>
+>Regards,
+>Sergio Demian Lerner
