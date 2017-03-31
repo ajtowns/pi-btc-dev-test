@@ -1,0 +1,56 @@
+From: bram@bittorrent.com (Bram Cohen)
+Date: Fri, 31 Mar 2017 15:05:07 -0700
+Subject: [bitcoin-dev] The TXO bitfield
+Message-ID: <CA+KqGkpa0=O-ob6SsxST6bHwHu9hTnS16wnpNusrbc8nXVEouA@mail.gmail.com>
+
+Looking forward in node scaling we can envision a future in which blocks
+are required to come with proofs of their validity and nodes can be run
+entirely in memory and never have to hit disk. Ideally we'd like for proofs
+to be able to be stored in client wallets which plan to spend their utxos
+later, or at least be able to have a full node make a single not terribly
+expensive disk access to form the proof which can then be passed along to
+other peers.
+
+Such proofs will probably be significantly larger than the blocks they
+prove (this is merkle root stuff, not zero knowledge stuff), but if we
+accept that as a given then this should be doable, although the details of
+how to do it aren't obvious.
+
+This vision can be implemented simply and efficiently by playing some games
+with the semantics of the term 'proof'. A proof is a thing which convinces
+someone of something. What we've discussed in the past for such proofs
+mostly has to do with maintaining a hash root of everything and having
+proofs lead to that. This is an extrema of complexity of the proof and
+simplicity of the checker, at the expense of forcing the root to be
+maintained at all times and the proof to be reasonably fresh. Some tricks
+can be applied to keep that problem under control, but there's an
+alternative approach where the amount of data necessary to do validation is
+much larger but still entirely reasonable to keep in memory, and the sizes
+of proofs and their required freshness is much smaller.
+
+In the previous discussion on Merkle sets I commented that insertion
+ordering's main practical utility may be that it allows for compression. It
+turns out that a constant factor of 256 makes a big difference. Since
+there's only really one bit stored for each txo (stored or not) once you
+have an insertion ordering you can simply store a bitfield of all txos so
+far, which is entirely reasonable to hold in memory, and can be made even
+more reasonable by compactifying down the older, mostly spent portions of
+it (how best to compress a bitfield while maintaining random access is an
+interesting problem but entirely doable).
+
+This approach meets all the design goals, even allowing wallets to remember
+their own 'proofs', which are just proofs of insertion ordering. Those
+don't even change once the risk of reorgs has passed, so they can be stored
+for years without being maintained.
+
+Proofs of insertion ordering can be made by having a canonical way of
+calculating a root of position commitments for each block, and nodes
+calculate those roots when evaluating the block history and store them all
+in memory. A proof of position is a path to one of those roots.
+
+I've intentionally skipped over most of the details here, because it's
+probably best to have a high level discussion of this as a general approach
+before getting lost in the weeds.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170331/d7516c3d/attachment.html>
