@@ -1,0 +1,44 @@
+From: praxeology_guy@protonmail.com (praxeology_guy)
+Date: Sat, 01 Apr 2017 06:18:12 -0400
+Subject: [bitcoin-dev] A Better MMR Definition
+In-Reply-To: <CA+KqGkoKy4spzi4mHBEfqXV8e9xwf8GA8oWN-Nqv7kNH_yPqpg@mail.gmail.com>
+References: <20170224010943.GA29218@savin.petertodd.org>
+	<20170224031531.GA32118@savin.petertodd.org>
+	<CA+KqGkrfhg3GnbWwvKXHQ2NWuCnfzYyTPUxRhzYMuDBiNQR4eA@mail.gmail.com>
+	<20170224043613.GA32502@savin.petertodd.org>
+	<CA+KqGkpi4GvgU-K6vt-U5ZN4AkpjZ0rruzddoJS4-V0TcnyqUQ@mail.gmail.com>
+	<20170225041202.GA11152@savin.petertodd.org>
+	<CA+KqGkqs8F1hK6y-JnLFRpqhQ5i8i+MXVmtGUQBYmE5d1OCAAg@mail.gmail.com>
+	<20170301223101.GA17022@savin.petertodd.org>
+	<CA+KqGkoKy4spzi4mHBEfqXV8e9xwf8GA8oWN-Nqv7kNH_yPqpg@mail.gmail.com>
+Message-ID: <U7XfjmkXVYYN0dL44eOIu9O0W7p6nd_BjIKkPW3Eiu2ADYbwsdQWt-JEWxdg-DOhde9pp9NKbkQIJr8ZEoJQp1WORMn6USprETs7RXgwgUk=@protonmail.com>
+
+Peter Todd,
+
+This MMR structure looks good to me. I really like how wallets keep their MMR proof and txo index instead of requiring the entire network to maintain an index on txids w/ plain old utxo snapshots.
+
+Re: "only left or right child of inner node be a fully spent node"... that sounds fine to me, but the software should virtually consider that the previous dissapearing leaf nodes still exist. It would instead say be a special case handled by the meta hashing function. Would save a good amount of time from unneccesary hashing. Might also do the rule: if a parent node has a single fully spent child node, its hash is equal to its other child's hash.
+
+Below is questions about txo/utxo MMR commitments after reading: "https://petertodd.org/2016/delayed-txo-commitments".
+
+I'm mainly concerned about the performance of recalculating all of the node hashes on old spends. But probably with a long enough delay policy, it shouldn't be an issue.
+
+Then the issues with people keeping their MMR proofs up to date and discovering received txos before they get pruned. Sure would be nice if a wallet didn't have to keep on updating their MMR proof. Hopefully spends would refer to old txos by their MMR index.
+
+How are you ordering MMR additions? Are you only adding old utxos to the MMR? Or every old txo? I think you are doing all old txos (mostly would be spent nodes), but why not just old utxos? Are you doing it to make MMR index = blockchain txo index, so such an index can be used in all TX inputs except for non-confirmed transactions? Potentially a tx could use a MMR.ix, allblock'stxo.ix (if we want to maintian that index), or tx.id & vout.ix depending on how old the tx is.
+
+What is the process for removing old utxos from the utxo set, and placing them into the MMR? Are you going to keep height in the utxo db, and then iterate through the whole thing?
+
+Are you still proposing a 1 year txo commitment delay? Do you have any data/preformance studies judging the cost of a larger utxo and longer delay vs smaller utxo and shorder delay? I would figure a longer delay would be better as long as the utxo doesn't get too big. Longer delay means less MMR maintainance.
+
+Have you considered not making a new commitment on every block, instead maybe every 6*24 blocks or so? This could reduce the number of times the same nodes are re-hashed, while not having much impact on security.
+
+What about re-orgs? You'd have to restore the previous leaf & inner nodes. You'd need both the txos and MMR proofs, right? It looks like you clear this info from the TXO journal when the delay duration threshold is met. I guess this info might also be stored with the block data, and could be recovered from there.
+
+What are your current thoughts on block size weighting for MMR proofs? Just count the extra byte length that full nodes need to relay as simliar to SegWit witness data?
+
+Cheers,
+Praxeology Guy
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170401/0059dc09/attachment.html>
