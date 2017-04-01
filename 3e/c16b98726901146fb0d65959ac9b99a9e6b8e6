@@ -1,0 +1,42 @@
+From: praxeology_guy@protonmail.com (praxeology_guy)
+Date: Sat, 01 Apr 2017 15:46:12 -0400
+Subject: [bitcoin-dev] A Better MMR Definition
+In-Reply-To: <U7XfjmkXVYYN0dL44eOIu9O0W7p6nd_BjIKkPW3Eiu2ADYbwsdQWt-JEWxdg-DOhde9pp9NKbkQIJr8ZEoJQp1WORMn6USprETs7RXgwgUk=@protonmail.com>
+References: <20170224010943.GA29218@savin.petertodd.org>
+	<20170224031531.GA32118@savin.petertodd.org>
+	<CA+KqGkrfhg3GnbWwvKXHQ2NWuCnfzYyTPUxRhzYMuDBiNQR4eA@mail.gmail.com>
+	<20170224043613.GA32502@savin.petertodd.org>
+	<CA+KqGkpi4GvgU-K6vt-U5ZN4AkpjZ0rruzddoJS4-V0TcnyqUQ@mail.gmail.com>
+	<20170225041202.GA11152@savin.petertodd.org>
+	<CA+KqGkqs8F1hK6y-JnLFRpqhQ5i8i+MXVmtGUQBYmE5d1OCAAg@mail.gmail.com>
+	<20170301223101.GA17022@savin.petertodd.org>
+	<CA+KqGkoKy4spzi4mHBEfqXV8e9xwf8GA8oWN-Nqv7kNH_yPqpg@mail.gmail.com>
+	<U7XfjmkXVYYN0dL44eOIu9O0W7p6nd_BjIKkPW3Eiu2ADYbwsdQWt-JEWxdg-DOhde9pp9NKbkQIJr8ZEoJQp1WORMn6USprETs7RXgwgUk=@protonmail.com>
+Message-ID: <sg1WY50VjVRyYpa-2svzLhpSqj4NyFTASjsnebr0lY9ofjYLwMOzS_aRWszEeXvKi6s4tHFfJvx-x875Nl80gxBhHiLqLfCtCLd0xYaNmhc=@protonmail.com>
+
+gmaxwell told me that most nodes would keep a full copy of the top of the MMR tree.
+
+Here I am exploring how this could be policy-ized to solve two problems:
+- MMR proofs change over time
+- How to coordinate nodes to get them to keep different portions of the MMR, so that everyone can prune most of the structure, but the entire network still retains multiple copies of the full MMR.
+
+Define deltaLeafHeight as the number of tree layers between a node and the leaves in the MMR data structure. We make it a policy that nodes are expected to have all nodes above deltaLeafHeight = DLH_REQUIRED, but that nodes are free to prune any nodes with a deltaLeafHeight < DLH_REQUIRED. Of course a node could prune at DLH_REQUIRED or higher, but what I am proposing is that messages and proofs by default would only include nodes at deltaLeafHeight < DLH_REQUIRED.
+
+Given the above, If a wallet didn't want to be continuously concerned about updating their MMR proof for its coins, then for each coin:
+- store the set of utxo digests that are children of the "root nearest" node that is at deltaLeafHeight = DLH_REQUIRED. Call such a set of utxo digests the "pruned relatives".
+- Pruned relative count = 2^DLH_REQUIRED -1
+- Guessing the spentness status of the pruned relatives would worst case take 2^(pruned relative count) guesses.
+- in the case where the MMR holds all txos (not just utxos at addition time)... the wallet should also keep record of which of the pruned relatives were utxos.
+- Any future information discovered about whether a pruned relative is spent would reduce the worst case guess count by a factor of 2.
+
+As an example, in the case where DLH_REQUIRED = 3:
+- pruned relative count = 7
+- worst case spentness guess count = 128
+
+Wallets storing the digests of pruned relatives could also help the entire network be able to discover otherwise lost portions of the MMR. If wallets stored not just the pruned relatives digests, but also their corresponding utxos, they could help other nodes find lost coins.
+
+Cheers,
+Praxeology Guy
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170401/084274f5/attachment.html>
