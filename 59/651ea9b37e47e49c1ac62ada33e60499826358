@@ -1,0 +1,42 @@
+From: praxeology_guy@protonmail.com (praxeology_guy)
+Date: Sun, 02 Apr 2017 16:43:40 -0400
+Subject: [bitcoin-dev] Guessing the spentness status of the pruned
+	relatives
+In-Reply-To: <h-i4wv8tgd-htJYGNv1FsgBOs0CJbU2CVhit0gj1JqGp6qnCB6_Lvqt-pFNQxD_cuM-Z8Bu6e-YImZkPv8LYOAaVJHmNsSJIeLV-qiGpUHc=@protonmail.com>
+References: <CEaHrHj5i8IQC75k1BY8e6a-4l-Wdq6vofQRYGQTtwx43uhcgzpg29Pbeh72d5LP5rQwxuCzevrGGnD2Bg8NKsDkUGCyzTwPczlbH2pOjgg=@protonmail.com>
+	<d89b85f6e5dbeaefc6402596dfc3c843@cock.lu>
+	<Agqv6Is87aXmNkFS0XphXWCE2TTZuuRJP8shQaomIUqx6W789WvMwflWqnSCQCwLPglEJ2rq3SkF-8tzYaZixbW9Ph-6u4a6sRCu4w-fPmA=@protonmail.com>
+	<CA+KqGkoNyHbw_6thOPSLKK9xMVgJtkDWwCZgwhoEQm1pD8_kDw@mail.gmail.com>
+	<8f4fSx74VGLlhmwWm7Gwzl5qNMd6okkHcBlCT55CRkYxa_lrEHL-C0hARMXcTaf4CNVIh8no1CHJF-_bmZJRJDsx1H10PCrI45X0D7QdukE=@protonmail.com>
+	<CA+KqGkpLJasuYqn9tzA_CUihwmoRqpQZ_exOUT_uqGYEesvceQ@mail.gmail.com>
+	<h-i4wv8tgd-htJYGNv1FsgBOs0CJbU2CVhit0gj1JqGp6qnCB6_Lvqt-pFNQxD_cuM-Z8Bu6e-YImZkPv8LYOAaVJHmNsSJIeLV-qiGpUHc=@protonmail.com>
+Message-ID: <slZ23d145uIKHr0zGoApsczTN3MNPSMtYbNmZV3Nk7F9YrgY8XaXTZ4BPvgIGGIdHBEf5V7c_ugY4RQVWeYYQW57ZQtfkUlHwOQZC7ANGjk=@protonmail.com>
+
+TL;DR: using spentness bits scales linearly... vs swapping digest leafs with empties can scale with logorithmically increasing storage requirements. So if you are using a 32 byte hash and spentness bits, you are pretty much limited to only being able to prune 8 to 12 layers. This corresponds to an MMR proof length of 512 to 768 bytes.
+
+===============
+
+After doing some calculations:
+Given that the spentness bit fields are 1 bit per txo, and markle hash size is 32 bytes... When using spentness bits in the merkle tree hashes instead of setting leaf nodes to empty, increasing the DLH_REQUIRED beyond 8 quickly has diminishing returns.
+
+With DLH_REQUIRED = 8, the spentness bits take up 30% of the data structure's space. MMR proof size = 512 bytes.
+
+With DLH_REQUIRED = 12, the spentness bits take up 87% of the data structure's space. MMR proof size = 768 bytes.
+
+Using stats from blockchain.info (I know not very reliable)... I figure there would be about 12E6 delayed utxo only txos added to an MMR per year w/ the current block size. 200E6 txo/year added to the MMR per year if spent txos are added too.
+
+Using DLH_REQUIRED = 12 (or 8)
+With 12E6 txo/year added to the MMR, the MMR grows by about 1.5MB (or 5MB) per year.
+With 200E6 txo/year added to the MMR, the MMR grows by about 27.5MB (or 80MB) per year.
+
+Since the spentness bits are not in any way compressed by the MMR tree... this puts a hard limit on the potential gains by pruning more.
+
+A growth rate of 27MB to 80MB per year for adding all txos to the MMR doesn't sound too bad. But if the block size is increased, we may soon decide we'd rather switch from using spentness bits to changing digest nodes to empty nodes. Only adding utxos at a delayed time gives more breathing room.
+
+Cheers,
+Praxeology Guy
+
+P.S. This analysis also applies to Bram Cohen's "TXO bitfield". Instead of DLH_REQUIRED, his node with spendess bits would be at a block with about 4000 txos, which just happens to equal a DLH_REQUIRED = 12.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170402/44931f22/attachment-0001.html>
