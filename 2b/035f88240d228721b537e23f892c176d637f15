@@ -1,0 +1,111 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Mon, 3 Apr 2017 04:13:23 +0800
+Subject: [bitcoin-dev] BIP draft: Extended block header hardfork
+Message-ID: <2D094CEC-3756-45B0-970F-1EB33DF352C5@xbt.hk>
+
+This is the first of a series of BIPs describing my ?spoonnet? experimental hardfork. Recently many bitcoin businesses expressed their requirements for supporting a hardfork proposal. While it is proven to be extremely difficult to obtain community-wide consensus, spoonnet fulfills all the commonly requested features, including deterministic activation logic, strong and simple 2-way replay protection, wipe-out protection, and predictable resources use. A few more BIPs are coming to describe these features.
+
+The activation is purely based on flag day. Since it is very difficult to measure community consensus on-chain, this may only be done off-chain, and everyone switch to the new software when the vast majority agree. This is more a social issue than a technical one.
+
+Reference implementation for consensus codes could be found at: https://github.com/jl2012/bitcoin/tree/spoonnet2 . This does not include mempool, wallet, and mining support. Mempool and wallet support are more tricky due to replay attack protection.
+
+BIP: ? 
+Layer: Consensus (hard fork) 
+Title: Extended block header hardfork 
+Author: Johnson Lau <jl2012 at xbt.hk> 
+Comments-Summary: No comments yet. 
+Comments-URI: 
+Status: Draft 
+Type: Standards Track 
+Created: 2017-03-31 
+License: BSD-2-Clause
+
+
+Abstract
+
+This BIP proposes a flexible and upgradable extended block header format thorough a hardfork.
+
+Motivation
+
+In the current Bitcoin protocol, the block header is fixed at 80 bytes with no space reserved for additional data. The coinbase transaction becomes the only practical location for new consensus-critical data, such as those proposed by BIP100 and BIP141. Although this preserves maximal backward compatibility for full nodes, it is not ideal for light clients because the size of coinbase transaction and depth of Merkle tree are indefinite.
+
+This BIP proposes an extended block header format with the following objectives:
+
+	? To provide a flexible header format which is easily upgradeable with softforks.
+	? Old light nodes following the hardfork chain if it has most proof-of-work, but not seeing any transactions.
+	? Being compatible with the Stratum mining protocol to avoid mining machine upgrade.
+	? Having a deterministic hardfork activation.
+	? Being a permanent hardfork, as supporting nodes will not accept blocks mined in old rules after hardfork is activated.
+
+Specification
+
+The following rules are activated when the median timestamp of the past 11 blocks is equal to or greater than a to-be-determined time and after activation of BIP65.
+
+
+	? the nVersion of the block header MUST have the most significant bit (the sign bit) signalled.
+	? for the purpose of counting softforks proposal signalling (BIP9), the sign bit is ignored.
+	? segregated witness MUST be enabled, if it had not been already activated through the BIP9 mechanism.
+	? the witness of the first input of the coinbase transaction MUST have exactly one stack item (the "extended header"), with the following data:
+		? bytes 0 to 3: nHeight MUST be equal to the height of this block (signed little endian)
+		? bytes 4 to 5: MUST be exactly 0x0000
+		? bytes 6 to 53: extra data with no meaning in Bitcoin protocol
+		? bytes 54 to 85: hashMerkleRoot the transaction Merkle root (calculated in the same way as the original Merkle root in the block header)
+		? bytes 86 to 117: hashWitnessRoot the witness Merkle root (NOT calculated in the way described in BIP141)
+		? bytes 118 to 121: nTx MUST be equal to the number of transactions in this block (unsigned little endian, minimum 1)
+		? bytes 122 to 129: nFees MUST be equal to the total transaction fee paid by all transactions, except the coinbase transaction, in the block (unsigned little endian)
+		? bytes 130 to 137: nWeight MUST be equal to or greater than the total weight of all transactions in the block (to be described in another BIP. NOT calculated in the way described in BIP141)
+		? bytes 138+ : Reserved space for future upgrades
+	? bytes 36 to 67 in the block header, the place originally for the hashMerkleRoot is replaced by the double SHA256 hash of the extended header.
+	? size of the extended header MUST be at least 138 bytes.
+	? wtxid of the coinbase transaction is calculated as if the witness of its first input is empty.
+	? the hashWitnessRoot is calculated with all wtxid as leaves, in a way similar to the hashMerkleRoot.
+	? the OP_RETURN witness commitment rules described in BIP141 is not enforced.
+	? The witness reserved valued described in BIP141 is removed from the protocol.
+A special extheader softfork is defined, with the following BIP9 parameters:
+	? bit: 15
+	? starttime: 0
+	? timeout: 0xffffffff
+Until the extheader softfork is activated, the following extra rules are enforced:
+	? nWeight MUST be exactly equal to the total weight of all transactions in the block
+	? size of the extended header MUST NOT be larger than 152 bytes
+Activation of the special extheader softfork is independent to the activation time of the hardfork. If the special softfork is activated before the hardfork, the aforementioned extra rules will not be enforced when the hardfork is activated. Nodes that are not aware of the new rules should consider extheader softfork as an unknown upgrade and issue warnings to users accordingly.
+
+Rationale
+
+This hardfork employs a simple flag day deployment based on the median timestamp of previous blocks. Beyond this point, supporting nodes will not accept blocks with original rules. This ensures a deterministic and permanent departure with the original rules.
+
+The witness field of the coinbase input is used as a convenient unused space to store the extended header. For any other purposes the extended header is not considered as part of the coinbase transaction (it is removed when the wtxid is calculated) This design minimizes the changes in the peer-to-peer protocol between full nodes, as no new message type is required to transmit the extended header. However, a new protocol message is still needed for serving light nodes.
+
+Committing to the block height allows determining the value before all parental headers are obtained.
+
+By fixing the bytes 4 to 5 as 0x0000, in the worst case an unupgraded light node may consider the block has only one transaction with no input and output, and will not see any real transactions.
+
+The 48 byte extra data field is reserved for miners for any purposes and designed to be compatible with the Stratum mining protocol. Miners are expected to use 4 to 16 bytes as extra nonce, and 32 to 44 bytes for merge mining. This requires a hardfork for all AuxPOW blockchains, while significantly reduces the size of AuxPOW block headers.
+
+hashMerkleRoot is relocated to the extended header, followed by hashWitnessRoot. The new structure allows hashWitnessRoot committing to the wtxid of coinbase transaction with extended header removed.
+
+Committing to the number of transactions allows light nodes to determine the Merkle tree structure easily.
+
+Committing to the transaction fees and block weight provides information for fees estimation.
+
+The reserved space (16 bytes until the extheader softfork is activated) MUST NOT be used without community consensus. It should be primarily used for consensus critical commitments and network status data for light nodes. Other arbitrary data should use the extra data field in extended header or the scriptSig of the coinbase transaction.
+
+The special extheader softfork allows future protocol upgrades to increase the size of the extended header and redefine the calculation of block weight in a backward compatible way.
+
+Other proposed hardfork changes are described in other BIPs.
+
+Compatibility
+
+This is a hard forking change, which breaking compatibility with old full node and light node. It should not be deployed without widespread consensus.
+
+Old full nodes will consider the block header nVersion as invalid and refuse the follow the hardfork chain.
+
+Depending on the design of light nodes, they may consider the hardfork chain as the best chain if it has the most total proof-of-work. However, they will not see any transactions in the chain and cease to properly function until either upgrading to the new rules, or rejecting the new rules with the negative block header nVersion.
+
+Reference implementation
+
+https://github.com/jl2012/bitcoin/tree/spoonnet2
+
+Copyright
+
+This BIP is licensed under the 2-clause BSD license.
