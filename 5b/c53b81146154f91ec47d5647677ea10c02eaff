@@ -1,0 +1,103 @@
+From: jtimon@jtimon.cc (=?UTF-8?B?Sm9yZ2UgVGltw7Nu?=)
+Date: Sun, 2 Apr 2017 06:57:48 +0200
+Subject: [bitcoin-dev] Segwit2Mb - combined soft/hard fork - Request For
+	Comments
+In-Reply-To: <CAAt2M1835S3YYJ_p0_zvDR9U6EfYAt7SWTAEPNHnNfgstKpgMg@mail.gmail.com>
+References: <CAKzdR-oN6tGvGSb04_awCf=Jsf3wgKJN5xUhCr8G2D2W9YgJww@mail.gmail.com>
+	<1CF1FD5D-8D29-4783-823F-B3F588D5C5CE@mattcorallo.com>
+	<CAD1TkXse5O6nEw9-EPsNp4c56YJ+OnM=F1uf8w+tyB=_+hFzFQ@mail.gmail.com>
+	<CAKzdR-rFJNOZ856rA_q8C=zEUj_X561OSOwW+KZr4nRJ51w3HA@mail.gmail.com>
+	<CABm2gDrAHo2P7t6SjituURqMUqs_=Lbp7X=g_j8nGoNKMKCRKQ@mail.gmail.com>
+	<CAAt2M19PvHLY0PA6iy+wiPg10vqONDApTLDuxzEcte=KUZLoaQ@mail.gmail.com>
+	<CABm2gDqw2TayGvaH_nz3jrF8Cz2V=SbB4begD6+K=Ye=Msw4mg@mail.gmail.com>
+	<CAAt2M1_gDzEuDLSvVsJARvdCAtUyM3Yuu7TT25sbm3L-Zi6+0Q@mail.gmail.com>
+	<CAAt2M18=Tjw+05QCv6G7Abv=idB6ONgU9xvtrR=fn731452_mg@mail.gmail.com>
+	<CAAt2M1835S3YYJ_p0_zvDR9U6EfYAt7SWTAEPNHnNfgstKpgMg@mail.gmail.com>
+Message-ID: <CABm2gDqMGBiwZppcyt6yF2sMJVs=nCr0M8u4H_22QDMR3wCFxQ@mail.gmail.com>
+
+On Sat, Apr 1, 2017 at 5:34 PM, Natanael <natanael.l at gmail.com> wrote:
+> Den 1 apr. 2017 16:07 skrev "Jorge Tim?n" <jtimon at jtimon.cc>:
+> On Sat, Apr 1, 2017 at 3:15 PM, Natanael <natanael.l at gmail.com> wrote:
+>> Den 1 apr. 2017 14:33 skrev "Jorge Tim?n via bitcoin-dev"
+>> <bitcoin-dev at lists.linuxfoundation.org>:
+>> Segwit replaces the 1 mb size limit with a weight limit of 4 mb.
+>> That would make it a hardfork, not a softfork, if done exactly as you say.
+> No, because of the way the weight is calculated, it is impossible to
+> create a block that old nodes would perceive as bigger than 1 mb
+> without also violating the weight limit.
+> After segwit activation, nodes supporting segwit don't need to
+> validate the 1 mb size limit anymore as long as they validate the
+> weight limit.
+>
+> https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#Block_size
+>
+> Huh, that's odd. It really does still count raw blockchain data blocksize.
+
+It's not odd, it's just counter-intuitive. How can "< 4 mb weight" be
+a more restrictive rule than "< 1 mb size"? Well, it is, that's why
+segwit's size increase is a softfork.
+It is not that hard once you look at the actual weight formula:
+segregated_sigs_sise + (other_size * 4) < 4 "mb"
+
+It is impossible to produce to produce a block that violates the 1 mb
+size limit but doesn't violate the 4 mb weight limit too.
+There can be block that are < 1 mb size but 20 mb in weight, but those
+are invalid according to the new 4 mb weight rule.
+At the same time, any block that violates the < 1 mb rule for old
+nodes will be invalid not only to old nodes but also to any node
+validating the new 4mb rule. This is not by chance but a design choice
+for any block size increase within segwit to remain a softfork, which
+is what can be deployed faster.
+
+One extreme example would be any 1 mb block today. 1 "mb" of a block
+today times 4 is 4 mb, so it complies with the new 4 mb weight rule.
+The opposite extreme example would be 4 mb of signatures and 0 mb of
+"other data", but this example is not really possible in practice
+because signatures need some tx to be part of to be part of the block
+itself.
+The most extreme examples I have seen on testnet are 3.7 mb blocks,
+but those don't represent the average usage today (whenever you read
+this).
+
+One common misunderstanding is that users who aren't using payment
+channels (that includes lightning but also other smart contracts) or
+users that aren't using mutlisig can't enjoy the so called "discount":
+there's no reasonable argument for rejecting the "discount" on your
+own transactions once/if segwit gets activated.
+
+I would prefer to call the absence of "discount" *penalization*.
+Signatures are unreasonable penalized pre-segwit, and there's more
+things that remain unreasonably penalized with respect to their
+influence on the current utxo after segwit. But signatures are by far
+the biggest in data space and validation time, and the most important
+unreasonable yet unintended penalization pre-segwit.
+
+> It just uses a ratio between how many units each byte is worth for block
+> data vs signature data, plus a cap to define the maximum. So the current max
+> is 4 MB, with 1 MB of non-witness blockchain data being weighted to 4x = 4
+> MB. That just means you replaced the two limits with one limit and a ratio.
+
+Exactly, once one maximum limit is defined, no need for two limits.
+But the current max is 1 mb size, not 4 mb weight until/unless segwit
+is activated.
+Some people complain about 4 mb weight not being as much as 4 mb size,
+and that is correct, but both are bigger than 1 mb size.
+
+> A hardfork increasing the size would likely have the ratio modified too.
+
+If the single ratio needs to be modified, it can be modified now
+before any rule changes are activated, no need to change the consensus
+rules more than needed.
+
+> With exactly the same effect as if it was two limits...
+
+If you don't see any disadvantage on having one single limit if/when
+segwit gets activated, I don't see the point of maintaining two
+limits, but if you're happy to maintain the branch with the redundant
+one you may get my ack: I don't see any disadvantage on checking the
+same thing twice besides performance,
+
+> Either way, there's still going to be non-segwit nodes for ages.
+
+That's precisely why it's good segwit has been designed to be backward
+compatible as a bip9 softfork.
