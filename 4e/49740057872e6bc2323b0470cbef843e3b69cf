@@ -1,0 +1,233 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Wed, 5 Apr 2017 21:37:45 +0000
+Subject: [bitcoin-dev] BIP proposal: Inhibiting a covert attack on the
+	Bitcoin POW function
+Message-ID: <CAAS2fgR84898xD0nyq7ykJnB7qkdoCJYnFg6z5WZEUu0+-=mMA@mail.gmail.com>
+
+A month ago I was explaining the attack on Bitcoin's SHA2 hashcash which
+is exploited by ASICBOOST and the various steps which could be used to
+block it in the network if it became a problem.
+
+While most discussion of ASICBOOST has focused on the overt method
+of implementing it, there also exists a covert method for using it.
+
+As I explained one of the approaches to inhibit covert ASICBOOST I
+realized that my words were pretty much also describing the SegWit
+commitment structure.
+
+The authors of the SegWit proposal made a specific effort to not be
+incompatible with any mining system and, in particular, changed the
+design at one point to accommodate mining chips with forced payout
+addresses.
+
+Had there been awareness of exploitation of this attack an effort
+would have been made to avoid incompatibility-- simply to separate
+concerns.  But the best methods of implementing the covert attack
+are significantly incompatible with virtually any method of
+extending Bitcoin's transaction capabilities; with the notable
+exception of extension blocks (which have their own problems).
+
+An incompatibility would go a long way to explain some of the
+more inexplicable behavior from some parties in the mining
+ecosystem so I began looking for supporting evidence.
+
+Reverse engineering of a particular mining chip has demonstrated
+conclusively that ASICBOOST has been implemented
+in hardware.
+
+On that basis, I offer the following BIP draft for discussion.
+This proposal does not prevent the attack in general, but only
+inhibits covert forms of it which are incompatible with
+improvements to the Bitcoin protocol.
+
+I hope that even those of us who would strongly prefer that
+ASICBOOST be blocked completely can come together to support
+a protective measure that separates concerns by inhibiting
+the covert use of it that potentially blocks protocol improvements.
+
+The specific activation height is something I currently don't have
+a strong opinion, so I've left it unspecified for the moment.
+
+<pre>
+  BIP: TBD
+  Layer: Consensus
+  Title: Inhibiting a covert attack on the Bitcoin POW function
+  Author: Greg Maxwell <greg at xiph.org>
+  Status: Draft
+  Type: Standards Track
+  Created: 2016-04-05
+  License: PD
+</pre>
+
+==Abstract==
+
+This proposal inhibits the covert exploitation of a known
+vulnerability in Bitcoin Proof of Work function.
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+"SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+document are to be interpreted as described in RFC 2119.
+
+==Motivation==
+
+Due to a design oversight the Bitcoin proof of work function has a potential
+attack which can allow an attacking miner to save up-to 30% of their energy
+costs (though closer to 20% is more likely due to implementation overheads).
+
+Timo Hanke and Sergio Demian Lerner claim to hold a patent on this attack,
+which they have so far not licensed for free and open use by the public.
+They have been marketing their patent licenses under the trade-name
+ASICBOOST.  The document takes no position on the validity or enforceability
+of the patent.
+
+There are two major ways of exploiting the underlying vulnerability: One
+obvious way which is highly detectable and is not in use on the network
+today and a covert way which has significant interaction and potential
+interference with the Bitcoin protocol.  The covert mechanism is not
+easily detected except through its interference with the protocol.
+
+In particular, the protocol interactions of the covert method can block the
+implementation of virtuous improvements such as segregated witness.
+
+Exploitation of this vulnerability could result in payoff of as much as
+$100 million USD per year at the time this was written (Assuming at
+50% hash-power miner was gaining a 30% power advantage and that mining
+was otherwise at profit equilibrium).  This could have a phenomenal
+centralizing effect by pushing mining out of profitability for all
+other participants, and the income from secretly using this
+optimization could be abused to significantly distort the Bitcoin
+ecosystem in order to preserve the advantage.
+
+Reverse engineering of a mining ASIC from a major manufacture has
+revealed that it contains an undocumented, undisclosed ability
+to make use of this attack. (The parties claiming to hold a
+patent on this technique were completely unaware of this use.)
+
+On the above basis the potential for covert exploitation of this
+vulnerability and the resulting inequality in the mining process
+and interference with useful improvements presents a clear and
+present danger to the Bitcoin system which requires a response.
+
+==Background==
+
+The general idea of this attack is that SHA2-256 is a merkle damgard hash
+function which consumes 64 bytes of data at a time.
+
+The Bitcoin mining process repeatedly hashes an 80-byte 'block header' while
+incriminating a 32-bit nonce which is at the end of this header data. This
+means that the processing of the header involves two runs of the compression
+function run-- one that consumes the first 64 bytes of the header and a
+second which processes the remaining 16 bytes and padding.
+
+The initial 'message expansion' operations in each step of the SHA2-256
+function operate exclusively on that step's 64-bytes of input with no
+influence from prior data that entered the hash.
+
+Because of this if a miner is able to prepare a block header with
+multiple distinct first 64-byte chunks but identical 16-byte
+second chunks they can reuse the computation of the initial
+expansion for multiple trials. This reduces power consumption.
+
+There are two broad ways of making use of this attack. The obvious
+way is to try candidates with different version numbers.  Beyond
+upsetting the soft-fork detection logic in Bitcoin nodes this has
+little negative effect but it is highly conspicuous and easily
+blocked.
+
+The other method is based on the fact that the merkle root
+committing to the transactions is contained in the first 64-bytes
+except for the last 4 bytes of it.  If the miner finds multiple
+candidate root values which have the same final 32-bit then they
+can use the attack.
+
+To find multiple roots with the same trailing 32-bits the miner can
+use efficient collision finding mechanism which will find a match
+with as little as 2^16 candidate roots expected, 2^24 operations to
+find a 4-way hit, though low memory approaches require more
+computation.
+
+An obvious way to generate different candidates is to grind the
+coinbase extra-nonce but for non-empty blocks each attempt will
+require 13 or so additional sha2 runs which is very inefficient.
+
+This inefficiency can be avoided by computing a sqrt number of
+candidates of the left side of the hash tree (e.g. using extra
+nonce grinding) then an additional sqrt number of candidates of
+the right  side of the tree using transaction permutation or
+substitution of a small number of transactions.  All combinations
+of the left and right side are then combined with only a single
+hashing operation virtually eliminating all tree related
+overhead.
+
+With this final optimization finding a 4-way collision with a
+moderate amount of memory requires ~2^24 hashing operations
+instead of the >2^28 operations that would be require for
+extra-nonce  grinding which would substantially erode the
+benefit of the attack.
+
+It is this final optimization which this proposal blocks.
+
+==New consensus rule==
+
+Beginning block X and until block Y the coinbase transaction of
+each block MUST either contain a BIP-141 segwit commitment or a
+correct WTXID commitment with ID 0xaa21a9ef.
+
+(See BIP-141 "Commitment structure" for details)
+
+Existing segwit using miners are automatically compatible with
+this proposal. Non-segwit miners can become compatible by simply
+including an additional output matching a default commitment
+value returned as part of getblocktemplate.
+
+Miners SHOULD NOT automatically discontinue the commitment
+at the expiration height.
+
+==Discussion==
+
+The commitment in the left side of the tree to all transactions
+in the right side completely prevents the final sqrt speedup.
+
+A stronger inhibition of the covert attack in the form of
+requiring the least significant bits of the block timestamp
+to be equal to a hash of the first 64-bytes of the header. This
+would increase the collision space from 32 to 40 or more bits.
+The root value could be required to meet a specific hash prefix
+requirement in order to increase the computational work required
+to try candidate roots. These change would be more disruptive and
+there is no reason to believe that it is currently necessary.
+
+The proposed rule automatically sunsets. If it is no longer needed
+due to the introduction of stronger rules or the acceptance of the
+version-grinding form then there would be no reason to continue
+with this requirement.  If it is still useful at the expiration
+time the rule can simply be extended with a new softfork that
+sets longer date ranges.
+
+This sun-setting avoids the accumulation of technical debt due
+to retaining enforcement of this rule when it is no longer needed
+without requiring a hard fork to remove it.
+
+== Overt attack ==
+
+The non-covert form can be trivially blocked by requiring that
+the header version match the coinbase transaction version.
+
+This proposal does not include this block because this method
+may become generally available without restriction in the future,
+does not generally interfere with improvements in the protocol,
+and because it is so easily detected that it could be blocked if
+it becomes an issue in the future.
+
+==Backward compatibility==
+
+
+==Implementation==
+
+
+==Acknowledgments==
+
+
+==Copyright==
+
+This document is placed in the public domain.
