@@ -1,0 +1,126 @@
+From: chjj@purse.io (Christopher Jeffrey)
+Date: Wed, 5 Apr 2017 10:43:43 -0700
+Subject: [bitcoin-dev] Extension block proposal by Jeffrey et al
+In-Reply-To: <B15790EC-B298-4F6A-BEBF-AF8C3DA74EED@xbt.hk>
+Message-ID: <20170405174343.GA7180@gmail.com>
+
+Hi Johnson,
+
+Really appreciate the comments. I know this idea is your baby.
+
+> so the authors don?t consider segwit as a consensus-layer solution to
+> increase transaction throughput, or not think segwit is safe? But
+> logically speaking if segwit is not safe, this BIP could only be
+> worse. OTOH, segwit also obviously increases tx throughput, although
+> it may not be as much as some people wish to have.
+
+Segwit wasn't considered to be a part of that statement. It was
+referring to the numerous hardfork proposals we've seen over the past
+few years. Segwit is safe, but wouldn't be a comparable block size
+increase to what ext. blocks could potentially offer.
+
+> I think extension block in the proposed form actually breaks BIP141.
+> It may say it activates segregated witness as a general idea, but not
+> a specific proposal like BIP141
+
+Agreed. Needs to be reworded as it currently stands. Though, I suppose
+it would be possible to allow for compatibility with segwit in the
+mainchain if we utilize your idea of using a separate wit. program
+versions for the extension block. A slightly minor change to the spec,
+just a big change to the reference impl. code. It is doable.
+
+> This hits the biggest question I asked in my January post: do you want
+> to allow direct exit payment to legacy addresses? As a block reorg
+> will almost guarantee changing txid of the resolution tx, that will
+> permanently invalidate all the child txs based on the resolution tx.
+> This is a significant change to the current tx model. To fix this, you
+> need to make exit outputs unspendable for up to 100 blocks. Doing
+> this, however, will make legacy wallet users very confused as they do
+> not anticipate funding being locked up for a long period of time. So
+> you can?t let the money sent back to a legacy address directly, but
+> sent to a new format address that only recognized by new wallet, which
+> understands the lock up requirement. This way, however, introduces
+> friction and some fungibility issues, and I?d expect people using
+> cross chain atomic swap to exchange bitcoin and xbitcoin
+
+Yes, this issue is probably the biggest edge case in the proposal.
+
+I think there's two possible solutions:
+
+First solution:
+
+Like you said, add a maturity requirement for exiting outputs. Likely
+lower than coinbase's 100 block requirement. To solve the issue of
+non-upgraded wallets not being aware of this rule and spending early,
+have upgraded mempool implementations accept/relay txs that contain
+early spends of exits, but not mine them until they are mature. This way
+non-upgraded wallets do not end up broadcasting transactions that are
+considered invalid to the rest of the network.
+
+Depending on how wallets handle reorgs, a non-upgraded wallet may put
+reorg'd spend chains from exits back into an unconfirmed state, when in
+reality they should probably delete them or mark them conflicted in some
+way. This may be an acceptable compromise as the wallet will still see
+the funds as unconfirmed when they really don't exist anymore, but maybe
+unconfirmed is good enough. Users are pretty used to dropping
+non-confirming txs from their wallet, and this is much better than
+legacy wallets seeing there funds as confirmed when they could be
+permanently reorged out at any moment.
+
+Second solution:
+
+Move all exiting outputs to the coinbase. This will enforce a 100 block
+maturity requirement and non-upgraded wallets will be aware of this.
+
+The first solution might require more implementation, but allows more
+flexibility with the maturity requirement. The second solution is
+possibly simpler, but sticks to a hard 100 block limit.
+
+> 1. Is it acceptable to have massive txid malleability and transaction
+> chain invalidation for every natural happening reorg?  Yes: the
+> current spec is ok; No: next question (I?d say no)
+
+Answered above.
+
+> 2. Is locking up exit outputs the best way to deal with the problem?
+> (I tried really hard to find a better solution but failed)
+
+You've probably thought about this more than anyone, so I'd say yes, it
+may be the only way. Painful, but necessary.
+
+> 3. How long the lock-up period should be? Answer could be anywhere
+> from 1 to 100
+
+I imagine having something lower than 100 would be preferable to users,
+maybe somewhere in the 5 to 15 range. A 15 block reorg on mainnet is
+seriously unlikely unless something strange is happening. A 5 block
+reorg is still pretty unlikely, but possible. The coinbase solution only
+allows for 100 blocks though.
+
+> 4. With a lock-up period, should it allow direct exit to legacy
+> address? (I think it?s ok if the lock-up is short, like 1-2 block. But
+> is that safe enough?)
+
+I think so. Adding a kind of special address probably creates more
+issues than it solves.
+
+> 5. Due to the fungibility issues, it may need a new name for the
+> tokens in the ext-block
+
+I suppose the market will decide whether that's the case.
+
+It's worth noting, if segwit is not activated on the mainchain, it
+creates a much bigger incentive to use the extension block, and
+potentially ensures that users will have less of a reason to exit.
+
+--
+Christopher Jeffrey (JJ) <chjjeffrey at gmail.com>
+CTO & Bitcoin Menace, purse.io
+https://github.com/chjj
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 488 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170405/6fd08871/attachment-0001.sig>
