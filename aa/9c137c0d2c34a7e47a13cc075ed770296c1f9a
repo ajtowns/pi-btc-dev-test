@@ -1,0 +1,285 @@
+From: chjj@purse.io (Christopher Jeffrey)
+Date: Wed, 5 Apr 2017 09:54:05 -0700
+Subject: [bitcoin-dev] Extension block proposal by Jeffrey et al
+In-Reply-To: <201704041803.57409.luke@dashjr.org>
+Message-ID: <20170405165405.GA28519@gmail.com>
+
+Hi Luke,
+
+Thank you for the review. Many of these points should definitely be
+addressed in the spec. Although extension blocks has working code, the
+spec is currently still in a draft state now and could really use all
+the feedback it can get. A few rules are still up in the air before we
+setup a public testnet for it.
+
+There's understandable confusion about this, but this proposal is not
+meant to be a BIP. If it were meant to be a BIP, we still might not have
+even submitted it yet as it needs a bit more revision still.
+
+I'm just going to go over a lot of these and explain the reasoning.
+
+> This breaks the ability to spend unconfirmed funds in the same block
+> (as is required for CPFP).
+
+Yeah, child-pays-for-parent is practically impossible for exiting
+outputs. I don't see a good way around this. We tried to figure out a
+decent solution while initially drafting this. It's possible with tons
+of trickery, but likely not worth it.
+
+> The extension block's transaction count is not cryptographically
+> committed-to anywhere. (This is an outstanding bug in Bitcoin today,
+> but impractical to exploit in practice; however, exploiting it in an
+> extension block may not be as impractical, and it should be fixed
+> given the opportunity.)
+
+Yes. The merkle commitments are something we could definitely improve.
+Open to suggestions. Personally, I don't consider myself a merkle
+expert.
+
+> This needs to elaborate how the merkle tree is constructed. Are all
+> the txids followed by all the wtxids (tx hashes)? Are they alternated?
+> Are txid and wtxid trees built independently and merged at the tip?
+
+As of right now, the reference implementation uses the former, but
+again, the merkle commitments are something up in the air. It'd be nice
+to keep it as flexible as possible for SPV proofs on either the txids or
+wxtids.
+
+> Why? This prevents extblock users from sending to bare multisig or
+> other various possible destinations. (While static address forms do
+> not exist for other types, they can all be used by the payment
+> protocol.)
+
+Requiring only p2pkh and p2sh for exits reduces the possibility of more
+UTXO set size bloat (at least slightly). Non-standard scripts are a
+problem since they cannot be compressed for storage. I don't see it as
+important to allow naked multisig outputs. Currently, if users wanted to
+use a naked multisig (why?), they can always use the 1mb chain directly.
+
+> Additionally, this forbids datacarrier (OP_RETURN), and forces spam to
+> create unprovably-unspendable UTXOs. Is that intentional?
+
+All outputs within the extension block are meant to be witness programs.
+This was done for simplicity. The 1mb chain is still usable for any
+OP_RETURNs committed to the chain. More thought on this would be good
+though.
+
+> > The maximum extension size should be intentionally high.
+>
+> This has the same "attacks can do more damage than ordinary benefit"
+> issue as BIP141, but even more extreme since it is planned to be used
+> for future size increases.
+
+> What is a "point"? What does it mean multiplied by a factor of 8? Why
+> not just say "8 points"?
+
+Just for consistency of wording.
+
+The notion of cost creates a system of points which are multiplied by a
+factor chosen by the witness program version. Unknown witness programs
+have a factor of 1. If, in the future, we soft-fork in a new witness
+program version, its chosen factor could be 7 or 6. The idea being,
+future versions could add less "cost" to the block, allowing for
+relaxing dos limits over time via soft-fork.
+
+I would much rather have people arguing over whether to soft-fork dos
+limits than whether to hard-fork dos limits.
+
+So the idea here is, we have a hard limit (say 6mb) for quick sanity
+checking and DoS prevention, and a soft-forkable soft limit (e.g. 2mb).
+
+Having unknown witness program versions be worth only 1 point does
+enable the possibility that a worst case block could be up to the "hard"
+max extension size limit. This is also a possibility with segwit, but
+yes, less severe with segwit assuming the max ext. block size is above
+3mb.
+
+More discussion and running of numbers is probably necessary before we
+come up with optimal limits here.
+
+> Please define "accurately counted" here. Is this using BIP16 static
+> counting, or accurately counting sigops during execution?
+
+It's meant to refer to BIP16 static counting. I believe the actual
+argument passed to the function in Bitcoin Core is called `fAccurate`.
+Many other implementations use the same terminology. The counting during
+execution proposed by Gavin's hardfork BIP isn't widely implemented as
+far as I know.
+
+> Is the size rounded up or down? If down, 72-byte scripts will carry 0
+> points...)
+
+Rounded up. The code included this earlier, but I took the whole
+weighing against size out temporarily. Will be updated to match the
+spec.
+
+> BIPs must be in MediaWiki format, not Markdown. They should be
+> submitted for discussion to the bitcoin-dev mailing list, not social
+> media and news.
+
+Yeah, that's sort of a bias of mine. I prefer markdown, and everyone
+else helping out with the spec seemed to be okay with my preference. The
+mediawiki format is offensive to me. In any case, this isn't really
+meant to be a BIP.
+
+> Extension blocks are more of a hard-fork IMO.
+
+Could you expand on why you consider this a hardfork?
+
+> Block time seems entirely unrelated to this spec. Motivation is
+> unclear.
+
+Transaction throughput is related to this spec. Block time and size are
+both related to transaction throughput. It's meant to say something to
+the effect of "changing retargetting is likely infeasible with a
+soft-fork, but changing block size may not be as much of a problem."
+Could be reworded.
+
+> As stated in the next paragraph, the rules in BIP 141 are
+> fundamentally incompatible with this one, so saying BIP 141 is
+> activated is confusingly incorrect.
+
+True. Should be reworded.
+
+> Extension blocks should be compatible with BIP 141, there doesn?t
+> appear to be any justification for not making them compatible.
+
+The implementation initially seemed a lot simpler when moving all segwit
+behavior to the extension block. The initial conception was to have all
+witness programs be entrances into and scripts within the extension
+block, but I guess there's no reason we couldn't do something like
+Johnson proposed and have different witness program versions be the
+ext-block-only programs. It just involves me rewriting a bit of code in
+the reference implementation, and backporting a lot of code to the
+original branch.
+
+> > Note that canonical blocks containing entering outputs MUST contain
+> > an extension block commitment (all zeroes if nothing is present in
+> > the extension block).
+>
+> Please explain why in Rationale.
+
+This can be removed, and something I initially added to my own code
+during initial implementation as a simple check ahead of time to check
+for entering outputs.
+
+> > Coinbase outputs MUST NOT contain witness programs, as they cannot
+> > be sweeped by the resolution transaction due to previously existing
+> > consensus rules.
+>
+> Seems like an annoying technical debt. I wonder if it can be avoided.
+
+I think there is a way around it, just not a real viable way: requiring
+miners to resolve the witness program outputs in the coinbase 100 blocks
+ago. But this will cause miners to attack each other, since they're now
+potentially adding size to another miners block. It also causes a load
+of other issues with wallets.
+
+I don't see the coinbase output rule as that much of an issue though.
+The 1mb chain will remain the realm of miners and long-term hodlers for
+sure. If they want to switch to the ext. block, they can always just
+sweep their outputs.
+
+> Why? Unlike the coinbase, this seems to create additional technical
+> debt with no apparent purpose. Better to just have a consensus rule
+> every input must be null.
+
+It's a pretty simple consensus check, and might be a fun extra to have.
+The genesis block has a pretty unique mystique to it. Might be fun to
+replicate that in the genesis resolution.
+
+> Transaction versions are signed, so I assume this is actually simply
+> -1.  (While signed transaction versions seemed silly to me, using it
+> for special cases like this actually makes sense.)
+
+Yeah, transaction versions are just bits as far as I'm concerned. It
+depends on how you want to interpret them. But yeah, it would be `-1` if
+you were to consider it an int32. My own code just treats them as
+unsigned.
+
+> Should specify that spending such an exit must use the resolution
+> txid, not the extblock's txid.
+
+Agreed.
+
+> BIPs should not specify policy at all. Perhaps prefix "For the
+> avoidance of doubt:" to be clear that miners may perform any fee logic
+> they like.
+
+Mentioning policy as an aside seemed useful here for now for a clearer
+understanding. A good deal of this spec may be separated out as some
+kind of commentary on implementation details eventually.
+
+> Since extblock transactions are all required to be segwit, why
+> wouldn't this be mandatory?
+
+That was originally only referring to serialization (segwit allows empty
+witness vectors in serialization). I will reword this to refer to
+verification only.
+
+> Note this makes adoption slower: wallets cannot use the extblock until
+> the economy has updated to support segwit-native addresses.
+
+Nested P2SH would be hard to do for the ext. block, short of some added
+trickery (miners only redeeming that output for entrance once the redeem
+script is revealed).
+
+> Please explain why 73 bytes in Rationale.
+
+DER-formatted signature size. "Inputs cost" was originally designed to
+reflect sigops. To prevent tons of garbage data in the witness vector,
+the vector's size is also considered a "sigop/cost" for every 73 bytes.
+It should probably start weighing sigops points and size points
+differently though, or treat them as separate metrics.
+
+> > A consensus dust threshold is now enforced within the extension
+> > block.
+>
+> Why?
+
+Another measure to potentially reduce UTXO spam. Will clarify.
+
+> Why wouldn't users set this on all transactions?
+
+It looks like Laolu beat me to commenting on this. Both Joseph and Laolu
+will have better commentary on this than me, so I'll let them handle
+this.
+
+> > The "deactivation" deployment's start time...
+>
+> What about timeout? None? To continue the extension block, must it be
+> deactivated and reactivated in parallel?
+
+Timeout of 1 year. That may have gotten lost in the frequent revisions
+we did.
+
+Once voting has successfully activated the deactivation bit, the
+locked-in time is 26 retarget intervals (approx. 1 year).
+
+So, the simplest proposal for deactivation we came up with returns the
+OP_TRUE to being anyone-can-spend. By that time, a future softfork
+(activated in the same versionbit) can introduce code to handle the
+migration of funds elsewhere. The anyone-can-spend part does sound
+pretty odd at first glance, but it's the only way to get new behavior in
+here without a hardfork.
+
+The merkle proof proposal is tougher, because we would have to write
+code _now_ to handle the migration. And since we don't know what future
+extension blocks might look like or how they might behave, this is
+pretty difficult.
+
+---
+
+I will open a few issues on the repo for some of the points made here.
+
+--
+Christopher Jeffrey (JJ) <chjj at purse.io>
+CTO & Bitcoin Menace, purse.io
+https://github.com/chjj
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 488 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170405/3c3700c0/attachment.sig>
