@@ -1,0 +1,76 @@
+From: joseph@lightning.network (Joseph Poon)
+Date: Wed, 5 Apr 2017 09:25:31 -0700
+Subject: [bitcoin-dev] Extension block proposal by Jeffrey et al
+In-Reply-To: <CAB3F3DvNO5G6WHeDr4qu8NWH3AWWgRN=NfGTNQ1myUZDzC1hnQ@mail.gmail.com>
+References: <201704041803.57409.luke@dashjr.org>
+	<B15790EC-B298-4F6A-BEBF-AF8C3DA74EED@xbt.hk>
+	<CAO3Pvs9DF6F4gDgrNPoUw5bqwb6ajDwwVP9NpcLzpZMzzgMQjw@mail.gmail.com>
+	<CAB3F3DvNO5G6WHeDr4qu8NWH3AWWgRN=NfGTNQ1myUZDzC1hnQ@mail.gmail.com>
+Message-ID: <20170405162531.GA16131@lightning.network>
+
+On Wed, Apr 05, 2017 at 11:37:22AM -0400, Greg Sanders via bitcoin-dev wrote:
+> I'd appreciate the authors chiming in, but I read the PASDA differently:
+> 
+> 1) If a transaction is mined with a certain bit set, it reserves 700 bytes
+> for that particular block.
+> 2) In that space, 2 transactions may happen:
+> a) First, a transaction penalizing the "parent" transaction for fraud by
+> spending the funds immediately
+> b) Second, a "free rider" transaction that penalizes fraud within a ~2 week
+> window
+> 
+> This means during systematic flooding of closing transactions by
+> Goldfinger, vigilant watchers of their channels can immediately punish the
+> fraud in the same block using (a), and if they are unable to, need to find
+> space within two weeks in (b).
+> 
+> This is really in the LN weeds however, so I'll refrain from evaluating the
+> efficacy of such a solution.
+
+Yes, that is correct. I haven't had a chance to review Laolu's summary
+yet, haven't had a chance to talk to him today since I was away from the
+keyboard for most of the day, would have been unable to review things.
+
+Section "b" above only allows for free riding on the first output of a
+transaction with the bit set within the past 2016 blocks. It does not
+allow free riding on outputs without that bit set in the transaction.
+
+Additionally, the presumption is that the attacker fills up the
+mempool with incorrect prior commitment transactions.
+
+The attack scenario is Mallory asks everyone to open a channel with her.
+Mallory only has 1 BTC. With sufficiently low tx fees, Mallory can use
+that one bitcoin to open many ~1 BTC channels. All of those channels had
+a prior state which Mallory had ~1 BTC, and a current state where she
+has none. She broadcasts these thousands of prior states where she has
+~1 BTC.
+
+The presumption is the penalty transaction in many cases has a very
+small fee, since it is already covered by the commitment.
+
+This mitigates systemic goldfinger attacks since it is unlikely they can
+get enough transactions in. Additionally the transactions waiting on the
+mempool allows for many to be notified and fill up the first reserved
+space. The attacker would likely be attempting to fill up the mempool
+(longer block times help here with security!!!). It is presumed that
+there is some small amount in reserve so there is some fee reward
+covered for enforcing the penalty. This construction allows for the
+amount in reserve to be significantly smaller and much more resilient
+against even the largest of goldfinger attacks.
+
+(This isn't a full mitigation, as there are certain conditions related
+to miner-attacker coordination with high hashpower. Attacker-Miner
+coordination is presumed to be out-of-scope, especially in relation to
+51% attacks, since it's sort of a moot point, if they have the funds to
+mount this attack so that it's profitable, it gets pretty close for them
+to have a very significant hashpower anyway.)
+
+I'll add a clarification to the specification on github soon. The intent
+of this is to reduce the cost of setting up LN channels with funds in
+reserve, with minimal code changes. Future changes which could be
+desired if this is usable would be use additional tx flag bits to select
+how many outputs in a transaction apply to enable a large payment of
+funds pending in-flight.
+
+-- 
+Joseph Poon
