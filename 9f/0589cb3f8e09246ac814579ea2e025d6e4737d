@@ -1,0 +1,801 @@
+From: laolu32@gmail.com (Olaoluwa Osuntokun)
+Date: Wed, 05 Apr 2017 14:05:37 +0000
+Subject: [bitcoin-dev] Extension block proposal by Jeffrey et al
+In-Reply-To: <B15790EC-B298-4F6A-BEBF-AF8C3DA74EED@xbt.hk>
+References: <201704041803.57409.luke@dashjr.org>
+	<B15790EC-B298-4F6A-BEBF-AF8C3DA74EED@xbt.hk>
+Message-ID: <CAO3Pvs9DF6F4gDgrNPoUw5bqwb6ajDwwVP9NpcLzpZMzzgMQjw@mail.gmail.com>
+
+Hi Y'all,
+
+Thanks to luke-jr and jl2012 for publishing your analysis of the
+xblocks proposal. I'd like to also present some analysis but instead focus
+on the professed LN safety enhancing scheme in the proposal. It's a bit
+underspecified, so I've taken the liberty of extrapolating a bit to fill
+in the gaps to the point that I can analyze it.
+
+TLDR; The xblock proposal includes a sub-proposal for LN which is
+essentially a block-size decrease for each open channel within the network.
+This decrease reserves space in blocks to allow honest parties guaranteed
+space in the blocks to punish dishonest channel counter parties. As a result
+the block size is permanently decreased for each channel open. Some may
+consider this cost prohibitively high.
+
+>> If the second highest transaction version bit (30th bit) is set to to `1`
+>> within an extension block transaction, an extra 700-bytes is reserved on
+>> the transaction space used up in the block.
+
+> Why wouldn't users set this on all transactions?
+
+As the proposal stands now, it seems that users _are_ able to unilaterally
+use this for all their Bitcoin transactions, as there's no additional cost
+to using the smart-contract safety feature outlined in the proposal.
+
+The new safety measures proposed near the end of this xblock proposal
+could itself consume a dedicated document outlining the prior background,
+context, and implications of this new safety feature. Throughout the rest
+of this post, I'll be referring to the scheme as a Pre-Allocated
+Smart-contract Dispute arena (PASDA, chosen because it sounds kinda like
+"pasta", which brings me many keks). It's rather insufficiently described
+and
+under specified as it stands in the proposal. As a result, if one doesn't
+have the necessary prior context, it might've been skipped over entirely
+as it's difficult to extract the sub-proposal from the greater proposal. I
+think I possess the necessary prior context required to required to
+properly analyze the sub-proposal. As a result, I would like to illuminate
+the readers of the ML so y'all may also be able to evaluate this
+sub-proposal independently.
+
+
+## Background
+
+First, some necessary background. Within LN as it exists today there is
+one particularly nasty systematic risk related to blockchain availability
+in the case of a channel dispute. This risk is clearly outlined in the
+original white paper, and in my opinion a satisfactory solution to the
+risks which safe guard the use of very high-value channels has yet to be
+presented.
+
+
+### Chain Spam/Censorship Attack Vector
+
+The attack vector mentioned in the original paper is a reoccurring attack
+in systems of this nature: DoS attacks. As it stands today, if a channel
+counterparty is able to (solely, or in collaboration with other attackers)
+prevent one from committing a transaction to the chain, they're able to
+steal money from the honest participant in the channel. The attack
+proceeds something like this:
+
+   * Mallory opens a very large channel with me.
+   * We transfer money back and forth in the channel as normal. The nature
+     of these transfers isn't very important. The commitment balances may
+     be modified due to Mallory making multi-hop payments through my
+     channel, or possibly from Mallory directly purchasing some goods I
+     offer, paying via the channel.
+   * Let's call the current commitment number state S_i. In the lifetime
+     of the channel there may exist some state S_j (i < j) s.t Mallory's
+     balance in S_i, is larger than S_j.
+   * At this point, depending on the value of the channel's time-based
+     security parameter (T) it may be possible for Mallory to broadcast
+     state S_i (which has been revoked), and prevent me being able to
+     include by my punishment transaction (PTX) within the blockchain.
+   * If Mallory is able to incapacitate me for a period of time T, or
+     censor my transactions from the chain (either selectively or via a
+     spam attack), then at time K (K > T + B, where B is the time the
+     commitment transaction was stamped in the chain), then she'll be free
+     to walk away with her settled balance at state S_i. For the sake of
+     simplicity, we're ignoring HTLC's.
+   * Mallory's gain is the difference between the balance at state S_i and
+     S_j. Deepening on the gap between the states, my settled balance at
+     state S_i and the her balance delta, she may be able to fully recoup
+     the funds she initially place in the channel.
+
+
+### The Role of Channel Reserves as Partial Mitigation
+
+A minor mitigation to this attack that's purely commitment transaction
+policy is to mandate that Mallory's balance in the channel never dips
+below some reserve value R. Otherwise, if at state S_j, Mallory has a
+settled balance of 0 within he channel (all the money if on my side), then
+the attack outline above can under certain conditions be _costless_ from
+her PoV. Replicate this simultaneously across the network in a synchronized
+manner (possibly getting some help from your miner friends) and this
+becomes a bit of a problem (to say the least).
+
+Taking this a step further another mitigation that's been proposed is to
+also use the channel reserve to implement a _ceiling_ on the maximum size
+of _any_ in flight HTLC. Similar to the scheme above, this is meant to
+eliminate the possibility of a "costless" attack, as if channel throughput
+is artificially constrained, then the value of pending HTLC's isn't
+enticing enough to launch a channel breach attack.
+
+
+### Analysis of Attack Feasibility/Difficulty
+
+The difficulty of the attack is dependant on the time-denominated security
+parameter T, and the adversaries ability to collude with miners. Purely
+spamming the chain given a very larger T value may be prohibitively
+expensive for the attacker and their profit from launching the attack
+would need to outweigh the cost in transaction fees and idle bitcoin
+required to launch the attack. Considering the case of colluding with
+miners, if mining is highly centralized (as it is now), then that may be a
+more attractive attack avenue. In a world of highly decentralized mining
+(let's say a lofty goal of no pool commanding > 5% of the hash power),
+then the attack is much more difficult.
+
+(as an aside schemes that involve transactions committing to the inputs
+they're spending and revealing them at a later date/block (committed
+transactions) may address the miner censorship attack vector)
+
+Depending one's target use of channels, the individuals they open channels
+with, the applications that run on top of the channels, the amount of
+coins within the channel, and the choice of the time parameter T, the
+attack outline above may or may not be an issue from your PoV.  However,
+in order to realize LN's maximum potential of being able to enter a
+smart-contract with a complete stranger on the internet trustlessly,
+without fearing conditions that may lead to monetary losses, the attack
+vector should be mitigated if possible.
+
+In the words of The Architect of the Matrix (and referenced by Tadge at
+his "Level of LN" talk at Scaling Bitcoin Hong Kong: "There are levels of
+survival we are prepared to accept". There exist levels of LN and usage of
+channels, that may not consider this a dire issue.
+
+OK, with the necessary background and context laid out, I'll now analyze
+the solution proposed within the greater xblock proposal, making a brief
+detour to briefly described another proposed solution.
+
+### Timestop
+
+A prior proposed solution to the failure scenario described above is
+what's known as "time stop". This was proposed by gmaxwell and was briefly
+touched upon in the original LN white paper. The mechanism of the
+time-denominated security parameter T in today's channel construction is
+enforced using OpCheckSequenceVerify. After broadcasting a commitment
+transaction, all outputs paying to the broadcaster of the commitment are
+encumbered with a relative time delay of T blocks, meaning they are unable
+to claim the funds until time T has elapsed. This time margin gives the
+honest party an opportunity to broadcast their punishment transaction
+iff, the broadcaster has broadcast a prior revoked state.
+
+The idea of time stomp is to introduce a special sequence-locks block
+height to the system. This block height would increase with each block
+along with the regular block height _unless_ the block reaches a certain
+sustained "high water mark". As an example, let's assume that when 3
+blocks in row are above 75% capacity, then the sequence-lock clock stops
+ticking.
+
+The effect of this change is to morph the security risk into simply a
+postponement of the judgment within the contract. With this, DoS attacks
+simply delay the (seemingly) inevitable punishment of the dishonest party
+within the contract.
+
+Aside from some informal discussions and the brief section within the
+original white paper, many details of this proposal are left
+underspecified. For example: how do miners signal to full nodes that the
+sequence-lock clock has stopped? What's the high water mark threshold? Can
+it go on indefinitely? Should this feature be opt-in?
+
+I think this proposal should be considered in tandem with the proposal
+within the xblock proposal as both have a few unanswered questions that
+need to be further explored.
+
+## Pre-Allocated Smart-Contract Dispute Area (PASDA)
+
+Aight, now to the LN enhancing proposal that's buried within the
+greater xblock proposal. Introducing some new terminology, I've been
+calling this a: Pre-Allocated Smart-contract Dispute Arena or (PASDA) for
+short. In a nut shell, the key idea of the proposal is this: transactions
+that mark the commencement of a smart contract who's security depends on
+availability of block space for disputes are able to _pre allocate_ a
+section of the block that will _always_ be _reserved_ for dispute
+transactions. With this, contracts is  _guaranteed_ space in blocks to
+handle disputes in the case that the contract breaks down. As an analogy:
+when you enter in a contract with a contractor to build your dream
+kitchen, you _also_ go to a court and reserve a 1-hour block in their
+scheduled to handle a dispute _just in case_ one arises. In the event of a
+peaceful resolution to the contract, the space is freed up.
+
+The description in the paper is a bit light on the details, so I'll say up
+front that I'm extrapolating w.r.t to some mechanisms of the construction.
+However, I've been involved in some private conversations where the idea
+was thrown around, so I think I have enough context to _maybe_ fill in
+some of the gaps in the proposal.
+
+I'll now restate the proposal. Smart contract transactions set a certain
+bit in their version number. This bit indicates that they wish to
+pre-allocate N bytes in _all_ further blocks _until_ the contract has been
+reserved. In the specific context of payment channels, this means that
+once a channel is open, until it has been closed, it _decreases_ the
+available block size for all other transactions. As this is a very
+aggressive proposal I think the authors took advantage of the new design
+space within xblocks to include something that may not be readily accepted
+as a modification to the rules of the main chain.
+
+The concrete parameters chosen in the proposal are: each channel opening
+transaction reserves 700-bytes within _each_ block in the chain until the
+transaction has been closed. This pre-allocation has the following
+constraint: a transaction can _only_ take advantage of this allocation iff
+it's spending the _first_ output of a smart-contract transaction (has a
+particular bit in the version set). This means that only dispute
+resolution transactions can utilize this space.
+
+The proposal references two allocations, which I've squinted very hard at
+for half a day in an attempt to parse the rules governing them, but so far
+I've been unable to glean any further details. From my squinting, I
+interpret that half of the allocation is reserved for spending the
+self-output of a transaction in the last 2016 blocks (two weeks) and the
+other half is dedicated to spending the first output of a commitment
+transaction in the _same_ block.
+
+I'm unsure as to why these allocations are separate, and why they aren't
+just combined into a single allocation.
+
+### Modification to LN Today
+
+This change would require a slight modification to LN as it's currently
+defined today. ATM, we use BIP 69 in order the inputs and outputs of a
+transaction. This is helpful as it lets us just send of signatures for new
+states as both sides already know the order of the inputs and outputs.
+With PASDA, we'd now need to omit the to-self-output (the output in my
+commitment transaction paying to myself my settled balance) from this
+ordering and _always_ make it the first output (txid:0).
+
+The second change is that this proposal puts a ceiling on on the CSV value
+allowed by any channel. All CSV delays _must-weeks otherwise, they're
+unable to take advantage of the arena.
+
+### Modifications to Bitcoin
+
+In order to implement this within Bitcoin, a third utxo set (regular
+block, xblock) must be maintained by all full nodes. Alternatively, this
+can just be a bit in the xblock utxo set. The implementation doesn't
+really matter. Before attempting to pack transactions into a block, the
+total allocation within the PASDA utxo-set must be summed up, and
+subtracted from the block size cap. Only transactions which validly spend
+from one of these UTXO's are able to take advantage of the new space in
+the block.
+
+## Analysis of PASDA
+
+OK, now for some analysis. First, let's assume that transactions which
+create PASDA UTXO's aren't subject to any additional constraints. If so,
+then this means that _any_ transaction can freely create PASDA UTXO's and
+_decrease_ the block size for _all_ transactions until the UTXO has been
+spent. If my interpretation is correct, then this introduces a new attack
+vector which allows _anyone_ to nearly permanently decrease the block size
+for all-time with next to zero additional cost. If this is correct, then
+it seems that miners have _zero_ incentive to _ever_ include a transaction
+that creates a PASDA output in their blocks as it robs them of future
+revenue and decreases the available capacity in the system, possibly
+permanently proportionally to _each_ unspent PASDA output in the chain.
+
+Alternatively, let's say the transactions which create PASDA outputs
+_must_ pay a disproportionately high fee in order to pay up front for
+their consumption of the size within all future blocks. If so, then a
+question that arises is: How large a fee? If the fee is very large, then
+the utilization of the smart-contract battling arena is only reserved to
+very high valued channels who can afford very high fees. This may be
+acceptable as if you have a $5 channel, then are you really at risk at
+such a large scale attack on Bitcoin just to steal $5 from you? It's
+important to note that many attacks on LN's contract resolution
+capabilities are also a direct attack on Bitcoin. However, in a world of
+dynamic fees, then it may be the case that the fee paid 6 months ago is
+now a measly fee an no longer covers the costs to miners (and even the
+entire system...).
+
+Finally, here's something I thought of earlier today that possibly
+mitigates the downside from the PoV of the miners (everyone else must
+still accept the costs of a permanent block size decrease). Let's say that
+in order to create a PASDA output fees are paid as normal. However, for
+_each_ subsequent block, the participants of the contract _must_ pay a
+tribute to miners to account for their loss in revenue due to the
+reduction in block size. Essentially, all PASDA outputs must pay _rent_
+for their pre-allocated space. If rent isn't paid sufficiently and on-time,
+then the pre-allocate arena space is revoked by miners. There're a few
+ways to construct this payment, but I'll leave that to follow up work as I
+just want to shed some light on the PASDA and its implications.
+
+## Conclusion
+
+I've attempted to fill in some gaps for y'all w.r.t exactly what the
+sub-proposal within the greater xblock proposal consists of and some
+possible implications. I'd like to note that I've taken the liberty of
+filling on some gaps within the sub-proposal as only a single section
+within the greater proposal has been allocated to it. PASDA itself could
+likely fill up an entirely distinct propsal by itself spanning several
+pages. To the authors of the proposal: if my interpretation is inaccurate
+please correct me as I'd also like to better understand the proposal. It's
+possible that everything I've said in this (now rather long) email is
+incorrect.
+
+If you've made it this far, thank you for taking the time out of your day
+to consider my thoughts. It's my hope that we can further analyze this
+sub-proposal in detail and discuss its construction as well as its
+implications on smart-contracts like payment channels on top of Bitcoin.
+
+PASDA purports to address one half of the systematic risks in LN by
+possibly eliminating the DoS vector attack against LN. However, the costs
+of PASDA are very high, and possibly prohibitively so. In my opinion, the
+second attack vector lies in the ability of miners to arbitrarily censor
+transactions spending a particular output. Fungibility enhancing
+techniques such as Committed Transactions may be a viable path forward to
+patch this attack vector.
+
+-- roasbeef
+
+
+On Tue, Apr 4, 2017 at 8:35 PM Johnson Lau via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> I feel particularly disappointed that while this BIP is 80% similar to my
+> proposal made 2 months ago (
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013490.html
+> ), Matt Corallo was only the person replied me. Also, this BIP seems
+> ignored the txid malleability of the resolution tx, as my major technical
+> critique of xblock design.
+>
+> But anyway, here I?m only making comments on the design. As I said in my
+> earlier post, I consider this more as an academic topic than something
+> really ready for production use.
+>
+> > This specification defines a method of increasing bitcoin transaction
+> throughput without altering any existing consensus rules.
+>
+> Softforks by definition tighten consensus rules
+>
+> > There has been great debate regarding other ways of increasing
+> transaction throughput, with no proposed consensus-layer solutions that
+> have proven themselves to be particularly safe.
+>
+> so the authors don?t consider segwit as a consensus-layer solution to
+> increase transaction throughput, or not think segwit is safe? But logically
+> speaking if segwit is not safe, this BIP could only be worse. OTOH, segwit
+> also obviously increases tx throughput, although it may not be as much as
+> some people wish to have.
+>
+> > This specification refines many of Lau's ideas, and offers a much
+> simpler method of tackling the value transfer issue, which, in Lau's
+> proposal, was solved with consensus-layer UTXO selection.
+>
+> The 2013 one is outdated. As the authors are not quoting it, not sure if
+> they read my January proposal
+>
+> >  extension block activation entails BIP141 activation.
+>
+> I think extension block in the proposed form actually breaks BIP141. It
+> may say it activates segregated witness as a general idea, but not a
+> specific proposal like BIP141
+>
+> > The merkle root is to be calculated as a merkle tree with all extension
+> block txids and wtxids as the leaves.
+>
+> It needs to be more specific here. How are they exactly arranged? I
+> suggest it uses a root of all txids, and a root of all wtxids, and combine
+> them as the commitment. The reason is to allow people to prune the witness
+> data, yet still able to serve the pruned tx to light wallets. If it makes
+> txid and wtxid as pairs, after witness pruning it still needs to store all
+> the wtxids or it can?t reconstruct the tree
+>
+> > Outputs signal to exit the extension block if the contained script is
+> either a minimally encoded P2PKH or P2SH script.
+>
+> This hits the biggest question I asked in my January post: do you want to
+> allow direct exit payment to legacy addresses? As a block reorg will almost
+> guarantee changing txid of the resolution tx, that will permanently
+> invalidate all the child txs based on the resolution tx. This is a
+> significant change to the current tx model. To fix this, you need to make
+> exit outputs unspendable for up to 100 blocks. Doing this, however, will
+> make legacy wallet users very confused as they do not anticipate funding
+> being locked up for a long period of time. So you can?t let the money sent
+> back to a legacy address directly, but sent to a new format address that
+> only recognized by new wallet, which understands the lock up requirement.
+> This way, however, introduces friction and some fungibility issues, and I?d
+> expect people using cross chain atomic swap to exchange bitcoin and xbitcoin
+>
+> To summarise, my questions are:
+> 1. Is it acceptable to have massive txid malleability and transaction
+> chain invalidation for every natural happening reorg?  Yes: the current
+> spec is ok; No: next question (I?d say no)
+> 2. Is locking up exit outputs the best way to deal with the problem? (I
+> tried really hard to find a better solution but failed)
+> 3. How long the lock-up period should be? Answer could be anywhere from 1
+> to 100
+> 4. With a lock-up period, should it allow direct exit to legacy address?
+> (I think it?s ok if the lock-up is short, like 1-2 block. But is that safe
+> enough?)
+> 5. Due to the fungibility issues, it may need a new name for the tokens in
+> the ext-block
+>
+> > Verification of transactions within the extension block shall enforce
+> all currently deployed softforks, along with an extra BIP141-like ruleset.
+>
+> I suggest to only allow push-only and OP_RETURN scriptPubKey in xblock.
+> Especially, you don?t want to replicate the sighash bug to xblock. Also,
+> requires scriptSig to be always empty
+>
+> > This leaves room for 7 future soft-fork upgrades to relax DoS limits.
+>
+> Why 7? There are 16 unused witness program versions
+>
+> > Witness script hash v0 shall be worth the number of accurately counted
+> sigops in the redeem script, multiplied by a factor of 8.
+>
+> There is a flaw here: witness script with no sigop will be counted as 0
+> and have a lot free space
+>
+> > every 73 bytes in the serialized witness vector is worth 1 additional
+> point.
+>
+> so 72 bytes is 1 point or 0 point? Maybe it should just scale everything
+> up by 64 or 128, and make 1 witness byte = 1 point . So it won?t provide
+> any ?free space? in the block.
+>
+> > Currently defined witness programs (v0) are each worth 8 points. Unknown
+> witness program outputs are worth 1 point. Any exiting output is always
+> worth 8 points.
+>
+> I?d suggest to have at least 16 points for each witness v0 output, so it
+> will make it always more expensive to create than spend UTXO. It may even
+> provide extra ?discount? if a tx has more input than output. The overall
+> objective is to limit the UTXO growth. The ext block should be mainly for
+> making transactions, not store of value (I?ll explain later)
+>
+> > Dust Threshold
+>
+> In general I think it?s ok, but I?d suggest a higher threshold like 5000
+> satoshi. It may also combine the threshold with the output witness version,
+> so unknown version may have a lower or no threshold. Alternatively, it may
+> start with a high threshold and leave a backdoor softfork to reduce it.
+>
+> > Deactivation
+>
+> It is a double-edged sword. While it is good for us to be able to discard
+> an unused chain, it may create really bad user experience and people may
+> even lose money. For example, people may have opened Lightning channels and
+> they will find it not possible to close the channel. So you need to make
+> sure people are not making time-locked tx for years, and require people to
+> refresh their channel regularly. And have big red warning when the
+> deactivation SF is locked in. Generally, xblock with deactivation should
+> never be used as long-term storage of value.
+>
+> ????
+> some general comments:
+>
+> 1. This BIP in current form is not compatible with BIP141. Since most
+> nodes are already upgraded to BIP141, this BIP must not be activated unless
+> BIP141 failed to activate. However, if the community really endorse the
+> idea of ext block, I see no reason why we couldn?t activate BIP141 first
+> (which could be done in 2 weeks), then work together to make ext block
+> possible. Ext block is more complicated than segwit. If it took dozens of
+> developers a whole year to release segwit, I don?t see how ext block could
+> become ready for production with less time and efforts.
+>
+> 2. Another reason to make this BIP compatible with BIP141 is we also need
+> malleability fix in the main chain. As the xblock has a deactivation
+> mechanism, it can?t be used for longterm value storage.
+>
+> 3. I think the size and cost limit of the xblock should be lower at the
+> beginning, and increases as we find it works smoothly. It could be a
+> predefined growth curve like BIP103, or a backdoor softfork. With the
+> current design, it leaves a massive space for miners to fill up with non-tx
+> garbage. Also, I?d also like to see a complete SPV fraud-proof solution
+> before the size grows bigger.
+>
+>
+> > On 5 Apr 2017, at 02:03, Luke Dashjr via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+> >
+> > Recently there has been some discussion of an apparent work-in-progress
+> > extension block proposal by Christopher Jeffrey, Joseph Poon, Fedor
+> Indutny,
+> > and Steven Pair. Since this hasn't been formally posted on the ML yet,
+> perhaps
+> > it is still in pre-draft stages and not quite ready for review, but in
+> light
+> > of public interest, I think it is appropriate to open it to discussion,
+> and
+> > toward this end, I have reviewed the current revision.
+> >
+> > For reference, the WIP proposal itself is here:
+> >    https://github.com/tothemoon-org/extension-blocks
+> >
+> > ==Overall analysis & comparison==
+> >
+> > This is a relatively complicated proposal, creating a lot of additional
+> > technical debt and complexity in comparison to both BIP 141 and
+> hardforks. It
+> > offers no actual benefits beyond BIP 141 or hardforks, so seems
+> irrational to
+> > consider at face value. In fact, it fits much better the inaccurate
+> criticisms
+> > made by segwit detractors against BIP 141.
+> >
+> > That being said, this proposal is very interesting in construction and
+> is for
+> > the most part technically sound. While ill-fit to merely making blocks
+> larger,
+> > it may be an ideal fit for fundamentally different block designs such as
+> > Rootstock and MimbleWimble in absence of decentralised non-integrated
+> > sidechains (extension blocks are fundamentally sidechains tied into
+> Bitcoin
+> > directly).
+> >
+> > ==Fundamental problem==
+> >
+> > Extension blocks are a risk of creating two classes of "full nodes":
+> those
+> > which verify the full block (and are therefore truly full nodes), and
+> those
+> > which only verify the "base" block. However, because the extension is
+> > consensus-critical, the latter are in fact not full nodes at all, and
+> are left
+> > insecure like pseudo-SPV (not even real SPV) nodes. This technical
+> nature is
+> > of course true of a softfork as well, but softforks are intentionally
+> designed
+> > such that all nodes are capable of trivially upgrading, and there is no
+> > expectation for anyone to run with pre-softfork rules.
+> >
+> > In general, hardforks can provide the same benefits of an extension
+> block, but
+> > without the false expectation and pointless complexity.
+> >
+> > ==Other problems & questions==
+> >
+> >> These outpoints may not be spent inside the mempool (they must be
+> redeemed
+> > from the next resolution txid in reality).
+> >
+> > This breaks the ability to spend unconfirmed funds in the same block (as
+> is
+> > required for CPFP).
+> >
+> > The extension block's transaction count is not cryptographically
+> committed-to
+> > anywhere. (This is an outstanding bug in Bitcoin today, but impractical
+> to
+> > exploit in practice; however, exploiting it in an extension block may
+> not be
+> > as impractical, and it should be fixed given the opportunity.)
+> >
+> >> The merkle root is to be calculated as a merkle tree with all extension
+> > block txids and wtxids as the leaves.
+> >
+> > This needs to elaborate how the merkle tree is constructed. Are all the
+> txids
+> > followed by all the wtxids (tx hashes)? Are they alternated? Are txid and
+> > wtxid trees built independently and merged at the tip?
+> >
+> >> Output script code aside from witness programs, p2pkh or p2sh is
+> considered
+> > invalid in extension blocks.
+> >
+> > Why? This prevents extblock users from sending to bare multisig or other
+> > various possible destinations. (While static address forms do not exist
+> for
+> > other types, they can all be used by the payment protocol.)
+> >
+> > Additionally, this forbids datacarrier (OP_RETURN), and forces spam to
+> create
+> > unprovably-unspendable UTXOs. Is that intentional?
+> >
+> >> The maximum extension size should be intentionally high.
+> >
+> > This has the same "attacks can do more damage than ordinary benefit"
+> issue as
+> > BIP141, but even more extreme since it is planned to be used for future
+> size
+> > increases.
+> >
+> >> Witness key hash v0 shall be worth 1 point, multiplied by a factor of 8.
+> >
+> > What is a "point"? What does it mean multiplied by a factor of 8? Why
+> not just
+> > say "8 points"?
+> >
+> >> Witness script hash v0 shall be worth the number of accurately counted
+> > sigops in the redeem script, multiplied by a factor of 8.
+> >
+> > Please define "accurately counted" here. Is this using BIP16 static
+> counting,
+> > or accurately counting sigops during execution?
+> >
+> >> To reduce the chance of having redeem scripts which simply allow for
+> garbage
+> > data in the witness vector, every 73 bytes in the serialized witness
+> vector is
+> > worth 1 additional point.
+> >
+> > Is the size rounded up or down? If down, 72-byte scripts will carry 0
+> > points...)
+> >
+> > ==Trivial & process==
+> >
+> > BIPs must be in MediaWiki format, not Markdown. They should be submitted
+> for
+> > discussion to the bitcoin-dev mailing list, not social media and news.
+> >
+> >> Layer: Consensus (soft-fork)
+> >
+> > Extension blocks are more of a hard-fork IMO.
+> >
+> >> License: Public Domain
+> >
+> > BIPs may not be "public domain" due to non-recognition in some
+> jurisdictions.
+> > Can you agree on one or more of these?
+> >
+> https://github.com/bitcoin/bips/blob/master/bip-0002.mediawiki#Recommended_licenses
+> >
+> >> ## Abstract
+> >>
+> >> This specification defines a method of increasing bitcoin transaction
+> > throughput without altering any existing consensus rules.
+> >
+> > This is inaccurate. Even softforks alter consensus rules.
+> >
+> >> ## Motivation
+> >>
+> >> Bitcoin retargetting ensures that the time in between mined blocks will
+> be
+> > roughly 10 minutes. It is not possible to change this rule. There has
+> been
+> > great debate regarding other ways of increasing transaction throughput,
+> with
+> > no proposed consensus-layer solutions that have proven themselves to be
+> > particularly safe.
+> >
+> > Block time seems entirely unrelated to this spec. Motivation is unclear.
+> >
+> >> Extension blocks leverage several features of BIP141, BIP143, and
+> BIP144 for
+> > transaction opt-in, serialization, verification, and network services,
+> and as
+> > such, extension block activation entails BIP141 activation.
+> >
+> > As stated in the next paragraph, the rules in BIP 141 are fundamentally
+> > incompatible with this one, so saying BIP 141 is activated is confusingly
+> > incorrect.
+> >
+> >> This specification should be considered an extension and modification to
+> > these BIPs. Extension blocks are _not_ compatible with BIP141 in its
+> current
+> > form, and will require a few minor additional rules.
+> >
+> > Extension blocks should be compatible with BIP 141, there doesn?t appear
+> to be
+> > any justification for not making them compatible.
+> >
+> >> This specification prescribes a way of fooling non-upgraded nodes into
+> > believing the existing UTXO set is still behaving as they would expect.
+> >
+> > The UTXO set behaves fundamentally different to old nodes with this
+> proposal,
+> > albeit in a mostly compatible manner.
+> >
+> >> Note that canonical blocks containing entering outputs MUST contain an
+> > extension block commitment (all zeroes if nothing is present in the
+> extension
+> > block).
+> >
+> > Please explain why in Rationale.
+> >
+> >> Coinbase outputs MUST NOT contain witness programs, as they cannot be
+> > sweeped by the resolution transaction due to previously existing
+> consensus
+> > rules.
+> >
+> > Seems like an annoying technical debt. I wonder if it can be avoided.
+> >
+> >> The genesis resolution transaction MAY also include a 1-100 byte
+> pushdata in
+> > the first input script, allowing the miner of the genesis resolution to
+> add a
+> > special message. The pushdata MUST be castable to a true boolean.
+> >
+> > Why? Unlike the coinbase, this seems to create additional technical debt
+> with
+> > no apparent purpose. Better to just have a consensus rule every input
+> must be
+> > null.
+> >
+> >> The resolution transaction's version MUST be set to the uint32 max
+> (`2^32 -
+> > 1`).
+> >
+> > Transaction versions are signed, so I assume this is actually simply -1.
+> > (While signed transaction versions seemed silly to me, using it for
+> special
+> > cases like this actually makes sense.)
+> >
+> >> ### Exiting the extension block
+> >
+> > Should specify that spending such an exit must use the resolution txid,
+> not
+> > the extblock's txid.
+> >
+> >> On the policy layer, transaction fees may be calculated by transaction
+> cost
+> > as well as additional size/legacy-sigops added to the canonical block
+> due to
+> > entering or exiting outputs.
+> >
+> > BIPs should not specify policy at all. Perhaps prefix "For the avoidance
+> of
+> > doubt:" to be clear that miners may perform any fee logic they like.
+> >
+> >> Transactions within the extended transaction vector MAY include a
+> witness
+> > vector using BIP141 transaction serialization.
+> >
+> > Since extblock transactions are all required to be segwit, why wouldn't
+> this
+> > be mandatory?
+> >
+> >> - BIP141's nested P2SH feature is no longer available, and no longer a
+> > consensus rule.
+> >
+> > Note this makes adoption slower: wallets cannot use the extblock until
+> the
+> > economy has updated to support segwit-native addresses.
+> >
+> >> To reduce the chance of having redeem scripts which simply allow for
+> garbage
+> > data in the witness vector, every 73 bytes in the serialized witness
+> vector is
+> > worth 1 additional point.
+> >
+> > Please explain why 73 bytes in Rationale.
+> >
+> >> This leaves room for 7 future soft-fork upgrades to relax DoS limits.
+> >
+> > How so? Please explain.
+> >
+> >> A consensus dust threshold is now enforced within the extension block.
+> >
+> > Why?
+> >
+> >> If the second highest transaction version bit (30th bit) is set to to
+> `1`
+> > within an extension block transaction, an extra 700-bytes is reserved on
+> the
+> > transaction space used up in the block.
+> >
+> > Why wouldn't users set this on all transactions?
+> >
+> >> `default_witness_commitment` has been renamed to
+> > `default_extension_commitment` and includes the extension block
+> commitment
+> > script.
+> >
+> > `default_witness_commitment` was never part of the GBT spec. At least
+> describe
+> > what this new key is.
+> >
+> >> - Deployment name: `extblk` (appears as `!extblk` in GBT).
+> >
+> > Should be just `extblk` if backward compatibility is supported (and
+> `!extblk`
+> > when not).
+> >
+> >> The "deactivation" deployment's start time...
+> >
+> > What about timeout? None? To continue the extension block, must it be
+> > deactivated and reactivated in parallel?
+> >
+> >
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170405/8d1710e5/attachment-0001.html>
