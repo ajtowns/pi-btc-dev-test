@@ -1,0 +1,80 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Wed, 5 Apr 2017 18:28:07 +0800
+Subject: [bitcoin-dev] A different approach to define and understand
+	softforks and hardforks
+Message-ID: <CB65A263-FFD5-4F9A-B14E-31F44EEC05B9@xbt.hk>
+
+Softforks and hardforks are usually defined in terms of block validity (BIP99): making valid blocks invalid is a softfork, making invalid blocks valid is a hardfork, and SFs are usually considered as less disruptive as it is considered to be ?opt-in?. However, as shown below this technical definition could be very misleading. Here I?m trying to redefine the terminology in terms of software upgrade necessity and difficulty.
+
+Softforks are defined as consensus rule changes that non-upgraded software will be able to function exactly as usual, as if the rule changes have never happened
+
+Hardforks are defined as consensus rule changes that non-upgraded software will cease to function or be severely handicapped
+
+SFs and HFs under this definitions is a continuum, which I call it ?hardfork-ness?. A pure softfork has no hardfork-ness.
+
+*Mining node
+
+Under this definitions, for miners, any trivial consensus rule changes is somewhat a hardfork, as miners can?t reliably use non-upgraded software to create blocks. However, there is still 3 levels of ?hardfork-ness?, for example:
+
+1. Those with lower hardfork-ness would be the SFs that miners do not need to upgrade their software at all. Instead, the minimum requirement is to setup a boarder node with latest rules to make sure they won?t mine on top of an invalid block. Examples include CSV and Segwit
+
+2. Some SFs have higher hardfork-ness, for example BIP65 and BIP66. The minimum actions needed include setting up a boarder node and change the block version. BIP34 has even higher hardfork-ness as more actions are needed to follow the new consensus.
+
+3. Anything else, ranging from simple HFs like BIP102 to complete HFs like spoonnet, or soft-hardfork like forcenet, have the highest hardfork-ness. In these cases, boarder nodes are completely useless. Miners have to upgrade their servers in order to stay with the consensus.
+
+*Non-mining full node
+
+Similarly, in terms of non-mining full node, as the main function is to fully-validate all applicable rules on the network, any consensus change is a hardfork for this particular function. However, a technical SF would have much lower hardfork-ness than a HF, as a border node is everything needed in a SF. Just consider a company has some difficult-to-upgrade software that depends on Bitcoin Core 0.8. Using a 0.13.1+ boarder node will make sure they will always follow the latest rules. In case of a HF, they have no choice but to upgrade the backend system.
+
+So we may use the costs of running a boarder node to further define the hardfork-ness of SFs, and it comes to the additional resources needed:
+
+1. Things like BIP34, 65, 66, and CSV involves trivial resources use so they have lowest hardfork-ness.
+
+2. Segwit is higher because of increased block size.
+
+3. Extension block has very high hardfork-ness as people may not have enough resources to run a boarder node.
+
+* Fully validating wallets
+
+In terms of the wallet function in full node, without considering the issues of validation, the hardfork-ness could be ranked as below:
+
+1. BIP34, 65, 66, CSV, segwit all have no hardfork-ness for wallets. Non-upgraded wallets will work exactly in the same way as before. Users won?t notice any change at all. (In some cases they may not see a new tx until it has 1 confirmation, but this is a mild issue and 0-conf is unsafe anyway)
+
+2. Extension block, as presented in my January post ( https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013490.html <https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013490.html> ), has higher hardfork-ness, as users of legacy wallets may find it difficult to receive payments from upgraded wallet. However, once they got paid, the user experience is same as before
+
+3. Another extension block proposal ( https://github.com/tothemoon-org/extension-blocks <https://github.com/tothemoon-org/extension-blocks> ) has very high hardfork-ness for wallets, as legacy wallets will frequently and suddenly find that incoming and outgoing txs becoming invalid, and need to sign the invalidated txs again, even no one is trying to double spend.
+
+4. Hardfork rule changes have highest hardfork-ness for full node wallets
+
+I?ll explain the issues with extension block in a separate post in details
+
+* Real SPV wallet
+
+The SPV wallets as proposed by Satoshi should have the ability to fully validate the rules when needed, so they could be somehow seen as fully validating wallets. So far, real SPV wallet is just vapourware.
+
+* Fake SPV wallet, aka light wallet
+
+All the so-called SPV wallets we have today are fake SPV according to whitepaper definition. Since they validate nothing, the hardfork-ness profile is very different:
+
+1. BIP34, 65, 66, CSV, segwit has no hardfork-ness for light wallets. Block size HF proposals (BIP10x) and Bitcoin Unlimited also have no hardfork-ness (superficially, but not philosophically). Along the same line, even an inflation hardfork has no hardfork-ness for light wallets.
+
+2. Extension block has the same kind of hardfork-ness issue as I mentioned.
+
+3. HFs that deliberately breaks light wallets, such as spoonnet, is a complete hardfork.
+
+While some people try to leverage weakness of light wallets, the inability to validate any important rules like block size, double spending, and inflation is a serious vulnerability.
+
+===========
+
+Before I finish, I?d also like to analyse some other interesting cases.
+
+1. Soft-hardfork: which requires miners to mine empty blocks with 0 reward, and put the tx merkle tree in the legacy coinbase (e.g. https://github.com/luke-jr/bips/blob/bip-mmhf/bip-mmhf.mediawiki <https://github.com/luke-jr/bips/blob/bip-mmhf/bip-mmhf.mediawiki> ). This allows most hardfork-ing changes including block size and inflation. In terms of block validity this is a softfork. But with the definition I presented, soft-hardforks are clearly hardforks for every practical purposes.
+
+2. On-chain KYC, blacklist, account freezing: technically softforks, but all are very disruptive hardforks in terms of user experience.
+
+3. Lightning network and side chains are not consensus rule changes, and they could provide new features without any hardfork-ness.
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170405/9085157d/attachment-0001.html>
