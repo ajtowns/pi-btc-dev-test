@@ -1,0 +1,48 @@
+From: j@toom.im (Jonathan Toomim)
+Date: Wed, 5 Apr 2017 19:10:27 -0700
+Subject: [bitcoin-dev] BIP proposal: Inhibiting a covert attack on the
+	Bitcoin POW function
+In-Reply-To: <CAAS2fgR84898xD0nyq7ykJnB7qkdoCJYnFg6z5WZEUu0+-=mMA@mail.gmail.com>
+References: <CAAS2fgR84898xD0nyq7ykJnB7qkdoCJYnFg6z5WZEUu0+-=mMA@mail.gmail.com>
+Message-ID: <A0F870EB-AAFF-4730-9B88-6C2600981EAB@toom.im>
+
+Just checking to see if I understand this optimization correctly. In order to find merkle roots in which the rightmost 32 bits are identical (i.e. partial hash collisions), we want to compute as many merkle root hashes as quickly as possible. The fastest way to do this is to take the top level of the Merkle tree, and to collect a set of left branches and right branches which can be independently manipulated. While the left branch can easily be manipulated by changing the extranonce in the coinbase transaction, the right branch would need to be modified by changing one of the transactions in the right branch or by changing the number of transactions in the right branch. Correct so far?
+
+With the stratum mining protocol, the server (the pool) includes enough information for the coinbase transaction to be modified by stratum client (the miner), but it does not include any information about the right side of the merkle tree except for the top-level hash. Stratum also does not allow the client to supply any modifications to the merkle tree (including the right side) back to the stratum server. This means that any implementation of this final optimization would need to be using a protocol other than stratum, like getblocktemplate, correct?
+
+I think it would be helpful for the discussion to know if this optimization were currently being used or not, and if so, how widely.
+
+All of the consumer-grade hardware that I have seen defaults to stratum-only operation, and I have not seen or heard of any hardware available that can run more efficiently using getblocktemplate. As the current pool infrastructure uses stratum exclusively, this optimization would require significant retooling among pools, and probably a redesign of their core algorithms to help discover and share these partial collisions more frequently. It's possible that some large private farms have deployed a special system for solo mining that uses this optimization, of course, but it's also possible that there's a teapot in space somewhere between the orbit of Earth and Mars.
+
+Do you know of any ways to perform this optimization via stratum? If not, do you have any evidence that this optimization is actually being used by private solo mining farms? Or is this discussion purely about preventing this optimization from being used in the future?
+
+-jtoomim
+
+> On Apr 5, 2017, at 2:37 PM, Gregory Maxwell via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> An obvious way to generate different candidates is to grind the
+> coinbase extra-nonce but for non-empty blocks each attempt will
+> require 13 or so additional sha2 runs which is very inefficient.
+> 
+> This inefficiency can be avoided by computing a sqrt number of
+> candidates of the left side of the hash tree (e.g. using extra
+> nonce grinding) then an additional sqrt number of candidates of
+> the right  side of the tree using transaction permutation or
+> substitution of a small number of transactions.  All combinations
+> of the left and right side are then combined with only a single
+> hashing operation virtually eliminating all tree related
+> overhead.
+> 
+> With this final optimization finding a 4-way collision with a
+> moderate amount of memory requires ~2^24 hashing operations
+> instead of the >2^28 operations that would be require for
+> extra-nonce  grinding which would substantially erode the
+> benefit of the attack.
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 496 bytes
+Desc: Message signed with OpenPGP using GPGMail
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170405/591656bf/attachment.sig>
