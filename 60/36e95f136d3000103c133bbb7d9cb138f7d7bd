@@ -1,0 +1,82 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Thu, 6 Apr 2017 00:17:17 +0000
+Subject: [bitcoin-dev] BIP proposal: Inhibiting a covert attack on the
+ Bitcoin POW function
+In-Reply-To: <1491433518.2765667.935644008.2B153D86@webmail.messagingengine.com>
+References: <CAAS2fgR84898xD0nyq7ykJnB7qkdoCJYnFg6z5WZEUu0+-=mMA@mail.gmail.com>
+	<1491433518.2765667.935644008.2B153D86@webmail.messagingengine.com>
+Message-ID: <CAAS2fgS9dOxJDU0WU87aSJhvYbYu60kVnO6acE0G7QJFw4AQLQ@mail.gmail.com>
+
+On Wed, Apr 5, 2017 at 11:05 PM, theymos via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> This seems to be a serious security problem.  Would it be possible to have
+> a flag-day softfork included in Bitcoin Core as soon as 0.14.1? I think that a trigger
+> 3-6 months from release should be sufficient for enough of the economy to upgrade,
+> given the severity of the issue.
+
+Not 0.14.1 because that is in RC already and will hopefully be out in a week.
+
+I think the speed of adoption depends a lot of the level of support
+from the community. I don't believe there are any technical hurdles to
+implementing this relatively quickly (and I specifically propose using
+the users choice of the segwit commitment or a modified form in order
+to lower the technical complexity and risk).
+
+> BIP 141 says that the the commitment is optional if there are no SegWit transactions in
+> the block,  so will today's SegWit-ready miners always produce it even when optional
+> according to BIP 141, as required by this softfork?
+
+This is the default behavior as of 0.13.2, but I haven't gone out to
+measure this which is why the backwards compatibility section of the
+BIP isn't written yet.
+
+
+While I'm posting, I've had a dozen off-list emails that presented me
+with some FAQ:
+
+Many people asked what other protocol upgrades beyond segwit could run
+into the same incompatibility.
+
+Many proposed improvements to Bitcoin require additional
+transaction-dependent commitment data.
+
+Examples include:
+
+(1) Segwit.
+(2) UTXO commitments. (non-delayed, at least)
+(3) Committed Bloom filters
+(4) Committed address indexes
+(5) STXO commitments (non-delayed).
+(6) Weak blocks
+(7) Most kinds of fraud proofs
+-- to state a few.
+
+Unfortunately, putting *any* commitment to data dependent on the right
+hand side of the hash tree in the left hand side (e.g. coinbase) means
+a massive increase in the computation required for covert boosting,
+because it means you can't use the left+right side combinations to
+eliminate most of the hashing.
+
+It's plausible, in fact, that this extra computation could completely
+nullify the ASICBOOST advantage-- though this depends a lot on the
+fine details of the implementation.
+
+This proposal does not itself propose nullifying ASICBOOST entirely,
+it proposes severely handicapping the covert form of it, and
+eliminating the differential advantage for boosting miners related to
+the use of transaction-dependent commitments.
+
+Basically there are two completely separate concerns: that boosting
+can produce a monopoly advantage which could be severely harmful to
+the ecosystem, and that the efficient implementation of _covert_
+boosting can severely harm many useful protocol improvements.   My
+proposal only addresses the second concern, by (I believe) completely
+leveling the playing field so that opposing commitments will not break
+boosting any worse, and by making covert boosting less appealing in
+general.
+
+Use of the segwit-style commitment even in non-segwit blocks is sufficient
+because the segwit commitment commits to all  transactions  (except
+the coinbase) and not just segwit ones.
+(It was designed this way so that lite clients that needed witness
+data could work with just one tree).
