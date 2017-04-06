@@ -1,0 +1,117 @@
+From: jaredr26@gmail.com (Jared Lee Richardson)
+Date: Thu, 6 Apr 2017 13:21:12 -0700
+Subject: [bitcoin-dev] BIP proposal: Inhibiting a covert attack on the
+ Bitcoin POW function
+In-Reply-To: <A0F870EB-AAFF-4730-9B88-6C2600981EAB@toom.im>
+References: <CAAS2fgR84898xD0nyq7ykJnB7qkdoCJYnFg6z5WZEUu0+-=mMA@mail.gmail.com>
+	<A0F870EB-AAFF-4730-9B88-6C2600981EAB@toom.im>
+Message-ID: <CAD1TkXvbzpF4-KQue+X-gPRuO6wywWfBXig2miUfueDUWBH-Sw@mail.gmail.com>
+
+> Just checking to see if I understand this optimization correctly. In order to find merkle roots in which the rightmost 32 bits are identical (i.e. partial hash collisions), we want to compute as many merkle root hashes as quickly as possible. The fastest way to do this is to take the top level of the Merkle tree, and to collect a set of left branches and right branches which can be independently manipulated. While the left branch can easily be manipulated by changing the extranonce in the coinbase transaction, the right branch would need to be modified by changing one of the transactions in the right branch or by changing the number of transactions in the right branch. Correct so far?
+
+Envisioning it in my head and trying to read the white paper, it
+sounds like the process for a non-stratum mining farm would be this:
+
+On primary server with sufficient memory, calculate ~4k-6k valid
+left-side merkle tree roots and ~4k-6k right-side merkle tree roots.
+Then try hashing every left-side option with every right-side option.
+I'm not sure if modern asic chips are sufficiently generic that they
+can also sha256-double-hash those combinations, but it seems logical
+to assume that the permutations of those hashes could be computed on
+an asic, perhaps via additional hardware installed on the server.
+Hashing these is easier if there are fewer steps, i.e., fewer
+transactions.
+
+Out of this will come N(2-16 at most, higher not needed) colliding
+merkle roots where the last 4 bytes are identical.  Those N different
+merkle combinations are what can be used on the actual mining devices,
+and those are all that needs to be sent for the optimization to work.
+
+On the actual mining device, what is done is to take the identical
+(collision) right 4 bytes of the merkle root and hash it with one
+nonce value.  Since you have N(assume 8) inputs that all work with the
+same value, calculating this single hash of once nonce is equivalent
+to calculating 8 nonce hashes during the normal process, and this step
+is 1/4th of the normal hashing process.  This hash(or mid-value?) is
+then sent to 8 different cores which complete the remaining 3 hash
+steps with each given collision value.  Then you increment the nonce
+once and start over.
+
+This works out to a savings of (assuming compressor and expander steps
+of SHA2 require computationally the same amount of time) 25% * (7 / 8)
+where N=8.
+
+Greg, or someone else, can you confirm that this is the right
+understanding of the approach?
+
+> I have not seen or heard of any hardware available that can run more efficiently using getblocktemplate.
+
+As above, it doesn't require such a massive change.  They just need to
+retrieve N different sets of work from the central server instead of 1
+set of work.  The central server itself might need substantial
+bandwidth if it farmed out the merkle-root hashing computational space
+to miners.  Greg, is that what you're assuming they are doing?  Now
+that I think about it, even that situation could be improved.  Suppose
+you have N miners who can do either a merkle-tree combinatoric
+double-sha or a block-nonce double-sha.  The central server calculates
+the left and right merkle treeset to be combined and also assigns each
+miner each a unique workspace within those combinatorics.  The miners
+compute each hash in their workspace and shard the results within
+themselves according to the last 16 bits.  Each miner then needs only
+the memory for 1/Nth of the workspace, and can report back to the
+central server only the highest number of collisions it has found
+until the central server is satisfied and returns the miners to normal
+(collided) mining.
+
+Seems quite workable in a large mining farm to me, and would allow the
+collisions to be found very, very quickly.
+
+That said, it strikes me that there may be some statistical method by
+which we can isolate which pools seem to have used this approach
+against the background noise of other pools.  Hmm...
+
+Jared
+
+
+
+On Wed, Apr 5, 2017 at 7:10 PM, Jonathan Toomim via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Just checking to see if I understand this optimization correctly. In order to find merkle roots in which the rightmost 32 bits are identical (i.e. partial hash collisions), we want to compute as many merkle root hashes as quickly as possible. The fastest way to do this is to take the top level of the Merkle tree, and to collect a set of left branches and right branches which can be independently manipulated. While the left branch can easily be manipulated by changing the extranonce in the coinbase transaction, the right branch would need to be modified by changing one of the transactions in the right branch or by changing the number of transactions in the right branch. Correct so far?
+>
+> With the stratum mining protocol, the server (the pool) includes enough information for the coinbase transaction to be modified by stratum client (the miner), but it does not include any information about the right side of the merkle tree except for the top-level hash. Stratum also does not allow the client to supply any modifications to the merkle tree (including the right side) back to the stratum server. This means that any implementation of this final optimization would need to be using a protocol other than stratum, like getblocktemplate, correct?
+>
+> I think it would be helpful for the discussion to know if this optimization were currently being used or not, and if so, how widely.
+>
+> All of the consumer-grade hardware that I have seen defaults to stratum-only operation, and I have not seen or heard of any hardware available that can run more efficiently using getblocktemplate. As the current pool infrastructure uses stratum exclusively, this optimization would require significant retooling among pools, and probably a redesign of their core algorithms to help discover and share these partial collisions more frequently. It's possible that some large private farms have deployed a special system for solo mining that uses this optimization, of course, but it's also possible that there's a teapot in space somewhere between the orbit of Earth and Mars.
+>
+> Do you know of any ways to perform this optimization via stratum? If not, do you have any evidence that this optimization is actually being used by private solo mining farms? Or is this discussion purely about preventing this optimization from being used in the future?
+>
+> -jtoomim
+>
+>> On Apr 5, 2017, at 2:37 PM, Gregory Maxwell via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>
+>> An obvious way to generate different candidates is to grind the
+>> coinbase extra-nonce but for non-empty blocks each attempt will
+>> require 13 or so additional sha2 runs which is very inefficient.
+>>
+>> This inefficiency can be avoided by computing a sqrt number of
+>> candidates of the left side of the hash tree (e.g. using extra
+>> nonce grinding) then an additional sqrt number of candidates of
+>> the right  side of the tree using transaction permutation or
+>> substitution of a small number of transactions.  All combinations
+>> of the left and right side are then combined with only a single
+>> hashing operation virtually eliminating all tree related
+>> overhead.
+>>
+>> With this final optimization finding a 4-way collision with a
+>> moderate amount of memory requires ~2^24 hashing operations
+>> instead of the >2^28 operations that would be require for
+>> extra-nonce  grinding which would substantially erode the
+>> benefit of the attack.
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
