@@ -1,0 +1,87 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Thu, 6 Apr 2017 16:38:23 -0700
+Subject: [bitcoin-dev] Using a storage engine without UTXO-index
+In-Reply-To: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+References: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+Message-ID: <eebc06a4-5ab8-46a8-2f50-a472cb57a775@voskuil.org>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+On 04/06/2017 03:12 PM, Tomas via bitcoin-dev wrote:
+
+Hi Tomas,
+
+> I have been working on a bitcoin implementation that uses a
+> different approach to indexing for verifying the order of
+> transactions. Instead of using an index of unspent outputs, double
+> spends are verified by using a spend-tree where spends are scanned
+> against spent outputs instead of unspent outputs.
+
+This is the approach that genjix used in libbitcoin version2. With the
+exception of de-linking (not deleted) in the case of reorgs, the
+entire store is append only, implemented in a small set of memory
+mapped files. The downsides to the approach are:
+
+(1) higher than necessary storage space requirement due to storing the
+indexing data required for correlate the spends, and
+
+(2) higher than necessary validation complexity and cost in terms of
+computing the spent-ness (including spender height) of an output.
+
+His implementation used a hash table, so performance-wise it did quite
+well and would theoretically outperform a tree, O(1) vs. O(log2(N)).
+
+> This allows for much better concurrency, as not only blocks, but
+> also individual inputs can be verified fully in parallel.
+
+I was successful in parallelizing input validation (across the inputs
+of an unconfirmed tx and across the set of all inputs in a block)
+using the v2 store. However, it is not the case that the spends
+approach is necessary for concurrency.
+
+To resolve the above two problems the version3 store does not use a
+spends table/index. Nor does it store any table of UTXOs. Yet
+validation is highly parallelized. Instead of additional indexes it
+uses the tx hash table, augmented with 32 bits per output for spender
+height. So there is a O(1) cost of finding the tx and a O(N) cost of
+finding the spender height where N is the number of outputs in the tx.
+But because the number of outputs in a tx is bounded (by block size)
+this is constant time in the number of transactions.
+
+This works out much faster than the spends table, and without the
+storage cost or complexity disadvantages. It also scales with
+available hardware, as the memory mapped files become in-memory hash
+tables. For low memory machines we found it was important to implement
+an opaque UTXO cache to limit paging, but for higher end systems zero
+cache is optimal.
+
+> I am sharing this not only to ask for your feedback, but also to
+> call for a clear separation of protocol and implementations: As
+> this solution, reversing the costs of outputs and inputs, seems to
+> have excellent performance characteristics (as shown in the test
+> results), updates to the protocol addressing the UTXO growth, might
+> not be worth considering *protocol improvements* and it might be
+> best to address these concerns as implementation details.
+
+I don't follow this part, maybe you could clarify. A spends index
+grows with the size of the spend set (forever) as it cannot be pruned,
+which certainly exceeds the size of the UTXO set (unless nothing is
+spent). The advantage is that you don't have to keep rewriting the
+store when you use a spends set (because the store can be append only).
+
+Feel free to message me if you'd like to discuss in more detail, or to
+continue on the libbitcoin mailing list (copied).
+
+e
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2.0.22 (GNU/Linux)
+
+iQEcBAEBCAAGBQJY5tFpAAoJEDzYwH8LXOFOcMgH/2mw5iOvUYNwvZ2z0KKTSUOA
+Pd8d5mKoWvd94QxhQ+RyTbkEkMhHl75+zcBgRsfUTtZlBIe/Z0+OgVIN6ibEw+WD
+w7k3HqgQi9gLgydEelxTAX+z3dJ24n4kCCdKAmZbBuK+Yr/7AViugbEqYemKepku
+pRWZZS74MUvrYesc0xPn4Ao3DTzMjjY0K2mkuqV8jlwdfZjlAQX9pTx+iSCuMhkd
+HJ8w7s8QnjVnUeOlLe29mZwaFJPyOTLJMqgDE6s2sXacAy5QQbVCatygvDQ8A/wC
+ktBnKPFb2lGX3bGKu/KwABegBy/hyec+NP0wFR+0MVivCwTK1+SjeHu5MNOSVlM=
+=tfVj
+-----END PGP SIGNATURE-----
