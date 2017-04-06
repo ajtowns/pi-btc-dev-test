@@ -1,0 +1,78 @@
+From: shaolinfry@protonmail.ch (shaolinfry)
+Date: Thu, 06 Apr 2017 17:25:02 -0400
+Subject: [bitcoin-dev] Draft BIP: Version bits extension with guaranteed
+	lock-in
+Message-ID: <oO9hdZXHMpEDF84P5wXwMd0JsIeRqcDGVDHjgdNWxq81WpkqCIqrdMgEHmWAmM4a6i1cxDrUkgTPp_kx7N5CZxqwWP_5MtZ5DTAF2VorCp4=@protonmail.ch>
+
+After some thought I managed to simplify the original uaversionbits proposal introducing a simple boolean flag to guarantee lock-in of a BIP9 deployment by the timeout. This seems to be the simplest form combining optional flag day activation with BIP9. This brings the best of both worlds allowing user activated soft forks that can be activated early by the hash power.
+
+Specification: https://github.com/shaolinfry/bips/blob/bip-uavb/bip-uaversionbits.mediawiki
+Previous discussion: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-February/013643.html
+
+<pre>
+BIP: ?
+Title: Version bits extension with guaranteed lock-in
+Author: Shaolin Fry <shaolinfry at protonmail.ch>
+Comments-Summary: No comments yet.
+Comments-URI: https://github.com/bitcoin/bips/wiki/Comments:BIP-????
+Status: Draft
+Type: Informational
+Created: 2017-02-01
+License: BSD-3-Clause
+CC0-1.0
+</pre>
+
+==Abstract==
+
+This document specifies an extension to BIP9 that introduces an additional activation parameter to guarantee activation of backward-compatible changes (further called "soft forks").
+
+==Motivation==
+
+BIP9 introduced a mechanism for doing parallel soft forking deployments based on repurposing the block nVersion field. Activation is dependent on near unanimous hashrate signalling which may be impractical and is also subject to veto by a small minority of non-signalling hashrate.
+
+This specification provides a way to optionally guarantee lock-in at the end of the BIP9 timeout, and therefore activation.
+
+==Specification==
+
+This specification adds a new per-chain deployment parameter to the existing BIP9 specification as follows:
+
+# The '''lockinontimeout''' boolean if set to true, will transition state to LOCKED_IN at timeout if not already ACTIVE.
+
+===State transitions===
+
+<img src="bip-uaversionbits/states.png" align="middle"></img>
+
+The state transition workflow is exactly the same as in BIP9 with an additional rule: During the STARTED state if the '''lockinontimeout''' is set to true, the state will transition to LOCKED_IN when '''timeout''' is reached.
+
+case STARTED:
+// BIP9 specification follows
+if (GetMedianTimePast(block.parent) >= timeout) {
+return (fLockInOnTimeout == true) ? THRESHOLD_LOCKED_IN : THRESHOLD_FAILED
+}
+int count = 0;
+walk = block;
+for (i = 0; i < 2016; i++) {
+walk = walk.parent;
+if (walk.nVersion & 0xE0000000 == 0x20000000 && (walk.nVersion >> bit) & 1 == 1) {
+count++;
+}
+}
+if (count >= threshold) {
+return LOCKED_IN;
+}
+return STARTED;
+
+=== Reference implementation ===
+
+https://github.com/bitcoin/bitcoin/compare/master...shaolinfry:bip-uaversionbits
+
+==Deployments==
+
+A living list of deployment proposals can be found [[bip-0009/assignments.mediawiki|here]].
+
+==Copyright==
+
+This document is dual licensed as BSD 3-clause, and Creative Commons CC0 1.0 Universal.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170406/f7781921/attachment-0001.html>
