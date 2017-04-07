@@ -1,0 +1,68 @@
+From: tomas@tomasvdw.nl (Tomas)
+Date: Fri, 07 Apr 2017 23:14:51 +0200
+Subject: [bitcoin-dev] Using a storage engine without UTXO-index
+In-Reply-To: <CA+KqGko0cDY29bhznMxJJ7yAUTuB6GaDDNGBRwzssJUxM_53xQ@mail.gmail.com>
+References: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+	<CAAS2fgTJ8xOj8zCmBq1LN9OdMV-tDfSjVUPhLpO98cR1w-QAoA@mail.gmail.com>
+	<CA+KqGko0cDY29bhznMxJJ7yAUTuB6GaDDNGBRwzssJUxM_53xQ@mail.gmail.com>
+Message-ID: <1491599691.1245876.937920664.6EBA20DC@webmail.messagingengine.com>
+
+Answering both,
+
+
+
+On Fri, Apr 7, 2017 at 11:18 AM, Gregory Maxwell via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> 
+
+>> I'm still lost on this-- AFAICT your proposals long term resource
+
+>> requirements are directly proportional to the amount of
+>> unspent output
+>> data, which grows over time at some fraction of the total transaction
+>> volume (plus the rate of spending which is more or less a constant).
+>> 
+
+>> Can you help out my understanding here?
+
+>> 
+
+
+
+On Fri, Apr 7, 2017, at 20:39, Bram Cohen wrote:
+
+> Expanding on this question a bit, it's optimized for parallel access,
+> but hard drive access isn't parallel and memory accesses are very
+> fast, so shouldn't the target of optimization be about cramming as
+> much as possible in memory and minimizing disk accesses?
+
+
+The long term *minimal disk storage* requirement, can obviously not be
+less then all the unspent outputs. Minimal disk requirements is not
+something bitcrust attempts to address.
+
+
+ The storage that is accessed during peak load (block validation with
+ pre-synced transactions), is minimized as this only needs the
+ transaction index (to lookup ptrs from hashes), the tip of the spend-
+ tree and the tip of the spend-index (together to check double
+ spents/spending non-existing outputs). These not only easily fit in
+ RAM, but are accessed in a cache efficient way. *These* only grow with
+ inputs as the spend tree contains one record per input referencing the
+ output being spent.
+
+
+Script validation is also not something bitcrust *directly* addresses;
+it uses libbitcoinconsensus for the actual validation and lookups to
+outputs are mostly similar. They are kept fast by trusting the OS on MRU
+caching of transaction-outputs; I don't think that for this part the
+UTXO index has much drawbacks,. Bitcrust seems to have a small advantage
+due to the awesomeness of Rayon's parallelization and the lock-free data
+structures, but a disadvantage in that keeping all spent outputs
+decreases spatial locality of reference. Script validation is not the
+innovative part.
+
+
+Tomas
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170407/f7db76c7/attachment.html>
