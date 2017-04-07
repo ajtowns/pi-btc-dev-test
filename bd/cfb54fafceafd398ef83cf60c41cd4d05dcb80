@@ -1,0 +1,57 @@
+From: tomas@tomasvdw.nl (Tomas)
+Date: Fri, 07 Apr 2017 03:29:07 +0200
+Subject: [bitcoin-dev] Using a storage engine without UTXO-index
+In-Reply-To: <CAAS2fgR0t=QG6HfhF1MKW3k_4mjv7rjWE4T3-wdiL2fB6TVV4Q@mail.gmail.com>
+References: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+	<CAAS2fgTEMCkDWdhCWt1EsUrnt3+Z_8m+Y1PTsff5Rc0CBnCKWQ@mail.gmail.com>
+	<1491526132.723002.936945760.06A943C6@webmail.messagingengine.com>
+	<CAAS2fgR0t=QG6HfhF1MKW3k_4mjv7rjWE4T3-wdiL2fB6TVV4Q@mail.gmail.com>
+Message-ID: <1491528547.734012.936970328.62366FA5@webmail.messagingengine.com>
+
+
+
+On Fri, Apr 7, 2017, at 03:09, Gregory Maxwell wrote:
+> 
+> How do you deal with validity rules changing based on block height?
+
+I expected that one :). Just like the 100 blocks coinbase rule, changes
+by softforks need to be added as metadata to the transaction-index, but
+this is not yet in place.
+
+As for the script validation itself using libbitcoinconsensus, this is a
+bit hairy as this expects the rules to be known. Luckily, simply
+gradually retrying using "lower" rules won't hurt performance, as
+transaction that mismatch newer rules are rare.
+
+Generally, bitcrust would appreciate a "is valid with X rules" instead 
+of a "validate with X rules" approach.
+
+
+> So it sounds like to work the software still needs an analog of a
+> (U)TXO database? I am confused by the earlier comments about thinking
+> the the resource consumption of the (U)TXO database is not a
+> consideration in your design.
+
+No, but transactional access is. Bitcrust just uses a
+*transaction-index*, where outputs can be looked up regardless of being
+spent. As the concept of being "spent" depends on the branch, script
+validation ignores this and simply looks up the outputs.
+
+Transactions are split in two parts for better locality of reference
+when accessing outputs.
+
+The transaction index only looks similar to an "UTXO-index" after full
+pruning.
+
+> If you get a transaction claiming to spend 0xDEADBEEFDEADBEEF, an
+> output that never existed how does your spent index reject this spend
+
+The spend-tree is scanned until either DEADBEAF is found (=ERR double
+spent),  the transaction of DEADBEEF is found (=all ok!), or the start
+of the chain is reached (=ERR spending unknown output!)
+
+To prevent actually having to scan to genesis, the spent-index "catches"
+the search after a few blocks and performs the same lookup (positive for
+tx, negative for output) on a simple bit index.
+
+
