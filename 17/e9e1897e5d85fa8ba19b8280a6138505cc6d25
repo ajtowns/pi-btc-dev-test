@@ -1,0 +1,106 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Fri, 7 Apr 2017 12:55:58 -0700
+Subject: [bitcoin-dev] Using a storage engine without UTXO-index
+In-Reply-To: <CA+KqGko0cDY29bhznMxJJ7yAUTuB6GaDDNGBRwzssJUxM_53xQ@mail.gmail.com>
+References: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+	<CAAS2fgTJ8xOj8zCmBq1LN9OdMV-tDfSjVUPhLpO98cR1w-QAoA@mail.gmail.com>
+	<CA+KqGko0cDY29bhznMxJJ7yAUTuB6GaDDNGBRwzssJUxM_53xQ@mail.gmail.com>
+Message-ID: <cb45ab6e-f3d0-85f2-4b41-8c7bc2bdf399@voskuil.org>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+On 04/07/2017 11:39 AM, Bram Cohen via bitcoin-dev wrote:
+> Expanding on this question a bit, it's optimized for parallel
+> access, but hard drive access isn't parallel and memory accesses
+> are very fast, so shouldn't the target of optimization be about
+> cramming as much as possible in memory and minimizing disk
+> accesses?
+
+While this may seem to be the case it is not generally optimal. The
+question is overly broad as one may or may not be optimizing for any
+combination of:
+
+startup time (first usability)
+warm-up time (priming)
+shutdown time (flush)
+fault tolerance (hard shutdown survivability)
+top block validation (read speed)
+full chain validation (read/write speed)
+RAM consumption
+Disk consumption
+Query response
+Servers (big RAM)
+Desktops (small RAM)
+Mining (fast validation)
+Wallets (background performance)
+SSD vs. HDD
+
+But even limiting the question to input validation, all of these
+considerations (at least) are present.
+
+Ideally one wants the simplest implementation that is optimal under
+all considerations. While this may be a unicorn, it is possible to
+achieve a simple implementation (relative to alternatives) that allows
+for the trade-offs necessary to be managed through configuration (by
+the user and/or implementation).
+
+Shoving the entire data set into RAM has the obvious problem of
+limited RAM. Eventually the OS will be paging more of the data back to
+disk (as virtual RAM). In other words this does not scale, as a change
+in hardware disproportionately impacts performance. Ideally one wants
+the trade between "disk" and "memory" to be made by the underlying
+platform, as that is its purpose. Creating one data structure for disk
+and another for memory not only increases complexity, but denies the
+platform visibility into this trade-off. As such the platform
+eventually ends up working directly against the optimization.
+
+An on-disk structure that is not mapped into memory by the application
+allows the operating system to maintain as much or as little state in
+memory as it considers optimal, given the other tasks that the user
+has given it. In the case of memory mapped files (which are optimized
+by all operating systems as central to their virtual memory systems)
+it is possible for everything from zero to the full store to be memory
+resident.
+
+Optimization for lower memory platforms then becomes a process of
+reducing the need for paging. This is the purpose of a cache. The seam
+between disk and memory can be filled quite nicely by a small amount
+of cache. On high RAM systems any cache is actually a de-optimization
+but on low RAM systems it can prevent excessive paging. This is
+directly analogous to a CPU cache. There are clear optimal points in
+terms of cache size, and the implementation and management of such a
+cache can and should be internal to a store. Of course a cache cannot
+provide perfect scale all the way to zero RAM, but it scales quite
+well for actual systems.
+
+While a particular drive may not support parallel operations one
+should not assume that a disk-based store does not benefit from
+parallelism. Simply refer to the model described above and you will
+see that with enough memory the entire blockchain can be
+memory-resident, and for high performance operations a fraction of
+that is sufficient for a high degree of parallelism.
+
+In practice a cache of about 10k transactions worth of outputs is
+optimal for 8GB RAM. This requires just a few blocks for warm-up,
+which can be primed in inconsequential time at startup. Fault
+tolerance can be managed by flushing after all writes, which also
+reduces shutdown time to zero. For higher performance systems,
+flushing can be disabled entirely, increasing shutdown time but also
+dramatically increasing write performance. Given that the blockchain
+is a cache, this is a very reasonable trade-off in some scenarios. The
+model works just as well with HDD as SSD, although certainly SSD
+performs better overall.
+
+e
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2.0.22 (GNU/Linux)
+
+iQEcBAEBCAAGBQJY5+7GAAoJEDzYwH8LXOFOsAsH/3QK55aWH6sAi6OsTwV1FLZV
+Y/2SSjwn1vUh55MDkPpCxDwV99JqVwpk0vGM8mGg5s4ZS8sxOPqwGiBz/SZWbF9v
+oStJS0DjUPnbYtI/mrC30GuAYVcKnc5DFDHvjX6f0xrLIzViFR7eiW0npUH6Xipt
+RI9Mockaf1CqqGExtbIqWal0YDEQGH0ekXRp7uEjh8nPUoKqTVvxDCgqVooQfvfx
+EeKX9ruSv/r91EM1JQuH8HBBF7+R24tmMtwbpGx0zrDg5ytpIyrRzVH/ze1Mj2a3
+ZxThvofGzhKcDiTPWiJI11DBYUvhSH4Kx0uWLzFUA0gxPfWkZQKJWNDl2CEwljk=
+=C7rD
+-----END PGP SIGNATURE-----
