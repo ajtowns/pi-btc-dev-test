@@ -1,0 +1,180 @@
+From: tomas@tomasvdw.nl (Tomas)
+Date: Sun, 09 Apr 2017 01:58:02 +0200
+Subject: [bitcoin-dev] Using a storage engine without UTXO-index
+In-Reply-To: <83618cca-c6a3-301c-af70-ab7807474f30@voskuil.org>
+References: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+	<eebc06a4-5ab8-46a8-2f50-a472cb57a775@voskuil.org>
+	<1491524267.715789.936916864.1156D8CB@webmail.messagingengine.com>
+	<83618cca-c6a3-301c-af70-ab7807474f30@voskuil.org>
+Message-ID: <1491695882.3440363.938700256.78C37AC3@webmail.messagingengine.com>
+
+Thank you for your elaborate response Eric,
+
+On Sun, Apr 9, 2017, at 00:37, Eric Voskuil wrote:
+> My point was that "Using a storage engine without UTXO-index" has been
+> done, and may be a useful reference, not that implementation details
+> are the same.
+
+I haven't dived into libbitcoin V2/V3 enough to  fully grasp it and
+though your comments help, I still not fully do.  I will answer below
+what is related to bitcrust itself.
+
+My post wasn't posted to claim innovation; I merely try to explain how
+Bitcrust works and why   it performs well. 
+
+
+> First, I remain confused on your comments pertaining to UTXO growth
+> and network protocol. I followed your conversation with Greg and it
+> remains unclear to me. From what I understand you have isolated order
+> (double spend) from script validation. I think we all understand that
+> script validation requires inputs and outputs while double spend
+> detection requires correlation of inputs. What I do not understand is
+> your choice of optimization axis.
+> 
+> Detection of double spend is not useful in isolation. One must also
+> validate scripts, which requires outputs. I can see that there is an
+> opportunity to reject blocks (within the same branch) faster by
+> validating for double spends before validating script. But unconfirmed
+> transactions do not exist in a branch, and are therefore not truly
+> conflicting, until they are mined. And even after they are mined
+> conflicting txs remain potentially valid in other branches. So
+> rejecting txs due to conflict comes down to a denial of service
+> policy, which ultimately must be based on fee increment (e.g. RBF).
+> But fees are based on the amount of the output value that remains
+> unspent in the transaction. So this in turn requires the retrieval of
+> outputs.
+> 
+> And yet the remaining scenario of fast rejection of invalid blocks is
+> not a meaningful optimization. Optimizing for the case where a block
+> has valid and sufficient PoW and yet is invalid (for double spend) is
+> counterproductive. And even so, the txs within the invalid block may
+> be entirely valid independent of the block, so you are back to looking
+> up their outputs to obtain fees in the case of a double spend or to
+> validate script otherwise. In all cases you need to get the outputs.
+> 
+> > Bitcrust simply scans the tree. Although earlier designs used a 
+> > skip-list, it turns out that accompanied by a spent-index lagging a
+> > few blocks behind, raw scanning is faster then anything even though
+> > it needs to scan ~5 blocks times ~4000 inputs before reaching the
+> > first spent-index,  the actual scan is highly cache efficient and
+> > little more then a "REP SCASQ", reaching sub-microsecond per input
+> > on each core *including* the lookup in the spend index.
+> 
+> I realize that you see the implementation of the ordering validation
+> as interesting detail, but I find it hard to justify contemplating the
+> implementation in isolation from the output lookup requirement. And if
+> one must looking up both outputs and spends for each validation, it
+> makes more sense to co-locate that data.
+> 
+> Recovering in one step all data necessary to validate a tx has real
+> advantages over either interleaving queries and validation or
+> splitting input vs. output validation queries into two steps. It is a
+> significantly more test-friendly approach, has better performance
+> characteristics, and simplifies code. I cannot see any reason to
+> perform the data read for double spend validation in isolation of that
+> for script validation.
+
+
+You seem to ignore here the difference between base load and peak load.
+If Compact blocks/XThin with further optimizations can presync nearly
+100% of the transactions, and nodes can do as much as possible when a
+transaction comes in, the time spent when a block comes in can be
+minimized and a lot more transactions can be handled with the same
+resources.
+
+The reason for "splitting" is that for an incoming transaction the
+spent-state of the outputs being spent isn't particularly relevant as
+you seem to acknowledge. When the block comes in, the actual output data
+isn't relevant.
+
+The *only* thing that needs to be checked when a block comes in is the
+order, and the spend-tree approach absolves the need to access outputs
+here.
+
+As it also absolves the need for reorgs this greatly simplifies the
+design. I am not sure why you say that a one-step approach is more
+"test-friendly" as this seems to be unrelated.
+
+> 
+> If by results you are referring to performance numbers, it's very hard
+> to draw any conclusions without a full benchmark. It's great that if
+> you are able to boost Core, but from my perspective the numbers aren't
+> especially compelling.
+>
+
+I fully agree and hopefully do not pretend to hide that my numbers are
+premature without a full implementation. I just think they are promising
+enough to  convince at least myself to move on with this model.
+ 
+> Despite the site's explanation I cannot think of any reason to ever
+> validate two blocks at the same time. You would always prioritize the
+> block with the greatest PoW. Doing otherwise just slows down the net
+> validation in all but the pathological case where a miner has produced
+> an *invalid* block with *more* PoW than another valid block which
+> arrived at the node within the same second. Rejecting a *valid* block
+> with more PoW in favor of one with *less* "processing" is a hard fork,
+> so you probably wouldn't want to do that either. But with compact
+> block validation times approaching 25ms it's hard to justify stopping
+> a block validation for any reason.
+
+I don't get what you are saying. Why pick the greatest PoW of two
+competing blocks? If two blocks come in, an implementation is free to
+choose whichever block to build on. Choosing so is not a "hardfork".
+Parallel validation simply makes it easier to make an optimal choice,
+for if two blocks come in, the one that is validated fastest can be
+build upon without the risk of validationless mining.
+
+> 
+> That's not to say parallel block validation difficult to do. If you
+> can validate one block's full set of inputs in parallel (which is not
+> novel) doing the same with additional blocks has trivial additional
+> complexity.
+
+I am not trying to claim novelty here.
+
+> I am also interested in your previous comments about soft forks. These
+> are material considerations that Greg touched on but it doesn't sound
+> like you fully appreciate just yet. When a tx is pre-validated the
+> rules applied must be the same rules as those of some future block.
+> Yet a tx can be included in more than one block (different branches).
+> Across branches and even in one branch, validation rules change, and
+> can change back. The changes are based on accumulated branch history.
+> Pre-validation can later become invalidated, and differently in
+> different branches. And maintaining proper context requires either
+> storing state that you are apparently not storing, or invalidating
+> optimizations. Based on your comments you do not seem to be accounting
+> for this in your storage assumptions or in your results. A recent post
+> by Greg highlights the complexity and consensus criticality of these
+> considerations.
+
+Frankly, I think this is a bit of an exaggeration. Soft forks are
+counted on a hand, and I don't think there are many - if any -
+transactions in the current chain that have changed compliance based on
+height. This makes this a compliance issue and not a performance issue
+and the solution I have explained, to add height-based compliance as
+meta data of validation seems to 
+be adequate and safe.
+
+
+> The hash table store that I described can fully navigate the block
+> tree and transaction DAG, since the stored tx, parent and point hashes
+> are also natural keys and each link is navigable in constant time. It
+> is also lock-free, can concurrently write any number of blocks during
+> initial block download and supports read/write concurrency. It has
+> successfully indexed and stored the entire blockchain from the P2P
+> network in 16 minutes (locally). It also stores both confirmed and
+> unconfirmed transactions in the same store, so there is nothing to
+> write when a block is confirmed except for the block header/hashes and
+> updates to spender heights for any output spent by the new block's
+> txs. It is similarly capable of storage in the block table of weak
+> chain blocks...
+> 
+
+I think I get the gist of your approach and it sounds very interesting
+and I will definitely dive in deeper.
+
+It also seems sufficiently different from Bitcrust to merit competing on
+(eventual) results instead of the complicated theory alone.
+
+Best,
+Tomas
