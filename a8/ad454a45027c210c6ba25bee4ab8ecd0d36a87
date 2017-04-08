@@ -1,0 +1,344 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Sat, 8 Apr 2017 15:37:50 -0700
+Subject: [bitcoin-dev] Using a storage engine without UTXO-index
+In-Reply-To: <1491524267.715789.936916864.1156D8CB@webmail.messagingengine.com>
+References: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+	<eebc06a4-5ab8-46a8-2f50-a472cb57a775@voskuil.org>
+	<1491524267.715789.936916864.1156D8CB@webmail.messagingengine.com>
+Message-ID: <83618cca-c6a3-301c-af70-ab7807474f30@voskuil.org>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+On 04/06/2017 05:17 PM, Tomas wrote:
+> Thanks, but I get the impression that the similarity is rather 
+> superficial.
+
+My point was that "Using a storage engine without UTXO-index" has been
+done, and may be a useful reference, not that implementation details
+are the same.
+
+> To address your points:
+
+Below you addressed two points I made regarding the downside of the
+original libbitcoin implementation. These were initial learnings that
+informed future implementations (also without a UTXO index). These
+were not comparisons to your implementation.
+
+>> (1) higher than necessary storage space requirement due to
+>> storing the indexing data required for correlate the spends, and
+> 
+> Hmm. No. Spends are simply scanned in the spend-tree (full tree, 
+> prunable, fully 5.6gb), or caught by the spend-index (bit index, 
+> non-prunable, fully 180mb). Neither impose significant storage 
+> requirements.
+> 
+>> 2) higher than necessary validation complexity and cost in terms
+>> of computing the spent-ness (including spender height) of an
+>> output.
+>> 
+>> With the exception of de-linking (not deleted) in the case of
+>> reorgs, the entire store is append only, implemented in a small
+>> set of memory mapped file
+> 
+> I guess this is the key difference. As the spend-tree stores the
+> spend information in a tree structure, no reorgs are required, and
+> the resulting code is actually much less complex.
+
+The references to "higher than necessary storage" and "higher than
+necessary validation cost" are explicitly relative statements,
+comparing earlier and later libbitcoin implementations.
+
+It is not clear to me how you are relating both the storage cost
+("Hmm. No. ... Neither impose significant storage requirements.") and
+code complexity ("... resulting code is actually much less complex")
+of your tx ordering software to my statements. Do you think I am wrong
+and libbitcoin v3 is not actually more space and code efficient than
+libbitcoin v2?
+
+But given that you have thrown some numbers and ideas out in a request
+for feedback, I'm happy to give you some based on several years of
+experience working closely with these issues.
+
+First, I remain confused on your comments pertaining to UTXO growth
+and network protocol. I followed your conversation with Greg and it
+remains unclear to me. From what I understand you have isolated order
+(double spend) from script validation. I think we all understand that
+script validation requires inputs and outputs while double spend
+detection requires correlation of inputs. What I do not understand is
+your choice of optimization axis.
+
+Detection of double spend is not useful in isolation. One must also
+validate scripts, which requires outputs. I can see that there is an
+opportunity to reject blocks (within the same branch) faster by
+validating for double spends before validating script. But unconfirmed
+transactions do not exist in a branch, and are therefore not truly
+conflicting, until they are mined. And even after they are mined
+conflicting txs remain potentially valid in other branches. So
+rejecting txs due to conflict comes down to a denial of service
+policy, which ultimately must be based on fee increment (e.g. RBF).
+But fees are based on the amount of the output value that remains
+unspent in the transaction. So this in turn requires the retrieval of
+outputs.
+
+And yet the remaining scenario of fast rejection of invalid blocks is
+not a meaningful optimization. Optimizing for the case where a block
+has valid and sufficient PoW and yet is invalid (for double spend) is
+counterproductive. And even so, the txs within the invalid block may
+be entirely valid independent of the block, so you are back to looking
+up their outputs to obtain fees in the case of a double spend or to
+validate script otherwise. In all cases you need to get the outputs.
+
+> Bitcrust simply scans the tree. Although earlier designs used a 
+> skip-list, it turns out that accompanied by a spent-index lagging a
+> few blocks behind, raw scanning is faster then anything even though
+> it needs to scan ~5 blocks times ~4000 inputs before reaching the
+> first spent-index,  the actual scan is highly cache efficient and
+> little more then a "REP SCASQ", reaching sub-microsecond per input
+> on each core *including* the lookup in the spend index.
+
+I realize that you see the implementation of the ordering validation
+as interesting detail, but I find it hard to justify contemplating the
+implementation in isolation from the output lookup requirement. And if
+one must looking up both outputs and spends for each validation, it
+makes more sense to co-locate that data.
+
+Recovering in one step all data necessary to validate a tx has real
+advantages over either interleaving queries and validation or
+splitting input vs. output validation queries into two steps. It is a
+significantly more test-friendly approach, has better performance
+characteristics, and simplifies code. I cannot see any reason to
+perform the data read for double spend validation in isolation of that
+for script validation.
+
+>> I don't follow this part, maybe you could clarify. A spends
+>> index grows with the size of the spend set (forever) as it cannot
+>> be pruned, which certainly exceeds the size of the UTXO set
+>> (unless nothing is spent). The advantage is that you don't have
+>> to keep rewriting the store when you use a spends set (because
+>> the store can be append only).
+> 
+> My point is, that the spend tree grows per *input* of a
+> transaction instead of per *output* of a transaction, because this
+> is what is scanned on order validation.
+
+I think the conversation with Greg resolved my questions in this area.
+What I find interesting is the reliance on Core's UTXO store to
+implement script validation. This is not, "a storage engine without a
+UTXO-index" as it has a dependency on Core's UTXO index.
+
+On the other hand the initial libbitcoin implementation that I
+described to you is *actually* a bitcoin store with no UTXO index. The
+current implementation is as well, however it is implemented
+differently and is much more efficient than the original. How it
+compares to your design is not really the point and impossible to
+measure until you have production code.
+
+I can say however that your assumptions about the storage (and
+performance) superiority of the design, or at least its
+implementation, seem unfounded. If you are storing more index data
+(5.6gb) than 32 bits per output, you are using more space than
+production implementations. As for complexity, I don't think you'll
+get any simpler than a loop to populate spend heights from a hash
+table and a loop to test their integer values.
+
+> The spend tree can be pruned because the spend index (~200mb)
+> catches early spends.
+> 
+> Disregarding the baseload script validation, the peak load order 
+> validation of bitcrust is more negatively effected by a transaction
+> with many inputs than by a transaction of many outputs.
+> 
+> I encourage you to check out the results at https://bitcrust.org
+
+If by results you are referring to performance numbers, it's very hard
+to draw any conclusions without a full benchmark. It's great that if
+you are able to boost Core, but from my perspective the numbers aren't
+especially compelling.
+
+As for some of the site's comments, these again cause me to question
+the optimization choices:
+
+"Blocks can be verified in parallel..."
+
+Despite the site's explanation I cannot think of any reason to ever
+validate two blocks at the same time. You would always prioritize the
+block with the greatest PoW. Doing otherwise just slows down the net
+validation in all but the pathological case where a miner has produced
+an *invalid* block with *more* PoW than another valid block which
+arrived at the node within the same second. Rejecting a *valid* block
+with more PoW in favor of one with *less* "processing" is a hard fork,
+so you probably wouldn't want to do that either. But with compact
+block validation times approaching 25ms it's hard to justify stopping
+a block validation for any reason.
+
+That's not to say parallel block validation difficult to do. If you
+can validate one block's full set of inputs in parallel (which is not
+novel) doing the same with additional blocks has trivial additional
+complexity.
+
+"The storage engine is optimized from ground up for
+xthin/compact-block synchronization. This ensures that when the
+majority of transactions are already synced, incoming blocks can be
+verified at minimal resources using order-validation only."
+
+There are two distinct considerations here. One is pre-validation of
+txs and the other is compact announcements. Just to be clear, the
+former does not require the latter. Libbitcoin for example fully
+exploits the former, independent of compactness. With a low min fee
+setting and a few peers it is typical for the node to have
+pre-validated 100% of non-coinbase txs. Averages at 1 satoshi per byte
+are about 99.9%, effectively amortizing all script validation cost. So
+this optimization is neither novel nor limited to compactness (which
+is about reducing latency).
+
+I am also interested in your previous comments about soft forks. These
+are material considerations that Greg touched on but it doesn't sound
+like you fully appreciate just yet. When a tx is pre-validated the
+rules applied must be the same rules as those of some future block.
+Yet a tx can be included in more than one block (different branches).
+Across branches and even in one branch, validation rules change, and
+can change back. The changes are based on accumulated branch history.
+Pre-validation can later become invalidated, and differently in
+different branches. And maintaining proper context requires either
+storing state that you are apparently not storing, or invalidating
+optimizations. Based on your comments you do not seem to be accounting
+for this in your storage assumptions or in your results. A recent post
+by Greg highlights the complexity and consensus criticality of these
+considerations.
+
+By "order-validation only" I believe you are referring to a
+determination of whether the txs organized into a candidate block
+double spend internal to the block or in the ancestry. Assuming that
+one recovers outputs at the same time (and presumably from the same
+location) as spender height (which is required both for validating
+spends of a coinbase and for determination of whether the spend is
+above the fork point), this determination is straightforward. One
+simply loops over the spender records and invalidates a tx that has a
+spender height not above the fork point (while also validating
+coinbase maturity using the same height). A loop over the set of
+in-memory spend heights of each output a tx is certainly fast enough
+to not be worthy of any further optimization. And as previously
+discussed, the population of the spender heights is not even a
+material additional cost over obtaining the (necessary) output scripts.
+
+The hash table store that I described can fully navigate the block
+tree and transaction DAG, since the stored tx, parent and point hashes
+are also natural keys and each link is navigable in constant time. It
+is also lock-free, can concurrently write any number of blocks during
+initial block download and supports read/write concurrency. It has
+successfully indexed and stored the entire blockchain from the P2P
+network in 16 minutes (locally). It also stores both confirmed and
+unconfirmed transactions in the same store, so there is nothing to
+write when a block is confirmed except for the block header/hashes and
+updates to spender heights for any output spent by the new block's
+txs. It is similarly capable of storage in the block table of weak
+chain blocks...
+
+But one thing it does *not* do is maintain spender and fork state for
+multiple branches. In other words it is optimized for one long chain,
+not multiple long branches. Your approach has a limited (in terms of
+double spend identification) optimization for reorganization (i.e. a
+change to the strong chain identity). However, applying that
+optimization to the full store and supportive of soft forks, as
+opposed to just input ordering, is a much larger task than it appears
+you have attempted. I know, as I created a design for that approach
+and after some time scrapped it. The cost of performing the
+reorganization in the above store is low enough and very long reorgs
+infrequent enough, for the optimization to be counterproductive. It's
+elegant in theory, but in practice it increases storage requirements,
+impacts general performance and significantly increases complexity.
+Bitcoin's data model pushes one away from a tree design in that it is
+always pruning the tree. Having the tree is necessary, but it's not
+something to optimize for.
+
+e
+
+
+> Regards, Tomas
+> 
+> On Fri, Apr 7, 2017, at 01:38, Eric Voskuil wrote: On 04/06/2017
+> 03:12 PM, Tomas via bitcoin-dev wrote:
+> 
+> Hi Tomas,
+> 
+>>>> I have been working on a bitcoin implementation that uses a 
+>>>> different approach to indexing for verifying the order of 
+>>>> transactions. Instead of using an index of unspent outputs,
+>>>> double spends are verified by using a spend-tree where spends
+>>>> are scanned against spent outputs instead of unspent
+>>>> outputs.
+> 
+> This is the approach that genjix used in libbitcoin version2. With
+> the exception of de-linking (not deleted) in the case of reorgs,
+> the entire store is append only, implemented in a small set of
+> memory mapped files. The downsides to the approach are:
+> 
+> (1) higher than necessary storage space requirement due to storing
+> the indexing data required for correlate the spends, and
+> 
+> (2) higher than necessary validation complexity and cost in terms
+> of computing the spent-ness (including spender height) of an
+> output.
+> 
+> His implementation used a hash table, so performance-wise it did
+> quite well and would theoretically outperform a tree, O(1) vs.
+> O(log2(N)).
+> 
+>>>> This allows for much better concurrency, as not only blocks,
+>>>> but also individual inputs can be verified fully in
+>>>> parallel.
+> 
+> I was successful in parallelizing input validation (across the
+> inputs of an unconfirmed tx and across the set of all inputs in a
+> block) using the v2 store. However, it is not the case that the
+> spends approach is necessary for concurrency.
+> 
+> To resolve the above two problems the version3 store does not use
+> a spends table/index. Nor does it store any table of UTXOs. Yet 
+> validation is highly parallelized. Instead of additional indexes
+> it uses the tx hash table, augmented with 32 bits per output for
+> spender height. So there is a O(1) cost of finding the tx and a
+> O(N) cost of finding the spender height where N is the number of
+> outputs in the tx. But because the number of outputs in a tx is
+> bounded (by block size) this is constant time in the number of
+> transactions.
+> 
+> This works out much faster than the spends table, and without the 
+> storage cost or complexity disadvantages. It also scales with 
+> available hardware, as the memory mapped files become in-memory
+> hash tables. For low memory machines we found it was important to
+> implement an opaque UTXO cache to limit paging, but for higher end
+> systems zero cache is optimal.
+> 
+>>>> I am sharing this not only to ask for your feedback, but also
+>>>> to call for a clear separation of protocol and
+>>>> implementations: As this solution, reversing the costs of
+>>>> outputs and inputs, seems to have excellent performance
+>>>> characteristics (as shown in the test results), updates to
+>>>> the protocol addressing the UTXO growth, might not be worth
+>>>> considering *protocol improvements* and it might be best to
+>>>> address these concerns as implementation details.
+> 
+> I don't follow this part, maybe you could clarify. A spends index 
+> grows with the size of the spend set (forever) as it cannot be
+> pruned, which certainly exceeds the size of the UTXO set (unless
+> nothing is spent). The advantage is that you don't have to keep
+> rewriting the store when you use a spends set (because the store
+> can be append only).
+> 
+> Feel free to message me if you'd like to discuss in more detail, or
+> to continue on the libbitcoin mailing list (copied).
+> 
+> e
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2.0.22 (GNU/Linux)
+
+iQEcBAEBCAAGBQJY6WY4AAoJEDzYwH8LXOFO+wwH/1uE/+P1+KLJWTkcttVWsO//
+QAlikqg0HLFDtkd5jaYsBtx6op/Uz2o53ohZwVJt71ITCjQQI+yYK2RjBX92xIhd
+K0rE901Np4PfMFbDA60LB0c/65aPlkUCr3f2PYIlizJs4Qq5Kn2sIpC5v9T3B7H4
+MPq5UJwoPP+m3RZ9TSsVyee3ejHYXM7y2VNNnnWD3edIioA3cLh+y6sczpco2Hpa
+P+GSDnv2cwV6FA22Is1Z15tpfLyQnPrrGJ9QEJJ15vnhCTxZe0j1PQ4y+OOZh5Iq
+mqBkGRNPeUnPAPDM+/qvhr2kUyxFbaJNtwg5HDGHWFOq5B/YeKxVk8Qjnk+9epA=
+=XRKl
+-----END PGP SIGNATURE-----
