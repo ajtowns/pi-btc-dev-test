@@ -1,0 +1,37 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Sat, 8 Apr 2017 22:12:09 +0000
+Subject: [bitcoin-dev] Using a storage engine without UTXO-index
+In-Reply-To: <DF7A05F0-4EA7-4CB3-A9BE-491BDA209EF7@xbt.hk>
+References: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+	<CAAS2fgTJ8xOj8zCmBq1LN9OdMV-tDfSjVUPhLpO98cR1w-QAoA@mail.gmail.com>
+	<CA+KqGko0cDY29bhznMxJJ7yAUTuB6GaDDNGBRwzssJUxM_53xQ@mail.gmail.com>
+	<1491599691.1245876.937920664.6EBA20DC@webmail.messagingengine.com>
+	<CAAS2fgTWyX5M-xcELC2vDvGfs01tbGYkpZJCSeNbvn_p4Ecjqg@mail.gmail.com>
+	<1491636528.2474173.938219072.54C44183@webmail.messagingengine.com>
+	<6F1E6FB6-1342-4BD6-BF83-A160C1A7CD34@xbt.hk>
+	<1491681378.2454247.938587616.7199D633@webmail.messagingengine.com>
+	<DF7A05F0-4EA7-4CB3-A9BE-491BDA209EF7@xbt.hk>
+Message-ID: <CAAS2fgSueiF51cg2zotwg5FdZQf_jcUgoBgVr5kiHafxXhc6jQ@mail.gmail.com>
+
+On Sat, Apr 8, 2017 at 8:21 PM, Johnson Lau <jl2012 at xbt.hk> wrote:
+> pre-synced means already in mempool and verified? Then it sounds like we just need some mempool optimisation? The tx order in a block is not important, unless they are dependent
+
+In Bitcoin Core the software _explicitly_ and intentionally does not
+exploit mempool pre-validation because doing that very easily leads to
+hard to detect consensus faults and makes all mempool code consensus
+critical when it otherwise is not. There have been bugs in the past
+which would have split the network if this optimization had been used.
+
+(in particular, I believe I recall one related to correctly removing
+coinbase spends from the mempool during reorganization that made them
+immature; and with the optimization and without the CNB post-test
+would have resulted in nodes that saw the reorg creating and accepting
+an invalid block, while nodes that didn't rejecting it; but because of
+prudent design it was largely harmless).
+
+Because signature validation is cached, and takes the majority of the
+block validation time the speed up from the risky optimization isn't
+that considerable, and there are other lower hanging fruity with
+bigger payouts like Pieter's change to the per-txout management model
+and the new non-atomic flushing logic.... and these things don't make
+more of the system consensus critical.
