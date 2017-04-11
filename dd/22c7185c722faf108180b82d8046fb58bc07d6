@@ -1,0 +1,277 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Mon, 10 Apr 2017 18:44:57 -0700
+Subject: [bitcoin-dev] Using a storage engine without UTXO-index
+In-Reply-To: <1491695882.3440363.938700256.78C37AC3@webmail.messagingengine.com>
+References: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+	<eebc06a4-5ab8-46a8-2f50-a472cb57a775@voskuil.org>
+	<1491524267.715789.936916864.1156D8CB@webmail.messagingengine.com>
+	<83618cca-c6a3-301c-af70-ab7807474f30@voskuil.org>
+	<1491695882.3440363.938700256.78C37AC3@webmail.messagingengine.com>
+Message-ID: <1b6b300d-4b24-2a64-12a3-4e654174c132@voskuil.org>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+On 04/08/2017 04:58 PM, Tomas wrote:
+> You seem to ignore here the difference between base load and peak 
+> load. If Compact blocks/XThin with further optimizations can 
+> presync nearly 100% of the transactions, and nodes can do as much 
+> as possible when a transaction comes in, the time spent when a 
+> block comes in can be minimized and a lot more transactions can be 
+> handled with the same resources.
+
+Maybe it's an issue of terminology. I have never used the terms
+base/peak load. However I've been trying to get across, poorly I
+suppose, that this is actually implemented in libbitcoin. I generally
+refer to it as tx pre-validation. I've also tried to relate that you
+are unnecessarily relating pre-validation to compactness. These are
+unrelated ideas and better considered independently. One can get
+nearly all of the benefit of pre-validation while still receiving
+blocks (vs. compact blocks). The advantage of compactness is reduced
+latency of the block announcement. The reason for pre-validation is
+amortization of the validation and/or storage cost of a block.
+
+> The reason for "splitting" is that for an incoming transaction the
+>  spent-state of the outputs being spent isn't particularly
+> relevant as you seem to acknowledge. When the block comes in, the
+> actual output data isn't relevant.
+
+As I understand it you would split tx inputs and outputs and send them
+independently, and that you intend this to be a P2P network
+optimization - not a consensus rule change. So my comments are based
+on those inferences. If we are talking about consensus changes this
+conversation will end up in an entirely different place.
+
+I don't agree with the input/output relevance statements above. When a
+tx is announced the entire tx is relevant. It cannot be validated as
+outputs only. If it cannot be validated it cannot be stored by the
+node. Validating the outputs only would require the node store invalid
+transactions.
+
+I do accept that a double-spend detection is not an optimal criteria
+by which to discard a tx. One also needs fee information. But without
+double-spend knowledge the node has no rational way to defend itself
+against an infinity of transactions that spend the minimal fee but
+also have conflicting inputs (i.e. risking the fee only once). So tx
+(pool) validation requires double-spend knowledge and at least a
+summary from outputs.
+
+> The *only* thing that needs to be checked when a block comes in is 
+> the order, and the spend-tree approach absolves the need to access 
+> outputs here.
+
+Inputs that are already valid against prevouts remain valid assuming
+consensus rules have not changed. But any input that spends a coinbase
+must be validated for prevout height once there is a block context for
+validation. Additionally the set of txs must be validated for total
+size, sigops, and fee claim. So it's not true that conflict detection
+alone is sufficient. Yet one can cache a tx's size, sigops, fee and
+minimum height in a graph so that when a block appears that contains
+that tx the input validation can be skipped.
+
+Ignoring the (actual) requirement for the full tx on the pool
+validation, the required "order" validation at (compact or other)
+block arrival basically consists of traversing each tx, ensuring none
+are confirmed in a block below the fork point; traversing each each of
+its confirmed inputs, ensuring that none are spent in a block below
+the fork point; and ensuring the block's set of transactions do not
+contain missing inputs and do not double spend internal to the block.
+
+This and the above-mentioned other required per-transaction block
+validation data can be cached to an in-memory structure as a potential
+optimization over navigating the store, and as you say, does not
+therefore require the actual outputs (script/value). But the original
+issue of needing full transactions for independent transaction
+validation remains.
+
+> As it also absolves the need for reorgs this greatly simplifies the
+> design.
+
+A reorg is conceptual and cannot be engineered out. What you are
+referring to is a restructuring of stored information as a consequence
+of a reorg. I don't see this as related to the above. The ability to
+perform reorganization via a branch pointer swap is based not on the
+order or factoring of validation but instead on the amount of
+information stored. It requires more information to maintain multiple
+branches.
+
+Transactions have confirmation states, validation contexts and spender
+heights for potentially each branch of an unbounded number of
+branches. It is this requirement to maintain that state for each
+branch that makes this design goal a very costly trade-off of space
+and complexity for reorg speed. As I mentioned earlier, it's the
+optimization for this scenario that I find questionable.
+
+> I am not sure why you say that a one-step approach is more 
+> "test-friendly" as this seems to be unrelated.
+
+Full separation of concerns allows all validation to be performed in
+isolation from the store. As such validation state can be faked and
+provided to a tx, block or chain, for the purpose of test. Validation
+that interacts with a complex store during validation is harder to
+fake and tests can be hard to verify.
+
+It's not really the "one-step" approach that make this possible. In
+fact that's not an accurate description. Validation and storage of txs
+and blocks consists of four steps:
+
+(1) context free
+(2) contextual (chain-based)
+(3) expensive (script eval)
+(4) storage and notification
+
+So we have:
+
+tx.check()
+tx.accept(state)
+tx.connect(state)
+chain.organize(tx)
+
+block.check()
+block.accept(state)
+block.connect(state)
+chain.organize(block)
+
+...where "chain" is the store, from which "state" is derived. The
+state for an unconfirmed tx is based on the presumption that the tx
+would be mined in the next block. If that is not the case then its
+pre-validation can become invalidated. So from my perspective, this
+discussion is all about populating state. Anything that cannot be
+placed into that pattern would complicate both the conceptual model
+and testing. We've also seen that this isolation also has performance
+advantages, as it facilitates optimizations that are otherwise
+challenging.
+
+>> Despite the site's explanation I cannot think of any reason to 
+>> ever validate two blocks at the same time. You would always 
+>> prioritize the block with the greatest PoW. Doing otherwise just 
+>> slows down the net validation in all but the pathological case 
+>> where a miner has produced an *invalid* block with *more* PoW 
+>> than another valid block which arrived at the node within the 
+>> same second. Rejecting a *valid* block with more PoW in favor of 
+>> one with *less* "processing" is a hard fork, so you probably 
+>> wouldn't want to do that either. But with compact block 
+>> validation times approaching 25ms it's hard to justify stopping
+>> a block validation for any reason.
+> 
+> I don't get what you are saying. Why pick the greatest PoW of two 
+> competing blocks?
+
+Because choosing the lesser amount of work is non-consensus behavior.
+Under the same circumstances (i.e. having seen the same set of blocks)
+two nodes will disagree on whether there is one confirmation or no
+confirmations for a given tx. This disagreement will persist (i.e. why
+take the weaker block only to turn around and replace it with the
+stronger block that arrives a few seconds or minutes later). It stands
+to reason that if one rejects a stronger block under a race condition,
+one would reorg out a stronger block when a weaker block arrives a
+little after the stronger block. Does this "optimization" then apply
+to chains of blocks too?
+
+> If two blocks come in, an implementation is free to choose 
+> whichever block to build on.
+
+Implementations are free to choose no blocks. That's not really the issu
+e.
+
+> Choosing so is not a "hardfork".
+
+Accepting a block that all previous implementations would have
+rejected under the same circumstance could be considered a hard fork,
+but you may be right.
+
+Yet the classification is not essential to my point. Nor is any
+material change required to validate blocks in parallel. We can do it
+using current design, but it doesn't make sense to do so.
+
+> Parallel validation simply makes it easier to make an optimal 
+> choice, for if two blocks come in, the one that is validated 
+> fastest can be build upon without the risk of validationless 
+> mining.
+
+This is not an optimization, since it should always be optimal to
+validate blocks independently. Performing multiple together inherently
+slows both of them. And the advantage to not validating *either* would
+remain.
+
+>> I am also interested in your previous comments about soft forks. 
+>> These are material considerations that Greg touched on but it 
+>> doesn't sound like you fully appreciate just yet. When a tx is 
+>> pre-validated the rules applied must be the same rules as those 
+>> of some future block. Yet a tx can be included in more than one 
+>> block (different branches). Across branches and even in one 
+>> branch, validation rules change, and can change back. The
+>> changes are based on accumulated branch history. Pre-validation
+>> can later become invalidated, and differently in different
+>> branches. And maintaining proper context requires either storing
+>> state that you are apparently not storing, or invalidating
+>> optimizations. Based on your comments you do not seem to be
+>> accounting for this in your storage assumptions or in your
+>> results. A recent post by Greg highlights the complexity and
+>> consensus criticality of these considerations.
+> 
+> Frankly, I think this is a bit of an exaggeration. Soft forks are 
+> counted on a hand, and I don't think there are many - if any - 
+> transactions in the current chain that have changed compliance 
+> based on height.
+
+Hope is a bug.
+
+> This makes this a compliance issue and not a performance issue
+
+You cannot have a useful performance measure without full compliance.
+
+> and the solution I have explained, to add height-based compliance 
+> as meta data of validation seems to be adequate and safe.
+
+If you intend this to be useful it has to help build the chain, not
+just rely on hardwiring checkpoints once rule changes are presumed to
+be buried deeply enough to do so (as the result of other implementations
+).
+
+I understand this approach, it was ours at one time. There is a
+significant difference, and your design is to some degree based on a
+failure to fully consider this. I encourage you to not assume any
+consensus-related detail is too small.
+
+>> The hash table store that I described can fully navigate the 
+>> block tree and transaction DAG, since the stored tx, parent and 
+>> point hashes are also natural keys and each link is navigable in 
+>> constant time. It is also lock-free, can concurrently write any 
+>> number of blocks during initial block download and supports 
+>> read/write concurrency. It has successfully indexed and stored 
+>> the entire blockchain from the P2P network in 16 minutes 
+>> (locally). It also stores both confirmed and unconfirmed 
+>> transactions in the same store, so there is nothing to write
+>> when a block is confirmed except for the block header/hashes and
+>>  updates to spender heights for any output spent by the new 
+>> block's txs. It is similarly capable of storage in the block 
+>> table of weak chain blocks...
+> 
+> I think I get the gist of your approach and it sounds very 
+> interesting and I will definitely dive in deeper.
+
+It's worth noting that many of your stated objectives, including
+modularity, developer platform, store isolation, consensus rule
+isolation (including optional use of libbitcoinconsensus) are implemente
+d.
+
+It seems like you are doing some good work and it's not my intent to
+discourage that. Libbitcoin is open source, I don't get paid and I'm
+not selling anything. But if you are going down this path you should
+be aware of it and may benefit from our successes as well as some of
+the other stuff :). And hopefully we can get the benefit of your
+insights as well.
+
+e
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2.0.22 (GNU/Linux)
+
+iQEcBAEBCAAGBQJY7DUUAAoJEDzYwH8LXOFOTB0H/jDtfnC6B9CtGrCTPtET+dDx
+r0uQ0SXo40AUTplyKQ228rVkjmZyczTOtIP5uNvKpvlr9wW8TyYzFzNW4RNCNtdP
+xZ9OjrfC24J2n+m1b9z9+CA85qAQxzLztBybDYzXCJG/dQ+y++7BR+rILGiRWUhs
+lROeaEMqlDl0fy5J3dlpe0RGZJPSRqlxW7EBNHYc3IEDNL+j5m80/tWb6H5a3Mv8
+7GTr6ulZef/04u/hRTXQ0ONy0MAIoi63HNHQuR0wF70ewGVmtFY4RHXEnNi+ucIG
+w3QZuNTPtjqIS+ZbpFuqBop+L3CtId9+jxaBAao2tEieoIUl/faLjdTPP+r0n6A=
+=5mz8
+-----END PGP SIGNATURE-----
