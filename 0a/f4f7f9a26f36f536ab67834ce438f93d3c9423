@@ -1,0 +1,103 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Tue, 11 Apr 2017 02:41:34 -0700
+Subject: [bitcoin-dev] Using a storage engine without UTXO-index
+In-Reply-To: <1491900210.2802950.940953480.4C391C68@webmail.messagingengine.com>
+References: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+	<eebc06a4-5ab8-46a8-2f50-a472cb57a775@voskuil.org>
+	<1491524267.715789.936916864.1156D8CB@webmail.messagingengine.com>
+	<83618cca-c6a3-301c-af70-ab7807474f30@voskuil.org>
+	<1491695882.3440363.938700256.78C37AC3@webmail.messagingengine.com>
+	<1b6b300d-4b24-2a64-12a3-4e654174c132@voskuil.org>
+	<1491900210.2802950.940953480.4C391C68@webmail.messagingengine.com>
+Message-ID: <83947375-e06b-71dd-1f79-6ca97bea392e@voskuil.org>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+On 04/11/2017 01:43 AM, Tomas wrote:
+> Splitting transactions only happens *on storage* and is just a
+> minor optimization compared to storing them in full.
+
+Ok
+
+> Sure, we can still call switching tips a "reorg". And it is indeed
+> a trade off as orphan blocks are stored, but a block in the spend
+> tree takes only ~12kb and contains the required state information.
+> 
+It's not the headers/tx-hashes of the blocks that I'm referring to, it
+is the confirmation and spend information relative to all txs and all
+outputs for each branch. This reverse navigation (i.e. utxo
+information) is essential, must be persistent and is branch-relative.
+
+> The blockchain is - by design - only eventually consistent across
+> nodes. Even if nodes would use the same "tip-selection" rules, you
+> cannot rely on all blocks being propagated and hence each
+> transaction having the same number of confirmations across all
+> nodes.
+> 
+> As a simpler example, if two miners both mine a block at
+> approximately the same time and send it to each other, then surely
+> they would want to continue mining on their own block. Otherwise
+> they would be throwing away their own reward.
+
+That's not your concurrent validation scenario. In the scenario you
+described, the person chooses the weaker block of two that require
+validation because it's better somehow, not because it's his own
+(which does not require validation).
+
+> And yes, this can also happen over multiple blocks, but the chances
+> of consistency are vastly increased with each confirmation.
+
+Consistency is reached, despite seeing things at different times,
+because people use the same rules. If the economy ran on arbitrary
+block preference consistency would be elusive.
+
+> I am not talking about rejecting blocks, I am only talking choosing
+> on which tip to mine.
+
+This line of reasoning has me a bit baffled. Yet as I said, it's not
+important to the question at hand. It is not likely to be optimal to
+validate concurrently even if you consider selection of a weaker block
+advantageous.
+
+>> If you intend this to be useful it has to help build the chain,
+>> not just rely on hardwiring checkpoints once rule changes are
+>> presumed to be buried deeply enough to do so (as the result of
+>> other implementations ).
+>> 
+>> I understand this approach, it was ours at one time. There is a 
+>> significant difference, and your design is to some degree based
+>> on a failure to fully consider this. I encourage you to not
+>> assume any consensus-related detail is too small.
+> 
+> I am not failing to consider this, and I don't consider this too
+> small . But ensuring contextual transaction validity by "validate
+> =>  valid with rules X,Y,Z" and then checking the active rules
+> (softfork activation) on order validation, will give logically the
+> same results as "validate with X,Y,Z => valid". This is not
+> "hardwiring checkpoints" at all.
+
+Storing the validation flags with each tx is exactly what libbitcoin
+does (otherwise pre-validation would be infeasible). But that was not
+the full point. You said on this in response previously:
+
+>>> ...height-based compliance as meta data of validation seems to
+>>> be
+adequate and safe.
+
+I read this as encoding the height at which a fork historically
+activated. If you intend to track activation for each branch that will
+not be "height-based" it will be history based.
+
+e
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2.0.22 (GNU/Linux)
+
+iQEcBAEBCAAGBQJY7KTHAAoJEDzYwH8LXOFOI+QH/RzX++1TNLC9DEMWioE7SmMj
+yKOrP8WEkOnnrZdFKxVmwV9oZBekEvDABMnJmFiW5TMjsmPz7XwKAYzV0Y5L5oGU
+fZYo3IOPyr0dA9TcpP15gNziR6pFUBq/QTYB6BcbUvvlkJv6xjgIdedgDMEyREWU
+Hm/JU5g7gQUQd6MIDWbQ9FbYjtPuNSRQi851YfIn5mDivT4HuidaqQYMd9t5yS2Z
+FuoQBI6L5GTJIqml1bTwJ0wsA7+ZseBEgMn1TT1ehy2v1FFJTojTpzIwG+m3eiXg
+TxN3U/+fNAj+sKBb8Hq+nb7DvgjvKHyHuyRryBju7yq5d5rsb6meXcoiOtAznP8=
+=fRXf
+-----END PGP SIGNATURE-----
