@@ -1,0 +1,150 @@
+From: tomas@tomasvdw.nl (Tomas)
+Date: Tue, 11 Apr 2017 10:43:30 +0200
+Subject: [bitcoin-dev] Using a storage engine without UTXO-index
+In-Reply-To: <1b6b300d-4b24-2a64-12a3-4e654174c132@voskuil.org>
+References: <1491516747.3791700.936828232.69F82904@webmail.messagingengine.com>
+	<eebc06a4-5ab8-46a8-2f50-a472cb57a775@voskuil.org>
+	<1491524267.715789.936916864.1156D8CB@webmail.messagingengine.com>
+	<83618cca-c6a3-301c-af70-ab7807474f30@voskuil.org>
+	<1491695882.3440363.938700256.78C37AC3@webmail.messagingengine.com>
+	<1b6b300d-4b24-2a64-12a3-4e654174c132@voskuil.org>
+Message-ID: <1491900210.2802950.940953480.4C391C68@webmail.messagingengine.com>
+
+
+
+On Tue, Apr 11, 2017, at 03:44, Eric Voskuil wrote:
+
+> As I understand it you would split tx inputs and outputs and send them
+> independently, and that you intend this to be a P2P network
+> optimization - not a consensus rule change. So my comments are based
+> on those inferences. If we are talking about consensus changes this
+> conversation will end up in an entirely different place.
+
+> I don't agree with the input/output relevance statements above. When a
+> tx is announced the entire tx is relevant. It cannot be validated as
+> outputs only. If it cannot be validated it cannot be stored by the
+> node. Validating the outputs only would require the node store invalid
+> transactions.
+
+Splitting transactions only happens *on storage* and is just a minor
+optimization compared to storing them in full. (actually a very recent
+change with only marginally better results). This is simply because the
+output scripts are read on script validation, and storing the outputs of
+the transaction separately ensures better spatial locality of reference
+(the inputs are just "in the way"). This is not relevant when using a
+UTXO-index, because the outputs are then directly stored in the index,
+where bitcrust has to read them from the transaction data.
+
+It is not my intention to send them independently.
+ 
+> I do accept that a double-spend detection is not an optimal criteria
+> by which to discard a tx. One also needs fee information. But without
+> double-spend knowledge the node has no rational way to defend itself
+> against an infinity of transactions that spend the minimal fee but
+> also have conflicting inputs (i.e. risking the fee only once). So tx
+> (pool) validation requires double-spend knowledge and at least a
+> summary from outputs.
+
+Double spent information is still available to the network node and
+could still be used for DoS protection, although I do believe
+alternatives may exist.
+ 
+> 
+> A reorg is conceptual and cannot be engineered out. What you are
+> referring to is a restructuring of stored information as a consequence
+> of a reorg. I don't see this as related to the above. The ability to
+> perform reorganization via a branch pointer swap is based not on the
+> order or factoring of validation but instead on the amount of
+> information stored. It requires more information to maintain multiple
+> branches.
+> 
+> Transactions have confirmation states, validation contexts and spender
+> heights for potentially each branch of an unbounded number of
+> branches. It is this requirement to maintain that state for each
+> branch that makes this design goal a very costly trade-off of space
+> and complexity for reorg speed. As I mentioned earlier, it's the
+> optimization for this scenario that I find questionable.
+
+Sure, we can still call switching tips a "reorg". And it is indeed a
+trade off as orphan blocks are stored, but a block in the spend tree
+takes only ~12kb and contains  the required state information. 
+
+I believe this trade off  reduced complexity. For the earlier tree this
+could be pruned.
+
+> Because choosing the lesser amount of work is non-consensus behavior.
+> Under the same circumstances (i.e. having seen the same set of blocks)
+> two nodes will disagree on whether there is one confirmation or no
+> confirmations for a given tx. This disagreement will persist (i.e. why
+> take the weaker block only to turn around and replace it with the
+> stronger block that arrives a few seconds or minutes later). It stands
+> to reason that if one rejects a stronger block under a race condition,
+> one would reorg out a stronger block when a weaker block arrives a
+> little after the stronger block. Does this "optimization" then apply
+> to chains of blocks too?
+
+The blockchain is - by design - only eventually consistent across nodes.
+Even if nodes would use the same "tip-selection" rules, you cannot rely
+on all blocks being propagated and hence each transaction having the
+same number of confirmations across all nodes.
+
+As a simpler example, if two miners both mine a block at approximately
+the same time and send it to each other, then surely they would want to
+continue mining on their own block. Otherwise they would be throwing
+away their own reward.  
+
+And yes, this can also happen over multiple blocks, but the chances of
+consistency are vastly increased with each confirmation.
+
+> Accepting a block that all previous implementations would have
+> rejected under the same circumstance could be considered a hard fork,
+> but you may be right.
+
+I am not talking about rejecting blocks, I am only talking choosing on
+which tip to mine.
+
+> > Frankly, I think this is a bit of an exaggeration. Soft forks are 
+> > counted on a hand, and I don't think there are many - if any - 
+> > transactions in the current chain that have changed compliance 
+> > based on height.
+> 
+> Hope is a bug.
+> 
+> If you intend this to be useful it has to help build the chain, not
+> just rely on hardwiring checkpoints once rule changes are presumed to
+> be buried deeply enough to do so (as the result of other implementations
+> ).
+> 
+> I understand this approach, it was ours at one time. There is a
+> significant difference, and your design is to some degree based on a
+> failure to fully consider this. I encourage you to not assume any
+> consensus-related detail is too small.
+
+I am not failing to consider this, and I don't consider this too small .
+But ensuring contextual transaction validity by "validate =>  valid with
+rules X,Y,Z" and then checking the active rules (softfork activation) on
+order validation, will give logically the same results as "validate with
+X,Y,Z => valid". This is not "hardwiring checkpoints" at all.
+
+> You cannot have a useful performance measure without full compliance.
+
+I agree that the results are preliminary and I will post more if the
+product reaches later stages.
+
+> It's worth noting that many of your stated objectives, including
+> modularity, developer platform, store isolation, consensus rule
+> isolation (including optional use of libbitcoinconsensus) are implemente
+> d.
+> 
+> It seems like you are doing some good work and it's not my intent to
+> discourage that. Libbitcoin is open source, I don't get paid and I'm
+> not selling anything. But if you are going down this path you should
+> be aware of it and may benefit from our successes as well as some of
+> the other stuff :). And hopefully we can get the benefit of your
+> insights as well.
+ 
+
+Thank you, I will definitely further dive into libbitcoin, and see what
+insights I can use for Bitcrust.
+
+Tomas
