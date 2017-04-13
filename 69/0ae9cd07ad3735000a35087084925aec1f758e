@@ -1,0 +1,70 @@
+From: oleganza@gmail.com (Oleg Andreev)
+Date: Wed, 12 Apr 2017 17:43:50 -0700
+Subject: [bitcoin-dev] Deploying CT in Bitcoin without extension blocks?
+Message-ID: <6DF303E6-E379-45FD-947B-BB5F938177E5@gmail.com>
+
+(This is a sketch, not a fully-formed proposal, just to kick off the discussion.)
+
+Confidential Transactions (by GMaxwell & Poelstra) require a new accounting model, 
+new representation of numbers (EC points as Pedersen commitments) and range proofs 
+per number. Setting aside performance and bandwidth concerns (3-4Kb per output, 
+50x more signature checks), how would we deploy that feature on Bitcoin network 
+in the most compatible manner?
+
+I'll try to present a sketch of the proposal. I apologize if this discussion already
+happened somewhere, although I couldn't find anything on this subject, apart from Elements 
+sidechain proposal, of course.
+
+At first glance we could create a new extblock and transaction format, add a protocol to
+"convert" money into and from such extblock, and commit to that extblock from the 
+outer block's coinbase transaction. Unfortunately, this opens gates to a flood of
+debates such as what should be the block size limit in such block, should we 
+take opportunity to fix over 9000 of pet-peeve issues with existing transactions
+and blocks, should we adjust inflation schedule, insert additional PoW, what would
+Satoshi say etc. Federated sidechain suffers from the same issues, plus adds 
+concerns regarding governance, although it would be more decoupled, which is useful.
+
+I tried to look at a possibility to make the change as compatible as possible,
+sticking confidential values right into the existing transaction structure and
+see how that would look like. As a nice bonus, confidential transactions would have 
+to fit into the hard-coded 1 Mb limit, preserving the drama around it :-P
+
+We start with a segwit-enabled script versioning and introduce 2 new script versions:
+version A has an actual program concatenated with the commitment, while version B 
+has only the commitment and allows mimblewimble usage (no signatures, non-interactive 
+cut-through etc). Legacy cleartext amount can nicely act as "min value" to minimize
+the range proof size, and range proofs themselves are provided separately in the
+segregated witness payload.
+
+Then, we soft fork additional rules:
+
+1. In non-coinbase tx, sum of commitments on inputs must balance with sum of commitments
+   on the outputs plus the cleartext mining fee in the witness.
+2. Range proof can be confidential, based on borromean ring signature.
+3. Range proof can be non-confidential, consisting of an amount and raw blinding factor.
+4. Tx witness can have an excess value (cf. MW) and cleartext amount for a miner's fee.
+5. In coinbase tx, total plaintext reward + commitments must balance with subsidy, 
+   legacy fees and new fees in the witness.
+6. Extra fees in the witness must be signed with the excess value's key.
+
+The confidential transactions use the same UTXO set, can be co-authored with plaintext inputs/outputs
+using legacy software and maybe even improve scalability by compressing on-chain transactions
+using mimblewimble cut-through.
+
+The rules above could have been made more complicated with export/import logic to allow users
+converting their coins to and from confidential ones, but that would require
+more complex support from miners to respect and merge outputs representing "plaintext value bank",
+mutate export transactions, which in turn requires introduction of a non-malleable TxID
+that excludes miner-adjustable export/import outputs.
+
+The rules above have a nice side effect that miners, being the minters of confidential coins, 
+can sell them at a premium, which creates an incentive for them to actually support
+that feature and work on improving performance of rangeproof validation (e.g. in GPUs).
+
+Would love to hear comments and criticism of that approach.
+
+Thanks!
+Oleg.
+
+
+
