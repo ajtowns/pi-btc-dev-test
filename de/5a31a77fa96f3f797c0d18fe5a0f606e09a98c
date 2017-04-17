@@ -1,0 +1,135 @@
+From: sergio.d.lerner@gmail.com (Sergio Demian Lerner)
+Date: Mon, 17 Apr 2017 10:25:14 -0300
+Subject: [bitcoin-dev] Suggestions to improve opcodes with O(N) complexity
+Message-ID: <CAKzdR-r-ZaH-Z1Jaehh3qRreTaSxSOSnYHOQ9mRUnayDTZ5QvA@mail.gmail.com>
+
+I came across O(N) behavior of two scripting opcodes, OP_IF and OP_ROLL. By
+exploiting edge cases for each of these two sub-optimal algorithms, I
+manage to simulate a Segwit block that takes up to 5.6 seconds to verify on
+a Ubuntu VM running on a single Core i5 processor. The simulation is based
+on a single thread executing EvalScript(), the Bitcoin script execution
+function. The tests were not performed processing actual blocks. These
+results should not make anyone worry, because there are worse problems in
+Bitcoin block verification, and because Bitcoin employs several worker
+threads for verifying scripts in parallel. For example, a Segwit block can
+request 80000 signature verifications when all transactions are P2WSH. It
+is said that Bitcoin Core (in a modern multi-core machine, using its
+multi-threading verification capabilities) can verify 8000 ECDSA signatures
+per second. Therefore a malicious miner can create a Segwit block that
+requires approximately 10 seconds to be verified. Since the examples
+presented in this post consume less than 10 seconds, I don?t consider my
+findings as vulnerabilities. However, if the block size is to be increased
+in the future, these problems should be considered prior increasing the
+block size. The scripts presented here as examples do not leave the value
+stack empty, but the Bitcoin protocol does not require it. Bitcoin only
+requires the top value to be true to accept the script.
+
+OP_IF abuse
+
+Every time a Bitcoin script executes the OP_IF opcode, a boolean value
+indicating if the condition was true, false or the conditional was skipped
+(also represented as false) is pushed into the vfExec stack.  Every time an
+opcode is executed, the number of  false values in the vfExec stack is
+counted using the following line:
+
+bool fExec = !count(vfExec.begin(), vfExec.end(), false);
+
+If the count is non-zero, all subsequent instructions except OP_ELSE and
+OP_ENDIF are skipped. It is clear that the longer the conditional stack is,
+the more it takes to count the false elements.
+
+The following scriptPub or ScriptSig exploits this problem:
+
+0
+OP_IF { 100 times }
+
+0 { 9798 times }
+
+OP_ENDIF { 100 times }
+1
+
+The vfExec vector is filled with 100 elements, and then each element is
+scanned 9799 times, totaling more than 979K items scanned. This took 2.5
+seconds in my test VM (for a block filled with these scriptSigs).
+
+To re-write this logic with a O(1) algorithm, one simply has to count the
+number of true conditions in one variable (trueCount), and the number of
+false or skipped conditions following all true conditions in another
+(ignoreCount). Detecting if code needs to be executed or not requires just
+testing if ignoreCount is zero.
+
+The handling of OP_IF / OP_NOTIF / OP_ELSE should be like the following
+pseudo-code:
+
+fExec = (ignoreCount==0);
+...
+case OP_IF:
+case OP_NOTIF:
+ {
+   if (fExec)
+    {
+     ....compute fValue...
+     if (fValue) trueCount++; else ignoreCount++;
+    } else
+    ignoreCount++;
+ } break;
+ case OP_ELSE:
+ {
+ if ((trueCount==0) && (ignoreCount==0))
+     return set_error(serror, SCRIPT_ERR_UNBALANCED_CONDITIONAL);
+ if (ignoreCount==0) { trueCount--; ignoreCount++; } else
+ if (ignoreCount==1) { trueCount++; ignoreCount--; }
+ } break;
+case OP_ENDIF:
+ {
+    if ((trueCount==0) && (ignoreCount==0))
+        return set_error(serror, SCRIPT_ERR_UNBALANCED_CONDITIONAL);
+    if (ignoreCount>0) ignoreCount--; else trueCount--;
+ }
+ break;
+
+You may have noticed the strange behavior of Bitcoin?s ELSE statement.
+Bitcoin allows one to switch between true and false conditions several
+times. For example, the following script is valid and leaves the value 2 on
+the stack:
+
+1 OP_IF OP_ELSE OP_ELSE 2 OP_ENDIF
+
+OP_ROLL
+
+The second problem lies in the OP_ROLL opcode. This opcode removes a value
+at a given index from the value stack, and pushes it on top. As the Bitcoin
+Core stack stores a list of char std::vector by value (not by reference),
+and because the stack is itself a std::vector (not a linked list), then
+removing the first elements requires moving all elements one position in
+memory. The value stack can store a maximum of 1000 elements. The following
+script fills the stack and then moves each stack element 200 times, so the
+number of moved elements is 200K. This took almost 5.6 seconds in my test
+VM (for a block filled with these scriptSigs).
+
+1  {999 times}
+998 OP_ROLL { 200 times }
+
+I tried other scripts, such as filling the stack with values of size 520
+using DUP3, and then performing rolls, but all of them led to a block that
+took less time, if the block is to be filled with the scripts.
+
+One solution to this problem is use a linked list data structure instead of
+a std::vector, to allow O(1) removal of items, but it still requires O(N)
+for element lookup. A balanced tree where each internal node is augmented
+with the number of children underneath can be used to provide efficient
+indexed access and efficient element removal. However, the overhead of such
+data structure may kill its benefits.
+
+So it may be the case that optimizing OP_ROLL will never really be
+required.
+
+But these minor issues have to be taken into account if the scripting
+system is modified in any way. There are many subtle interactions. For
+instance, it may seem that Segwit allows a transaction having a stack
+containing 2 million items to verify correctly, by having the witness stack
+filled with 2M zero values, and by executing an empty witness script.
+However this is prevented by the cleanstack check.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170417/64f59d8e/attachment.html>
