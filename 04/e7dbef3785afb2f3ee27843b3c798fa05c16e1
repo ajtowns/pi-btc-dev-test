@@ -1,0 +1,42 @@
+From: praxeology_guy@protonmail.com (praxeology_guy)
+Date: Tue, 18 Apr 2017 15:14:05 -0400
+Subject: [bitcoin-dev] Properties of an ideal PoW algorithm &
+	implementation
+In-Reply-To: <CAAt2M1-LsEgBXhMpAn+JkBwA+Q7AwikiVFY6z0jEfj8dCCBUTw@mail.gmail.com>
+References: <CAAt2M19QK9cZShOf16UmRz6me9+h_FvjaSCcq_T6aaabX_qpKg@mail.gmail.com>
+	<CAAt2M1_-KM3y-wOnAc-3bFJzJVz3GooSG0h_rixofd61R3h6gA@mail.gmail.com>
+	<CAAt2M1_YdK6n4B_tsJsCeKRNnG_p+e4mH=D_Jz1FkeYL1y54TA@mail.gmail.com>
+	<CAAt2M187-81ED8ZLf6F7m324RLBwB6u62=iPMbr9FD9qnu1XJw@mail.gmail.com>
+	<CAAt2M1_C_3wv9g7auCSg_ECZ=gbxAPumcfZZZO=o5Ly4VV+GvA@mail.gmail.com>
+	<CAAt2M1-a66K=uqOkGiHuuzU1qEPan6RHoRfwC+YVFeU94JBxNw@mail.gmail.com>
+	<CAAt2M1-RXYxVuNBDdKrnyWow6PCNDeGawv0gQx+jn4f-3xuumg@mail.gmail.com>
+	<CAAt2M1-kpQyK2bQyHM=vy2oor75m30frHLGk_phPs10gLsH14A@mail.gmail.com>
+	<CAAt2M1-LsEgBXhMpAn+JkBwA+Q7AwikiVFY6z0jEfj8dCCBUTw@mail.gmail.com>
+Message-ID: <d34BBx6aArm944Gm26SU3KIEqVMVbt1rx5Bnd3Cfs8Jc_uquIB5-RoMVoDoXRYXEaO_FudCUGe4y3ylqoz1JyEM7NUgS7kZMjE04dpxwkdw=@protonmail.com>
+
+Natanael,
+
+=== Metal Layers ===
+
+One factor in chip cost other than transistor count is the number of layers required to route all the interconnects in the desired die area constraint. The need for fewer layers can result in less patent-able costs of layering technology. Fewer layers are quicker and easier to manufacture.
+
+I'm not an expert in the field, and I can't vouch for the validity of the entirety of the paper, but this paper discusses various factors that impact chip cost design.
+http://www.cse.psu.edu/~juz138/files/3d-cost-tcad10.pdf
+
+=== Early nonce mixing, Variable Length Input with Near Constant Work ===
+
+To minimize asicboost like optimizations... the entirety of the input should be mixed with the nonce data ASAP. For example with Bitcoin as it is now, the 80 byte block header doesn't fully fit in one 64 byte SHA256 input block. This results in a 2nd SHA256 block input that only has 4 bytes of nonce and the rest constant that are mixed much later than the rest of the input... which allows for unexpected optimizations.
+
+Solution: A hash algorithm that could have more linear computation time vs input size would be a 2 stage algorithm:
+1. 1st stage Merkle tree hash to pre-lossy-mix-compress the variable length input stream to the size of the 2nd stage state vector. Each bit of input should have about equal influence on each of the output bits. (Minimize information loss, maximize mixed-ness).
+2. Multi-round mixing of the 2nd stage, where this stage is significantly more work than the 1st stage.
+
+This is somewhat done already in Bitcoin by the PoW doing SHA256 twice in serial. The first time is pretty much the merkle tree hash (a node with two children), and then the second time is the mult-round mixing. If the Bitcoin PoW did SHA256 three or four times or more, then asicboost like optimizations would have less of an effect.
+
+In actual hardware, assuming a particular input length for the design can result in a significantly more optimized design than creating hardware that can handle a variable length input. So your design goal of "not linear in performance relative to input size" to me seems to be a hard one to attain... in practical, to support very large input sizes in a constant work fashion requires a trade off between memory/parallelization and die space. I think it would be better to make an assumption about the block header size, such as that it is exactly 80 bytes, or, at least something reasonable like the hardware should be able to support a block header size <= 128 bytes.
+
+Cheers,
+Praxeology Guy
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170418/3a1bd7d0/attachment-0001.html>
