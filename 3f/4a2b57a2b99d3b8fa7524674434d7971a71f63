@@ -1,0 +1,300 @@
+From: david.vorick@gmail.com (David Vorick)
+Date: Wed, 19 Apr 2017 13:30:30 -0400
+Subject: [bitcoin-dev] Small Nodes: A Better Alternative to Pruned Nodes
+In-Reply-To: <19dbfef2-3791-8fe7-1c00-c4052c3d6c45@gmail.com>
+References: <CAFVRnypbQQ-vsSLqv48cYaqTCty4R1DmFRqfAvxe4mAqyQNXxQ@mail.gmail.com>
+	<19dbfef2-3791-8fe7-1c00-c4052c3d6c45@gmail.com>
+Message-ID: <CAFVRnyrQ3CMPW0=dtR-xnW1bF8cD9o5yvD67w25=w9wxVyJT9w@mail.gmail.com>
+
+On Tue, Apr 18, 2017 at 3:43 AM, Jonas Schnelli <dev at jonasschnelli.ch>
+wrote:
+
+>
+> Hi Dave
+>
+> *1. I agree that we need to have a way for pruned nodes to partially serve
+> historical blocks.*
+> My personal measurements told me that around ~80% of historical block
+> serving are between tip and -1?000 blocks.
+> Currently, Core nodes have only two modes of operations, ?server all
+> historical blocks? or ?none?.
+> This makes little sense especially if you prune to a target size of, lets
+> say, 80GB (~80% of the chain).
+> Ideally, there would be a mode where your full node can signal a third
+> mode ?I keep the last 1000 blocks? (or make this more dynamic).
+>
+
+That probably makes sense with small nodes too. The past 1000 blocks are
+such a small footprint compared to the rest of the chain.
+
+
+>
+> *2. Bootstrapping new peers*
+> I?m not sure if full nodes must be the single point of historical data
+> storage. Full nodes provide a valuable service (verification, relay,
+> filtering, etc.). I?m not sure if serving historical blocks is one of them.
+> Historical blocks could be made available on CDN?s or other file storage
+> networks. You are going to verify them anyways,... the serving part is pure
+> data storage.
+> I?m also pretty sure that some users have stopping running full nodes
+> because their upstream bandwidth consumption (because of serving historical
+> blocks) was getting intolerable.
+> Especially ?consumer? peers must have been hit by this (little experience
+> in how to reduce traffic, upstream in general is bad for
+> consumers-connections, little resources in general).
+>
+
+Perhaps it is not, but I would think that it would be pretty
+straightforward to configure a global bandwidth limit within Bitcoin. I
+know many torrent clients, and clients for protocols like Tor and i2p
+include the ability to set both speed limits and monthly bandwidth limits.
+Shipping core with sane default limits is probably sufficient to solve
+bandwidth issues for most users. I don't know if default limits may result
+in today's archive nodes pulling less weight though - changing the defaults
+to have limits may slow the network down as a whole.
+
+In my experience (living in a city where most people have uncapped
+connections), disk usage is usually the bigger issue, but certainly
+bandwidth is a known problem (especially for rural users) as well.
+
+
+>
+> Having a second option built into full nodes (or as an external bootstrap
+> service/app) how to download historical blocks during bootstrapping could
+> probably be a relieve for "small nodes?.
+> It could be a little daemon that downloads historical blocks from CDN?s,
+> etc. and feeds them into your full node over p2p/8333 and kickstarts your
+> bootstrapping without bothering valuable peers.
+> Or, the alternative download, could be built into the full nodes main
+> logic.
+> And, if it wasn?t obvious, this must not bypass the verification!
+>
+
+I worry about any type of CDN being a central point of failure. CDNs cost
+money, which means someone is footing the bill. Torrenting typically relies
+on a DHT, which is much easier to attack than Bitcoin's peer network. It's
+possible that a decentralized CDN could be used, but I don't think any yet
+exist (though I am building one for unrelated reasons) which are both
+sufficiently secure and incentive-compatible to be considered as an
+alternative to using full nodes to bootstrap.
+
+I just don't want to end up in a situation where 90% of users are getting
+their blockchain from the same 3 websites or centralized services. And I
+also don't want to rely on any p2p solution which would not stand up to a
+serious adversary. Right now, I think the bitcoin p2p network is by
+significant margin the best we've got. The landscape for decentralized data
+distribution is evolving rapidly though, perhaps in a few years there will
+be a superior alternative.
+
+
+> *To your proposal:*
+> - Isn?t there a tiny finger-printing element if peers have to pick an
+> segmentation index?
+> - SPV bloom filter clients can?t use fragmented blocks to filter txns?
+> Right? How could they avoid connecting to those peers?
+>
+> </jonas>
+>
+
+Yes, there is finger-print that happens if you have nodes pick an index.
+And the fingerprint gets a lot worse if you have a node pick multiple
+indexes. Though, isn't it already required that nodes have some sort of IP
+address or hidden service domain? I want to say that the fingerprint
+created by picking an index is not a big deal, because it can be separated
+from activity like transaction relaying and mining. Though, I am not
+certain and perhaps it is a problem.
+
+To be honest, I hadn't really considered SPV nodes at the time of writing.
+Small nodes would still be seeing all of the new blocks, and per your
+suggestion may also be storing the 1000 or so most recent blocks, but SPV
+nodes would still need some way to find all of their historical
+transactions. The problem is not fetching blocks, it's figuring out which
+blocks are worth fetching. It may be sufficient to have nodes store a bloom
+filter for each block indicating which addresses had activity. The bloom
+filter would probably only need to be about 1% of the size of the full
+block. That's not too much overhead (now you are storing 21% of the block
+instead of just 20%), and would retain SPV compatibility.
+
+On Mon, Apr 17, 2017 at 12:17 PM, praxeology_guy <
+praxeology_guy at protonmail.com> wrote:
+
+>
+> FYI With unspent coin snapshots, needing archive data becomes less
+> important.  People can synchronize from a later snapshot instead of the
+> genesis block.  See https://petertodd.org/2016/delayed-txo-commitments
+> for my current favorite idea.
+>
+>
+This is something that I think could help a lot too. If the build processes
+included verifying the chain and then creating a utxo snapshot at say,
+block 400,000, then nodes would no longer need to download, store, upload,
+or share blocks prior to that height. It means that a reorg deeper than
+that point would hardfork the network. But a reorg 60k blocks deep is going
+to cause problems worse than a network split. Then, the only people who
+would ever need to care about the early blocks are developers, and it's
+more reasonable to expect developers to go through a longer process and
+have more resources than everyday users.
+
+On Mon, Apr 17, 2017 at 6:14 AM, Aymeric Vitte via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> While I fully agree with the intent (increasing full nodes so a big miner
+> waking up in a bad mood can't threaten the world any longer every day as it
+> is now) I am not sure to get the interest of this proposal, because:
+>
+> - it's probably not a good idea to encourage the home users to run full
+> nodes, there are many people running servers far from their capacity that
+> could easily run efficient full nodes
+>
+Running a full node is the only way to avoid needing to trust others. It's
+also how you make your opinion worthwhile for events like hard forks and
+UASFs. If decentralization is the primary motivation, it absolutely makes
+sense to encourage people to run their own full nodes. Without a full node,
+you are at the mercy of the governance decisions by those who do have full
+nodes. But if you have a full node, you can chose to opt-out of any upgrade
+(example: ethereum classic nodes).
+
+
+> - if someone can't allocate 100 GB today to run a full node, then we can't
+> expect him to allocate more in the future
+>
+That's why I'm proposing something to decrease the storage requirements.
+
+
+> - this proposal is a kind of reinventing torrents, while limiting the
+> number of connections to something not efficient at all, I don't see why
+> something that is proven to be super efficient (torrents) would be needed
+> to be reinvented, I am not saying that it should be used as the bittorrent
+> network is doing but the concepts can be reused
+>
+It's different from torrents in that it uses specialized erasure coding to
+make sure that every block is always available, even if an adversary is
+running around targeting all the nodes with a particular piece.
+
+
+> - I don't get at all the concept of "archival" nodes since it's another
+> useless step toward centralization
+>
+"archival" nodes are simply nodes with the full blockchain. Nobody can
+bootstrap on the network without them. Today, every bitcoin-core node is an
+archival node by default.
+
+> I think the only way to increase full nodes it to design an incentive for
+> people to run them
+>
+The primary incentive is the sovereignty that it gives you. Running a
+Bitcoin full node gives you security and protection against political
+garbage that you can't get any other way. The network does currently depend
+on altruism to allow people to download the blockchain, but as long as we
+can keep the resource requirements of this altruism low, I think we can
+expect it to continue. This proposal attempts to keep those requirements
+low.
+
+
+
+On Tue, Apr 18, 2017 at 6:50 AM, Tom Zander <tomz at freedommail.ch> wrote:
+
+> On Monday, 17 April 2017 08:54:49 CEST David Vorick via bitcoin-dev wrote:
+> > The best alternative today to storing the full blockchain is to run a
+> > pruned node
+>
+> The idea looks a little overly complex to me.
+>
+> I suggested something similar which is a much simpler version;
+> https://zander.github.io/scaling/Pruning/
+>
+> > # Random pruning mode
+> >
+> > There is a large gap between the two current modes of everything
+> > (currently 75GB) and only what we need (2GB or so).
+> >
+> > This mode would have two areas, it would keep a days worth of blocks to
+> > make sure that any reorgs etc would not cause a re-download, but it would
+> > have additionally have an area that can be used to store historical data
+> > to be shared on the network. Maybe 20 or 50GB.
+> >
+> > One main feature of Bitcoin is that we have massive replication. Each
+> node
+> > currently holds all the same data that every other node holds. But this
+> > doesn't have to be the case with pruned nodes. A node itself has no need
+> > for historic data at all.
+> >
+> > The suggestion is that a node stores a random set of blocks. Dropping
+> > random blocks as the node runs out of disk-space. Additionally, we would
+> > introduce a new way to download blocks from other nodes which allows the
+> > node to say it doesn't actually have the block requested.
+> >
+> > The effect of this setup is that many different nodes together end up
+> > having the total amount of blocks, even though each node only has a
+> > fraction of the total amount.
+>
+> --
+> Tom Zander
+> Blog: https://zander.github.io
+> Vlog: https://vimeo.com/channels/tomscryptochannel
+>
+
+Your proposal has a significant disadvantage: If every peer is dropping 75%
+of all blocks randomly, then you need to connect to a large number of peers
+to download the whole blockchain. Any given peer has a 25% chance of
+holding a block, or rather, a 75% chance of not holding a block. If you
+have n peers, your probability of not being able to download a given block
+is 0.75^n. If you are downloading 450,000 blocks, you will need to connect
+to an expected 46 peers to download the whole blockchain.
+
+Your proposal is also a lot less able to handle active adversaries: if
+nodes are randomly dropping blocks, the probability that one block in
+particular is dropped by everyone goes up significantly. And the problem
+gets a lot worse in the presence of an active adversary. If there are 8000
+nodes each dropping 75% of the blocks, then each block on average will only
+be held by 2000 nodes. Probabilistically, some unlucky blocks will be held
+by fewer than 2000 nodes. An active adversary needs only to eliminate about
+2000 nodes (a chosen 2000 nodes) to knock a block off of the network. But
+missing even a single block is a significant problem.
+
+Your proposal essentially requires that archive nodes still exist and be a
+part of a typical blockchain download. Given that, I don't think it would
+be a sound idea to ship as a default in bitcoin core.
+
+
+
+On Tue, Apr 18, 2017 at 9:07 AM, Tier Nolan via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> This has been discussed before.
+>
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> 2015-May/008101.html
+>
+> including a list of nice to have features by Maxwell
+>
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> 2015-May/008110.html
+>
+> You meet most of these rules, though you do have to download blocks from
+> multiple peers.
+>
+> The suggestion in that thread were for a way to compactly indicate which
+> blocks a node has.  Each node would then store a sub-set of all the
+> blocks.  You just download the blocks you want from the node that has them.
+>
+> Each node would be recommended to store the last few days worth anyway.
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+I believe that my proposal does meet all of the requirements listed by
+Maxwell. Having a set of 8 random peers gives you a very high probability
+of being able to recover every single block. You would need to connect to
+at least 5 peers (and this is already >90% likely to be sufficient to
+recover every block), but if you cannot connect to 5 random peers your node
+is probably in trouble anyway. Highly parallel, high speed downloads are
+just as possible with small nodes as with archive nodes. It only takes a
+few bytes to indicate which part of the blockchain you have, and any 2
+peers have a less than 1% chance of overlapping.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170419/88f15eb2/attachment-0001.html>
