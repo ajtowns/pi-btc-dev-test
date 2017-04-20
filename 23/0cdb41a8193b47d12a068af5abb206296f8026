@@ -1,0 +1,177 @@
+From: erik@q32.com (Erik Aronesty)
+Date: Thu, 20 Apr 2017 11:50:24 -0400
+Subject: [bitcoin-dev] Small Nodes: A Better Alternative to Pruned Nodes
+In-Reply-To: <CAJN5wHW=p+q+DT9R=uheLxOjKBX=xcB+fOZR2KACgJO9SdXypw@mail.gmail.com>
+References: <CAFVRnypbQQ-vsSLqv48cYaqTCty4R1DmFRqfAvxe4mAqyQNXxQ@mail.gmail.com>
+	<CAJN5wHW=p+q+DT9R=uheLxOjKBX=xcB+fOZR2KACgJO9SdXypw@mail.gmail.com>
+Message-ID: <CAJowKg++8GD3gE15pdwe0Bj-L0A6MAzG0_uTSLASaRT9yVb1aQ@mail.gmail.com>
+
+Try to find 1TB dedicated server hosting ...
+
+If you want to set up an ecommerce site somewhere besides your living room,
+storage costs are still a concern.
+
+On Mon, Apr 17, 2017 at 3:11 AM, Danny Thorpe via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> 1TB HDD is now available for under $40 USD.  How is the 100GB storage
+> requirement preventing anyone from setting up full nodes?
+>
+> On Apr 16, 2017 11:55 PM, "David Vorick via bitcoin-dev" <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> *Rationale:*
+>>
+>> A node that stores the full blockchain (I will use the term archival
+>> node) requires over 100GB of disk space, which I believe is one of the most
+>> significant barriers to more people running full nodes. And I believe the
+>> ecosystem would benefit substantially if more users were running full nodes.
+>>
+>> The best alternative today to storing the full blockchain is to run a
+>> pruned node, which keeps only the UTXO set and throws away already verified
+>> blocks. The operator of the pruned node is able to enjoy the full security
+>> benefits of a full node, but is essentially leeching the network, as they
+>> performed a large download likely without contributing anything back.
+>>
+>> This puts more pressure on the archival nodes, as the archival nodes need
+>> to pick up the slack and help new nodes bootstrap to the network. As the
+>> pressure on archival nodes grows, fewer people will be able to actually run
+>> archival nodes, and the situation will degrade. The situation would likely
+>> become problematic quickly if bitcoin-core were to ship with the defaults
+>> set to a pruned node.
+>>
+>> Even further, the people most likely to care about saving 100GB of disk
+>> space are also the people least likely to care about some extra bandwidth
+>> usage. For datacenter nodes, and for nodes doing lots of bandwidth, the
+>> bandwidth is usually the biggest cost of running the node. For home users
+>> however, as long as they stay under their bandwidth cap, the bandwidth is
+>> actually free. Ideally, new nodes would be able to bootstrap from nodes
+>> that do not have to pay for their bandwidth, instead of needing to rely on
+>> a decreasing percentage of heavy-duty archival nodes.
+>>
+>> I have (perhaps incorrectly) identified disk space consumption as the
+>> most significant factor in your average user choosing to run a pruned node
+>> or a lite client instead of a full node. The average user is not typically
+>> too worried about bandwidth, and is also not typically too worried about
+>> initial blockchain download time. But the 100GB hit to your disk space can
+>> be a huge psychological factor, especially if your hard drive only has
+>> 500GB available in the first place, and 250+ GB is already consumed by
+>> other files you have.
+>>
+>> I believe that improving the disk usage situation would greatly benefit
+>> decentralization, especially if it could be done without putting pressure
+>> on archival nodes.
+>>
+>> *Small Nodes Proposal:*
+>>
+>> I propose an alternative to the pruned node that does not put undue
+>> pressure on archival nodes, and would be acceptable and non-risky to ship
+>> as a default in bitcoin-core. For lack of a better name, I'll call this new
+>> type of node a 'small node'. The intention is that bitcoin-core would
+>> eventually ship 'small nodes' by default, such that the expected amount of
+>> disk consumption drops from today's 100+ GB to less than 30 GB.
+>>
+>> My alternative proposal has the following properties:
+>>
+>> + Full nodes only need to store ~20% of the blockchain
+>> + With very high probability, a new node will be able to recover the
+>> entire blockchain by connecting to 6 random small node peers.
+>> + An attacker that can eliminate a chosen+ 95% of the full nodes running
+>> today will be unable to prevent new nodes from downloading the full
+>> blockchain, even if the attacker is also able to eliminate all archival
+>> nodes. (assuming all nodes today were small nodes instead of archival nodes)
+>>
+>> Method:
+>>
+>> A small node will pick an index [5, 256). This index is that node's
+>> permanent index. When storing a block, instead of storing the full block,
+>> the node will use Reed-Solomon coding to erasure code the block using a
+>> 5-of-256 scheme. The result will be 256 pieces that are 20% of the size of
+>> the block each. The node picks the piece that corresponds to its index, and
+>> stores that instead. (Indexes 0-4 are reserved for archival nodes -
+>> explained later)
+>>
+>> The node is now storing a fragment of every block. Alone, this fragment
+>> cannot be used to recover any piece of the blockchain. However, when paired
+>> with any 5 unique fragments (fragments of the same index will not be
+>> unique), the full block can be recovered.
+>>
+>> Nodes can optionally store more than 1 fragment each. At 5 fragments, the
+>> node becomes a full archival node, and the chosen indexes should be 0-4.
+>> This is advantageous for the archival node as the encoded data for the
+>> first 5 indexes will actually be identical to the block itself - there is
+>> no computational overhead for selecting the first indexes. There is also no
+>> need to choose random indexes, because the full block can be recovered no
+>> matter which indexes are chosen.
+>>
+>> When connecting to new peers, the indexes of each peer needs to be known.
+>> Once peers totaling 5 unique indexes are discovered, blockchain download
+>> can begin. Connecting to just 5 small node peers provides a >95% chance of
+>> getting 5 uniques, with exponentially improving odds of success as you
+>> connect to more peers. Connecting to a single archive node guarantees that
+>> any gaps can be filled.
+>>
+>> A good encoder should be able to turn a block into a 5-of-256 piece set
+>> in under 10 milliseconds using a single core on a standard consumer
+>> desktop. This should not slow down initial blockchain download
+>> substantially, though the overhead is more than a rounding error.
+>>
+>> *DoS Prevention:*
+>>
+>> A malicious node may provide garbage data instead of the actual piece.
+>> Given just the garbage data and 4 other correct pieces, it is impossible
+>> (best I know anyway) to tell which piece is the garbage piece.
+>>
+>> One option in this case would be to seek out an archival node that could
+>> verify the correctness of the pieces, and identify the malicious node.
+>>
+>> Another option would be to have the small nodes store a cryptographic
+>> checksum of each piece. Obtaining the cryptographic checksum for all 256
+>> pieces would incur a nontrivial amount of hashing (post segwit, as much as
+>> 100MB of extra hashing per block), and would require an additional ~4kb of
+>> storage per block. The hashing overhead here may be prohibitive.
+>>
+>> Another solution would be to find additional pieces and brute-force
+>> combinations of 5 until a working combination was discovered. Though this
+>> sounds nasty, it should take less than five seconds of computation to find
+>> the working combination given 5 correct pieces and 2 incorrect pieces. This
+>> computation only needs to be performed once to identify the malicious peers.
+>>
+>> I also believe that alternative erasure coding schemes exist which
+>> actually are able to identify the bad pieces given sufficient good pieces,
+>> however I don't know if they have the same computational performance as the
+>> best Reed-Solomon coding implementations.
+>>
+>> *Deployment:*
+>>
+>> Small nodes are completely useless unless the critical mass of 5 pieces
+>> can be obtained. The first version that supports small node block downloads
+>> should default everyone to an archival node (meaning indexes 0-4 are used)
+>>
+>> Once there are enough small-node-enabled archive nodes, the default can
+>> be switched so that nodes only have a single index by default. In the first
+>> few days, when there are only a few small nodes, the previously-deployed
+>> archival nodes can help fill in the gaps, and the small nodes can be useful
+>> for blockchain download right away.
+>>
+>> ----------------------------------
+>>
+>> This represents a non-trivial amount of code, but I believe that the
+>> result would be a non-trivial increase in the percentage of users running
+>> full nodes, and a healthier overall network.
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170420/9e3837a3/attachment-0001.html>
