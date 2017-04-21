@@ -1,0 +1,247 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Fri, 21 Apr 2017 20:38:36 +0000
+Subject: [bitcoin-dev] Small Nodes: A Better Alternative to Pruned Nodes
+In-Reply-To: <CAFVRnypbQQ-vsSLqv48cYaqTCty4R1DmFRqfAvxe4mAqyQNXxQ@mail.gmail.com>
+References: <CAFVRnypbQQ-vsSLqv48cYaqTCty4R1DmFRqfAvxe4mAqyQNXxQ@mail.gmail.com>
+Message-ID: <CAAS2fgT5pJh68xufv_81+N8K0asxH16WdX7PLLXGjRPmJOkYFQ@mail.gmail.com>
+
+On Mon, Apr 17, 2017 at 6:54 AM, David Vorick via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Rationale:
+>
+> A node that stores the full blockchain (I will use the term archival node)
+> requires over 100GB of disk space, which I believe is one of the most
+> significant barriers to more people running full nodes. And I believe the
+> ecosystem would benefit substantially if more users were running full nodes.
+
+Hi David,
+
+I've been thinking about this subject for a long time (Tier Nolan
+linked some of the threads; see also the coloration part of
+https://en.bitcoin.it/wiki/User:Gmaxwell/block_network_coding) and
+about using FEC with the history for the last year or so. (we use FEC
+in practice in fibre for relay at the tip now, and that has a design
+history going back to 2013).
+
+As Jonas points out, we're all set to also offer the 'recent blocks'
+separately, so that is obviously going to happen and will help. The
+free design parameter is the definition of recent, but we have good
+measurements for setting that now. But about history...
+
+I think I might have designed myself into a corner and perhaps you've
+shown a way out-- I think there are some serious limits in your
+proposal but perhaps we can fix them.  Let me give you what I had been
+thinking about, then hand you at least a couple improvements to your
+thinking:
+
+As you hopefully now know (per Tier Nolan's) post: I'd previously been
+thinking about nodes keeping a deterministic random, independently
+selected subset which is self-leveling based on a small seed.   The
+connection overhead can can be mitigated by working with chunks of
+blocks rather than single blocks.
+
+But as you've observed, the failure probabilities are rather high,
+especially if an active attacker targets nodes carrying less commonly
+available blocks.  So I thought, okay we can use FEC to help improve
+the recovery odds.
+
+So I considered using a sparse random code (E.g. an LDPC erasure code
+like in RFC 5170) the advantage of these codes is that they are very
+fast to decode, and they support having enormous codewords, so you can
+a high probability of every peer having a unique ID, so there would
+effectively never need to be any duplication.
+
+But then I ran into the problem that I had no reasonable way to
+recover from bad data, short of pulling a single group from an archive
+then banning whatever peers gave you bad chunks.
+
+So that is kind of where I got stuck.
+
+I didn't even consider the advantage of only being able to use a few
+peers total, as I still assumed that it would be doing the random
+groups thing as well. That's a great point.
+
+So on your design:
+
+Being able to have a lower bound of 20% seems like a serious
+limitation to me: it would be fine today, but the chain will quite
+possibly be twice the current size in a year.... and in four years
+we're back to where we are now. What I'd been thinking would be able
+to scale arbitrarily low.
+
+20% is small, but is it small enough? -- today that would get us back
+into common SSDs being able to hold the whole chain, but that property
+will probably be lost again in a couple years. I think with any fixed
+fraction we'll constantly be fighting against the opportunity cost of
+upgrading storage, if not the cost of the storage itself. (and I agree
+this is the vast majority of the response from actual users,  sync
+time and ongoing bandwidth usage seeming to tie for second; the latter
+of which can be mitigated in other ways but for the former see my
+remarks at the end)
+
+The fact that having only a few required blocks needed lets you brute
+force out the decode is a great point.  I hadn't considered that, and
+the schemed I'd been considering are not communications efficient with
+only a few blocks required e.g. they sometimes require a couple extra
+blocks to successfully decode, which is a lot of overhead if you're
+only splitting 5 ways.
+
+> I also believe that alternative erasure coding schemes exist which actually
+> are able to identify the bad pieces given sufficient good pieces, however I
+> don't know if they have the same computational performance as the best
+> Reed-Solomon coding implementations.
+
+Actually RS codes are _the_ codes you want to use for with decoding
+with errors but the 'computationally efficient' error correcting
+decoding (which is itself heinously slow) requires 2*errors + data
+number of blocks to decode. Not so useful if you're only looking at 5
+parts.
+
+RS decoding is pretty slow generally, esp compared to binary sparse
+codes.  We were unable to make RS coding make sense for use in fast
+block relay for this reason-- decoding time bottlenecked
+reconstruction. The most highly optimized RS codes make a special
+optimization which is not useful for your proposal: They're much
+faster to decode if you're decoding from the first couple correction
+blocks.  Without these optimizations speeds from from 1GB/s to more
+like 100MB/s or worse.  Though I suppose with assumevalid initial sync
+now is pretty cpu-idle on most hardware.  (If 100MB/s sounds fast,
+keep in mind that time spent decoding is time that can't be spent
+hashing/verifying/etc.. and on a lot hardware with fast broadband with
+signature validation enabled we're cpu bound already)
+
+> Another option would be to have the small nodes store a cryptographic
+> checksum of each piece. Obtaining the cryptographic checksum for all 256
+> pieces would incur a nontrivial amount of hashing (post segwit, as much as
+> 100MB of extra hashing per block), and would require an additional ~4kb of
+> storage per block. The hashing overhead here may be prohibitive.
+
+This was a complete non-starter when thinking about using these sparse
+codes where the number of possible blocks is effectively unlimited.
+
+Your 4kb assumption isn't correct though: How you do it is that after
+downloading a block you compute the 255 fragments (as an aside, you're
+saying 256 but the most you can get is 255 for an 8-bit RS code).
+then you compute a hashtree over them. Every node remembers the root,
+and the membership proofs for their chunk(s)... this is 256 bytes of
+extra storage.
+
+When you decode you use a majority to decide what root you are trying
+to decode. If it fails to result in valid blocks, you blacklist that
+root, ban all those peers, and try the next.  Worst case cost is the
+number of invalid roots rather than peers choose 5.
+
+I'm not sure if combinitoral decode or the above would be easier to implement.
+
+> This represents a non-trivial amount of code, but I believe that the result
+> would be a non-trivial increase in the percentage of users running full
+> nodes, and a healthier overall network.
+
+The RS coder stuff is small, even doing the fancy w/ error decodes it
+isn't huge. I expect complexity mostly will show up in the garbage
+input handling.
+
+A couple other thoughts:
+
+The coded blocks are not useful for things like bloom scanning or
+other lookup.  With the committed filter proposals you could still
+keep the committed filters (even 5 way shared themselves...) so
+perhaps not that much of a concern.
+
+Coding the blocks will make their encoding normative. The current P2P
+one we use is by no means more efficient,  Pieter and I have an
+encoding that works on a transaction by transaction basis and
+decreases the size of the whole chain by ~28%, block-wide entropy
+encoding could reduce the size even further.  We'd hoped to at least
+start using this per transaction coding locally, converting on the fly
+to the original serialization where needed (the idea would be to
+eventually support the compacted serialization on the wire too).
+Maybe the answer there is to just get in whatever improvements we
+think are reasonable before doing the coded block.
+
+I think the 20% floor is still too high, and too many nodes will be
+forced to just do the recent blocks things. perhaps not today, but
+eventually.   I suppose we could just assume that the block is split
+10 ways, and the default is two indexes, but there is flexibility to
+go down to one in the future, at the cost of needing more peers...
+could run numbers on the decode failure odds for the 10 of 255 case...
+But that would only improve it to 10%.   I suppose the proposal could
+be combined with sparse chain storage like I was thinking years ago,
+but much less sparsity would be needed so the downsides would be less
+severe.
+
+E.g. if you want to store <10% of the chain you'd keep some 10% blocks
+for random groups.  such a feature could be introduced later when it
+was more important to keep less than 10 or 20 percent.
+
+Recovery odds could be improved with a second level of coding. E.g. if
+your ID was not a constant but a seed into PRNG(height)%250+5  then
+you also have a fraction of nodes store the xor between adjacent pairs
+then you can fill in unrecoverable groups.  the limit of this thinking
+is exactly the sparse random code ECC schemes) Probably not worth the
+complexity, but just a thing to keep in mind...
+
+Probably the next step is to do some more focused benchmarks. I have
+some code I can recommend offline.
+
+I can't help but feel that this might be a little bit of a waste of
+time. I think the long term survival of the system is likely going to
+ultimately depend on doing an assumevalid like gated sync of a UTXO
+set.  Ethereum already does something far more reckless (they let
+miners pick the state and blindly trust it with almost no depth
+required) and no one cares.  If that is done then all these concerns
+are greatly reduced, along with the 100(+++?)GB/history-year transfer
+costs.  You'd still want to have archives, but do you care about 20%
+archives?
+
+Replying to some other comments in the thread:
+
+> A user may not want to run a node at home, but rather on a digital ocean or AWS server
+
+This is almost if not quite entirely pointless. There are already many
+nodes on AWS and DO, adding more does not improve your security (you
+must trust DO/AWS), does not improve your reliability (DO/AWS), does
+not improve the network's capacity, etc.  About the only arguable
+benefit I can see there beyond making more money for these hosts is
+feel good points for (incorrectly) thinking you're helping the
+network, and negligibly reducing the density of spy nodes (but wait:
+AWS/DO may well just be spying on your connections too..). and it it
+isn't like fast storage on these services is cheap.
+
+> Perhaps it is not, but I would think that it would be pretty straightforward to configure a global bandwidth limit within Bitcoin.
+
+We have outbound transmission limits though not by default. Setting
+them sensibly is something of a black art. Obviously these will
+improve over time... and are more reasons that I agree with your
+relative cost assumptions except for the sync-time part.
+
+> Fingerprinting?
+
+Unavoidable, but should be made inconsequential by making transaction
+announcement more private independent of any of this. There are
+already _MANY_ ways to fingerprint nodes, please don't think that
+existing software has any real immunity here. We avoid adding new
+fingerprinting where we can... but they're very fingerprintable
+already. Transaction announcement privacy MUST be fixed.  I assume if
+any of this is worth doing, it will also be worth the increase in
+fingerprinting. And at least this proposal would 'only' create 255
+node classes.
+
+> SPV?
+
+As I pointed out above, Vorick's idea is totally compatible with
+committed filters, and the filters can even be shared like the blocks
+are.
+
+> [People who fail at math]
+
+The SNR on this list really sucks.  If you aren't spending a couple
+hours thinking about your responses or at least citing research that
+took days of effort or more then you are probably wasting people's
+time. Please respect the other users of the list.
+
+> Could there be a slider?
+
+Absolutely, I assume if Vorick's proposal were implemented that nodes
+would have the follow options: Pruned [UTXO + recent two weeks of
+blocks], 20%, 40%, 60%, 80%, 100% (archive).
