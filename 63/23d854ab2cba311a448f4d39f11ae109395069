@@ -1,0 +1,147 @@
+From: praxeology_guy@protonmail.com (praxeology_guy)
+Date: Mon, 24 Apr 2017 00:29:19 -0400
+Subject: [bitcoin-dev] Wallet: A User Friendly Data Structure
+Message-ID: <TOc2JwQfHfQVfmhBtjeXiqhZ4T-PYw_7HNnUYAXl_MVmiLWhP1i3syNpTptvqA-ZAnyppfPAdqWFwIzbmhtyJMCpaQQHVBrZ_myYKHwnpGE=@protonmail.com>
+
+Below is a proposal for a wallet data structure that can enable a wallet to be user friendly.
+
+This is a proposed partial solution to "Pruned wallet support #9409": https://github.com/bitcoin/bitcoin/issues/9409
+It is envisioned to work with "Complete hybrid full block SPV mode #9483": https://github.com/bitcoin/bitcoin/pull/9483
+
+The data structure implies that the wallet would/could run in a different process than a Bitcoin node. Furthermore, the wallet would have a set of whitelisted/trusted nodes, which may only be the user's nodes.
+
+Cheers,
+Praxeology Guy
+
+The primary purpose of this data structure is to enable the creation of a responsive and informative open-and-go wallet. Some of my design goals include:
+- Instant on. Can be put in cold storage, and years later be immediately operational.
+- Scans optional/happen in background. Supports partial scans of the block height range.
+- Functional even with only utxo set data
+- Fast loading of external private keys and other watched identifiers.
+- Supports wallet merging
+- Supports connection with different kinds of nodes/providers of transaction evidence
+- Communicates the reliability of the evidence with the user
+- Supports transaction deprecation and double spending
+- Can work in a different process than a Bitcoin relay node.
+- Works immediately/quickly even with a node that has only prefetched headers and only begun validating blocks.
+- Potentially allows a wallet to display unconfirmed transactions to the user even if it only has an SPV evidence source.
+
+=== Wallet ===
+- List: Spend Term
+- List: Wallet Coin
+- List: Spend Attempt
+- List: Transaction Evidence
+- List: Coin Scan
+- List: Evidence Source
+
+// The wallet would also need other data that existing wallets have such as information about deterministic keys and pre-allocated keys etc. For the wallet to work with SPV security, it would also need block headers.
+
+=== Spend Term ===
+- GUID
+- Name (Human readable)
+- Type: [private key/public key/address/out script]
+- Term Value
+- Creation date
+- List: Wallet Coin
+
+// A spend term is anything that can be used to identify a coin that should be tracked by this wallet. GUID should probably be the address or a hash of the out script.
+
+=== Evidence Source ===
+- GUID
+- Operator Name
+- Device Name
+- Software Name
+- Software Version
+- Public Key
+- Operator Trust: Self, Reliable Friend, Stranger
+- Device Security: Air Gap, Single Purpose Networked, Multipurpose Networked, Dedicated Remote Hosted, VPS Remote Hosted
+
+// An Evidence Source is a {operator, device, software} that fully validates blocks. It provides evidence of coin confirmations and spends. Maybe GUID should be a hash of the public key.
+
+=== Wallet Coin ===
+Required:
+- Spend Term GUID
+- TXID
+- vout.ix
+- amount
+- output script
+Optional:
+- Wallet first discovery date
+- full TX data
+- List: Transaction Evidence
+- List: Spend Attempt
+- TXID Spent
+
+// A wallet coin is a bitcoin txo with some extra data relevant to the wallet. A wallet coin's ID is {TXID, vout.ix}.
+
+=== Spend Attempt ===
+- Wallet Coins List: {TXID, vout.ix}
+- TXID
+- Creation date
+- Relay date(s)
+- Is Deprecated?
+- Deprecated date
+- Replace By Fee (RBF) enabled?
+- List: Transaction Evidence
+
+// deprecating a spend attempt will clear the "TXID Spent" in Wallet Coin, and set "Is Deprecated?" and "Deprecated date".
+
+=== Evidence ===
+Required:
+- tip hash
+- tip height
+- date
+- Evidence Source GUID
+- Evidence Source Signature
+
+=== Transaction Evidence : Evidence ===
+Required:
+- TXID
+Optional:
+- discover date
+
+// Evidence of the creation or spend of a coin. There are different kinds of evidence from different sources. The kind and source impact the user's confidence in the validity and finality of a transaction.
+
+=== Confirmed UTXO Set Presence : Transaction Evidence ===
+Required:
+- Is in UTXO set?
+Optional:
+- block height
+- block hash
+- block timestamp
+- Future: utxo set snaphot merkle proof
+- confirm date
+
+// Evidence (from a trustworthy source needed) that a coin is or is not in the confirmed utxo set. With the future possibility of utxo set snapshot merkle proof, the trustworthiness of the source is not as important. This evidence type is only used for Wallet Coins. It is not used for Spend Attempts.
+
+=== Confirmation : Transaction Evidence ===
+Required:
+- block height
+- block hash
+- block timestamp
+- tx merkle proof
+- wtx merkle proof
+- is in greatest PoW chain?
+Optional:
+- confirm date
+- 51% attack cost to double spend
+- Future: Are/which reliable miners still creating blocks in the greatest PoW chain (network split risk)
+
+// Evidence that a transaction was confirmed.
+
+=== Discovery (Unconfirmed TX) : Transaction Evidence ===
+Optional:
+- Confirmable Evidence: tree of source input transactions that lead back to utxo outputs. Unconfirmed parents: discover date, size, fee.
+
+// Evidence merely that a transaction was discovered. There is no guarantee that the transaction will be confirmed. Preferably the Source that is providing the wallet with the discovery evidence will also provide evidence that the transaction could be confirmed... especially if the Source is not trusted. The wallet could ask other Sources whether the confirmed inputs are present in the Confirmed UTXO Set.
+
+=== Spend Term Scan : Evidence ===
+- Term List: Spend Term GUID
+- Target: [blocks, confirmed utxo set]
+- Range Start
+- Range End
+
+// The wallet would request a scan from the Source. It would provide the spend terms, target, and range. The Source would respond with the range actually scanned, in addition to any Transaction Evidence discovered.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170424/2cfdf37c/attachment-0001.html>
