@@ -1,0 +1,88 @@
+From: praxeology_guy@protonmail.com (praxeology_guy)
+Date: Wed, 26 Apr 2017 04:51:51 -0400
+Subject: [bitcoin-dev] Segwit v2
+In-Reply-To: <201704202028.53113.luke@dashjr.org>
+References: <201704202028.53113.luke@dashjr.org>
+Message-ID: <sA89Vq4fr_pEm_Frc0QUNxEakvmFM2ebeeq7zpn7miez2vleOnBS0bhcWD-pbymvKevg5pP9k1R0qWflkhHpHB-RezzBlI5PbLgLq-3QAvU=@protonmail.com>
+
+Luke,
+
+I can't really advise on your proposed changes... but I have a couple new suggestions:
+
+=== Future Proof Commitment Extension Methodology ===
+1. I'm not a fan of how ambiguous the direction is on handling future commitment extensions. See https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#Extensible_commitment_structure.
+
+1-byte - OP_RETURN (0x6a)
+1-byte - Push the following 36 bytes (0x24)
+4-byte - Commitment header (0xaa21a9ed)
+32-byte - Commitment hash: Double-SHA256(witness root hash|witness reserved value*)
+39th byte onwards: Optional data with no consensus meaning
+* "witness reserved value" _must_ also go in the input's scriptSig/witness field... blah blah blah warning warning.
+
+Where is the new "witness reserved value" going to go for the next extension? Why waste 32 bytes in some arbitrary location, and then later when there is an extension, eventually be wasting 32 more bytes at some other arbitrary location?
+
+Here's a more well defined/future proof proposal that uses fewer bytes:
+
+1-byte - OP_RETURN (0x6a)
+1-byte - Push the following 36 bytes (0x24)
+4-byte - Commitment header (0xaa21a9ed)
+32-byte - Commitment hash: Double-SHA256(extension root A|extension root B|extension root C...)
+
+variable bytes - Extension identifiers: array of extension identifiers
+variable bytes - Extension roots: array of {extension identifier, extension root length, extension root}
+next byte onwards - Optional data with no consensus meaning
+
+- The extension identifiers are ordered the same as the order of the extension roots in the merkle root.
+- The extension identifiers can be highly compacted together using a custom compression algorithm.
+- The array length for the extension roots can be a utf8-like format, where up to 0-127 can be represented with one byte, and 128-16383 can be represented with two bytes.
+- The extension roots themselves only need to be provided for the sake of clients that are unable or not desiring to compute a particular extension root, but do want to verify some of the extension roots.
+
+This design is much more future proof, and uses less space. With SegWit only, this would take up maybe 1 byte for the extension identifiers (compressed length 1 and id 0 for wtxroot), and 1 byte for the extension roots (array length = 0).
+
+=== Replay Attack Prevention ===
+2. Implement the Policy ID 'replay attack" prevention that I have suggested (but is in dev list purgatory), which increases each wtx length by 1 byte. This can be reduced in a block by clustering Policy ID ranges in the coinbase... or by guessing the Policy ID. Witness data would sign on the Policy ID... preventing replay if at least one branch adopted a new Policy ID.
+
+Cheers,
+Praxeology Guy
+
+-------- Original Message --------
+Subject: [bitcoin-dev] Segwit v2
+Local Time: April 20, 2017 3:28 PM
+UTC Time: April 20, 2017 8:28 PM
+From: bitcoin-dev at lists.linuxfoundation.org
+To: bitcoin-dev at lists.linuxfoundation.org
+
+Since BIP 141's version bit assignment will timeout soon, and needing renewal,
+I was thinking it might make sense to make some minor tweaks to the spec for
+the next deployment. These aren't critical, so it's perfectly fine if BIP 141
+activates as-is (potentially with BIP 148), but IMO would be an improvement if
+a new deployment (non-BIP148 UASF and/or new versionbit) is needed.
+
+1. Change the dummy marker to 0xFF instead of 0. Using 0 creates ambiguity
+with incomplete zero-input transactions, which has been a source of confusion
+for raw transaction APIs. 0xFF would normally indicate a >32-bit input count,
+which is impossible right now (it'd require a >=158 GB transaction) and
+unlikely to ever be useful.
+
+2. Relax the consensus rules on when witness data is allowed for an input.
+Currently, it is only allowed when the scriptSig is null, and the scriptPubKey
+being spent matches a very specific pattern. It is ignored by "upgrade-safe"
+policy when the scriptPubKey doesn't match an even-more-specific pattern.
+Instead, I suggest we allow it (in the consensus layer only) in combination
+with scriptSig and with any scriptPubKey, and consider these cases to be
+"upgrade-safe" policy ignoring.
+
+The purpose of the second change is to be more flexible to any future
+softforks. I consider it minor because we don't know of any possibilities
+where it would actually be useful.
+
+Thoughts?
+
+Luke
+_______________________________________________
+bitcoin-dev mailing list
+bitcoin-dev at lists.linuxfoundation.org
+https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170426/6a50a078/attachment.html>
