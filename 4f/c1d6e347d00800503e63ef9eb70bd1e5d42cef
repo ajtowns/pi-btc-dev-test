@@ -1,0 +1,67 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 28 Apr 2017 04:10:03 +0800
+Subject: [bitcoin-dev] Trustless Segwit activation bounty protocol (aka.
+ bribing the miners)
+In-Reply-To: <CACV3+OU3wT6ZZ+ffUOEXpnmu9p0kf42fEBv3fPxnGPJ88BVwAg@mail.gmail.com>
+References: <CACV3+OU3wT6ZZ+ffUOEXpnmu9p0kf42fEBv3fPxnGPJ88BVwAg@mail.gmail.com>
+Message-ID: <98AA9A95-0150-4D71-8667-613E1CCD597D@xbt.hk>
+
+As other explained, your scheme is broken.
+
+Unless we have a softfork first (OP_CHECKBIP9VERIFY: payment is valid only if a BIP9 proposal is active), it is not possible to create a softfork bounty in a decentralised way
+
+On the other hand, hardfork bounty is very simple. You just need to make sure your tx violates existing rules
+
+
+> On 28 Apr 2017, at 01:48, Matt Bell via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> Hello everyone,
+> 
+> I've been thinking of an alternative to possibly get Segwit activated sooner: bribing the miners. This proposal may not be necessary if everyone is already set on doing a UASF, but  miners seem to optimize for short-term profits and this may make it easier for BitMain to accept its fate in losing the ASICBoost advantage.
+> 
+> Here is a possible trustless contract protocol where contributors could pledge to a Segwit bounty which would be paid out to miners iff Segwit is activated, else the funds are returned to the contributor:
+> 
+> # Setup
+> 
+> - The contributor picks a possible future height where Segwit may be activated and when the funds should be released, H.
+> - The contributor chooses a bounty contribution amount X.
+> - The contributor generates 3 private keys (k1, k2, and k3) and corresponding pubkeys (K1, K2, and K3).
+> - The contributor creates and broadcasts the Funding Transaction, which has 2 outputs:
+>   * Output 0, X BTC, P2SH redeem script:
+>     <H> CHECKLOCKTIMEVERIFY DROP
+>     <K1> CHECKSIGVERIFY
+>   * Output 1, 0.00001 BTC, P2SH redeem script:
+>     <H> CHECKLOCKTIMEVERIFY DROP
+>     <K2> CHECKSIGVERIFY
+> - The contributor builds the Segwit Assertion Transaction:
+>   * nTimeLock set to H
+>   * Input 0, spends from Funding Transaction output 1, signed with k2, SIGHASH_ALL
+>   * Output 0, 0.00001 BTC, P2WPKH using K3
+> - The contributor builds the Bounty Payout Transaction:
+>   * nTimeLock set to H
+>   * Input 0, spends from Funding Transaction output 0, signed with k1, SIGHASH_ALL
+>   * Input 1, spends from Segwit Assertion Transaction output 0, signed with k3, SIGHASH_ALL
+>   * No outputs, all funds are paid to the miner
+> - The contributor publishes the Segwit Assertion Transaction and Bounty Payout Transaction (with signatures) somewhere where miners can find them
+> 
+> # Process
+> 
+> 1. After the setup, miners can find Funding Transactions confirmed on the chain, and verify the other 2 transactions are correct and have valid signatures. They can sum all the valid bounty contracts they find to factor into their expected mining profit.
+> 2A. Once the chain reaches height H-1, if Segwit has activated, miners can claim the bounty payout by including the Segwit Assertion and Bounty Payout transactions in their block H. Since Segwit has activated, the output from the Segwit Assertion tx can be spent by the Bounty Payout, so both transactions are valid and the miner receives the funds.
+> 2B. If Segwit has not activated at height H, Input 1 of the Bounty Payout is not valid since it spends a P2WPKH output, preventing the miner from including the Bounty Payout transaction in the block. (However, the output of the Segwit Assertion tx can be claimed since it is treated as anyone-can-spend, although this is not an issue since it is a very small amount). The contributor can reclaim the funds from Output 0 of the Funding tx by creating a new transaction, signed with k1.
+> 
+> # Notes
+> 
+> - This is likely a win-win scenario for the contributors, since Segwit activating will likely increase the price of Bitcoin, which gives a positive return if the price increases enough. If it does not activate, the funds will be returned so nothing is at risk.
+> - Contributors could choose H heights on or slightly after an upcoming possible activation height. If contributors pay out to many heights, then the bounty can be split among many miners, it doesn't have to be winner-take-all.
+> - If Segwit does not activate at H, the contributor has until the next possible activation height to claim their refund without risking it being taken by another miner. This could be outsourced by signing a refund transaction which pays a fee to some third-party who will be online at H and can broadcast the transaction. If the contributor wants to pay a bounty for a later height, they should create a new contract otherwise a miner could invalidate the payout by spending the output of the Segwit Assertion.
+> 
+> Thanks, I'd like to hear everyone's thoughts. Let me know if you find any glaring flaws or have any other comments.
+> Matt
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+
