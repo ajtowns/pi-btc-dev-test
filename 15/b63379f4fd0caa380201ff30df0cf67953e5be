@@ -1,0 +1,198 @@
+From: erik@q32.com (Erik Aronesty)
+Date: Wed, 3 May 2017 15:41:07 -0400
+Subject: [bitcoin-dev] Transaction signalling
+In-Reply-To: <CAJowKgK=B2=fSwz5cqPLzMtyo-uDiNCOy9q+C39DJkaQ5h8U_Q@mail.gmail.com>
+References: <CAJowKgJ38kA_vPGF6KpKEnrRzStrk-Mj87bttaOw-dvLW675Jw@mail.gmail.com>
+	<CAJowKgK4j=sL2vh1bxWh2WWw0vw1PuxfJ39JW7bQS-UDzKh6CQ@mail.gmail.com>
+	<CAJowKgKAnrMKiLdONrXJtGQYhYgRSXq7JNWrY=zUEMvw4WSX9w@mail.gmail.com>
+	<CAJowKgL-NB0zF-Ud52Jr6n0Fo-uV=bXzVAFMOKmhAVA0RdRVuQ@mail.gmail.com>
+	<CAJowKgJGZJMondTmsdOLdqqY1mf9S+TaB8UmdCtsLF6PA2RSJw@mail.gmail.com>
+	<CAJowKg+gZcNO+-sdmt55KOt+zuN+8m7Hiqh77s9=gYpyszDwmA@mail.gmail.com>
+	<CAJowKgKC4+6vv0QUH_DRASVqU4jui-iXG6TDgEpGUHRkVwJFqg@mail.gmail.com>
+	<CAJowKgKH2h1QwpEvZ30OuEUsTCg1OoD6JcuXdmS+d_pKpygFcQ@mail.gmail.com>
+	<CAJowKg+EJGXA5=LjJhCo1YevQtBubEftSNPfnzE4b5ESCwrUMg@mail.gmail.com>
+	<CAJowKgLQCqL37oCzkJc8gPnUCkPYtF6G8_7Ug4AP5FpTOonBWQ@mail.gmail.com>
+	<CAJowKgJ-eoF6ZCKrWbJQDcMK8-jTZxD+J_6tGAyfXz+HYrqmXg@mail.gmail.com>
+	<CAJowKgKEVxS9OCg=Lioc1gRAy1Ftc27bp3nr2R9MQX-VQ9PrhQ@mail.gmail.com>
+	<CALxbBHVY6_Xuq4Si9yQ0+dL_9DTCdwiWLDFStzFO2xRvHzTyBQ@mail.gmail.com>
+	<1492554557.1625.4.camel@mmci.uni-saarland.de>
+	<CAJowKgK=B2=fSwz5cqPLzMtyo-uDiNCOy9q+C39DJkaQ5h8U_Q@mail.gmail.com>
+Message-ID: <CAJowKgK1303atiQ8pKZkj2C2_eb_COU4eb3nc9uJNP2i2=-KCw@mail.gmail.com>
+
+BIP XXXX : User activated features (ROUGH OVERVIEW)
+
+A proposed change to a usage of the 'OP_RETURN' script opcode in Bitcoin
+transactions, allowing multiple changes (features) to be deployed in
+parallel. It relies on interpreting the output field as a bit vector, where
+each bit can be used to track an independent change. Like BIP9, once a
+consensus change succeeds or times out, there is a "fallow" pause after
+which the bit can be reused for later changes.
+
+==Motivation==
+
+BIP 9 introduced a mechanism for doing soft-forking changes, relying on
+measuring miner support indicated by version bits in block headers. As it
+relies on miner support, any change which may conflict with miners but is
+acceptable to users may be difficult to deploy.   The alternative, a
+flag-day deployment can cause issues for users of a feature that has failed
+to achieve adequate miner support.
+
+BIP XXXX, if used for deployment, can be used in conjunction with BIP 9, in
+order to more safely deploy soft-forking changes that do not require a
+supermajority of miners, but do require a large percentage of active
+users.
+
+Alternatively, BIP XXXX signalling can be used to gauge user support for
+"features" - independent of its use as a direct deployment mechanism.   In
+this document a "feature" can be considered synonymous with "soft fork",
+but since this mechanism is "user activated", it is not necessarily
+restricted to soft-forks.
+
+==Specification==
+
+Each "feature" is specified by the sames set of per-chain parameters as in
+BIP9, with the same usage and meaning (name, bit, starttime and timeout).
+
+===Bit flags===
+
+If the outputs contain a zero valued OP_RETURN, and the length of the key
+is 2 bytes, and if the first byte (prefix) of that OP_RETURN's key
+parameter is 0x012, then the remaining byte is to be interpreted as an
+8-bit little-endian integer, and bits are selected within this integer as
+values (1 << N) where N is the bit number.  This allows up to 8 features to
+be in the STARTED state at a time.
+
+===Array determination===
+
+In order for this to successfully be used for deployment, a lightweight
+UTXO must be maintained in memory.   For each bit in STARTED state, a
+corresponding bit is set in a map entry for each input address.   Each
+input address is hashed to a 24 bit value using SHA3-256(input)[0:24].  An
+array with 16777216 2-byte entries (~32MB RAM) is used to record the
+current activation state.   The first byte contains the bit flags most
+recently associated with an entry.
+
+The second byte contains the log base 2 of the number of "1/100th" bitcoins
+most recently associated with this entry.   This is computed by taking the
+value, multiplying by 100, converting to an unsigned 32 bit integer, and
+using the log2_32 function below (.... log2_32 func defined below ....).
+
+This array is initialized to zero.   The array must be stored and
+maintained for each block.  When a block is in the STARTED state for any
+bit, the array is updated for each transaction in the block according to
+the rules above: a[i][0]=bits, a[i][1]=log2_32(....)
+
+===State transitions===
+
+State transitions work the same as BIP9, however, the determination of the
+LOCKED_IN tally is as follows:
+
+For each bit in STARTED state, using the array above, the values are
+totaled (unsigned int)(2 << a[i][1]) for each entry where this bit is set
+in a[i][0].  In addition the total of all the entries in a, irrespective of
+bit, are computed.   This can be done in a single pass, resulting in a
+vector of up to 8 32 bit entries containing the "feature totals" for the
+array, and one extra 32 bit entry for the sum total of observations since
+the start time.
+
+The percentage of observations is computed for each bit.   Up to 8 features
+can be computed at a time, with reuse similar to BIP9.
+
+If 2016 sequential blocks have a value of 95% or greater, a feature is
+"LOCKED_IN", (75% on testnet)
+bit.
+
+Similar to BIP9, a block's state never depends on its own transactions set;
+only on that of its ancestors.  ACTIVE and FAILED are terminal states, etc.
+
+
+On Thu, Apr 20, 2017 at 12:14 PM, Erik Aronesty <erik at q32.com> wrote:
+
+> I agree, addresses create vulnerability, an OP_RETURN signal seems the
+> safest way to go for UA signalling.   I can model a BIP after BIP9, with
+> some discussion of how to properly collect statistics, and the ability for
+> nodes to activate features based on an "economic majority" defined in this
+> way.
+>
+> On Tue, Apr 18, 2017 at 6:29 PM, Tim Ruffing via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> I don't have an opinion on whether signaling is a good idea in general.
+>>
+>> However I don't think that using addresses is a good idea, because this
+>> has privacy implications. For example, it makes it much easier to link
+>> the addresses, e.g., inputs with change address. (The change address
+>> votes for the same proposal as the input address.)
+>>
+>> Tim
+>>
+>> On Tue, 2017-04-18 at 18:07 +0000, Christian Decker via bitcoin-dev
+>> wrote:
+>> > I really like the idea of extending signalling capabilities to the
+>> > end-users. It gives stakeholders a voice in the decisions we take in
+>> > the network, and are a clear signal to all other involved parties. It
+>> > reminds me of a student thesis I supervised some time ago [1], in
+>> > which we explored various signalling ideas.
+>> >
+>> > I think we have a number of fields that may be used for such a
+>> > signalling, e.g., OP_RETURN, locktime, and output scripts. I think
+>> > OP_RETURN is probably not the field you'd want to use though since it
+>> > adds data that needs to be transferred, stored for bootstrap, and
+>> > outputs in the UTXO would need to be tagged with additional
+>> > information. Locktime has the advantage of being mostly a freeform
+>> > field for values in the past, but it clashes with other uses that may
+>> > rely on it. Furthermore, it is the transaction creator that specifies
+>> > the locktime, hence the signal trails one hop behind the current
+>> > owner, i.e., the actual stakeholder.
+>> >
+>> > I think probably the best field to signal would be the output
+>> > script. It is specified by the recipient of the funds, i.e., the
+>> > current owner, and is already stored in the UTXO, so a single pass
+>> > can
+>> > tally up the votes. We could for example use the last 4 bits of the
+>> > pubkey/pubkeyhash to opt in (3 leading 0 bits) and the vote (0/1
+>> > depending on the stakeholders desired signal). We'd need to define
+>> > similar semantics for other script types, but getting the standard
+>> > scripts to be recognized should be simple.
+>> >
+>> > In the spirit of full disclosure I'd like to also mention some of the
+>> > downsides of voting this way. Unlike the OP_RETURN proposal, users
+>> > that do not intend to signal will also be included in the tally. I'd
+>> > expect the signals of these users to be random with a 50% chance of
+>> > either outcome, so they should not influence the final result, but
+>> > may
+>> > muddy the water depending on what part of the population is
+>> > signalling. The opt-in should make sure that the majority of votes
+>> > are
+>> > actually voluntary votes, and not just users that randomly select a
+>> > pubkey/pubkeyhash, and can be adjusted as desired, though higher
+>> > values require more grinding on behalf of the users.
+>> >
+>> > The grinding may also exacerbate some problems we already have with
+>> > the HD Wallet lookahead, since we now skip a number of addresses, so
+>> > we should not require too many opt-in bits.
+>> >
+>> > So there are some problems we'd need to tackle, but I'm really
+>> > excited
+>> > about this, as it could provide data to make informed decisions, and
+>> > should put an end to the endless speculation about the will of the
+>> > economic majority.
+>> >
+>> > Cheers,
+>> > Christian
+>> >
+>> > [1] http://pub.tik.ee.ethz.ch/students/2015-HS/SA-2015-30.pdf
+>> > _______________________________________________
+>> > bitcoin-dev mailing list
+>> > bitcoin-dev at lists.linuxfoundation.org
+>> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170503/3d21c76d/attachment-0001.html>
