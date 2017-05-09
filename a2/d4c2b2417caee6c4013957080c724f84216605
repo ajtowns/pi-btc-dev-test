@@ -1,0 +1,189 @@
+From: chjj@purse.io (Christopher Jeffrey)
+Date: Mon, 8 May 2017 17:56:59 -0700
+Subject: [bitcoin-dev] Extension block proposal by Jeffrey et al
+In-Reply-To: <F322F899-8748-407D-884F-95EFBD3C7F99@xbt.hk>
+References: <20170405174343.GA7180@gmail.com>
+	<F322F899-8748-407D-884F-95EFBD3C7F99@xbt.hk>
+Message-ID: <20170509005659.GA1902@gmail.com>
+
+Johnson,
+
+Yeah, I do still see the issue. I think there are still some reasonable
+ways to mitigate it.
+
+I've started revising the extension block specification/code to coexist
+with mainchain segwit. I think the benefit of this is that we can
+require exiting outputs to only be witness programs. Presumably segwit
+wallets will be more likely to be aware of a new output maturity rule
+(I've opened a PR[1] which describes this in greater detail). I think
+this probably reduces the likelihood of the legacy wallet issue,
+assuming most segwit-supporting wallets would implement this rule before
+the activation of segwit.
+
+What's your opinion on whether this would have a great enough effect to
+prevent the legacy wallet issue? I think switching to witness programs
+only may be a good balance between fungibility and backward-compat,
+probably better all around than creating a whole new
+addr-type/wit-program just for exits.
+
+[1] https://github.com/tothemoon-org/extension-blocks/pull/16
+
+On Mon, Apr 10, 2017 at 06:14:36PM +0800, Johnson Lau wrote:
+>
+> > On 6 Apr 2017, at 01:43, Christopher Jeffrey <chjj at purse.io> wrote:
+> >
+> >
+> >> This hits the biggest question I asked in my January post: do you want
+> >> to allow direct exit payment to legacy addresses? As a block reorg
+> >> will almost guarantee changing txid of the resolution tx, that will
+> >> permanently invalidate all the child txs based on the resolution tx.
+> >> This is a significant change to the current tx model. To fix this, you
+> >> need to make exit outputs unspendable for up to 100 blocks. Doing
+> >> this, however, will make legacy wallet users very confused as they do
+> >> not anticipate funding being locked up for a long period of time. So
+> >> you can?t let the money sent back to a legacy address directly, but
+> >> sent to a new format address that only recognized by new wallet, which
+> >> understands the lock up requirement. This way, however, introduces
+> >> friction and some fungibility issues, and I?d expect people using
+> >> cross chain atomic swap to exchange bitcoin and xbitcoin
+> >
+> > Yes, this issue is probably the biggest edge case in the proposal.
+> >
+> > I think there's two possible solutions:
+> >
+> > First solution:
+> >
+> > Like you said, add a maturity requirement for exiting outputs. Likely
+> > lower than coinbase's 100 block requirement. To solve the issue of
+> > non-upgraded wallets not being aware of this rule and spending early,
+> > have upgraded mempool implementations accept/relay txs that contain
+> > early spends of exits, but not mine them until they are mature. This way
+> > non-upgraded wallets do not end up broadcasting transactions that are
+> > considered invalid to the rest of the network.
+>
+> This won?t solve the problem. Think about the following conversation:
+>
+> Alice (not upgraded): Please pay 1 BTC to my address 1ALicExyz
+> Bob (upgraded): ok, paid, please check
+>
+> 10 minutes later
+>
+> Alice: received and confirmed, thanks!
+>
+> 5 minutes later:
+>
+> Carol (not upgraded): Please pay 0.5BTC to my address 3CaroLXXX
+> Alice: paid, please check
+>
+> 1 hour later:
+>
+> Carol: it?s not confirmed. Have you paid enough fees?
+> Alice: ok, I?ll RBF/CPFP it
+>
+> 2 hours later:
+>
+> Carol: it?s still not confirmed.
+> Alice: I have already paid double fees. Maybe the network is congested and I need to pay more?..
+>
+> Repeat until the lock up period ends.
+>
+> So this so-called ?softfork? actually made non-upgraded wallet totally unusable. If failed to meet the very important requirement of a softfork: backward compatibility
+>
+> More discussion:
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-April/013985.html <https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-April/013985.html>
+>
+>
+> >
+> > Depending on how wallets handle reorgs, a non-upgraded wallet may put
+> > reorg'd spend chains from exits back into an unconfirmed state, when in
+> > reality they should probably delete them or mark them conflicted in some
+> > way. This may be an acceptable compromise as the wallet will still see
+> > the funds as unconfirmed when they really don't exist anymore, but maybe
+> > unconfirmed is good enough. Users are pretty used to dropping
+> > non-confirming txs from their wallet, and this is much better than
+> > legacy wallets seeing there funds as confirmed when they could be
+> > permanently reorged out at any moment.
+> >
+> > Second solution:
+> >
+> > Move all exiting outputs to the coinbase. This will enforce a 100 block
+> > maturity requirement and non-upgraded wallets will be aware of this.
+>
+> This is also unacceptable.
+>
+> When someone says "Please pay 1 BTC to my address 1ALicExyz?, no one anticipates being paid by a coinbase output. Some exchanges like btc-e explicitly reject coinbase payment.
+>
+> Such deterioration in user experience is unacceptable. It basically forces everyone to upgrade, i.e. a hardfork with soft fork?s skin
+>
+>
+>
+> >
+> > The first solution might require more implementation, but allows more
+> > flexibility with the maturity requirement. The second solution is
+> > possibly simpler, but sticks to a hard 100 block limit.
+> >
+> >> 1. Is it acceptable to have massive txid malleability and transaction
+> >> chain invalidation for every natural happening reorg?  Yes: the
+> >> current spec is ok; No: next question (I?d say no)
+> >
+> > Answered above.
+> >
+> >> 2. Is locking up exit outputs the best way to deal with the problem?
+> >> (I tried really hard to find a better solution but failed)
+> >
+> > You've probably thought about this more than anyone, so I'd say yes, it
+> > may be the only way. Painful, but necessary.
+> >
+> >> 3. How long the lock-up period should be? Answer could be anywhere
+> >> from 1 to 100
+> >
+> > I imagine having something lower than 100 would be preferable to users,
+> > maybe somewhere in the 5 to 15 range. A 15 block reorg on mainnet is
+> > seriously unlikely unless something strange is happening. A 5 block
+> > reorg is still pretty unlikely, but possible. The coinbase solution only
+> > allows for 100 blocks though.
+> >
+> >> 4. With a lock-up period, should it allow direct exit to legacy
+> >> address? (I think it?s ok if the lock-up is short, like 1-2 block. But
+> >> is that safe enough?)
+> >
+> > I think so. Adding a kind of special address probably creates more
+> > issues than it solves.
+>
+>
+> As I explained above, no legacy wallet would anticipate a lock up. If you want to make a softfork, all burden of incompatibility must be taken by the upgraded system. Only allow exit to a new address guarantees that only upgraded wallet will see the locked-up tx:
+>
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013490.html <https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013490.html>
+> >
+> >> 5. Due to the fungibility issues, it may need a new name for the
+> >> tokens in the ext-block
+> >
+> > I suppose the market will decide whether that's the case.
+> >
+> > It's worth noting, if segwit is not activated on the mainchain, it
+> > creates a much bigger incentive to use the extension block, and
+> > potentially ensures that users will have less of a reason to exit.
+> >
+>
+> I think it?s unacceptable if malleability is not fixed in main chain, for 3 reasons:
+>
+> 1. a solution is *already* available and tested for > 1 year.
+>
+> 2. the deactivation design (which I think is an interesting idea) makes the ext block unsuitable for long-term storage of value.
+>
+> 3. LN over main chain allows instant exchange of main coin and xcoin without going through the ugly 2-way-peg process.
+>
+>
+>
+
+--
+Christopher Jeffrey (JJ) <chjjeffrey at gmail.com>
+CTO & Bitcoin Menace, purse.io
+https://github.com/chjj
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 488 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170508/6eb88054/attachment-0001.sig>
