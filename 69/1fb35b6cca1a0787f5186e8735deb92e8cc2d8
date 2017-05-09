@@ -1,0 +1,160 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Tue, 9 May 2017 16:11:31 -0700
+Subject: [bitcoin-dev] Network-layer attacks
+In-Reply-To: <BN6PR18MB13483361D401D0A378BEBDCECDEF0@BN6PR18MB1348.namprd18.prod.outlook.com>
+References: <BN6PR18MB13483361D401D0A378BEBDCECDEF0@BN6PR18MB1348.namprd18.prod.outlook.com>
+Message-ID: <c78f6d0f-5eb4-31d2-1dbc-53eec5f70784@voskuil.org>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+On 05/09/2017 09:09 AM, Raystonn . via bitcoin-dev wrote:
+> This study was released last week, detailing some attacks at the
+> network layer: https://btc-hijack.ethz.ch/files/btc_hijack.pdf.  Of
+> the countermeasures discussed in the paper, the use of encryption 
+> to secure communications between nodes looks like low hanging
+> fruit.
+
+I draw a very different conclusion.
+
+The paper states:
+
+?Our work underscores the importance of proposed modifications which
+argue for encrypting Bitcoin traffic or traffic exchanged among miners.?
+
+The phrase, ?encrypting ... traffic exchanged among miners,? is not
+merely about encryption, since if one cannot identify the peer as the
+intended miner it could just as well be an attacker. This is about
+(presumably encrypted) authenticated connections.
+
+Indeed, encryption of traffic among miners is referred to again here:
+
+?Finally, an attacker cannot intercept (possibly encrypted) private
+connections, corresponding to peering agreements between mining pools.
+- From the attacker?s point of view, these connections can be treated as
+intra-pool connections and the corresponding pair of pools can be
+considered as one larger pool.?
+
+So the encryption-based defense for miners is to use authentication to
+create, ?one larger pool,? consisting of, ?private connections.?
+
+Additionally it states, ?we show that hijacking fewer than 100
+prefixes is enough to isolate a large amount of the mining power due
+to Bitcoin?s centralization.?
+
+In other words the proposed solution, to what is largely a problem of
+miner centralization, is to create one miner. The paper doesn?t
+attempt to investigate the downside to that apparent centralization
+spiral.
+
+The paper investigates routing attacks on the p2p protocol,
+specifically partitioning and delay. Regarding traffic encryption it
+*stresses* the caution:
+
+?Yet, we stress that not all routing attacks will be solved by such
+measures since attackers can still disrupt connectivity and isolate
+nodes by dropping Bitcoin packets instead of modifying them.?
+
+In other words it recognizes that encryption is both centralizing and
+ineffective. Along these lines it also observes:
+
+* A smaller set of nodes will be easier to isolate for extended periods.
+* All incoming connection slots can be occupied by connections from
+attacker nodes.
+* Outgoing connections can be biased via a traditional eclipse attack.
+
+Notice that none of these issues are mitigated by encryption, since in
+each case the encrypted connection may just as easily be the attacker.
+The presumed powerful attacker (one with the ability to modify
+Internet routing tables) is not deterred by encryption. Instead of
+modifying or dropping packets he can simply redirect traffic to his
+own node(s) and carry on the attack on an encrypted connection with
+the victim. As such all calls for encryption in the P2P protocol
+ultimately end in calls for authentication.
+
+It is true that if all connections are authenticated these attacks are
+mitigated. But as the ?one larger pool? discussion shows, this is
+simply a regression to a private network.
+
+As for the two scenarios analyzed, the summary on delay attacks includes
+:
+
+* Delay attackers intercepting 50% of a node?s connection can waste
+63% of its mining power.
+* Due to pools multi-homing, Bitcoin (as a whole) is not vulnerable to
+delay attackers, even powerful ones.
+* Even a small degree of multi-homing is enough to protect Bitcoin
+from powerful attackers.
+
+Furthermore, the delay attack scenario explicitly relies on, ?the fact
+that a [Core] Bitcoin node waits for 20 minutes after having requested
+a block from a peer before requesting it again from another peer.? The
+waste of mining power above is a function of that delay. So delay is
+not a material concern for the entire network, and there are
+mitigations that hang much lower than making the network private.
+
+Regarding partitioning, clearly neither encryption nor authentication
+can ensure that one is seeing the strongest chain unless the network
+is fully private (and trustworthy). The paper states, ?Increase
+partition persistence: ... Intuitively, the attacker needs to suppress
+the effect of churn in order to keep the victim nodes isolated.? In
+other words, simply rotating connections is presumed to be effective.
+
+There are other useful countermeasures listed in the paper:
+
+* Increase the diversity of node connections
+* Select Bitcoin peers while taking routing into account
+* Monitor round-trip time (RTT)
+* Monitor additional statistics
+* Embrace churn
+* Use gateways in different ASes
+* Prefer peers hosted in the same AS and in /24 prefixes
+* Use distinct control and data channels
+* Use UDP heartbeats
+* Request a block on multiple connections
+
+The single recommendation that includes encryption is heavily qualified:
+
+* Encrypt Bitcoin Communication and/or adopt MAC
+"While encrypting Bitcoin connections would not prevent adversaries
+from dropping packets, it would prevent them from eavesdropping
+connections and modifying key messages. Alternatively, using a Message
+Authentication Code (MAC) to validate that the content of each message
+has not been changed would make delay attacks much more difficult."
+
+First, it should be widely understood that eavesdropping on the relay
+of public information is not an attack. Secondly, the paper clearly
+states, ?attackers can still disrupt connectivity and isolate nodes by
+dropping Bitcoin packets instead of modifying them.? So the
+distinction between dropping and modifying messages is immaterial. And
+thirdly, the paper recognizes that eclipse attacks remain effective
+short of authentication.
+
+Taken alongside the risk of centralization though the widespread use
+of authentication, which the paper does not contemplate, encryption is
+anything but low hanging fruit. Several of the other above mitigations
+are described as effective, and it is the case that some nodes already
+employ some of them. Libbitcoin for example embraces churn by
+providing both configurable and partially-randomized connection
+timeout and a configurable block withholding timeout.
+
+The paper is a valuable contribution in assessing risks to the P2P
+network and individual nodes, and suggesting mitigations, but it is
+not comprehensive. As with block size, the most obvious answer is not
+always the right answer. Bitcoin is a public cache of independently
+verifiable information shared anonymously over a P2P network. The
+primary threat is centralization. Authentication is a necessary aspect
+of centralizing the network.
+
+e
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v2.0.22 (GNU/Linux)
+
+iQEcBAEBCAAGBQJZEkyWAAoJEDzYwH8LXOFOwW4H/2icvGAiKmSSI8+TtiI52hDC
+SouctpRXE/R0BSs1+KkSnj8c6nwNDqwpWWzKyDLVHT53FBk5cbUkUnTCev+MxZvm
+srk63/nnI12/7RpEVoPVEiHXYd60hzNjN2Fod1ox+lN7Ln3nf22f+3ZP2evv8ETd
+jZSnjVlOcnRrx/s67iE+n+IYPAtAENcxQhzZtGY1vLLgRrX7YbKlgjI8DNuSOgvZ
+VugTU3NeahUpGJQ5tvBWt0eHE0StzvcoCpts58Eozs4rnp7FWWDNYH9dtyzgqM6/
+qONC0MEHtO63PQ09DriHpAAUDw9xXCGOyv6aJ1TErzkJEXmkHn0QxUg/sYknL18=
+=jAkv
+-----END PGP SIGNATURE-----
