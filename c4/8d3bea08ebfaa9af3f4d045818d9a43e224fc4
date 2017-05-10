@@ -1,0 +1,65 @@
+From: rx@awsomnet.org (adiabat)
+Date: Wed, 10 May 2017 10:59:08 -0400
+Subject: [bitcoin-dev] Per-block non-interactive Schnorr signature
+	aggregation
+In-Reply-To: <20170510075542.GZ10783@boulet.lan>
+References: <CAKEeUhh3Rj3Dh8ab5FFR6dGKc2Ojm5Z0uyWtAtrPrh=7dvj-GA@mail.gmail.com>
+	<CAMZUoK=iXXYkN64+T-haK=vXrd=L7eqbo3P-MOhrj6p35uaW0A@mail.gmail.com>
+	<20170510075542.GZ10783@boulet.lan>
+Message-ID: <CAKEeUhhPpCVG5Y7Upp5SXm1g3aXgm4ggNNT6C=_Pcj46vKVc7w@mail.gmail.com>
+
+I messed up and only replied to Russel O'Connor; my response is copied below.
+And then there's a bit more.
+
+-----
+Aha, Wagner's generalized birthday attack, the bane of all clever tricks!
+I didn't realize it applied in this case but looks like it in fact does.
+ applies to this case.  It would have to be a miner performing the
+attack as the s-value would only be aggregated in the coinbase tx, but
+that's hardly an impediment.
+
+In fact, sketching it out, it doesn't look like the need to know m1,
+m2... m_n is a big problem.  Even if the m's are fixed after being
+chosen based on the P1... Pn's, (in bitcoin, m always commits to P so
+not sure why it's needed in the hash) there is still freedom to
+collide the hashes.  The R values can be anything, so getting h(m1,
+R1, P1) + h(m2, R2, P2)... to equal -h(m0, R0, P0) is doable with
+Wagner's attack by varying R1, R2... to get different hashes.
+
+I *think* there is a viable defense against this attack, but it does
+make the whole aggregation setup less attractive.  The miner who
+calculates s-aggregate could also aggregate all the public keys from
+all the aggregated signatures in the block (P0, P1...), sort them and
+hash the concatenated list of pubkeys.  They could then multiply s by
+this combo-pubkey hash (call it h(c)).  Then when nodes verify the
+aggregate signature, they need to go through all the pubkeys in the
+block, create the same combo-pubkey hash, and multiply s by the
+multiplicative inverse of the h(c) they calculate, then verify s.  I
+believe this breaks the Wagner generalized birthday attack because
+every h(m_i, R_i, P_i)*h(c) included or omitted affects the c part of
+h(m0, R0, P0)*h(c).
+
+I'm not sure how badly this impacts the verification speed.  It might
+not be too bad for verification as it's amortized over the whole
+block.  For the miner doing the aggregation it's a bit slower as they
+need to re-sort and hash all the pubkeys every time a new signature is
+added.  Might not be too slow.
+
+I'm not super confident that this actually prevents the generalized
+birthday attack though.  I missed that attack in the previous post so
+I'm 0 for 1 against Wagner so far :)
+
+-----
+
+Andrew: Right, commiting to all the R values would also work; is there
+an advantage to using the R's instead of the P's?  At first glance it
+seems about the same.
+
+Another possible optimization: instead of sorting, concatenate all the
+R's or P's in the order they appear in the block.  Then have the miner
+commit to s*h(c)^1, the multiplicative inverse of the hash of all
+those values.  Then when nodes are verifying in IBD, they can just
+multiply by h(c) and they don't have to compute the inverse.  A bit
+more work for the miner and a bit less for the nodes.
+
+-Tadge
