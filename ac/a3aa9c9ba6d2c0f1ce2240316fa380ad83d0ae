@@ -1,0 +1,188 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Tue, 9 May 2017 21:59:06 -0400
+Subject: [bitcoin-dev] Per-block non-interactive Schnorr signature
+	aggregation
+In-Reply-To: <CAKEeUhh3Rj3Dh8ab5FFR6dGKc2Ojm5Z0uyWtAtrPrh=7dvj-GA@mail.gmail.com>
+References: <CAKEeUhh3Rj3Dh8ab5FFR6dGKc2Ojm5Z0uyWtAtrPrh=7dvj-GA@mail.gmail.com>
+Message-ID: <CAMZUoK=iXXYkN64+T-haK=vXrd=L7eqbo3P-MOhrj6p35uaW0A@mail.gmail.com>
+
+I'm a bit amateur at this sort of thing, but let me try to argue that this
+proposal is in fact horribly broken ;)
+
+Suppose Alice has some UTXO with some money Bob wants to steal.  Grant me
+that the public key P0 protecting Alice's UTXO is public (say because the
+public key has been reused elsewhere).
+
+Bob going to spend Alice's UTXO by generating random values s0, k0 and R0
+:= k0*G and thus creating a random signature for it, [R0, s0].  Now clearly
+this signature isn't going to be valid by itself because it is just random.
+Bob's goal will be to make a transaction with other inputs such that, while
+the individual signatures are not valid, the aggregated signature will be
+valid.
+
+To do this Bob generates a set of random public keys P1 ... P_n of the form
+P_i := P0 + r_i*G, and a bunch of random k1 ... k_n with R1 := k1*G ... R_n
+:= k_n*G, such that
+
+    h(m1, R1, P1) + ... + h(m_n, R_n, P_n) = -h(m0, R0 P0) (modulo the
+order of the elliptic curve)
+
+I understand that this can be done efficiently with Wagner's Generalized
+Birthday attack.
+
+The RHS aggregated signature equation on the private side is
+
+    k0 + k1 + ... k_n - h(m0, R0, P0)x0 - h(m1, R1, P1)(x0 + r1) - ... -
+h(m_n, R_n, P_n)(x0 + r_n)
+
+with x0 unknown to Bob.  Rearranging the terms we get
+
+    k0 + k1 + ... k_n - [h(m0, R0, P0) + h(m1, R1, P1) + ... + h(m_n, R_n,
+P_n)]*x0 - [h(m1, R1, P1)*r1 + ... + h(m_n, R_n, P_n)*r_n]
+
+However [h(m0, R0, P0) + h(m1, R1, P1) + ... + h(m_n, R_n, P_n)] is 0 so
+cancelling that we are left with
+
+    k0 + k1 + ... k_n - [h(m1, R1, P1)*r1 + ... + h(m_n, R_n, P_n)*r_n]
+
+which no longer depends on the unknown value x0, so that is good.  Bob
+knows what this value is.
+
+Bob creates a set UTXOs by spending to the set of public keys P1 .. P_n.
+Bob don't know what the private keys are for these public keys, but that is
+going to be okay.
+
+Bob creates a final transaction that takes as input the UTXO of Alice's
+funds he wants to steal, with public key P0, and also his newly created
+UTXOs with public keys P1 ... P_n.
+For the signature on Alice's input he uses [R0,s0].  For the rest of the
+signature he picks s1 ... s_n such that
+
+    s0 + s1 + ... + sn = k0 + k1 + ... k_n - [h(m1, R1, P1)*r1 + ... +
+h(m_n, R_n, P_n)*r_n] (which is equal to k0 + k1 + ... k_n - h(m0, R0,
+P0)x0 - h(m1, R1, P1)(x0 + r1) - ... - h(m_n, R_n, P_n)(x0 + r_n)).
+
+and uses signatures [R1, s1] ... [R_n, s_n] on his other inputs.
+
+Thus, while none of the individual signatures are valid, the aggregated
+signature does validate.
+
+One wrinkles in this argument is that Bob needs to pick m1 ... m_n before
+he knows what the transaction will be.  I think this can be mitigated by
+using some combination of SIGHASH_ANYONECANPAY, but I'm not sure if that
+works.  Even if my argument doesn't actually work, I think it is close
+enough to be pretty scary.
+
+Thanks goes to Pieter Wuille for helping explain things to me; however any
+errors above are my own.
+
+On Sun, May 7, 2017 at 2:45 AM, adiabat via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> If / when Schnorr signatures are deployed in a future witness version, it
+> may be possible to have non-interactive partial aggregation of the
+> signatures on a per-block basis.  This could save quite a bit of space.  It
+> *seems* not to have any security problems but this mailing list is very
+> good at finding vulnerabilities so that type of feedback is the main reason
+> I'm writing :) (A quick explanation of why this is horribly broken could
+> save me lots of time!)
+> (also sorry if this has been discussed; didn't see anything)
+>
+> Quick recap / context of Schnorr sigs:
+>
+> There are a bunch of private keys x1, x2, x3...
+> multiply by generator G to get x1G = P1, x2G = P2, x3G = P3
+>
+> Everyone makes their sighash m1, m2, m3, and their random nonces k1, k2,
+> k3.
+>
+> To sign, people calculate s values:
+>
+> s1 = k1 - h(m1, R1, P1)x1
+> s2 = k2 - h(m2, R2, P2)x2
+>
+> (adding the P2 into the e hash value is not in most literature /
+> explanations but helps with some attacks; I beleive that's the current
+> thinking.  Anyway it doesn't matter for this idea)
+>
+> Signature 1 is [R1, s1].  Verifiers check, given P1, m1, R1, s1:
+>
+> s1G =? R1 - h(m1, R1, P1)P1
+>
+> You can *interactively* make aggregate signatures, which requires
+> co-signers to build an aggregate R value by coming up with their own k
+> values, sharing their R with the co-signers, adding up the R's to get a
+> summed R, and using that to sign.
+>
+> Non-interactively though, it seems like you can aggregate half the
+> signature.  The R values are unique to the [m, P] pair, but the s's can be
+> summed up:
+>
+> s1 + s2 = k1 + k2 - h(m1, R1, P1)x1 - h(m2, R2, P2)x2
+>
+> (s1 + s2)G = R1 + R2 - h(m1, R1, P1)P1 - h(m2, R2, P2)P2
+>
+> To use this property in Bitcoin, when making transactions, wallets can
+> sign in the normal way, and the signature, consisting of [R, s] goes into
+> the witness stack.  When miners generate a block, they remove the s-value
+> from all compatible inputs, and commit to the aggregate s-value in the
+> coinbase transaction (either in a new OP_RETURN or alongside the existing
+> witness commitment structure).
+>
+> The obvious advatage is that signatures go down to 32 bytes each, so you
+> can fit more of them in a block, and they take up less disk and network
+> space.  (In IBD; if a node maintains a mempool they'll need to receive all
+> the separate s-values)
+>
+> Another advatage is that block verification is sped up.  For individual
+> signatures, the computation involves:
+>
+> e = h(m1, R1, P1)           <- hash function, super fast
+> e*P                         <- point multiplication, slowest
+> R - e*P                     <- point addidion, pretty fast
+> s*G                         <- base point multiplication, pretty slow
+>
+> with s-aggregate verification, the first three steps are still carried out
+> on each signature, but the s*G operation only needs to be done once.
+> Instead another point addition per signature is needed, where you have some
+> accumulator and add in the left side:
+> A += R - e*P
+> this can be parallelized pretty well as it's commutative.
+>
+> The main downside I can see (assuming this actually works) is that it's
+> hard to cache signatures and quickly validate a block after it has come
+> in.  It might not be as bad as it first seems, as validation given chached
+> signatures looks possible without any elliptic curve operations.  Keep an
+> aggregate s-value (which is a scalar) for all the txs in your mempool.
+> When a block comes in, subtract all the s-values for txs not included in
+> the block.  If the block includes txs you weren't aware of, request them in
+> the same way compact blocks works, and get the full signature for those
+> txs.  It could be several thousand operations, but those are all bigInt
+> modular additions / subtractions which I believe are pretty quick in
+> comparison with point additions / multiplications.
+>
+> There may be other complications due to the fact that the witness-txids
+> change when building a block.  TXIDs don't change though so should be
+> possible to keep track of things OK.
+>
+> Also you can't "fail fast" for the signature verification; you have to add
+> everything up before you can tell if it's correct.  Probably not a big deal
+> as PoW check comes first, and invalid blocks are pretty uncommon and quite
+> costly.
+>
+> Would be interested to hear if this idea looks promising.
+> Andrew Polestra mentioned something like this in the context of CT /
+> mimblewimble transactions a while ago, but it seems it may be applicable to
+> regular bitcoin Schnorr txs.
+>
+> -Tadge
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170509/75fc05c4/attachment.html>
