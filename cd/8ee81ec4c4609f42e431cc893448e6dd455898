@@ -1,0 +1,74 @@
+From: apoelstra@wpsoftware.net (Andrew Poelstra)
+Date: Wed, 10 May 2017 07:55:42 +0000
+Subject: [bitcoin-dev] Per-block non-interactive Schnorr signature
+ aggregation
+In-Reply-To: <CAMZUoK=iXXYkN64+T-haK=vXrd=L7eqbo3P-MOhrj6p35uaW0A@mail.gmail.com>
+References: <CAKEeUhh3Rj3Dh8ab5FFR6dGKc2Ojm5Z0uyWtAtrPrh=7dvj-GA@mail.gmail.com>
+	<CAMZUoK=iXXYkN64+T-haK=vXrd=L7eqbo3P-MOhrj6p35uaW0A@mail.gmail.com>
+Message-ID: <20170510075542.GZ10783@boulet.lan>
+
+On Tue, May 09, 2017 at 09:59:06PM -0400, Russell O'Connor via bitcoin-dev wrote:
+> I'm a bit amateur at this sort of thing, but let me try to argue that this
+> proposal is in fact horribly broken ;)
+> 
+> Suppose Alice has some UTXO with some money Bob wants to steal.  Grant me
+> that the public key P0 protecting Alice's UTXO is public (say because the
+> public key has been reused elsewhere).
+> 
+> Bob going to spend Alice's UTXO by generating random values s0, k0 and R0
+> := k0*G and thus creating a random signature for it, [R0, s0].  Now clearly
+> this signature isn't going to be valid by itself because it is just random.
+> Bob's goal will be to make a transaction with other inputs such that, while
+> the individual signatures are not valid, the aggregated signature will be
+> valid.
+>
+
+If you seed the randomization with every R value (which would come for free
+if you used, say, the witness root) then Wagner's attack no longer applies.
+
+The idea is that no aggregation occurs until a miner produces a block. You
+have a bunch of independent Schnorr sigs (s_i, R_i). Then the _miner_ multiples
+each s_i by H(witness root || index) or whatever, sums up the s_i's, and commits
+the sum somewhere where it doesn't affect the root.
+
+Verifiers then multiply each R_i by the same multiplying factors and are able
+to do a batch verification of them.
+
+
+Verifiers who have seen a signature before and cached it as valid can save
+themselves a bit of time by subtracting H(witness root || index)*s_i from
+the summed s-value and then skipping R_i in the above step. These are scalar
+operations and are extremely cheap.
+
+They can recognize the signature given only the transaction it signs and R_i,
+which uniquely determine a valid signature.
+
+
+I believe this is what Tadge was referring to when he mentioned a talk of mine.
+It's roughly what I've had in mind whenever I talk about non-interactive Schnorr
+aggregation.
+
+
+
+Cheers
+Andrew
+
+
+-- 
+Andrew Poelstra
+Mathematics Department, Blockstream
+Email: apoelstra at wpsoftware.net
+Web:   https://www.wpsoftware.net/andrew
+
+"A goose alone, I suppose, can know the loneliness of geese
+ who can never find their peace,
+ whether north or south or west or east"
+       --Joanna Newsom
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170510/ab8b75e7/attachment.sig>
