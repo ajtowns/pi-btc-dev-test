@@ -1,0 +1,55 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Mon, 15 May 2017 10:44:13 +0930
+Subject: [bitcoin-dev] BIP: Block signal enforcement via tx fees
+In-Reply-To: <CAMZUoKnjc4ezVm4FeMFA-+=g13E5ZwZCAoAjd_yL89v7qf1gEA@mail.gmail.com>
+References: <201705121922.57445.luke@dashjr.org>
+	<CAMZUoKnzV9faJ+mBTTzTre05Ejwnx3tC4ozbiPoPUfS+7GLMTQ@mail.gmail.com>
+	<201705130526.59467.luke@dashjr.org>
+	<CAMZUoKnjc4ezVm4FeMFA-+=g13E5ZwZCAoAjd_yL89v7qf1gEA@mail.gmail.com>
+Message-ID: <87tw4mly56.fsf@rustcorp.com.au>
+
+Russell O'Connor via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+writes:
+> On Sat, May 13, 2017 at 1:26 AM, Luke Dashjr <luke at dashjr.org> wrote:
+>
+>> Versionbits change/lose their meaning after the deployment timeout. For
+>> this
+>> reason, the timeout must be specified so the check is skipped when that
+>> occurs.
+>>
+>
+> To add a timeout a user can optionally bundle a pair of similar
+> transactions.  One with the transaction version bits set and a second with
+> a locktime set.  The effect is the same.
+
+I have a similar proposal to Russell; use tx nVersion.  However, my
+subset is simpler, and uses fewer precious nVersion bits:
+
+1. Top version 26 bits must be 1 (say)
+2. Next bit indicates positive (must have bit set) or negative (must NOT
+   have bit set).
+3. Bottom 5 bits refer to which BIP8/9 bit we're talking about.
+
+This only allows specifying a single bit, and only support BIP8/9-style
+signalling.
+
+I believe we can skip the timeout: miners don't signal 100% either way
+anyway.  If a BIP is in LOCKIN, wallets shouldn't set positive on that
+bit (this gives them two weeks).  Similarly, if a BIP is close to
+FAILED, don't set positive on your tx.  Wallets shouldn't signal until
+any bit until see some minimal chance it's accepted (eg. 1 in 20 blocks).
+
+> I recall chatting about this idea recently and my conclusion was the same
+> as Peter Todd's conclusion: this will just encourage miners to false signal
+> readiness with undermines both BIP 9 and BIP 8.
+
+This is gentler on miners than a UASF flag day, and does offer some
+harder-to-game signalling from bitcoin users.
+
+False signalling miners still have the 2 week LOCKIN period to upgrade,
+otherwise they can already lose money.  You could argue they're *more*
+likely to upgrade with a signal that significant parts of the economy
+have done so.
+
+Cheers,
+Rusty.
