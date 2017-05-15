@@ -1,0 +1,186 @@
+From: peter_r@gmx.com (Peter R)
+Date: Mon, 15 May 2017 13:53:45 -0700
+Subject: [bitcoin-dev] Rolling UTXO set hashes
+In-Reply-To: <CAPg+sBgruEiXya6oFy6VpmR1KPDebjeGDtZZU+facZx5=L_a5w@mail.gmail.com>
+References: <CAPg+sBgruEiXya6oFy6VpmR1KPDebjeGDtZZU+facZx5=L_a5w@mail.gmail.com>
+Message-ID: <553BA161-F60F-4278-914F-0E5F2D2E0A84@gmx.com>
+
+Hi Pieter,
+
+I wanted to say that I thought this write-up was excellent!  And efficiently hashing the UTXO set in this rolling fashion is a very exciting idea!! 
+
+Peter R
+
+> On May 15, 2017, at 1:01 PM, Pieter Wuille via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> Hello all,
+> 
+> I would like to discuss a way of computing a UTXO set hash that is
+> very efficient to update, but does not support any compact proofs of
+> existence or non-existence.
+> 
+> Much has been written on the topic of various data structures and
+> derived hashes for the UTXO/TXO set before (including Alan Reiner's
+> trust-free lite nodes [1], Peter Todd's TXO MMR commitments [2] [3],
+> or Bram Cohen's TXO bitfield [4]). They all provide interesting extra
+> functionality or tradeoffs, but require invasive changes to the P2P
+> protocol or how wallets work, or force nodes to maintain their
+> database in a normative fashion. Instead, here I focus on an efficient
+> hash that supports nothing but comparing two UTXO sets. However, it is
+> not incompatible with any of those other approaches, so we can gain
+> some of the advantages of a UTXO hash without adopting something that
+> may be incompatible with future protocol enhancements.
+> 
+> 1. Incremental hashing
+> 
+> Computing a hash of the UTXO set is easy when it does not need
+> efficient updates, and when we can assume a fixed serialization with a
+> normative ordering for the data in it - just serialize the whole thing
+> and hash it. As different software or releases may use different
+> database models for the UTXO set, a solution that is order-independent
+> would seem preferable.
+> 
+> This brings us to the problem of computing a hash of unordered data.
+> Several approaches that accomplish this through incremental hashing
+> were suggested in [5], including XHASH, AdHash, and MuHash. XHASH
+> consists of first hashing all the set elements independently, and
+> XORing all those hashes together. This is insecure, as Gaussian
+> elimination can easily find a subset of random hashes that XOR to a
+> given value. AdHash/MuHash are similar, except addition/multiplication
+> modulo a large prime are used instead of XOR. Wagner [6] showed that
+> attacking XHASH or AdHash is an instance of a generalized birthday
+> problem (called the k-sum problem in his paper, with unrestricted k),
+> and gives a O(2^(2*sqrt(n)-1)) algorithm to attack it (for n-bit
+> hashes). As a result, AdHash with 256-bit hashes only has 31 bits of
+> security.
+> 
+> Thankfully, [6] also shows that the k-sum problem cannot be
+> efficiently solved in groups in which the discrete logarithm problem
+> is hard, as an efficient k-sum solver can be used to compute discrete
+> logarithms. As a result, MuHash modulo a sufficiently large safe prime
+> is provably secure under the DL assumption. Common guidelines on
+> security parameters [7] say that 3072-bit DL has about 128 bits of
+> security. A final 256-bit hash can be applied to the 3072-bit result
+> without loss of security to reduce the final size.
+> 
+> An alternative to multiplication modulo a prime is using an elliptic
+> curve group. Due to the ECDLP assumption, which the security of
+> Bitcoin signatures already relies on, this also results in security
+> against k-sum solving. This approach is used in the Elliptic Curve
+> Multiset Hash (ECMH) in [8]. For this to work, we must "hash onto a
+> curve point" in a way that results in points without known discrete
+> logarithm. The paper suggests using (controversial) binary elliptic
+> curves to make that operation efficient. If we only consider
+> secp256k1, one approach is just reading potential X coordinates from a
+> PRNG until one is found that has a corresponding Y coordinate
+> according to the curve equation. On average, 2 iterations are needed.
+> A constant time algorithm to hash onto the curve exists as well [9],
+> but it is only slightly faster and is much more complicated to
+> implement.
+> 
+> AdHash-like constructions with a sufficiently large intermediate hash
+> can be made secure against Wagner's algorithm, as suggested in [10].
+> 4160-bit hashes would be needed for 128 bits of security. When
+> repetition is allowed, [8] gives a stronger attack against AdHash,
+> suggesting that as much as 400000 bits are needed. While repetition is
+> not directly an issue for our use case, it would be nice if
+> verification software would not be required to check for duplicated
+> entries.
+> 
+> 2. Efficient addition and deletion
+> 
+> Interestingly, both ECMH and MuHash not only support adding set
+> elements in any order but also deleting in any order. As a result, we
+> can simply maintain a running sum for the UTXO set as a whole, and
+> add/subtract when creating/spending an output in it. In the case of
+> MuHash it is slightly more complicated, as computing an inverse is
+> relatively expensive. This can be solved by representing the running
+> value as a fraction, and multiplying created elements into the
+> numerator and spent elements into the denominator. Only when the final
+> hash is desired, a single modular inverse and multiplication is needed
+> to combine the two.
+> 
+> As the update operations are also associative, H(a)+H(b)+H(c)+H(d) can
+> in fact be computed as (H(a)+H(b)) + (H(c)+H(d)). This implies that
+> all of this is perfectly parallellizable: each thread can process an
+> arbitrary subset of the update operations, allowing them to be
+> efficiently combined later.
+> 
+> 3. Comparison of approaches
+> 
+> Numbers below are based on preliminary benchmarks on a single thread
+> of a i7-6820HQ CPU running at 3.4GHz.
+> 
+> (1) (MuHash) Multiplying 3072-bit hashes mod 2^3072 - 1103717 (the
+> largest 3072-bit safe prime).
+>    * Needs a fast modular multiplication/inverse implementation.
+>    * Using SHA512 + ChaCha20 for generating the hashes takes 1.2us per element.
+>    * Modular multiplication using GMP takes 1.5us per element (2.5us
+> with a 60-line C+asm implementation).
+>    * 768 bytes for maintaining a running sum (384 for numerator, 384
+> for denominator)
+>    * Very common security assumption. Even if the DL assumption would
+> be broken (but no k-sum algorithm faster than Wagner's is found), this
+> still maintains 110 bits of security.
+> 
+> (2) (ECMH) Adding secp256k1 EC points
+>    * Much more complicated than the previous approaches when
+> implementing from scratch, but almost no extra complexity when ECDSA
+> secp256k1 signature validation is already implemented.
+>    * Using SHA512 + libsecp256k1's point decompression for generating
+> the points takes 11us per element on average.
+>    * Addition/subtracting of N points takes 5.25us + 0.25us*N.
+>    * 64 bytes for a running sum.
+>    * Identical security assumption as Bitcoin's signatures.
+> 
+> Using the numbers above, we find that:
+> * Computing the hash from just the UTXO set takes (1) 2m15s (2) 9m20s
+> * Processing all creations and spends in an average block takes (1)
+> 24ms (2) 100ms
+> * Processing precomputed per-transaction aggregates in an average
+> block takes (1) 3ms (2) 0.5ms
+> 
+> Note that while (2) has higher CPU usage than (1) in general, it has
+> lower latency when using precomputed per-transaction aggregates. Using
+> such aggregates is also more feasible as they're only 64 bytes rather
+> than 768. Because of simplicity, (1) has my preference.
+> 
+> Overall, these numbers are sufficiently low (note that they can be
+> parallellized) that it would be reasonable for full nodes and/or other
+> software to always maintain one of them, and effectively have a
+> rolling cryptographical checksum of the UTXO set at all times.
+> 
+> 4. Use cases
+> 
+> * Replacement for Bitcoin Core's gettxoutsetinfo RPC's hash
+> computation. This currently requires minutes of I/O and CPU, as it
+> serializes and hashes the entire UTXO set. A rolling set hash would
+> make this instant, making the whole RPC much more usable for sanity
+> checking.
+> * Assisting in implementation of fast sync methods with known good
+> blocks/UTXO sets.
+> * Database consistency checking: by remembering the UTXO set hash of
+> the past few blocks (computed on the fly), a consistency check can be
+> done that recomputes it based on the database.
+> 
+> 
+>  [1] https://bitcointalk.org/index.php?topic=88208.0
+>  [2] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-May/012715.html
+>  [3] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-February/013591.html
+>  [4] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-March/013928.html
+>  [5] https://cseweb.ucsd.edu/~mihir/papers/inchash.pdf
+>  [6] https://people.eecs.berkeley.edu/~daw/papers/genbday.html
+>  [7] https://www.keylength.com/
+>  [8] https://arxiv.org/pdf/1601.06502.pdf
+>  [9] https://www.di.ens.fr/~fouque/pub/latincrypt12.pdf
+>  [10] http://csrc.nist.gov/groups/ST/hash/sha-3/Aug2014/documents/gligoroski_paper_sha3_2014_workshop.pdf
+> 
+> Cheers,
+> 
+> -- 
+> Pieter
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
