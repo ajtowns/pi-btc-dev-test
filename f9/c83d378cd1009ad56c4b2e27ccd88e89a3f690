@@ -1,0 +1,968 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Mon, 15 May 2017 23:30:59 +0000
+Subject: [bitcoin-dev] Validationless mining without transactions
+Message-ID: <CAAS2fgSfx-sr8hQt_atFw0Qmu_cQFCAc2XCapoNsUuZrPU3O5Q@mail.gmail.com>
+
+Today someone showed up on IRC suggesting a scheme for to improve the
+ability of miners to mine without validation while including transactions
+by shipping around an approximate sketch of the txins that were used by a
+block.
+
+I pointed out that what sounded like the exact same scheme had been
+previously proposed by Anthony Towns over a year ago,  that it turned out
+that it didn't need any consensus changes, but also wasn't very attractive
+because the actual transmission of the block (at least with FBRP or Fibre)
+didn't really take any longer...  And, of course, mining without validating
+does a real number on SPV security assumptions.
+
+But then realized the the conversation between Anthony and I was offlist.
+So-- for posterity...
+
+I think the most interesting thing about this thread is that it gives a
+concrete proof that a restriction on collecting transaction fees does not
+discourage validationless mining; nor to other proposed consensus changes
+make it any easier to include transactions while mining without validation.
+
+
+Forwarded conversation
+Subject: Blockchain verification flag (BIP draft)
+------------------------
+
+From: Anthony Towns <aj at erisian.com.au>
+Date: Mon, Feb 29, 2016 at 2:13 AM
+To: Gregory Maxwell <greg at xiph.org>
+
+
+On Fri, Dec 04, 2015 at 08:26:22AM +0000, Gregory Maxwell via bitcoin-dev
+wrote:
+> A significant fraction of hashrate currently mines blocks without
+> verifying them for a span of time after a new block shows up on the
+> network for economically rational reasons.
+
+Two thoughts related to this. Are they obvious or daft?
+
+a)
+
+Would it make sense to require some demonstration that you've validated
+prior blocks? eg, you could demonstrate you've done part of the work
+to at least verify signatures from the previous block by including the
+sha256 of the concatenation of all the sighash values in the coinbase
+transaction -- if you'd already done the sig checking, calculating that
+as you went would be pretty cheap, I think. Then make the rule be that
+if you set the "validated" bit without including the demonstration of
+validation, your block is invalid.
+
+I guess this is more or less what Peter Todd proposed in:
+
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+2015-December/012105.html
+
+b)
+
+It occurred to me while emailing with Matt Corallo, that it's probably
+possible to make it easy to generate actually useful blocks while doing
+validationless mining, rather than only creating empty blocks.
+
+When creating a block, you:
+
+   - calculate a fixed size (7168 bytes?) bloom filter of the
+     prevouts that the block is spending
+   - include the sha256 of the final bloom filter as the last output
+     in the coinbase
+   - enforce the inclusion of that sha256 by soft-fork
+   - as part of fast relaying, transmit:
+       - 80 byte block header
+       - 7168 byte bloom filter
+       - < 416 (?) byte merkle path to the coinbase
+       - 64 byte sha256 midstate for coinbase up to start of the
+         final transaction
+       - < 128 byte tail of coinbase including bloom commitment
+     (total of 7856 bytes, so less than 8kB)
+
+I think that would be enough to verify that the proof-of-work is
+committing to the bloom filter, and the bloom filter will then let
+you throw out any transactions that could have been included in a block
+built on block n-1, but can't be included in block n+1 -- whether they're
+included in the new block, or would be double spends. So given that
+information you can safely build a new block that's actually full of
+transactions on top of the new block, even prior to downloading it in
+full, let alone validating it.
+
+I've run that algorithm over the last couple of weeks' worth of
+transactions (to see how many of the next block's transaction would have
+been thrown away using that approach) and it appeared to work fine --
+it throws away maybe a dozen transactions per block compared to accurate
+validation, but that's only about a couple of kB out of a 1MB block,
+so something like 0.2%.  (I'm seeing ~4500 prevouts per block roughly,
+so that's the error rate you'd expect; doubling for 2MB's worth of txes
+with segwit predicts 3.5%, doubling again would presumably result in 14%
+of transactions being falsely identified as double spends prior to the
+block actually validating)
+
+I haven't checked the math in detail, but I think that could reasonably
+give an immediate 20% increase in effective blocksize, given the number of
+empty blocks that get mined... (There were only ~1571MB of transactions
+in the last 2016 blocks, so bumping the average from 780kB per block to
+940kB would be a 20% increase; which would bring the 1.7x segwit increase
+up to 2x too...)
+
+Also, as far as I can see, you could probably even just have bitcoin core
+transmit that 8kB of data around as part of propogating headers first.
+Once you've got the new header and bloom filter, the only extra bit
+should be passing both those into getblocktemplate to update the
+previousblockhash and transaction selection. Both those together and it
+seems like you could be mining on top of the latest block seconds after
+it was found, just by naively running a bitcoin node?
+
+I saw the "Bitcoin Classic" roadmap includes:
+
+  "Implement "headers-first" mining. As soon as a valid 80-byte block
+   header that extends the most-work chain is received, relay the header
+   (via a new p2p network message) and allow mining an empty block on top
+   of it, for up to 20 seconds."
+
+which seems like the same idea done worse...
+
+Any thoughts? Pointers to the bitcointalk thread where this was proposed
+two years ago? :)
+
+Cheers,
+aj
+
+
+----------
+From: Gregory Maxwell <gmaxwell at gmail.com>
+Date: Mon, Feb 29, 2016 at 3:20 AM
+To: Anthony Towns <aj at erisian.com.au>
+
+
+On Mon, Feb 29, 2016 at 2:13 AM, Anthony Towns <aj at erisian.com.au> wrote:
+> Would it make sense to require some demonstration that you've validated
+> prior blocks? eg, you could demonstrate you've done part of the work
+
+That information is easily shared/delegated... so it just creates
+another centralized information source, and another source of
+unfairness producing latency in the mining process. Without actually
+preventing parties from mining. Doubly so in the context of how
+validationless mining is actually done; the miners pull from other
+miner's stratum servers; so they'll just see the commitments there.
+
+So I don't see there being too much value there.
+
+> if you set the "validated" bit without including the demonstration of
+> validation, your block is invalid.
+
+Pretty good incentive to not adopt the scheme, perhaps?
+
+Moreover, this creates another way for a block to be invalid which has
+no compact fraud proof. :(
+
+> It occurred to me while emailing with Matt Corallo, that it's probably
+> possible to make it easy to generate actually useful blocks while doing
+> validationless mining, rather than only creating empty blocks.
+
+I agree but:
+
+I'm basically tired of repeating to people that there is no need for a
+validationless block to be empty. So Yes, I agree with you on that
+fact; it's possible for miners to do this already, with no protocol
+changes (yes, it requires trusting each other but inherently
+validationless mining already requires that). Miners only don't bother
+right now because the funds left behind are insubstantial.
+
+Its absolutely untrue that an empty block is not useful. Every block,
+empty or not, mined against the best tip you know contributes to the
+resolution of consensus and collapsing the network onto a single
+state. Every block that was mined only after validating a block
+amplifies security; by helping leave behind an invalid chain faster. A
+block doesn't need to contain transactions to do these things.
+
+>        - 7168 byte bloom filter
+
+FWIW, thats significantly larger than the amount of data typically
+needed to send the whole block using the fast block relay protocol.
+
+Your estimates are assuming the empty blocks come purely from
+transmission and verification, but because most verification is cached
+and transmission compressed-- they don't. There are numerous latency
+sources through the whole stack, some constant some
+size-proportional... the mining without validation achieves its gains
+not from skipping validation (at least not most of the time); but
+mostly from short cutting a deep stack with many latency sources;
+including ones that have nothing to do with bitcoin core or the
+Bitcoin protocol.
+
+High hardware latency also amplifies short periods of empty block
+mining to longer periods.
+
+Perhaps most importantly, VFM mining avoids needing to identify and
+characterize these other delay sources, by short cutting right at the
+end no one needs to even figure out that their pool server is
+performing a DNS request before every time it contacts their bitcoind
+RPC or whatnot.
+
+>   "Implement "headers-first" mining. As soon as a valid 80-byte block
+
+This BIP draft resulted in me relieving some pretty vicious attacks
+from that community... funny.
+
+> Any thoughts? Pointers to the bitcointalk thread where this was proposed
+> two years ago? :)
+
+Relevant to your interests: https://github.com/bitcoin/bitcoin/pull/1586
+
+Lots of discussion on IRC.
+
+----------
+From: Anthony Towns <aj at erisian.com.au>
+Date: Wed, Mar 2, 2016 at 9:55 PM
+To: Gregory Maxwell <gmaxwell at gmail.com>
+
+
+On Mon, Feb 29, 2016 at 03:20:01AM +0000, Gregory Maxwell wrote:
+> On Mon, Feb 29, 2016 at 2:13 AM, Anthony Towns <aj at erisian.com.au> wrote:
+> > Would it make sense to require some demonstration that you've validated
+> > prior blocks? eg, you could demonstrate you've done part of the work
+> That information is easily shared/delegated...
+
+Yeah, I thought about that. It's a tradeoff -- you definitely want the
+validation to be easily "shared" in the sense that you want one validation
+run to suffice for billions of mining attempts; and you probably want
+it to be easy to compute when you receive a block, so you don't have
+to revalidate the previous one to validate the new one... But you don't
+want it to be so easily shared that one person on the planet calculates
+it and everyone else just leeches from them.
+
+> so it just creates
+> another centralized information source, and another source of
+> unfairness producing latency in the mining process. Without actually
+> preventing parties from mining. Doubly so in the context of how
+> validationless mining is actually done; the miners pull from other
+> miner's stratum servers; so they'll just see the commitments there.
+
+I think you could make it hostile to accidental sharing by having it be:
+
+  <n> ;
+  sha256(
+      sha256( current block's first <n>+1 coinbase outputs ;
+               previous block's nonce )
+      sha256( previous block's sighash values )
+  )
+
+If you skipped the internal sha256's (or just moved the nonce into the
+final sha256), you'd be half-way forced to revalidate the previous block
+every time you found a new block, which might be worthwhile.
+
+> > if you set the "validated" bit without including the demonstration of
+> > validation, your block is invalid.
+> Pretty good incentive to not adopt the scheme, perhaps?
+
+Well, my theory was once you have validated the block, then the
+demonstration is trivially easy to provide.
+
+I was thinking that you could add a positive incentive by making validated
+blocks count for something like 1.6x the chainwork for choosing which
+chain to build on; so if you have a chain with 3 unvalidated blocks in
+a row, then a chain with 2 validated blocks in a row instead would be
+preferred for building your next block.
+
+> Moreover, this creates another way for a block to be invalid which has
+> no compact fraud proof. :(
+
+Hmmm. That's true. Is it true by definition though? If you're proving
+you've validated 100% of a block, then is it even conceptually possible
+to check that proof with less work than validating 100% of a block?
+Sounds kind of SNARK-ish.
+
+Oh, don't SNARKs (theoretically) give you a compact fraud proof, provided
+the block size and sigops are bounded? The "secret" input is the block
+data, public input is the block hash and the supposed validation proof
+hash, program returns true if the block hash matches the block data,
+and the calculated validation hash doesn't match the supposed validation
+hash. Shudder to think how long generating the proof would take though,
+or how hard it'd be to generate the circuit in the first place...
+
+> > It occurred to me while emailing with Matt Corallo, that it's probably
+> > possible to make it easy to generate actually useful blocks while doing
+> > validationless mining, rather than only creating empty blocks.
+> I agree but:
+> I'm basically tired of repeating to people that there is no need for a
+> validationless block to be empty. So Yes, I agree with you on that
+> fact; it's possible for miners to do this already, with no protocol
+> changes (yes, it requires trusting each other but inherently
+> validationless mining already requires that).
+
+If you're only mining an empty block, the only way someone else can
+cause you to waste your time is by wasting their own time doing PoW on
+an invalid block. If you're mining a block with transactions in it, and
+they can mine a valid block, but trick you into mining something that
+double spends, then they can make you waste your time without wasting
+their own, which seems like a much worse attack to me.
+
+The advantage of the consensus enforced bloom filter is you don't have
+to trust anything more than that economic incentive. However if you just
+sent an unverifiable bloom filter, it'd be trivial to trick you into
+mining an invalid block.
+
+(If you already have the 1MB of block data, then extracting the prevouts
+for use as a blacklist would probably be plenty fast though)
+
+(Of course, maybe 90% of current hashpower does trust each other
+anyway, in which case requiring trust isn't a burden, but that's not
+very decentralised...)
+
+(Paragraphs deleted. My maths is probably wrong, but I think it is
+actually economically rational to mine invalid blocks as chaff to distract
+validationless miners? The numbers I get are something like "if 40% of
+the network is doing validationless mining for 20 seconds out of every
+10 minutes, then it's profitable to devote about 2% of your hashpower to
+mining invalid blocks". Probably some pretty dodgy assumptions though,
+so I'm not including any algebra. But having actual invalid blocks with
+real proof of work appear in the wild seems like it'd be a good way to
+encourage miners to do validation...)
+
+> Miners only don't bother
+> right now because the funds left behind are insubstantial.
+
+Hey, fees are almost 1% of the block payout these days -- that's within
+an order of magnitude of a rounding error!
+
+> Its absolutely untrue that an empty block is not useful.
+
+Yeah, I deleted "useless" for that reason then put it back in anyway...
+
+> >        - 7168 byte bloom filter
+> FWIW, thats significantly larger than the amount of data typically
+> needed to send the whole block using the fast block relay protocol.
+
+Really? Hmm, if you have 2-byte indexes into the most likely to be mined
+60k transactions, by 2000 transactions per block is about 4000 bytes. So
+I guess that makes sense. And weak blocks would make that generalisable
+and only add maybe a 32B index to include on the wire, presumably.
+
+It'd only take a dozen missed transactions to be longer though.
+
+> Your estimates are assuming the empty blocks come purely from
+> transmission and verification, but because most verification is cached
+> and transmission compressed-- they don't. There are numerous latency
+> sources through the whole stack, some constant some
+> size-proportional... the mining without validation achieves its gains
+> not from skipping validation (at least not most of the time); but
+> mostly from short cutting a deep stack with many latency sources;
+> including ones that have nothing to do with bitcoin core or the
+> Bitcoin protocol.
+
+Hmm, so my assumption is the "bitcoin core" side of the stack looks
+something like:
+
+   block header received by p2p or relay network
+     |
+     V
+   block data received by p2p or relay network
+     |
+     V
+   validation, UTXO set updates
+     |
+     V
+   getblocktemplate (possible tx ordering recalculation)
+     |
+     V
+   block header to do PoW on!
+     |
+     V
+   vary and push to miners over the network
+     |
+     V
+   push to ASICs
+
+and the validationless "shortcut" just looks like:
+
+   block header received by p2p or relay network
+     |
+     V
+   hack hack
+     |
+     V
+   new block header to do PoW on!
+     |
+     V
+   vary and push to miners over the network
+     |
+     V
+   push to ASICs
+
+and so making the bitcoin core parts able to provide an unvalidated
+header to push to miners/ASICs against "instantly" would be a win as
+far as getting bitcoin proper back into the loop all the time... That
+would mean removing validation from the critical path, and possibly more
+optimisation of getblocktemplate to make it effectively instant too. But
+those seem possible?
+
+Having it be:
+
+  header received by bitcoin core
+    |
+    V
+  new block header to do (unverified) PoW on!
+    |
+    V
+  ...
+
+and
+
+  header received by bitcoin core
+    |
+    V
+  block data received by bitcoin core
+    |
+    V
+  block data validated
+    |
+    V
+  new block header to do (verified) PoW on!
+    |
+    V
+  ...
+
+with mining tools being able to just reliably and efficiently leave
+bitcoin core in the loop seems like it ought to be a win to me...
+
+> Perhaps most importantly, VFM mining avoids needing to identify and
+> characterize these other delay sources, by short cutting right at the
+> end no one needs to even figure out that their pool server is
+> performing a DNS request before every time it contacts their bitcoind
+> RPC or whatnot.
+
+At least with longpoll, doing a DNS query before connection shouldn't
+matter?
+
+> >   "Implement "headers-first" mining. As soon as a valid 80-byte block
+> This BIP draft resulted in me relieving some pretty vicious attacks
+> from that community... funny.
+
+I'm guessing you meant "receiving", which makes that a kinda weird
+freudian slip? :) But yeah, technical consistency isn't something I've
+seen much of from that area...
+
+> > Any thoughts? Pointers to the bitcointalk thread where this was proposed
+> > two years ago? :)
+> Relevant to your interests: https://github.com/bitcoin/bitcoin/pull/1586
+
+Tsk, 2 != 4...
+
+Hmm, I'm not sure where this leaves my opinion on either of those ideas.
+
+Cheers,
+aj
+
+
+----------
+From: Anthony Towns <aj at erisian.com.au>
+Date: Sun, Mar 13, 2016 at 3:58 AM
+To: Gregory Maxwell <gmaxwell at gmail.com>
+
+
+On Thu, Mar 03, 2016 at 07:55:06AM +1000, Anthony Towns wrote:
+> > >        - 7168 byte bloom filter
+> > FWIW, thats significantly larger than the amount of data typically
+> > needed to send the whole block using the fast block relay protocol.
+> Really? Hmm, if you have 2-byte indexes into the most likely to be mined
+> 60k transactions, by 2000 transactions per block is about 4000 bytes. So
+> I guess that makes sense. And weak blocks would make that generalisable
+> and only add maybe a 32B index to include on the wire, presumably.
+> It'd only take a dozen missed transactions to be longer though.
+
+So I think there's two levels of withholding adversarial miners could
+do:
+
+ - block withholding, so they have more time to build on top of their
+   own block, maybe increasing their effective hashrate if they have
+   above average connectivity
+
+ - transaction withholding, so an entire block can be invalidated
+   after the fact, hitting SPV nodes. if there are SPV miners, this can
+   invalidate their work (potentially profitably, if you've accidently
+   orphaned yourself)
+
+You could solve transaction withholding for miners just by saying
+"a PoW isn't valid unless the merkle tree is valid", that way you
+can't retroactively invalidate a block, but then you need fast relay
+before starting to mine, not just the header and some hint as to what
+transactions might be included, and therefore the bloom filter idea
+is pointless...
+
+
+Having actually tried the relay network now, it seems like:
+
+ a) it gets less coding gain than it theoretically could; the day or
+    so's worth of blocks from Lightsword only seemed to be ~8x less data,
+    rather than ~125x-250x, and what I'm seeing seems similar. So still
+    room for improvement?
+
+ b) using "weak blocks" as a way of paying for adding "non-standard"
+    transactions (large, low fee, actually non-standard, etc) to the
+    mempool seems workable to me; so long as the only reason you're doing
+    weak blocks is so miners can ensure the transactions they're mining
+    are in mempools, and thus that their blocks will relay quickly, the
+    incentives seem properly aligned. (I think you'd want to distinguish
+    txns only relayed because they have a weak block, just to be nice to
+    SPV clients -- weak block txns might only be mined by one miner, while
+    standard, fee paying transactions are being mined by all/most miners)
+
+ c) it seems like it would be possible to adapt the relay protocol into
+    a p2p environment to me? I'm thinking that you provide a bidirectional
+    mapping for (a subset of) your mempool for each connection you
+    have, so that you can quickly go to/from a 2-byte index to a
+    transaction. If you make it so that whoever was listening gets to
+    decide what transactions are okay, then you'd just need 9 of these
+    maps -- 1 for each of your outgoing connections (ie, 8 total), plus
+    another 1 that covers all your incoming connections, and each map
+    should only really need to use up to about a meg of memory, which
+    seems pretty feasible.  Maybe it means up to 8x5MB of your mempool
+    is controlled by other people's policies rather than your own,
+    but that doesn't seem to bad either.
+
+ d) I'm a bit confused how it compares to IBLT; it seems like IBLT has
+    really strong ordering requirements to work correctly, but if you
+    had that you could compress the fast relay protocol really well,
+    since you could apply the same ordering to your shared mempool, and
+    then just send "next tx, next tx, skip 1 tx, next tx, next tx, skip
+    3 tx, next tx, here's one you missed, ...", which with compression
+    would probably get you to just a few /bits/ per (previously seen)
+    transaction...  [0] [1]
+
+ e) for p2p relay, maybe it would make sense to have the protocol only
+    allow sending blocks where all the transactions are "previously
+    seen". that way if you get a block where some txes haven't been
+    seen before, you stall that block, and start sending transactions
+    through. if another block comes in in the meantime, that doesn't
+    have any new transactions, you send that block through straight away.
+    that encourages sending weak blocks through first, to ensure your
+    transactions are already in mempools and no one else can sneak
+    in first.
+
+Hmm... So that all seems kind of plausible to me; in how many ways am I
+mistaken? :)
+
+Cheers,
+aj
+
+[0] A hard-fork change to have the block merkle tree be ordered by txid,
+    and have the transactions topologically sorted before being validated
+    would be kind-of interesting here -- apart from making sorting
+    obvious, it'd make it easy to prove that a block doesn't contain a
+    transaction. Bit altcoin-y though...
+
+[1] Maybe having the shared mempool indexes be sorted rather than FIFO
+    would make the data structures hard; I don't think so, but not sure.
+
+
+----------
+From: Gregory Maxwell <gmaxwell at gmail.com>
+Date: Sun, Mar 13, 2016 at 5:06 AM
+To: Anthony Towns <aj at erisian.com.au>
+
+
+On Sun, Mar 13, 2016 at 3:58 AM, Anthony Towns <aj at erisian.com.au> wrote:
+> On Thu, Mar 03, 2016 at 07:55:06AM +1000, Anthony Towns wrote:
+>> > >        - 7168 byte bloom filter
+>> > FWIW, thats significantly larger than the amount of data typically
+>> > needed to send the whole block using the fast block relay protocol.
+>> Really? Hmm, if you have 2-byte indexes into the most likely to be mined
+>> 60k transactions, by 2000 transactions per block is about 4000 bytes. So
+>> I guess that makes sense. And weak blocks would make that generalisable
+>> and only add maybe a 32B index to include on the wire, presumably.
+>> It'd only take a dozen missed transactions to be longer though.
+>
+> So I think there's two levels of withholding adversarial miners could
+> do:
+>
+>  - block withholding, so they have more time to build on top of their
+>    own block, maybe increasing their effective hashrate if they have
+>    above average connectivity
+
+Also called "selfish mining".
+
+>  - transaction withholding, so an entire block can be invalidated
+>    after the fact, hitting SPV nodes. if there are SPV miners, this can
+>    invalidate their work (potentially profitably, if you've accidently
+>    orphaned yourself)
+> You could solve transaction withholding for miners just by saying
+> "a PoW isn't valid unless the merkle tree is valid", that way you
+> can't retroactively invalidate a block, but then you need fast relay
+> before starting to mine, not just the header and some hint as to what
+> transactions might be included, and therefore the bloom filter idea
+> is pointless...
+
+Right, this is how Bitcoin Core works (won't extend a chain it hasn't
+validated)-- but some miners have shortcutted it to reduce latency.
+(And not just bypassing validation, but the whole process, e.g.
+transaction selection; which historically has taken more time than
+propagation).
+
+> Having actually tried the relay network now, it seems like:
+>
+>  a) it gets less coding gain than it theoretically could; the day or
+>     so's worth of blocks from Lightsword only seemed to be ~8x less data,
+>     rather than ~125x-250x, and what I'm seeing seems similar. So still
+>     room for improvement?
+
+It's pretty variable.  It depends a lot on consistency between the
+transactions the server side selects and the client. When spam attacks
+go on, or miners change their policy compression falls off until the
+far end twiddles.
+
+Go look at the distribution of the results.
+
+>  c) it seems like it would be possible to adapt the relay protocol into
+>     a p2p environment to me? I'm thinking that you provide a bidirectional
+>     mapping for (a subset of) your mempool for each connection you
+>     have, so that you can quickly go to/from a 2-byte index to a
+>     transaction. If you make it so that whoever was listening gets to
+>     decide what transactions are okay, then you'd just need 9 of these
+>     maps -- 1 for each of your outgoing connections (ie, 8 total), plus
+>     another 1 that covers all your incoming connections, and each map
+>     should only really need to use up to about a meg of memory, which
+>     seems pretty feasible.  Maybe it means up to 8x5MB of your mempool
+>     is controlled by other people's policies rather than your own,
+>     but that doesn't seem to bad either.
+
+That is a bit kludgy, but yes-- it would work.
+
+But the key thing about latency minimization is that you _must_ send a
+block with no request; because otherwise the RTT for just the request
+alone will totally dominate the transfer in most cases.  And having N
+peers send you the whole block redundantly ends up hurting your
+performance (esp because packet losses mean more round trips) even if
+the compression is very high.
+
+All these problems can be avoided; at least in theory. Optimal latency
+mitigation would be achieved by something like block network coding
+techniques:
+
+https://en.bitcoin.it/wiki/User:Gmaxwell/block_network_coding
+
+With these techniques peers could blindly send you data without you
+requesting it, while every byte they send would usefully contribute to
+your reconstruction. With extra effort and opportunistic forwarding
+the entire network could, in theory, receive a block in the time it
+took the original host to send only one block, while making use of a
+significant fraction of the network's whole bisection bandwidth.
+
+>  d) I'm a bit confused how it compares to IBLT; it seems like IBLT has
+>     really strong ordering requirements to work correctly, but if you
+>     had that you could compress the fast relay protocol really well,
+>     since you could apply the same ordering to your shared mempool, and
+>     then just send "next tx, next tx, skip 1 tx, next tx, next tx, skip
+>     3 tx, next tx, here's one you missed, ...", which with compression
+>     would probably get you to just a few /bits/ per (previously seen)
+>     transaction...  [0] [1]
+
+Latency of block relay easily ends up CPU bound; even when not doing
+anything too smart (this is why Matt's relay protocol stuff has AVX
+sha2 code in it). Prior IBLT implementation attempts have performance
+so low that their decode time ends up dwarfing transmission time, and
+plain uncoded blocks are faster for common host/bandwidth
+configurations.
+
+The ordering requirements stuff is not that relevant in my view; you
+likely believe this because Gavin rat-holed himself on it trying to
+spec out ordering requirements for miners...  The reality of it is
+that a uniform permutation of, say, 4000 transactions can be stored in
+log2(4000!)/8 bytes, or about 5.2kbytes (and this is easily achieved
+just by using range coding to optimally pack integers in the range
+[0..n_unpicked_txn) to pick transactions out of a lexagraphically
+sorted list) ... and this is without any prediction at all-- randomly
+ordered txn in the block would work just as well.
+
+[E.g. using the uint coder from the daala video codec project can code
+these values with about 1% overhead, and runs at about 12MB/sec doing
+so on my slow laptop]
+
+Recently some folks have been working privately on a block network
+coding implementation... earlier attempts (even before IBLT became
+trendy) were thwarted by the same thing that thwarts IBLT: the
+decoding was so slow it dominated the latency. We've found some faster
+coding schemes though... so it looks like it might be practical now. I
+could send you more info if you read the block network coding page and
+are interested in helping.
+
+Both IBLT and BNC would both be more useful in the weakblocks model
+because there the decode speed isn't latency critical-- so if it needs
+100ms of cpu time to decode an efficiently encoded block, that is no
+big deal.
+
+>  e) for p2p relay, maybe it would make sense to have the protocol only
+>     allow sending blocks where all the transactions are "previously
+>     seen". that way if you get a block where some txes haven't been
+>     seen before, you stall that block, and start sending transactions
+>     through. if another block comes in in the meantime, that doesn't
+>     have any new transactions, you send that block through straight away.
+>     that encourages sending weak blocks through first, to ensure your
+>     transactions are already in mempools and no one else can sneak
+>     in first.
+
+Yes, it's perfectly reasonable to do that for bandwidth minimization--
+though it doesn't minimize latency.  "Seen" is complex, you have no
+guarantee a peer will accept any transaction you've sent it, or even
+that it will retain any it sent you. So multiple round trips are
+required to resolve missing transactions.
+
+We haven't bothered implementing this historically because the
+bandwidth reduction is small overall, and it's not the right strategy
+for reducing latency-- the vast majority of bandwidth is eaten by
+relay. Right now maybe 15% is used by blocks... so at most you'd get a
+15% improvement here.
+
+I did some fairly informal measurements and posted about it:
+https://bitcointalk.org/index.php?topic=1377345.0
+
+I also point out there that the existing blocksonly mode achieves
+bandwidth optimal transport already (ignoring things like transaction
+format compression)... just so long as you don't care about learning
+about unconfirmed transactions. :)
+
+> [0] A hard-fork change to have the block merkle tree be ordered by txid,
+>     and have the transactions topologically sorted before being validated
+>     would be kind-of interesting here -- apart from making sorting
+>     obvious, it'd make it easy to prove that a block doesn't contain a
+>     transaction. Bit altcoin-y though...
+
+If you sort by data (or ID) without requiring the verifier to
+topologically sort then an efficient permutation coder would only
+spend bits on places where dependencies push things out of the
+expected order... which is fairly rare.
+
+Seems like a reasonable cost for avoiding the hardfork, no? The
+receiver topo sort requirement would also require more memory in a
+block verifier; and would be more complex to fraud proof, I think.
+
+Engineering wise it's not quite so simple. It's helpful for miners to
+have blocks sorted by feerate so that later stages of the mining
+process can drop the least profitable transactions simply by
+truncating the block.
+
+> [1] Maybe having the shared mempool indexes be sorted rather than FIFO
+>     would make the data structures hard; I don't think so, but not sure.
+
+I tried to get Matt to do that for his stuff previously; pointing out
+the sorted indexes would be easier to efficiently code. His
+counterargument was that for 2000 txn, the two bytes indexes take 4kb,
+which is pretty insignificant... and that his time would be better
+spent trying to get the hit-rate up. I found that hard to argue with.
+:)
+
+----------
+From: Anthony Towns <aj at erisian.com.au>
+Date: Mon, Mar 14, 2016 at 3:08 AM
+To: Gregory Maxwell <gmaxwell at gmail.com>
+
+
+On Sun, Mar 13, 2016 at 05:06:25AM +0000, Gregory Maxwell wrote:
+> >  - block withholding, so they have more time to build on top of their
+> >    own block, maybe increasing their effective hashrate if they have
+> >    above average connectivity
+> Also called "selfish mining".
+
+Yup.
+
+> >  c) it seems like it would be possible to adapt the relay protocol into
+> >     a p2p environment to me? [...]
+> That is a bit kludgy, but yes-- it would work.
+> But the key thing about latency minimization is that you _must_ send a
+> block with no request; because otherwise the RTT for just the request
+> alone will totally dominate the transfer in most cases.  And having N
+> peers send you the whole block redundantly ends up hurting your
+> performance (esp because packet losses mean more round trips) even if
+> the compression is very high.
+
+If the block can be encoded fully, then it's up to maybe 10kB per block
+max (at 1MB blocksize); I don't think multiple transmissions matter much
+in that case? Hmm, maybe it does...
+
+> All these problems can be avoided; at least in theory. Optimal latency
+> mitigation would be achieved by something like block network coding
+> techniques:
+> https://en.bitcoin.it/wiki/User:Gmaxwell/block_network_coding
+
+Ugh, patents. Interesting that the patents on turbo codes have expired,
+last time I looked they hadn't.
+
+> With these techniques peers could blindly send you data without you
+> requesting it, while every byte they send would usefully contribute to
+> your reconstruction.
+
+Yeah, that makes sense I think. Pretty complicated though. The "someone
+sent corrupt data" seems a little bit problematic to deal with too,
+especially in the "optimistically forward stuff before you can validate
+it" phase. At least if you're using error correcting codes anyway,
+that's probably a self-solving problem.
+
+What's with the switch from 32 bit faux ids in the original section
+to 63 bits in the reimagination? I guess you use most of that for the
+additional encoded length though...
+
+Keying with the previous block's hash seems kind-of painful, doesn't it?
+Once you receive the ids, you want to lookup the actual transactions
+from your mempool, but since you can't decrypt anything useful with
+only the first 50/60 bits of cyphertext, the only way to do that is
+to have already cycled through all the transactions in your mempool
+and pre-calculated what their network coded id for that block is, and
+you have to do that everytime you receive a block (including orphans,
+I guess). It'd make reorgs more expensive too, because you'd have to
+reindex all the mempool then as well?
+
+Maybe if you're only doing that predictively it's not so bad? The 5MB-20MB
+of txes with highest fees get coded up, and you just download any other
+transactions in full? If you're downloading large coinbase txes regularly
+anyway, that's probably no big deal.
+
+> Latency of block relay easily ends up CPU bound; even when not doing
+> anything too smart (this is why Matt's relay protocol stuff has AVX
+> sha2 code in it).
+
+Yeah, that seemed a little odd to me; there shouldn't be that much
+hashing to validate a block (1MB of transactions, then maybe 128kB to
+get to sha256d, then another 2*128kB for the rest of the merkle tree?).
+Matt's code seems like it's doing a linear search through the tx index
+to find each tx though, which probably doesn't help.
+
+> Prior IBLT implementation attempts have performance
+> so low that their decode time ends up dwarfing transmission time, and
+> plain uncoded blocks are faster for common host/bandwidth
+> configurations.
+
+Heh.
+
+> The ordering requirements stuff is not that relevant in my view; you
+> likely believe this because Gavin rat-holed himself on it trying to
+> spec out ordering requirements for miners...  The reality of it is
+> that a uniform permutation of, say, 4000 transactions can be stored in
+> log2(4000!)/8 bytes, or about 5.2kbytes
+
+Right, but 5.2 kB is a lot of overhead; at least compared to the cases
+where Matt's stuff already works well :)
+
+> Recently some folks have been working privately on a block network
+> coding implementation... earlier attempts (even before IBLT became
+> trendy) were thwarted by the same thing that thwarts IBLT: the
+> decoding was so slow it dominated the latency. We've found some faster
+> coding schemes though...  so it looks like it might be practical now. I
+> could send you more info if you read the block network coding page and
+> are interested in helping.
+
+Sure. (Though, fair warning, I've already failed a few times at doing
+anything useful with erasure coding...)
+
+> >  e) for p2p relay, maybe it would make sense to have the protocol only
+> >     allow sending blocks where all the transactions are "previously
+> >     seen". that way if you get a block where some txes haven't been
+> >     seen before, you stall that block, and start sending transactions
+> >     through. if another block comes in in the meantime, that doesn't
+> >     have any new transactions, you send that block through straight
+away.
+> >     that encourages sending weak blocks through first, to ensure your
+> >     transactions are already in mempools and no one else can sneak
+> >     in first.
+> Yes, it's perfectly reasonable to do that for bandwidth minimization--
+> though it doesn't minimize latency.  "Seen" is complex, you have no
+> guarantee a peer will accept any transaction you've sent it, or even
+> that it will retain any it sent you. So multiple round trips are
+> required to resolve missing transactions.
+
+The "p2p relay" in my head has "seen" meaning "the 5MB of transactions
+the listening peer thinks is most likely to be mined", odds on both
+peers have actually seen something like 145MB of additional transactions
+too. You don't do round trips; you just start sending the "unseen"
+transactions automatically (by id or in full?), then you send the
+compressed block. The only round trip is if you sent the id, but they
+actually needed the full tx.
+
+In my head, you get good latency if you do weak blocks beforehand,
+and somewhat poorer latency if you don't. Even in my head, I'm not sure
+that's actually feasible, though: I'm not sure weak blocks for coinbase
+transactions really work, and comparatively high latency on 5% of blocks
+that didn't get any weak blocks beforehand isn't very attractive...
+
+> We haven't bothered implementing this historically because the
+> bandwidth reduction is small overall, and it's not the right strategy
+> for reducing latency-- the vast majority of bandwidth is eaten by
+> relay. Right now maybe 15% is used by blocks... so at most you'd get a
+> 15% improvement here.
+
+Yeah, I'm assuming a non-trivial increase in bandwidth usage compared
+to current relay. Compared to relaying spam transactions (that don't
+get mined prior to expiry), not sure it's significant though.
+
+> > [0] A hard-fork change to have the block merkle tree be ordered by txid,
+> >     and have the transactions topologically sorted before being
+validated
+> >     would be kind-of interesting here -- apart from making sorting
+> >     obvious, it'd make it easy to prove that a block doesn't contain a
+> >     transaction. Bit altcoin-y though...
+> If you sort by data (or ID) without requiring the verifier to
+> topologically sort then an efficient permutation coder would only
+> spend bits on places where dependencies push things out of the
+> expected order... which is fairly rare.
+
+Really? I was seeing a lot of transaction chains in the couple of blocks I
+looked at. Also, you wouldn't get short proofs that a transaction isn't
+present in a block that way either afaics.
+
+> Seems like a reasonable cost for avoiding the hardfork, no? The
+> receiver topo sort requirement would also require more memory in a
+> block verifier; and would be more complex to fraud proof, I think.
+
+Hmm, I think it'd be easy to fraud proof -- just show adjacent merkle
+paths where the results are in the wrong order. Maybe the same's true
+with the id-order-but-toposorted too -- just show adjacent merkle paths
+where the results are in the wrong order, and the later doesn't depend
+on the former. I'm not sure that gives a unique sort though (but maybe
+that doesn't actually matter).
+
+> Engineering wise it's not quite so simple. It's helpful for miners to
+> have blocks sorted by feerate so that later stages of the mining
+> process can drop the least profitable transactions simply by
+> truncating the block.
+
+Yeah; not having ordering requirements seems far more practical.
+
+> > [1] Maybe having the shared mempool indexes be sorted rather than FIFO
+> >     would make the data structures hard; I don't think so, but not sure.
+> I tried to get Matt to do that for his stuff previously; pointing out
+> the sorted indexes would be easier to efficiently code. His
+> counterargument was that for 2000 txn, the two bytes indexes take 4kb,
+> which is pretty insignificant... and that his time would be better
+> spent trying to get the hit-rate up. I found that hard to argue with.
+> :)
+
+Yeah. Having the bitcoin mempool and fee info (and heck, priority info)
+more readily available when seeing new transactions and choosing what to
+include seems like it'd be helpful here. Seems relatively painful to do
+that outside of bitcoin though.
+
+Cheers,
+aj
+
+
+----------
+From: Gregory Maxwell <gmaxwell at gmail.com>
+Date: Mon, May 15, 2017 at 8:03 PM
+To: Anthony Towns <aj at erisian.com.au>
+
+
+I ran into someone proposing the same thing as you. Can I share this
+discussion with them? (with the public?)
+
+----------
+From: Anthony Towns <aj at erisian.com.au>
+Date: Mon, May 15, 2017 at 11:00 PM
+To: Gregory Maxwell <gmaxwell at gmail.com>
+
+
+Yes, go ahead on both counts.
+--
+Sent from my phone.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170515/48773e42/attachment-0001.html>
