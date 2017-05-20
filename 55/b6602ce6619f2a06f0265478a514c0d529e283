@@ -1,0 +1,76 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Sat, 20 May 2017 15:05:43 +1000
+Subject: [bitcoin-dev] BIP: Block signal enforcement via tx fees
+In-Reply-To: <CAMZUoKnjc4ezVm4FeMFA-+=g13E5ZwZCAoAjd_yL89v7qf1gEA@mail.gmail.com>
+References: <201705121922.57445.luke@dashjr.org>
+	<CAMZUoKnzV9faJ+mBTTzTre05Ejwnx3tC4ozbiPoPUfS+7GLMTQ@mail.gmail.com>
+	<201705130526.59467.luke@dashjr.org>
+	<CAMZUoKnjc4ezVm4FeMFA-+=g13E5ZwZCAoAjd_yL89v7qf1gEA@mail.gmail.com>
+Message-ID: <20170520050543.GA4334@erisian.com.au>
+
+On Sat, May 13, 2017 at 01:11:27PM -0400, Russell O'Connor via bitcoin-dev wrote:
+> On Sat, May 13, 2017 at 1:26 AM, Luke Dashjr <luke at dashjr.org> wrote:
+> > Versionbits change/lose their meaning after the deployment timeout. For
+> > this reason, the timeout must be specified so the check is skipped 
+> > when that occurs.
+> To add a timeout a user can optionally bundle a pair of similar transactions.?
+> One with the transaction version bits set and a second with a locktime set.?
+> The effect is the same.
+
+Another approach to ensuring the timeout might be to simply use input 
+height. ie:
+
+  * if there is a BIP-9 soft-fork using bit N currently STARTED or
+    LOCKED_IN phase. since the soft-fork is started, set the height of
+    the first block after starttime as "S".
+
+  * then a transaction is invalid in a block if:
+     * the soft-fork has not timed out or activated
+     * the block does not signal bit N
+     * the transaction nversion does signal bit N (by whatever formula)
+     * at least one input to the transaction has a height >= S
+
+That's compatible with bit reuse: if a transaction designed to encourage
+soft-fork foo with bit 1 does not get mined by the time foo finishes (by
+timeout or success), then when soft-fork bar reaches STARTED phase while
+reusing bit 1, the old transaction can be mined by either signalling
+or non-signalling miners -- because all of the transaction inputs are
+prior to bar's block S, the invalidation rule doesn't apply for bar, and
+because foo has timed out or activated, it doesn't apply for foo either.
+
+It means you can't directly use a bunch of old coins on their own to
+incentivise miner signalling -- you need to include a coin from after
+starttime. That doesn't seem terribly onerous though; and should be
+easily solvable by just providing a coinjoin API anyway.  I think it's
+compatible with using bitcoin days destroyed as a weighting measure too,
+since only one of the coins needs to be relatively recent.
+
+The above is a "fail-open" timeout rather than "fail-closed" -- if you
+signal for foo, but your transaction doesn't get mined because too few
+miners are signalling foo, and then foo fails to activate and times out,
+your transaction can then be mined by the miners that didn't signal. If
+this isn't what you want, double-spending should be fine: provide a double
+spend at market rates that doesn't require signalling directly to miners
+and their choice becomes "mine this thing now and get the fee directly"
+versus "hope no one else mines it now, and that I get the chance to mine
+the original higher fee transaction after activation, before anyone else
+does", so at least the economically-rational choice should be to mine
+the lower-fee double spend immediately. So it should be reasonable to
+offer a higher fee for signalling, without risking that non-signalling
+miners will be able to claim that high fee eventually.
+
+I'm not sure the incentives about tying user-signalling for a soft-fork
+to miner signalling for a soft-fork are entirely sound; but if they are
+then just using nversion seems a lot more user-friendly than requiring
+script changes to me. In particular, it doesn't require any setup or
+teardown costs -- you don't have to get an input with a particular
+script encoded that you can then spend to signal, and you don't have to
+remember variations on output address when you want to spend a transaction
+that was signalling; likewise changes to wallets are pretty simple and
+don't have "you lost all your money" results if there's a bug. Well,
+the above timeout procedure requires getting a recent coin as "setup",
+but that's pretty trivial, at least.
+
+Cheers,
+aj
+
