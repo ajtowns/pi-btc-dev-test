@@ -1,0 +1,143 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Mon, 22 May 2017 10:39:19 -0400
+Subject: [bitcoin-dev] Drivechain -- Request for Discussion
+In-Reply-To: <24f2b447-a237-45eb-ef9f-1a62533fad5c@gmail.com>
+References: <24f2b447-a237-45eb-ef9f-1a62533fad5c@gmail.com>
+Message-ID: <dhstGQudLBiwjDlaRrmMfy-ixwvXcwMr1CzCkPKh285RLICGZixkbdwpTDc2Sgz8eYIqSem8lwxW6QeJCD7aFfwQjLDnZ2NmOw0Zzd-KgSs=@protonmail.com>
+
+Good morning Paul,
+
+I read only http://www.truthcoin.info/blog/blind-merged-mining/
+
+>From just this document, I can't see a good justification for believing that a main->side locking transaction can be safely spent into a side->main unlocking transaction. Do you have a better explanation?
+
+OP_is_h_in_coinbase, as described, does not seem to protect against a sidechain reorg in your next section of the document. If I attempt to spend a main->side locking transaction on the basis of a "mistaken" side block #49, what prevents me from this sequence:
+
+1. Put a side:side->main transaction into a block together with TheDAO's hacked money.
+2. Wait for a reorg to revert TheDAO.
+3. Spend my now-free-in-the-reorg funds on Lightning Network to get mainchain funds.
+4. Create a main:side->main transaction with the side:side->main transaction in the TheDAO-hacked block as witness.
+5. Get another set of mainchain funds from the same sidechain funds.
+
+So far, the only good side->main transfer I know of is in Blockstream's original sidechains paper, with the main:side->main transaction spending into a timelocked transaction that may be burned if a reorg proof is submitted (i.e. you try to create a main:side->main transaction with the side:side->main transaction in the mistaken #49 and #50 as your proof, but someone else can come along and show a corrected #49, #50, #51 without your side:side->main transaction and burn your funds). Is your proposal at the technical level actually similar, or does it truly seem to be riskier? It seems to me that your OP_is_h_in_coinbase should scan a series of sidechain block headers backed by mainchain (meaning at the minimum that sidechains should have some common header format prefix), rather than just mainchain depth as your article seems to imply.
+
+Also, blinded merge mining seems strictly inferior to proof-of-burn: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2014-December/007012.html
+
+Proof-of-burn integrates a lottery to reduce the ability of a mainchain-rich attacker to reorg the sidechain by burning its greater funds. However it still seems to me that a rich attacker can simply make more bets in that scheme by some trivial modification of the side block. Blind merged mining seems strictly inferior as a rich attacker can simply reorg the sidechain outright without playing such games.
+
+Or is your proposal strictly for centralized sidechains, where only one entity creates side blocks? How does your proposal handle multiple side block creators on the same sidechain, with the possibility that chain splits occur?
+
+Regarding your dig about people who dislike data centers, the main issue with miners blindly accepting sidechain commitments is that it violates "Don't trust, verify", not that allows datacenters to be slightly smaller by not including side:nodes.
+
+Regards,
+ZmnSCPxj
+
+Sent with ProtonMail Secure Email.
+
+-------- Original Message --------
+Subject: [bitcoin-dev] Drivechain -- Request for Discussion
+Local Time: May 22, 2017 6:17 AM
+UTC Time: May 22, 2017 6:17 AM
+From: bitcoin-dev at lists.linuxfoundation.org
+To: Bitcoin Dev <bitcoin-dev at lists.linuxfoundation.org>
+
+Dear list,
+
+I've been working on "drivechain", a sidechain enabling technology, for
+some time.
+
+* The technical info site is here: www.drivechain.info
+* The changes to Bitcoin are here:
+https://github.com/drivechain-project/bitcoin/tree/mainchainBMM
+* A Blank sidechain template is here:
+https://github.com/drivechain-project/bitcoin/tree/sidechainBMM
+
+As many of you know, I've been seeking feedback in person, at various
+conferences and meetups over the past year, most prominently Scaling
+Milan. And I intend to continue to seek feedback at Consensus2017 this
+week, so if you are in NYC please just walk up and start talking to me!
+
+But I also wanted to ask the list for feedback. Initially, I was
+hesitant because I try not to consume reviewers' scarce time until the
+author has put in a serious effort. However, I may have waiting too
+long, as today it is actually quite close to a working release.
+
+Scaling Implications
+---------------------
+
+This upgrade would have significant scaling implications. Since it is
+the case that sidechains can be added by soft fork, and since each of
+these chains will have its own blockspace, this theoretically removes
+the blocksize limit from "the Bitcoin system" (if one includes
+sidechains as part of such a system). People who want a LargeBlock
+bitcoin can just move their BTC over to such a network [1], and their
+txns will have no longer have an impact on "Bitcoin Core". Thus, even
+though this upgrade does not actually increase "scalability" per se, it
+may in fact put an end to the scalability debate...forever.
+
+This work includes the relatively new concept of "Blind Merged Mining"
+[2] which I developed in January to allow SHA256^2 miners to merge-mine
+these "drivechains", even if these miners aren't running the actual
+sidechain software. The goal is to prevent sidechains from affecting the
+levelness of the mining "playing field". BMM is conceptually similar to
+ZooKeeV [3] which Peter Todd sketched out in mid-2013. BMM is not
+required for drivechain, but it would address some of the last remaining
+concerns.
+
+Total Transaction Fees in the Far Future
+-----------------------------------------
+
+Some people feel that a maximum blocksize limit is needed to ensure that
+future total equilibrium transaction fees are non-negligible. I
+presented [4] on why I don't agree, 8 months ago. The reviewers I spoke
+to over the last year have stopped bringing this complaint up, but I am
+not sure everyone feels that way.
+
+Juxtaposition with a recent "Scaling Compromise"
+-------------------------------------------------
+
+Recently, a scalability proposal began to circulate on social media. As
+far as I could tell, it goes something like "immediately activate
+SegWit, and then HF to double the nonwitness blockspace to 2MB within 12
+months". But such a proposal is quite meager, compared to a "LargeBlock
+Drivechain". The drivechain is better on both fronts, as it would not
+require a hardfork, and could *almost immediately* add _any_ amount of
+extra blockspace (specifically, I might expect a BIP101-like LargeBlock
+chain that has an 8 MB maxblocksize, which doubles every two years).
+
+In other words, I don't know why anyone would support that proposal over
+mine. The only reasons would be either ignorance (ie, unfamiliarity with
+drivechain) or because there are still nagging unspoken complaints about
+drivechain which I apparently need to hear and address.
+
+Other Thoughts
+---------------
+
+Unfortunately, anyone who worked on the "first generation" of sidechain
+technology (the skiplist) or the "second generation" (federated /
+Liquid), will find that this is very different.
+
+I will admit that I am very pessimistic about any conversation that
+involves scalability. It is often said that "talking politics lowers
+your IQ by 25 points". Bitcoin scalability conversations seem to drain
+50 points. (Instead of conversing, I think people should quietly work on
+whatever they are passionate about until their problem either is solved,
+or it goes away for some other reason, or until we all agree to just
+stop talking about it.)
+
+Cheers,
+Paul
+
+[1] http://www.drivechain.info/faq/#can-sidechains-really-help-with-scaling
+[2] http://www.truthcoin.info/blog/blind-merged-mining/
+[3] https://s3.amazonaws.com/peter.todd/bitcoin-wizards-13-10-17.log
+[4]
+https://www.youtube.com/watch?v=YErLEuOi3xU&list=PLw8-6ARlyVciNjgS_NFhAu-qt7HPf_dtg&index=4
+
+_______________________________________________
+bitcoin-dev mailing list
+bitcoin-dev at lists.linuxfoundation.org
+https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170522/b545bb82/attachment-0001.html>
