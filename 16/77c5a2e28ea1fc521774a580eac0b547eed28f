@@ -1,0 +1,381 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Mon, 22 May 2017 03:05:49 -0400
+Subject: [bitcoin-dev] A Method for Computing Merkle Roots of Annotated
+	Binary Trees
+Message-ID: <CAMZUoK=f3hXHkqJBDfiLGSrgXi_ppgyH6+XWD9W54EYFWLm1+Q@mail.gmail.com>
+
+## Introduction
+This document aims to specify and justify a method for computing Merkle
+roots for tree structures whose nodes are annotated with other data.  While
+this proposal could be used to replace Bitcoin's Merkle root calculation,
+it is primarily aimed at new applications such as MAST, (U)TXO commitments
+or other Merklized structures.
+
+## Background
+Bitcoin uses a Merkle tree construction to build a commitment to a sequence
+of transactions for a Bitcoin block.  The main operation for computing a
+Merkle tree is one that takes the recursively computed Merkle roots of two
+branches and combines them to compute the Merkle root of the tree with
+those two branches.  In Bitcoin, a Merkle root is 256 bits and the
+construction is
+
+    MerkleRoot := SHA256(SHA256(LeftRoot ? RightRoot))
+
+One problem with this construction is that it is unnecessarily expensive.
+While the concatenation of the LeftRoot and the RightRoot fits in 512 bits,
+the size of a SHA256 chunk, a second chunk is needed to fit SHA256's
+padding.  This means that inner SHA256 call invokes the SHA256 compression
+function twice, once for each chunk.  The outer SHA256 call invokes the
+SHA256 compression function a third time.  Bitcoin's Merkle root procedure
+calls the SHA256 compression function a total of three times per node.
+
+The main purpose of composing two calls to the SHA256 hash function is to
+protect against length extension attacks.  A length extension attack is
+where an attacker has access to the hash of a message `HASH(msg)` and,
+without knowing `msg`, is able to construct the hash of a new message
+`HASH(msg ? attackerMsg)`.  This is attack is usually used against poorly
+constructed MACs (Message Authentication Codes).  In the case of Bitcoin
+there are no secret messages that are hashed, so the outer call to SHA256
+is unnecessary.
+
+As mentioned above, the inner call to SHA256 requires two chunks because of
+SHA256's padding.  For the MerkleRoot construction added padding value is
+always
+
+
+0x80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000000000000000000000000000000200
+
+because the input is of a fixed length.  SHA256's padding function is
+designed
+
+1. to add bits to the message so that the resulting message size is a
+multiple of the chunk size (which is 512-bits in the case of SHA256).
+2. to satisfy the Merkle--Damg?rd property which says that if we can find a
+hash collision in SHA256, which operates on variable length messages, then
+we can find a hash collision in SHA256's compression function, which
+operates on fixed length messages.
+
+We could remove the second call to the SHA256 compression function and use
+SHA256 without padding.  If we did, we would lose the Merkle--Damg?rd
+property.  While this may be acceptable for some use cases, we are still
+left with no room to add annotation data held at a node.  For Bitcoin's
+Merkle tree this is not a problem, because its trees are not annotated.
+However, for other applications, we would need to add another chunk to hold
+the annotation, which would mean adding back the second call to the SHA256
+compression function per node of the tree.
+
+## A New Merkle Root Algorithm
+Below is an algorithm for computing Merkle roots that directly uses the
+SHA256 compression function.  This algorithm operates on binary trees and
+supports per node annotations.  Furthermore this proposal satisfies the
+Merkle--Damg?rd property and more.
+
+#### Remark 1
+Any finitely branching tree can be represented by a binary tree, so this
+construction also applies to arbitrary finitely branching trees.
+
+The SHA256 compression function takes two inputs:
+
+1. A 256-bit value for the previous chunk in a chain, or an initial vector
+in the case of the first chunk.
+2. A 512-bit chunk of data.
+
+    sha256Compress : Word256 ? Word512 -> Word256
+
+In total, the SHA256 compression function compresses 768-bits into
+256-bits.  The Merkle roots of two branches occupy 512 bits, and this
+leaves another 256-bits of space available for tags.
+
+Let us define a recursive type for binary trees annotated with tags.
+
+    type Tree tag where
+      Leaf   : tag                       -> Tree tag
+      Unary  : tag ? Tree tag            -> Tree tag
+      Binary : tag ? Tree tag ? Tree tag -> Tree tag
+
+We define a recursive algorithm for trees whose tags are 256-bit Words (or
+whose tags can be represented by 256-bit words).
+
+    merkleRoot : Tree Word256 -> Word256
+    merkleRoot (Leaf (t))                :=
+sha256Compress(sha256(ApplicationName),
+0b0^256 ? t)
+    merkleRoot (Unary (t, child))        := sha256Compress(merkleRoot(child),
+0b0^256 ? t)
+    merkleRoot (Binary (t, left, right)) := sha256Compress(merkleRoot(left),
+merkleRoot(right) ? t)
+
+We need some initial value for the `Leaf` case.  This could be taken as the
+initial vector for SHA256.  However, I suggest using the hash of an
+application specific name.
+
+    ApplicationName : BitString
+
+We further require that the tags dictate the kind of node it is attached
+to.  For example, if a given tag is used for Binary nodes, then it can only
+appear in other Binary nodes.  One way this can be accomplished is by
+requiring the first two bits of a tag follow a particular scheme (the
+scheme below ensures that one of the first two bits is set, which will be
+useful later when we define safe tags) such as
+
+- 0b11 when the node is a Leaf node.
+- 0b10 when the node is a Unary node.
+- 0b01 when the node is a Binary node.
+
+This condition suffices to provide the Merkle--Damg?rd property:
+
+#### Theorem 2
+Suppose `t_1` and `t_2` are two different `Tree Word256` values such that
+any tag occurring in the two trees only occurs in one kind of node.  If
+`merkleRoot(t_1) = merkleRoot(t_2)` then we can effectively find a
+collision in the SHA256 compression function.
+
+Proof.
+We proceed by structural induction on `t_1`.  Assume `t_1` and `t_2` are
+two different `Tree Word256` values such that `merkleRoot(t_1) =
+merkleRoot(t_2)`.  Define a `tag` function to extract the tag name from the
+root of a tree.
+
+    tag : Tree Word256 -> Word256
+    tag (Leaf (t))         := t
+    tag (Unary (t, _))     := t
+    tag (Binary (t, _, _)) := t
+
+Case 1: Suppose `tag(t_1) =/= tag(t_2)`.
+This means that the inputs to `sha256Compress` that produced
+`merkleRoot(t_1)` and `merkleRoot(t_2)` are different and we have found a
+collision in the SHA256 compression function.
+
+Case 2: Suppose `tag(t_1) = tag(t_2)`.
+Let `tg` be this tag.  By our requirement on tags, this means that `t_1`
+and `t_2` are the same kind of node.  Suppose `t_1 = Binary (tg, t_(1l),
+t_(1r))` and `t_2 = Binary (tg, t_(2l), t_(2r))`.  Since `t_1` and `t_2`
+are different, then either `t_(1l) =/= t_(2l)` or `t_(1r) =/= t_(2r)`.
+Without loss of generality, assume `t_(1l) =/= t_(2l)`.
+
+Case 2a: Suppose `merkleRoot(t_(1l)) =/= merkleRoot(t_(2l))`.
+This means that the inputs to `sha256Compress` that produced
+`merkleRoot(t_1)` and `merkleRoot(t_2)` are different and we have found a
+collision in the SHA256 compression function.
+
+Case 2b: Suppose `merkleRoot(t_(1l)) = merkleRoot(t_(2l))`.
+Then by induction we can find a collision in the SHA256 compression
+function.
+
+The cases where `t_1` and `t_2` are both `Unary` or `Leaf` nodes are
+handled in a similar way.  The reader can verify the algorithm implied by
+the above proof provides an effective method of finding a collision in the
+SHA256 compression function.  QED
+
+#### Remark 3
+We have filled half of the chunk with `0b0^256` in for the `Unary` and
+`Leaf `cases in the definition of `merkleRoot`.  The proof of Theorem 2
+does not depend on this, and if we have extra ancillary data for these
+types of nodes it can replace the `0b0^256` in this first half of the
+chunk.  This is particularly useful for the `Leaf `case because `Leaf`
+nodes often hold extra data.  We also remark that if this data is too large
+to be represented by a `Word256`, it can instead be hashed with SHA256 and
+the hash included instead.
+
+Not all of the inputs to the SHA256 compression function are created
+equal.  Only the second argument, the chunk data, is applied to the SHA256
+expander.  `merkleRoot` is designed to ensure that the first argument of
+the SHA256 compression function is only fed some output of the SHA256
+compression function.  In fact, we can prove that the output of the
+`merkleRoot` function is always the midstate of some SHA256 hash.  To see
+this, let us explicitly separate the `sha256` function into the padding
+step, `sha256Pad`, and the recursive hashing step, `unpaddedSha256`.
+
+    sha256Pad : BitString -> List Word512
+
+    sha256IV : Word256
+
+    sha256Loop : Word256 ? List Word512 -> Word256
+    sha256Loop (prev, Nil)                := prev
+    sha256Loop (prev, Cons (chunk, rest)) := sha256Loop(sha256Compress(prev,
+chunk), rest)
+
+    unpaddedSha256 : List Word512 -> Word256
+    unpaddedSha256 (chunks) := sha256Loop(sha256IV, chunks)
+
+    sha256 : BitString -> Word256
+    sha256 (s) := unpaddedSha256(sha256Pad(s))
+
+Now we can state what we mean when we say that the output of the
+`merkleRoot` function is always the midstate of some SHA256 hash.
+
+#### Theorem 4
+For all `t : Tree Word256` there exists some `l : List Word512` such that
+`merkleRoot(t) = unpaddedSha256(l)`.
+
+Proof.
+We construct a function to transform a tree into the required list of
+chunks.
+
+    merkleChain : Tree Word256 -> List Word512
+    merkleChain (Leaf (t))                := sha256Pad(ApplicationName) +
+[0b0^256 ? t]
+    merkleChain (Unary (t, child))        := merkleChain(child) + [0b0^256
+? t]
+    merkleChain (Binary (t, left, right)) := merkleChain(left) +
+[merkleRoot(right) ? t]
+
+The reader can verify by induction that
+
+    forall t : Tree Word256. merkleRoot(t) = unpaddedSha256(merkleChain(t)).
+
+QED
+
+### Large Tag Space
+
+If one's application cannot directly represent the space of tags with a
+`Word256`, then one can hash the tags and still maintain the
+Merkle--Damg?rd property given by Theorem 2, as long as we still have the
+property that each tag uniquely determines the kind of node it applies to.
+
+We first note that `Tree` is a functor.
+
+    treeMap : (a -> b) -> Tree a -> Tree b
+    treeMap f (Leaf (t))                := Leaf (f(t))
+    treeMap f (Unary (t, child))        := Unary (f(t), child)
+    treeMap f (Binary (t, left, right)) := Binary (f(t), left, right)
+
+We can hash the tags of a tree.
+
+    hash256Tags : Tree BitString -> Tree Word256
+    hash256Tags (t) := treeMap sha256 t
+
+Now we can compute the `merkleRoot` of the result of `hash256Tags`.
+
+#### Theorem 5
+Suppose `t_1` and `t_2` are two different `Tree BitString` values such that
+any tag occurring in the two trees only occurs in one kind of node.  If
+`merkleRoot(hash256Tags(t_1)) = merkleRoot(hash256Tags(t_2))`, then we can
+effectively find a collision in the SHA256 compression function.
+
+Proof.
+Assume `t_1` and `t_2` are two different `Tree BitString` values such that
+`merkleRoot(hash256Tags(t_1)) = merkleRoot(hash256Tags(t_2))`.
+
+Case 1: Suppose `hash256Tags(t_1) = hash256Tags(t_2)`.
+This means there must be a collision in the `sha256` function.  By the
+Merkle--Damg?rd property of SHA256, this means we can effectively find a
+collision in the SHA256 compression function.
+
+Case 2: Suppose `hash256Tags(t_1) =/= hash256Tags(t_2)`.
+If the SHA256 hashes of each tag in the two trees uniquely determines the
+kinds of their nodes, then we can apply Theorem 2 to conclude that we can
+effectively find a collision in the SHA256 compression function.  If the
+SHA256 hashes of each tag in the two trees does not uniquely determine the
+kinds of their nodes then there are two different tags among the two trees,
+`tg_1` and `tg_2`, such that `sha256(tg_1) = sha256(tg_2)`.  Hence there is
+a collision in the `sha256` function, and therefore we can effectively find
+a collision in the SHA256 compression function.  QED
+
+## Avoiding collisions between merkleRoot and sha256
+For the moment, let us assume there is no effective way to find a collision
+in the SHA256 compression function.  By the Merkle--Damg?rd property of
+SHA256, we cannot effectively find a collision within the sha256 function.
+We have shown, by Theorem 2, that merkleRoot has the same Merkle--Damg?rd
+property and hence we cannot effectively find a collision within the
+merkleRoot function.  However, we may have collisions between the `sha256`
+and the `merkleRoot` functions.  That is, we may be able to effectively
+find values `s : BitString` and `t : Tree Word256` such that `sha256(s) =
+merkleRoot(t)`.
+
+While this may not be a problem for most applications, it turns out that we
+can place restrictions on the format of tags to ensure that there are never
+collisions between `sha256` and `merkleRoot`.  Define a safe tag of type
+`Word256` to be a a value such that one the first 192 bits is set and the
+9th last bit is cleared.
+
+#### Theorem 6
+Let `t : Tree Word256` be a tree in which every tag is a safe tag.  Suppose
+we have some `s : BitString` such that `sha256(s) = merkleRoot(t)`.  Then
+we can effectively find a collision in the SHA256 compression function.
+
+Proof.
+The last chunk of `sha256Padding(s)` is a padding chunk as defined by the
+SHA256 standard.  If we look at the second half of this last chunk, then
+according to the padding rules, it can never be the case that one of the
+first 192 bits is set and the 9^th last bit is cleared.  Because `t` only
+contains safe tags, the inputs to their last compression function in the
+computation of `sha256(s)` and `merkleRoot(t)` must be different.
+Therefore if `sha256(s) = merkleRoot(t)` then we must have encountered a
+collision in the final compression function of the two computations.  QED
+
+#### Remark 7
+If we use safe tags we can consider a modified `merkleRoot'` function.
+
+    merkleRoot' : Tree Word256 -> Word256
+    merkleRoot' (Leaf (t))                :=
+sha256Compress(sha256(ApplicationName),
+sha256("") ? t)
+    merkleRoot' (Unary (t, child))        := sha256Compress(merkleRoot'(child),
+sha256("") ? t)
+    merkleRoot' (Binary (t, left, right)) := sha256Compress(merkleRoot'(left),
+merkleRoot'(right) ? t)
+
+If we use `merkleRoot'` we no longer require that tags uniquely define
+their node types in order to ensure the Merkle--Damg?rd property.  Instead
+we can rely on the safe tags to ensure that the use of `sha256(s)` will
+never collide with `merkleRoot'(t)`, and therefore nodes of different types
+will never collide with each other the `merkleRoot'` computation.  However,
+I don't feel this is a particularly good approach, so I will not elaborate
+on it further.
+
+Unfortunately, there is no guarantee that the result of `hash256Tags` will
+consist of only safe tags, so we cannot use it to avoid collisions between
+`sha256` and `merkleRoot ? hash256Tags`.  To remedy this we define an
+alternative to `hash256Tags`.
+
+    hash224Tag : BitString -> Word256
+    hash224Tag (s) := 0xFFFF ? sha224(s) ? 0x0000
+
+    hash224Tags : Tree BitString -> Tree Word256
+    hash224Tags (t) := treeMap hash224Tag t
+
+We see that by appropriately padding the result of `sha224` we guarantee
+that `hash224Tag(s)` is a safe tag.
+
+#### Theorem 8
+Suppose `t_1` and `t_2` are two different `Tree BitString` values such that
+any tag occurring in the two trees only occurs in one kind of node.  If
+`merkleRoot(hash224Tags(t_1)) = merkleRoot(hash224Tags(t_2))`, then we can
+effectively find either a collision in the SHA256 compression function, or
+a collision in SHA224.
+
+#### Remark 9
+We can safely replace the `0xFFFF` prefix in `hash224Tag` with one where
+the first two bits determine the kind of node in accordance with our
+previously defined scheme.
+
+#### Remark 10
+Rather than using SHA224 we could use SHA256 and tweak it afterwards to set
+the first bit and clear the 9th last bit. This comes at the cost of
+effectively using a non-standard hash function.
+
+#### Remark 11
+Most of this development not depend specifically on SHA256.  It all works
+similarly for SHA512 and other hash functions that compress in a similar
+manner.  SHA256 is used as the primary example because one can find
+hardware support for it on commodity hardware (for example, see the Intel
+SHA extensions).
+
+## Conclusion
+We have defined a merkleRoot function for computing Merkle roots of trees
+that include annotations per node.  The resulting function uses one SHA256
+compression function call per node and supports arbitrary 256-bit
+annotations per node.  Arbitrary annotations can be supported at the cost
+of more hashing.  We have also shown that by using safe tags we can
+additionally get a property that the `merkleRoot` will not effectively
+collide with `sha256` function.
+
+## Further Reading
+The article [Characterizing Padding Rules of MD Hash Functions Preserving
+Collision Security](https://eprint.iacr.org/2009/325.pdf) by Mridul Nandi
+provides a nice overview of various options for padding rules.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170522/c8eb4a67/attachment-0001.html>
