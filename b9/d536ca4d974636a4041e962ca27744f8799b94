@@ -1,0 +1,217 @@
+From: james.hilliard1@gmail.com (James Hilliard)
+Date: Tue, 23 May 2017 12:56:51 -0400
+Subject: [bitcoin-dev] Reduced signalling threshold activation of
+ existing segwit deployment
+In-Reply-To: <W5v1NIvVzD9MK1pTmq3ybIYadLtHyqJR58hu4_Rl_02DDDq6gIvT8dAvPFagolqKaws4Up9ywMhyXS1sWqJ4t_TBr7od5RRqIMuk9jz_4W4=@protonmail.com>
+References: <CADvTj4pQ8eJvzm9UOgC8bYm1ERGuTX7qq+a7etRe55S=KodrHQ@mail.gmail.com>
+	<W5v1NIvVzD9MK1pTmq3ybIYadLtHyqJR58hu4_Rl_02DDDq6gIvT8dAvPFagolqKaws4Up9ywMhyXS1sWqJ4t_TBr7od5RRqIMuk9jz_4W4=@protonmail.com>
+Message-ID: <CADvTj4phW9ovpnUBZnOosy30FB4opU0TB11R6itpkPsOsAkx+w@mail.gmail.com>
+
+On Tue, May 23, 2017 at 5:51 AM, Kekcoin <kekcoin at protonmail.com> wrote:
+> I think there may be merit to this idea, allowing for political compromise
+> without sacrificing the technological integrity of Bitcoin. There are a few
+> mechanical problems I see with it, though.
+>
+> 1. It should change its activation logic from BIP9-style to BIP8-style with
+> a flagday of August 1. This to maintain backwards compatibility with the
+> current deployment of BIP148 nodes. This proposal seems to be a measure to
+> prevent a chainsplit, so it must make sure to avoid triggering one.
+That can be done as a separate proposal, it's not mutually exclusive
+to this one for those who intend to run BIP148.
+>
+> 2. This should be for miners only; non-miners should not enforce this. It
+> severely weakens the block-signalling activation mechanism in several ways
+> (lowered threshold, short deployment timeframe, no "locked in" delay before
+> activation) and by doing so opens up attack vectors for
+> consensus-partitioning attacks using malicious false signalling. For
+> non-miners that seek to take their fate into their own hands, enforcing
+> BIP148 is enough.
+I disagree that it should be only run by miners, enforcement of
+segsignal mandatory signalling by economic nodes strongly discourages
+any false signaling.
+>
+> 3. Even for miners this is more risky than usual; only 31% of hashrate is
+> required to false-signal the activation to fork-off honest miners. This
+> attack vector is magnified by the lack of "locked in" delay that would allow
+> laggards to upgrade before activation. I suggest adding in at least a 1-week
+> lock-in period (given the shorter timeframes 2 weeks may eat up too much of
+> the available voting time before the brick wall of BIP148 activation on
+> August 1).
+Those who can should still upgrade for segsignal, the more that
+upgrade ahead of activation the more secure it is. Those who don't
+upgrade would want to wait for more confirmations anyways. I didn't
+think a lock in period was all that good an idea here due to the
+fairly short deployment timeline.
+>
+> Under the assumption that this is indeed compatible with the terms of the
+> Silbert agreement, we can presume the involved miners are willing to trust
+> eachother more than usual so such a short lock-in period should be
+> acceptable.
+>
+> -------- Original Message --------
+> Subject: [bitcoin-dev] Reduced signalling threshold activation of existing
+> segwit deployment
+> Local Time: May 23, 2017 1:40 AM
+> UTC Time: May 22, 2017 10:40 PM
+> From: bitcoin-dev at lists.linuxfoundation.org
+> To: Bitcoin Dev <bitcoin-dev at lists.linuxfoundation.org>
+>
+> I would like to propose an implementation that accomplishes the first
+> part of the Barry Silbert proposal independently from the second:
+>
+> "Activate Segregated Witness at an 80% threshold, signaling at bit 4"
+> in a way that
+>
+> The goal here is to minimize chain split risk and network disruption
+> while maximizing backwards compatibility and still providing for rapid
+> activation of segwit at the 80% threshold using bit 4.
+>
+> By activating segwit immediately and separately from any HF we can
+> scale quickly without risking a rushed combined segwit+HF that would
+> almost certainly cause widespread issues.
+>
+> Draft proposal:
+> https://github.com/jameshilliard/bips/blob/bip-segsignal/bip-segsignal.mediawiki
+>
+> Proposal text:
+> <pre>
+> BIP: segsignal
+> Layer: Consensus (soft fork)
+> Title: Reduced signalling threshold activation of existing segwit deployment
+> Author: James Hilliard <james.hilliard1 at gmail.com>
+> Status: Draft
+> Type: Standards Track
+> Created: 2017-05-22
+> License: BSD-3-Clause
+> CC0-1.0
+> </pre>
+>
+> ==Abstract==
+>
+> This document specifies a method to activate the existing BIP9 segwit
+> deployment with a majority hashpower less than 95%.
+>
+> ==Definitions==
+>
+> "existing segwit deployment" refer to the BIP9 "segwit" deployment
+> using bit 1, between November 15th 2016 and November 15th 2017 to
+> activate BIP141, BIP143 and BIP147.
+>
+> ==Motivation==
+>
+> Segwit increases the blocksize, fixes transaction malleability, and
+> makes scripting easier to upgrade as well as bringing many other
+> [https://bitcoincore.org/en/2016/01/26/segwit-benefits/ benefits].
+>
+> This BIP provides a way for a simple majority of miners to coordinate
+> activation of the existing segwit deployment with less than 95%
+> hashpower. For a number of reasons a complete redeployment of segwit
+> is difficulty to do until the existing deployment expires. This is due
+> to 0.13.1+ having many segwit related features active already,
+> including all the P2P components, the new network service flag, the
+> witness-tx and block messages, compact blocks v2 and preferential
+> peering. A redeployment of segwit will need to redefine all these
+> things and doing so before expiry would greatly complicate testing.
+>
+> ==Specification==
+>
+> While this BIP is active, all blocks must set the nVersion header top
+> 3 bits to 001 together with bit field (1<<1) (according to the
+> existing segwit deployment). Blocks that do not signal as required
+> will be rejected.
+>
+> ==Deployment==
+>
+> This BIP will be deployed by a "version bits" with an 80%(this can be
+> adjusted if desired) activation threshold BIP9 with the name
+> "segsignal" and using bit 4.
+>
+> This BIP will have a start time of midnight June 1st, 2017 (epoch time
+> 1496275200) and timeout on midnight November 15th 2017 (epoch time
+> 1510704000). This BIP will cease to be active when segwit is
+> locked-in.
+>
+> === Reference implementation ===
+>
+> <pre>
+> // Check if Segregated Witness is Locked In
+> bool IsWitnessLockedIn(const CBlockIndex* pindexPrev, const
+> Consensus::Params& params)
+> {
+> LOCK(cs_main);
+> return (VersionBitsState(pindexPrev, params,
+> Consensus::DEPLOYMENT_SEGWIT, versionbitscache) ==
+> THRESHOLD_LOCKED_IN);
+> }
+>
+> // SEGSIGNAL mandatory segwit signalling.
+> if ( VersionBitsState(pindex->pprev, chainparams.GetConsensus(),
+> Consensus::DEPLOYMENT_SEGSIGNAL, versionbitscache) == THRESHOLD_ACTIVE
+> &&
+> !IsWitnessLockedIn(pindex->pprev, chainparams.GetConsensus()) &&
+> // Segwit is not locked in
+> !IsWitnessEnabled(pindex->pprev, chainparams.GetConsensus()) ) //
+> and is not active.
+> {
+> bool fVersionBits = (pindex->nVersion & VERSIONBITS_TOP_MASK) ==
+> VERSIONBITS_TOP_BITS;
+> bool fSegbit = (pindex->nVersion &
+> VersionBitsMask(chainparams.GetConsensus(),
+> Consensus::DEPLOYMENT_SEGWIT)) != 0;
+> if (!(fVersionBits && fSegbit)) {
+> return state.DoS(0, error("ConnectBlock(): relayed block must
+> signal for segwit, please upgrade"), REJECT_INVALID, "bad-no-segwit");
+> }
+> }
+> </pre>
+>
+> https://github.com/bitcoin/bitcoin/compare/0.14...jameshilliard:segsignal-v0.14.1
+>
+> ==Backwards Compatibility==
+>
+> This deployment is compatible with the existing "segwit" bit 1
+> deployment scheduled between midnight November 15th, 2016 and midnight
+> November 15th, 2017. Miners will need to upgrade their nodes to
+> support segsignal otherwise they may build on top of an invalid block.
+> While this bip is active users should either upgrade to segsignal or
+> wait for additional confirmations when accepting payments.
+>
+> ==Rationale==
+>
+> Historically we have used IsSuperMajority() to activate soft forks
+> such as BIP66 which has a mandatory signalling requirement for miners
+> once activated, this ensures that miners are aware of new rules being
+> enforced. This technique can be leveraged to lower the signalling
+> threshold of a soft fork while it is in the process of being deployed
+> in a backwards compatible way.
+>
+> By orphaning non-signalling blocks during the BIP9 bit 1 "segwit"
+> deployment, this BIP can cause the existing "segwit" deployment to
+> activate without needing to release a new deployment.
+>
+> ==References==
+>
+> *[https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-March/013714.html
+> Mailing list discussion]
+> *[https://github.com/bitcoin/bitcoin/blob/v0.6.0/src/main.cpp#L1281-L1283
+> P2SH flag day activation]
+> *[[bip-0009.mediawiki|BIP9 Version bits with timeout and delay]]
+> *[[bip-0016.mediawiki|BIP16 Pay to Script Hash]]
+> *[[bip-0141.mediawiki|BIP141 Segregated Witness (Consensus layer)]]
+> *[[bip-0143.mediawiki|BIP143 Transaction Signature Verification for
+> Version 0 Witness Program]]
+> *[[bip-0147.mediawiki|BIP147 Dealing with dummy stack element malleability]]
+> *[[bip-0148.mediawiki|BIP148 Mandatory activation of segwit deployment]]
+> *[[bip-0149.mediawiki|BIP149 Segregated Witness (second deployment)]]
+> *[https://bitcoincore.org/en/2016/01/26/segwit-benefits/ Segwit benefits]
+>
+> ==Copyright==
+>
+> This document is dual licensed as BSD 3-clause, and Creative Commons
+> CC0 1.0 Universal.
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
