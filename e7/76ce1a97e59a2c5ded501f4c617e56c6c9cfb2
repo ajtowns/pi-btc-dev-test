@@ -1,0 +1,84 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 23 May 2017 13:43:45 -0700
+Subject: [bitcoin-dev] Rolling UTXO set hashes
+In-Reply-To: <8760gs2n7v.fsf@rustcorp.com.au>
+References: <CAPg+sBgruEiXya6oFy6VpmR1KPDebjeGDtZZU+facZx5=L_a5w@mail.gmail.com>
+	<CT3GNfkLsQJyM0EmWXc3HBmnW1h2iptP0SohZnXZfZPffoVmcofD8fs_E3kV5PuFL0pQSQwwk_FyR-8-wdANf15NE8UElNWqcEcc5Ql3n8M=@protonmail.com>
+	<CAAS2fgTif+Y6VzFG+w7W+CY1+D_roCqGyy392qB2KcDPGpVeiw@mail.gmail.com>
+	<20170516110104.GA5564@fedora-23-dvm>
+	<CAPg+sBjJLbhj71Epv=Qfc8HgJhSreN6BOmLkDkvcEGvPwxDNbg@mail.gmail.com>
+	<CAAS2fgQKOKY6DEwY3ycMjysU5Xf2UUE+k=vg2ekkAMO7KG3Gsw@mail.gmail.com>
+	<8760gs2n7v.fsf@rustcorp.com.au>
+Message-ID: <CAPg+sBgW7paof_rLunoDYJL_WXn7mYuHanuka8a_x0oE2LjwSQ@mail.gmail.com>
+
+On Mon, May 22, 2017 at 9:47 PM, Rusty Russell <rusty at rustcorp.com.au> wrote:
+> Gregory Maxwell via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> writes:
+>> On Tue, May 16, 2017 at 6:17 PM, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+>>> just the first - and one that has very low costs and no normative
+>>> datastructures at all.
+>>
+>> The serialization of the txout itself is normative, but very minimal.
+>
+> I do prefer the (2) approach, BTW, as it reuses existing primitives, but
+> I know "simpler" means a different thing to mathier brains :)
+
+Oh, I didn't mean it that way at all. (1) is simpler to get decent
+performance out of. Implementing (1) using any language that has big
+integer support or can link against GMP is likely going to be faster
+than the fastest possible implementation of (2).
+
+> Since it wasn't explicit in the proposal, I think the txout information
+> placed in the hash here is worth discussing.
+>
+> I prefer a simple txid||outnumber[1], because it allows simple validation
+> without knowing the UTXO set itself; even a lightweight node can assert
+> that UTXOhash for block N+1 is valid if the UTXOhash for block N is
+> valid (and vice versa!) given block N+1.  And miners can't really use
+> that even if they were to try not validating against UTXO (!) because
+> they need to know input amounts for fees (which are becoming
+> significant).
+>
+> If I want to hand you the complete validatable UTXO set, I need to hand
+> you all the txs with any unspent output, and some bitfield to indicate
+> which ones are unspent.
+
+That seems to completely defeat the purpose... if I want to give you a
+UTXO set, and prove its correctness wrt the hash you know... I need to
+remember the full transactions those outputs came from?
+
+> OTOH, if you serialize more (eg. ...||amount||scriptPubKey ?), then the UTXO
+> set size needed to validate the utxohash is a little smaller: you need
+> to send the txid, but not the tx nVersion, nLocktime or inputs.  But in a
+> SegWit world, that's actually *bigger* AFAICT.
+
+That's an interesting idea, but I believe you're forgetting:
+* The size of txin prevout/nsequence, which is typically larger than
+txouts (even when excluding scriptSig/witness data).
+* The size of spent txouts for transactions with unspent outputs left.
+* The fact that you can deduplicate the txids for txn that have
+multiple unspent outputs in the UTXO set serialization, even if that
+txid is repeated in the rolling hash computation.
+
+The construction I was considering and benchmarking is using 256-bit
+truncated SHA512(256bit txid || 32bit voutindex || 1bit coinbase ||
+31bit height || CTxOut output) as secp256k1 X coordinate, or as key to
+seed a ChaCha20 PRNG whose outputs is the 3072-bit MuHash number. The
+reason for using SHA512 is that it can process most UTXOs in a single
+transformation (as opposed to SHA256 which will almost always need 2).
+The reason for using ChaCha20 is that it's incredibly fast for
+producing much data when a key is already known. An alternative is
+using SHAKE256 for the whole construction (as it both takes an
+arbitrary amount of data, and produces an arbitrary length hash) - but
+it's a bit slower.
+
+> Thanks,
+> Rusty.
+>
+> [1] I think you could actually use txid^outnumber, and if that's not a
+>     curve point SHA256() again, etc.  But I don't think that saves any
+>     real time, and may cause other issues.
+
+That just seems scary to me...
+
+-- 
+Pieter
