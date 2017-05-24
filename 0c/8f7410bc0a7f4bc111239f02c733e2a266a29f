@@ -1,0 +1,264 @@
+From: truthcoin@gmail.com (Paul Sztorc)
+Date: Wed, 24 May 2017 09:43:49 -0400
+Subject: [bitcoin-dev] Fwd: Re:  Drivechain -- Request for Discussion
+In-Reply-To: <3c744cf9-da15-00c2-dea1-f1f3a1f0b5d5@gmail.com>
+References: <3c744cf9-da15-00c2-dea1-f1f3a1f0b5d5@gmail.com>
+Message-ID: <b478efd3-2760-ebe3-869b-4308535aecb2@gmail.com>
+
+Responses below.
+
+
+On 5/23/2017 7:26 PM, ZmnSCPxj wrote:
+> Good morning,
+> 
+> 
+>>>
+>>> How is OP_BRIBE superior to just using a <h*> OP_RETURN script? Cannot
+>>> a sidechain scan the block for OP_RETURN attesting that the block hash
+>>> is present in the block?
+>>
+>>The sidechain software can indeed, but the mainchain software cannot
+>>(without making validation of both chains part of the mainchain, which
+>>defeats the original purpose of sidechains).
+>>
+>>The purpose of OP_BRIBE is to allow "Sam" (on the sidechain) and "Mary"
+>>(a mainchain miner) to work together. Sam would pay X BTC to Mary, if
+>>Mary could provide Sam with some guarantee that Sam's sidechain block
+>>[defined by h*] would make it into the largest chain.
+> 
+> Regarding "largest chain", do you mean mainchain or sidechain?
+
+Sidechain. Sam is paying himself the revenues of the sidechain's block.
+These are side:btc, that he gets, if this block is part of the largest
+chain.
+> 
+> An OP_RETURN is still some guarantee that it will make it into the
+> longest mainchain.  If OP_RETURN tx is in a shorter mainchain but not on
+> the longer mainchain, then on the longer mainchain, the utxo's funding
+> the OP_RETURN tx is still unspent and the OP_RETURN tx will still be
+> mineable by any miner following the longer mainchain.  The X BTC would
+> be the OP_RETURN transaction's fee, which Mary would still want to mine
+> into the longest mainchain, as it is still money on the table if it is
+> not mined on the longest mainchain.
+
+As you say below, it is about the sidechain, not mainchain. (Anything
+not in the longest mainchain is just discarded by everyone, as always.)
+> 
+> Or, does OP_BRIBE somehow assure that Sam's block goes onto the longer
+> sidechain?  But then, do not side blocks refer to their previous side
+> block to define the sidechain?
+
+Yes, there is a new construction for this, which might be called "SPV
+squared". Classical merged mining (ie Namecoin) does not require the
+mainchain to do anything, except occasionally keep track of an ordered
+list of hash commitments. BMM is different, it does require the
+mainchain to keep track of a minimal amount of things. One is the total
+number of sidechains, but the second is what you have hit on here.
+
+In addition to a list of commitments (ideally, one commitment per
+block), the mainchain also keeps track of the block number ( ..or, as
+you'll see, perhaps "block number modulo x".. ) of recent sidechain
+blocks (for the last x=65,536 mainchain blocks). It then subsets the
+most recent y=4000 of these, and only allows new sidechain blocks to
+appear if they have a blocknumber equal to a member of set Y', where Y'
+is the set of all sidechain blocknumbers y blocks ago + 1.
+
+Then, the sidechain nodes simply reject the block if the h* commitment
+refers to a side:blockheader that has a different block number.
+
+Perhaps these notes..
+
+http://www.truthcoin.info/images/bmm-outline.txt
+
+..would be helpful. Looking back, this is probably the hackiest part of
+the entire system, by a wide margin, so it is good that you bring it up.
+
+> 
+> 
+> Is there some predictable schedule for side->main withdrawals?  If a
+> withdrawal is imminent, or if some actor can get "insider information"
+> about whether a withdrawal is imminent, cannot some actor induce the
+> above, with potentially shorter time to reach step 3?
+
+Yes, these delays are parameters, which are defined per sidechain. So
+once the sidechain has been 'added' to bitcoin, the schedule would be
+fully predictable.
+
+> 
+> From my reading, Blockstream's sidechains proposal supports a reorg
+> proof after a side->main withdrawal on the mainchain side, with a reorg
+> proof burn window after the main:side->main withdrawal, preventing its
+> utxo from being used.  If the reorg proof is published and shows that a
+> sidechain reorg invalidates a particular side->main withdrawal, then the
+> main:side->main withdrawal's utxo is burned.
+
+In this, there is no reorg proof (the miners would simply prevent the
+withdrawal from accumulating enough ACKs). A 51% miner coalition can
+always filter any message they like from the blockchain, including the
+reorg proofs.
+
+> 
+>>For extraordinary DAO-like situations, disinterested mainchain miners
+>>merely need a single bit of information (per sidechain), which is
+>>"distress=true", and indicates to them to temporarily stop ACKing
+>>withdrawals from the sidechain. This alone is enough to give the reorg
+>>an unlimited amount of time to work itself out.
+> 
+> Do you have some document containing these details?  I cannot find this
+> in the blog posts I've read so far.
+
+This specific detail is not documented. I feel it is comparable to, for
+example, the March 2013 chain fork.
+
+> 
+>>>>I feel that my proposal is more secure, as it can operate healthily and
+>>> quickly while using spv proofs which are much slower and much much
+>>> easier to audit.
+>>>
+>>> I don't quite understand how Drivechain handles sidechain reorgs, while
+>>> keeping Bitcoin miners blinded. It seems sidechains need to be known
+>>> ("seen") by the miner, so I don't see what is being blinded by blinded
+>>> merge mining.
+>>
+>>Mainchain miners do need to maintain some data about the sidechains, but
+>>this is very minimal, and certainly does not include the transaction
+>>data (or arbitrary messages) of the sidechain.
+> 
+> As above, do you have document containing what data mainchain needs to
+> track?
+
+Yes, I think the notes (above) may be helpful.
+
+> 
+>>>>>Blind merged mining seems strictly inferior ... a rich attacker can
+>>> simply reorg the sidechain outright without playing such games.
+>>>>
+>>>>In the future, when there is no block subsidy, a rich attacker can also
+>>> do that in mainchain Bitcoin.
+>>>
+>>> I see. However, block subsidies will drop far in the future, do you
+>>> mean to say, that sidechains will be used only in the far future?
+>>
+>>In one sense, I mean "you have already endorsed this 'fees only will
+>>work' premise, by endorsing Bitcoin".
+> 
+> I endorse this on the basis of Greg Maxwell's analysis that a block size
+> limit is necessary to have a fee market.
+
+Even were that the case, the limit does not need to be imposed by nodes.
+Miners are likely to self-impose a limit, on nodes and each other, in
+order to maximize their total revenues. In fact they will eventually be
+required to do so (even though they do not now, beyond the naive
+maximization of imposing minimum tx fee requirements).
+
+In fact, in that case, the larger the range of possible blocksizes, the
+greater the ability of miners to extract fees from users -- ie the less
+limited the blocksize, the more hashpower security.
+
+Simply, if revenue = R = f(demand, supply), and miners choose the supply
+which argmax R , then R can only go down as supply is constrained.
+
+And, the effect is even more beneficial to security than _that_ ...if
+the sidechains are different from each other, such that blockspace in
+one chain is _not_ a perfect substitute for blockspace in another. In
+this case miners can choke up on some (or each) individual S_i, forcing
+sum(R_i) to go even higher.
+
+
+> 
+> 
+>>That mechanism is enforced by drivechain itself, not OP_BRIBE. (OP Bribe
+>>is itself only ~half of BMM. I admit it is getting a little confusing.)
+> 
+> Can you provide the details of this mechanism?  For example, does h*
+> actually include some information identifying the sidechain and OP_BRIBE
+> is supposed to do some additional checking not shown in your current
+> code, or ....?
+
+Yes. Yes.
+
+This is what we nicknamed the "ratchet", I cannot easily check the code
+right now but will get back to you.
+
+https://github.com/drivechain-project/bitcoin/commit/c4fe067e298f57252789c28161272db3d7483dca#diff-be5f6bb690c9898e44cbd7e78c465e43R83
+
+
+
+> 
+>>Drivechain requires a soft fork to add each new sidechain
+> 
+> Oh.
+> 
+> My understanding is that with Blockstream's zk-SNARKs, a new sidechain
+> would not require a soft fork at all (or even miner voting on the
+> validity of WT^: the validity of side:side->main transactions is assured
+> by proof that the zk-SNARK checking that transaction was executed
+> correctly, and the lack of a reorg proof during the burn window after
+> the main:side->main).
+> 
+> Is your model then, that each sidechain maintainer has to maintain a
+> patchset or some plugin system to Core?  And miners who want to support
+> particular sidechains to modify their software, applying the patch for
+> each sidechain they want to support?
+
+Not necessarily, but I think "plugins" are a good metaphor.
+
+> 
+> It seems this is somewhat brittle and may cause sidechain coding
+> problems to leak into mainchain.
+> 
+> I think, it is much less interesting to have to softfork in every
+> sidechain, rather than to support a general mechanism (zk-SNARK) to
+> allow sidechains to be launched without any modification to Core code.
+> 
+
+I completely disagree. Unrestrained smart contract execution will be the
+death of most of the interesting applications of sidechains, and would
+probably destabilize Bitcoin itself.
+
+I would be as if your body "added" the ability to synthesize any
+protein, including prions. Then you make one prion and your entire body
+dies.
+
+I thought this would come up, I have a presentation on this:
+https://www.youtube.com/watch?v=xGu0o8HH10U&list=PLw8-6ARlyVciMH79ZyLOpImsMug3LgNc4&index=1
+
+You don't need to watch the whole thing, maybe just parts 1 and 5.
+
+> 
+>>. It requires
+>>this literally for a few good reasons...but the best is: there is an
+>>implicit requirement that the miners not steal from the sidechain
+>>anyway. In this way drivechain knows how to keep track of what it should
+>>expect.
+> 
+> It seems to be, more of "completely sighted merged mining" than "blind
+> merge mining".
+
+You can call it microscope mining if you like..it attempts to address
+the concerns that were raised earlier in the peer review process.
+
+> 
+> 
+> 
+>>> Perhaps the datacenter point is simply that your proposal suggests to
+>>> reduce the size of the datacenter by removing surge suppressors and
+>>> UPS's, to avoid some definition of "datacenter is a room with >$XXX of
+>>> equipment".
+>>
+>>I hope that my replies above already help with these. If not, let me know.
+> 
+> I find this point now moot, as drivechains require a softfork for each
+> sidechain, and the size of the datacenter is pointless if there is some
+> need to softfork in every sidechain.
+
+You might be confused...miners can soft fork in a sidechain that they
+have *no* intention of merged mining, or BMM ing. I do not know why, as
+they would be leaving money on the table, but it is possible. Perhaps
+only 5% of miners want to bother with it. The point is that the other
+90% hashpower has no inherent reason *not* to allow that the experiment
+be run.
+
+> 
+> Regards,
+> ZmnXCPxj
