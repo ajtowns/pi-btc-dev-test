@@ -1,0 +1,138 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Thu, 25 May 2017 23:08:00 +0100
+Subject: [bitcoin-dev] Drivechain -- Request for Discussion
+In-Reply-To: <2b5567e1-2b6d-db4a-0f44-c66a24fe28ea@gmail.com>
+References: <24f2b447-a237-45eb-ef9f-1a62533fad5c@gmail.com>
+	<dhstGQudLBiwjDlaRrmMfy-ixwvXcwMr1CzCkPKh285RLICGZixkbdwpTDc2Sgz8eYIqSem8lwxW6QeJCD7aFfwQjLDnZ2NmOw0Zzd-KgSs=@protonmail.com>
+	<CA+XQW1jZpJ9wnEg47fouyywL09=_vU8dMP3owkkuNqRvzTZUDg@mail.gmail.com>
+	<CAE-z3OUYuAXE2+h60A=r4UyGU4CSQuF98oFgHnD7iaj-=Z=yOw@mail.gmail.com>
+	<CA+XQW1hRhcxJBoOJ57YG0t5y5j1Qm3RO4wr2eXV5V-UzDaiPPw@mail.gmail.com>
+	<CAE-z3OVWXN58X-+nAFTm61G1=v_1xrniyrBy8x=VRG4N149aXQ@mail.gmail.com>
+	<141a0cd1-9d4f-c137-a349-17248f9cafd4@gmail.com>
+	<CAE-z3OXY2YiQ5fzxZBw4FooRsUzXricHmpv_+t+HbTf0MxP0kg@mail.gmail.com>
+	<CAE-z3OXLb0QOjACfvToxf9TfLJhBHiboAaieLA4V9gx6V4CjoQ@mail.gmail.com>
+	<2b5567e1-2b6d-db4a-0f44-c66a24fe28ea@gmail.com>
+Message-ID: <CAE-z3OWF8PabC3314Aj_9cyu+sjZnSe2N-Rfoh8T6vhPgrkn8Q@mail.gmail.com>
+
+On Wed, May 24, 2017 at 6:32 PM, CryptAxe via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Also the block number can only change by +1 or -1, so when a new h* is
+> added to the
+> queue it must be compared to the most recent h* in the queue.
+> std::abs(queue.back().nHeight - ToAdd.nHeight) must equal 1.
+>
+
+I think it is better to have it locked to a particular bitcoin height and
+if it doesn't get included in that block, the sidechain miner can re-claim
+it.
+
+This could be taken to the extreme where the sidechain miner specifies a
+particular parent of the claiming block.
+
+The output should have a standard template, so miners can easily find bids.
+
+The template on my previous post was:
+
+IF
+   <block height> <chain_id> <critical hash> OP_BRIBE_VERIFY
+ELSE
+  <public key> OP_CHECKSIG
+ENDIF
+
+
+If the output is spent by the miner for block <block height>, then the
+sidechain miner has spent the funds.
+
+Otherwise, the sidechain miner can use the else branch to reclaim his money.
+
+The sidechain miner could also reclaim his money if the transaction was
+included in an earlier block.  That would defeat the purpose of the bribe.
+Bitcoin miners would have a (justified) incentive to not allow Bribe
+outputs to be spent "early".
+
+The bribe transactions could be created with no fees.  This would mean that
+it is pointless for bitcoin miners to include them in blocks unless they
+are claiming the outputs.
+
+The relay rules would need to be modified to handle that.  Pools could
+allow bids to be made directly, but that is less decentralized.
+
+Here's what I'm testing right now as I'm working on BMM:
+>
+> script << OP_RETURN << CScriptNum::serialize(nSidechain) <<
+> CScriptNum(nSidechainHeight) << ToByteVector(sidechain blinded block hash
+> h*)
+>
+
+I don't think OP_BRIBE should care about info for the side chain.  The only
+thing that is necessary is to indicate which sidechain.
+
+You could just define the critical hash as
+
+Hash( SideChainHeight | blinded h* )
+
+For bribe payout release, it needs to give that particular miner an
+advantage over all competitors, so their block forms the longest chain on
+the sidechain (assuming their block is actually valid).
+
+> One other thing I want to make sure is clear enough is that the block
+> number in the critical hash script is
+> a sidechain block number, not a mainchain block number.
+>
+The sidechain miner is saying that they will pay the bribe but only if
+their block is included in the main chain.  The means that main chain
+height is important.
+
+They are paying for their block to be placed ahead of all competing blocks
+for their chain.
+
+It does mean that the side-chain can have at most the same number of blocks
+as bitcoin.
+
+>
+> We were thinking about making bribe outputs have a maturity period like
+> generated coins. You
+> think that they should be locked for >100 blocks by having OP_BRIBE also
+> check the lock time?
+>
+
+Well, it depends on the exact rules for OP_BRIBE.
+
+The process I see is:
+
+- sidechain miner submits a bribe transaction which pays to op bribe
+- bitcoin miner includes that transaction in his block (or it could be
+included in a previous block)
+- bitcoin miner includes a claim transaction in his block
+
+The claim transaction spends the outputs from the bribe transaction.  If
+the claim transaction is block height locked, then it violates the rules
+that previous soft-forks have followed.
+
+For previous opcode changes there was a requirement that if a transaction
+was accepted into block N, then it must also be acceptable in block (N+1).
+
+The only (unavoidable) exceptions were double spends and coinbases outputs.
+
+This means that the same protection should be added to your claim
+transaction.
+
+You could do it by requiring all outputs of the claim transaction to start
+with
+
+<100> CHECK_SEQUENCE_VERIFY DROP ...
+
+This is only a few bytes extra at the start of the output script.
+
+This means you can't use witness or P2SH output types for any of the
+outputs, but that isn't that important.  The point of the transaction is to
+make a payment.
+
+An alternative would be to just add the rule as part of soft-fork
+definition.  You could define a claim transaction as one that spends at
+least one OP_BRIBE output and therefore, all its outputs have a 100 block
+delay.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170525/f02cd841/attachment.html>
