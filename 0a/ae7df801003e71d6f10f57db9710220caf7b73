@@ -1,0 +1,58 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Mon, 29 May 2017 10:55:37 -0400
+Subject: [bitcoin-dev] A Method for Computing Merkle Roots of Annotated
+ Binary Trees
+In-Reply-To: <20170528082624.GA14552@fedora-23-dvm>
+References: <CAMZUoK=f3hXHkqJBDfiLGSrgXi_ppgyH6+XWD9W54EYFWLm1+Q@mail.gmail.com>
+	<20170528082624.GA14552@fedora-23-dvm>
+Message-ID: <CAMZUoK=8xaVp2Qoc7kvx8FdPbpY0rEpSba8kQVRQGjX4p0haxg@mail.gmail.com>
+
+On Sun, May 28, 2017 at 4:26 AM, Peter Todd <pete at petertodd.org> wrote:
+
+> On Mon, May 22, 2017 at 03:05:49AM -0400, Russell O'Connor via bitcoin-dev
+> wrote:
+> > Not all of the inputs to the SHA256 compression function are created
+> > equal.  Only the second argument, the chunk data, is applied to the
+> SHA256
+> > expander.  `merkleRoot` is designed to ensure that the first argument of
+> > the SHA256 compression function is only fed some output of the SHA256
+> > compression function.  In fact, we can prove that the output of the
+> > `merkleRoot` function is always the midstate of some SHA256 hash.  To see
+> > this, let us explicitly separate the `sha256` function into the padding
+> > step, `sha256Pad`, and the recursive hashing step, `unpaddedSha256`.
+>
+> This doesn't hold true in the case of pruned trees, as for the pruning to
+> be
+> useful, you don't know what produced the left merkleRoot, and thus you
+> can't
+> guarantee it is in fact a midstate of a genuine SHA256 hash.
+>
+
+Thanks for the review Peter.  This does seem like a serious issue that I
+hadn't considered yet.  As far as I understand, we have no reason to think
+that the SHA-256 compression function will be secure with chosen initial
+values.
+
+Some of this proposal can be salvaged, I think, by putting the hash of the
+tags into Sha256Compress's first argument:
+
+    merkleRoot : Tree BitString -> Word256
+    merkleRoot (Leaf (t))                := sha256Compress(sha256(t),
+0b0^512)
+    merkleRoot (Unary (t, child))        := sha256Compress(sha256(t),
+merkleRoot(child) ? 0b0^256)
+    merkleRoot (Binary (t, left, right)) := sha256Compress(sha256(t),
+merkleRoot(left) ? merkleRoot(right))
+
+The Merkle--Damg?rd property will still hold under the same conditions
+about tags determining the type of node (Leaf, Unary, or Binary) while
+avoiding the need for SHA256's padding.  If you have a small number of
+tags, then you can pre-compute their hashes so that you only end up with
+one call to SHA256 compress per node. If you have tags with a large amount
+of data, you were going to be hashing them anyways.
+
+Unfortunately we lose the ability to cleverly avoid collisions between the
+Sha256 and MerkleRoot functions by using safe tags.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170529/8a3b421d/attachment.html>
