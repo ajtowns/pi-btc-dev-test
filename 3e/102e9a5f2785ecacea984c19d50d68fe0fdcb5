@@ -1,0 +1,102 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 29 May 2017 12:10:59 -0400
+Subject: [bitcoin-dev] A Method for Computing Merkle Roots of Annotated
+ Binary Trees
+In-Reply-To: <CAMZUoK=8xaVp2Qoc7kvx8FdPbpY0rEpSba8kQVRQGjX4p0haxg@mail.gmail.com>
+References: <CAMZUoK=f3hXHkqJBDfiLGSrgXi_ppgyH6+XWD9W54EYFWLm1+Q@mail.gmail.com>
+	<20170528082624.GA14552@fedora-23-dvm>
+	<CAMZUoK=8xaVp2Qoc7kvx8FdPbpY0rEpSba8kQVRQGjX4p0haxg@mail.gmail.com>
+Message-ID: <20170529161059.GA7698@fedora-23-dvm>
+
+On Mon, May 29, 2017 at 10:55:37AM -0400, Russell O'Connor wrote:
+> > This doesn't hold true in the case of pruned trees, as for the pruning to
+> > be
+> > useful, you don't know what produced the left merkleRoot, and thus you
+> > can't
+> > guarantee it is in fact a midstate of a genuine SHA256 hash.
+> >
+> 
+> Thanks for the review Peter.  This does seem like a serious issue that I
+> hadn't considered yet.  As far as I understand, we have no reason to think
+> that the SHA-256 compression function will be secure with chosen initial
+> values.
+
+Well, it's an easy thing to forget, unless like me, you've written a general
+purpose library to work with pruned data. :) (actually, soon to be two of
+them!)
+
+I also ran into the midstate issue with my OpenTimestamps protocol, as I was
+looking into whether or not it was safe to have a SHA256 midstate commitment
+operation, and couldn't find clear evidence that it was.
+
+> Some of this proposal can be salvaged, I think, by putting the hash of the
+> tags into Sha256Compress's first argument:
+> 
+>     merkleRoot : Tree BitString -> Word256
+>     merkleRoot (Leaf (t))                := sha256Compress(sha256(t),
+> 0b0^512)
+>     merkleRoot (Unary (t, child))        := sha256Compress(sha256(t),
+> merkleRoot(child) ? 0b0^256)
+>     merkleRoot (Binary (t, left, right)) := sha256Compress(sha256(t),
+> merkleRoot(left) ? merkleRoot(right))
+> 
+> The Merkle--Damg?rd property will still hold under the same conditions
+> about tags determining the type of node (Leaf, Unary, or Binary) while
+> avoiding the need for SHA256's padding.  If you have a small number of
+> tags, then you can pre-compute their hashes so that you only end up with
+> one call to SHA256 compress per node. If you have tags with a large amount
+> of data, you were going to be hashing them anyways.
+
+Notice how what you're proposing here is almost the same thing as using SHA256
+directly, modulo the fact that you skip the final block containing the message
+length.
+
+Similarly, you don't need to compute sha256(t) - you can just as easily compute
+the midstate sha256Compress(IV, t), and cache that midstate if you can reuse
+tags. Again, the only difference is the last block.
+
+> Unfortunately we lose the ability to cleverly avoid collisions between the
+> Sha256 and MerkleRoot functions by using safe tags.
+
+I think a better question to ask is why you want that property in the first
+place?
+
+My earlier python-proofmarshal(1) library had a scheme of per-use-case tags,
+but I eventually realised that depending on tags being unique is a footgun. For
+example, it's easy to see how two different systems could end up using the same
+tag due to designers forgetting to create new tags while copying and pasting
+old code. Similarly, if two such systems have to be integrated, you'll end up
+with tags getting reused for two different purposes.
+
+Now, if you design a system where that doesn't matter, then by extension it'll
+also be true that collisions between the sha256 and merkleroot functions don't
+matter either. And that system will be more robust to design mistakes, as tags
+only need to be unique "locally" to distinguish between different sub-types in
+a sum type (enum).
+
+
+FWIW what I've done with my newer (and as yet unpublished) rust-proofmarshal
+work is commitments are only valid for a specific type. Secondly, I use
+blake2b, whose compression function processes up to 128 bytes of message on
+each invocation.  That's large enough for four 32 byte hashes, which is by
+itself more than sufficient for a summed merkle tree with three 32 byte hashes
+(left right and sum) and a per-node-type tag.
+
+Blake2b's documentations don't make it clear if it's resistant to collision if
+the adversary can control the salt or personalization strings, so I don't
+bother using them - the large block size by itself is enough to fit almost any
+use-case into a single block, and it hashes blocks significantly faster than
+SHA256. This also has the advantage that the actual primitive I'm using is 100%
+standard blake2b, an aid to debugging and development.
+
+1) https://github.com/proofchains/python-proofmarshal
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170529/22b1b0f7/attachment.sig>
