@@ -1,0 +1,86 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Thu, 1 Jun 2017 11:10:56 -0400
+Subject: [bitcoin-dev] A Method for Computing Merkle Roots of Annotated
+ Binary Trees
+In-Reply-To: <20170529161059.GA7698@fedora-23-dvm>
+References: <CAMZUoK=f3hXHkqJBDfiLGSrgXi_ppgyH6+XWD9W54EYFWLm1+Q@mail.gmail.com>
+	<20170528082624.GA14552@fedora-23-dvm>
+	<CAMZUoK=8xaVp2Qoc7kvx8FdPbpY0rEpSba8kQVRQGjX4p0haxg@mail.gmail.com>
+	<20170529161059.GA7698@fedora-23-dvm>
+Message-ID: <CAMZUoKm6Oh4fp3nK3sTkfX+cu2Nuf6gKRs87Cu4w9Tm+G5Jb5Q@mail.gmail.com>
+
+On Mon, May 29, 2017 at 12:10 PM, Peter Todd <pete at petertodd.org> wrote:
+
+> On Mon, May 29, 2017 at 10:55:37AM -0400, Russell O'Connor wrote:
+> > Some of this proposal can be salvaged, I think, by putting the hash of
+> the
+> > tags into Sha256Compress's first argument:
+> >
+> >     merkleRoot : Tree BitString -> Word256
+> >     merkleRoot (Leaf (t))                := sha256Compress(sha256(t),
+> > 0b0^512)
+> >     merkleRoot (Unary (t, child))        := sha256Compress(sha256(t),
+> > merkleRoot(child) ? 0b0^256)
+> >     merkleRoot (Binary (t, left, right)) := sha256Compress(sha256(t),
+> > merkleRoot(left) ? merkleRoot(right))
+> >
+> > The Merkle--Damg?rd property will still hold under the same conditions
+> > about tags determining the type of node (Leaf, Unary, or Binary) while
+> > avoiding the need for SHA256's padding.  If you have a small number of
+> > tags, then you can pre-compute their hashes so that you only end up with
+> > one call to SHA256 compress per node. If you have tags with a large
+> amount
+> > of data, you were going to be hashing them anyways.
+>
+> Notice how what you're proposing here is almost the same thing as using
+> SHA256
+> directly, modulo the fact that you skip the final block containing the
+> message
+> length.
+>
+> Similarly, you don't need to compute sha256(t) - you can just as easily
+> compute
+> the midstate sha256Compress(IV, t), and cache that midstate if you can
+> reuse
+> tags. Again, the only difference is the last block.
+>
+
+Yes, either way would be fine.
+
+
+> > Unfortunately we lose the ability to cleverly avoid collisions between
+> the
+> > Sha256 and MerkleRoot functions by using safe tags.
+>
+> I think a better question to ask is why you want that property in the first
+> place?
+>
+> My earlier python-proofmarshal(1) library had a scheme of per-use-case
+> tags,
+> but I eventually realised that depending on tags being unique is a
+> footgun. For
+> example, it's easy to see how two different systems could end up using the
+> same
+> tag due to designers forgetting to create new tags while copying and
+> pasting
+> old code. Similarly, if two such systems have to be integrated, you'll end
+> up
+> with tags getting reused for two different purposes.
+>
+> Now, if you design a system where that doesn't matter, then by extension
+> it'll
+> also be true that collisions between the sha256 and merkleroot functions
+> don't
+> matter either. And that system will be more robust to design mistakes, as
+> tags
+> only need to be unique "locally" to distinguish between different
+> sub-types in
+> a sum type (enum).
+>
+
+I was looking to add the property mostly because it was free to do with my
+original design when the set of tags was small and could make some
+applications more robust and/or easier to debug.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170601/80c03c9c/attachment.html>
