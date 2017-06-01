@@ -1,0 +1,140 @@
+From: elombrozo@gmail.com (Eric Lombrozo)
+Date: Thu, 1 Jun 2017 14:00:02 -0700
+Subject: [bitcoin-dev] BIP Proposal: Compact Client Side Filtering for
+ Light Clients
+In-Reply-To: <CAO3Pvs8ccTkgrecJG6KFbBW+9moHF-FTU+4qNfayeE3hM9uRrg@mail.gmail.com>
+References: <CAO3Pvs8ccTkgrecJG6KFbBW+9moHF-FTU+4qNfayeE3hM9uRrg@mail.gmail.com>
+Message-ID: <CABr1YTdQy9=XiCQOuSnLq_y1PDWg7mC=Wquv9YEFDW832J2NhQ@mail.gmail.com>
+
+Thanks for sending this proposal! I look forward to having a great
+discussion around this.
+
+- Eric
+
+On Thursday, June 1, 2017, Olaoluwa Osuntokun via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Hi y'all,
+>
+> Alex Akselrod and I would like to propose a new light client BIP for
+> consideration:
+>    * https://github.com/Roasbeef/bips/blob/master/gcs_light_
+> client.mediawiki
+>
+> This BIP proposal describes a concrete specification (along with a
+> reference implementations[1][2][3]) for the much discussed client-side
+> filtering reversal of BIP-37. The precise details are described in the
+> BIP, but as a summary: we've implemented a new light-client mode that uses
+> client-side filtering based off of Golomb-Rice coded sets. Full-nodes
+> maintain an additional index of the chain, and serve this compact filter
+> (the index) to light clients which request them. Light clients then fetch
+> these filters, query the locally and _maybe_ fetch the block if a relevant
+> item matches. The cool part is that blocks can be fetched from _any_
+> source, once the light client deems it necessary. Our primary motivation
+> for this work was enabling a light client mode for lnd[4] in order to
+> support a more light-weight back end paving the way for the usage of
+> Lightning on mobile phones and other devices. We've integrated neutrino
+> as a back end for lnd, and will be making the updated code public very
+> soon.
+>
+> One specific area we'd like feedback on is the parameter selection. Unlike
+> BIP-37 which allows clients to dynamically tune their false positive rate,
+> our proposal uses a _fixed_ false-positive. Within the document, it's
+> currently specified as P = 1/2^20. We've done a bit of analysis and
+> optimization attempting to optimize the following sum:
+> filter_download_bandwidth + expected_block_false_positive_bandwidth. Alex
+> has made a JS calculator that allows y'all to explore the affect of
+> tweaking the false positive rate in addition to the following variables:
+> the number of items the wallet is scanning for, the size of the blocks,
+> number of blocks fetched, and the size of the filters themselves. The
+> calculator calculates the expected bandwidth utilization using the CDF of
+> the Geometric Distribution. The calculator can be found here:
+> https://aakselrod.github.io/gcs_calc.html. Alex also has an empirical
+> script he's been running on actual data, and the results seem to match up
+> rather nicely.
+>
+> We we're excited to see that Karl Johan Alm (kallewoof) has done some
+> (rather extensive!) analysis of his own, focusing on a distinct encoding
+> type [5]. I haven't had the time yet to dig into his report yet, but I
+> think I've read enough to extract the key difference in our encodings: his
+> filters use a binomial encoding _directly_ on the filter contents, will we
+> instead create a Golomb-Coded set with the contents being _hashes_ (we use
+> siphash) of the filter items.
+>
+> Using a fixed fp=20, I have some stats detailing the total index size, as
+> well as averages for both mainnet and testnet. For mainnet, using the
+> filter contents as currently described in the BIP (basic + extended), the
+> total size of the index comes out to 6.9GB. The break down is as follows:
+>
+>     * total size:  6976047156
+>     * total avg:  14997.220622758816
+>     * total median:  3801
+>     * total max:  79155
+>     * regular size:  3117183743
+>     * regular avg:  6701.372750217131
+>     * regular median:  1734
+>     * regular max:  67533
+>     * extended size:  3858863413
+>     * extended avg:  8295.847872541684
+>     * extended median:  2041
+>     * extended max:  52508
+>
+> In order to consider the average+median filter sizes in a world worth
+> larger blocks, I also ran the index for testnet:
+>
+>     * total size:  2753238530
+>     * total avg:  5918.95736054141
+>     * total median:  60202
+>     * total max:  74983
+>     * regular size:  1165148878
+>     * regular avg:  2504.856172982827
+>     * regular median:  24812
+>     * regular max:  64554
+>     * extended size:  1588089652
+>     * extended avg:  3414.1011875585823
+>     * extended median:  35260
+>     * extended max:  41731
+>
+> Finally, here are the testnet stats which take into account the increase
+> in the maximum filter size due to segwit's block-size increase. The max
+> filter sizes are a bit larger due to some of the habitual blocks I
+> created last year when testing segwit (transactions with 30k inputs, 30k
+> outputs, etc).
+>
+>      * total size:  585087597
+>      * total avg:  520.8839608674402
+>      * total median:  20
+>      * total max:  164598
+>      * regular size:  299325029
+>      * regular avg:  266.4790836307566
+>      * regular median:  13
+>      * regular max:  164583
+>      * extended size:  285762568
+>      * extended avg:  254.4048772366836
+>      * extended median:  7
+>      * extended max:  127631
+>
+> For those that are interested in the raw data, I've uploaded a CSV file
+> of raw data for each block (mainnet + testnet), which can be found here:
+>      * mainnet: (14MB): https://www.dropbox.com/s/
+> 4yk2u8dj06njbuv/mainnet-gcs-stats.csv?dl=0
+>      * testnet: (25MB): https://www.dropbox.com/s/
+> w7dmmcbocnmjfbo/gcs-stats-testnet.csv?dl=0
+>
+>
+> We look forward to getting feedback from all of y'all!
+>
+> -- Laolu
+>
+>
+> [1]: https://github.com/lightninglabs/neutrino
+> [2]: https://github.com/Roasbeef/btcd/tree/segwit-cbf
+> [3]: https://github.com/Roasbeef/btcutil/tree/gcs/gcs
+> [4]: https://github.com/lightningnetwork/lnd/
+>
+> -- Laolu
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170601/e4d43fdf/attachment-0001.html>
