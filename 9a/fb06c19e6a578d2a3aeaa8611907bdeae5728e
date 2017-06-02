@@ -1,0 +1,82 @@
+From: karljohan-alm@garage.co.jp (Karl Johan Alm)
+Date: Fri, 2 Jun 2017 15:00:30 +0900
+Subject: [bitcoin-dev] BIP Proposal: Compact Client Side Filtering for
+ Light Clients
+In-Reply-To: <CAO3Pvs8ccTkgrecJG6KFbBW+9moHF-FTU+4qNfayeE3hM9uRrg@mail.gmail.com>
+References: <CAO3Pvs8ccTkgrecJG6KFbBW+9moHF-FTU+4qNfayeE3hM9uRrg@mail.gmail.com>
+Message-ID: <CALJw2w5gUgbdX7XnxPsK2FZ6PZ5cSTgmCEqiPu7-S4gwXBM-_Q@mail.gmail.com>
+
+Hello,
+
+Really wish I'd known you were working on this a few weeks ago, but
+such is life. Hopefully I can provide some useful feedback.
+
+On Fri, Jun 2, 2017 at 4:01 AM, Olaoluwa Osuntokun via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Full-nodes
+> maintain an additional index of the chain, and serve this compact filter
+> (the index) to light clients which request them. Light clients then fetch
+> these filters, query the locally and _maybe_ fetch the block if a relevant
+> item matches.
+
+Is it necessary to maintain the index all the way to the beginning of
+the chain? When would clients request "really old digests" and why?
+
+> One specific area we'd like feedback on is the parameter selection. Unlike
+> BIP-37 which allows clients to dynamically tune their false positive rate,
+> our proposal uses a _fixed_ false-positive. Within the document, it's
+> currently specified as P = 1/2^20. We've done a bit of analysis and
+> optimization attempting to optimize the following sum:
+> filter_download_bandwidth + expected_block_false_positive_bandwidth. Alex
+> has made a JS calculator that allows y'all to explore the affect of
+> tweaking the false positive rate in addition to the following variables:
+> the number of items the wallet is scanning for, the size of the blocks,
+> number of blocks fetched, and the size of the filters themselves. The
+> calculator calculates the expected bandwidth utilization using the CDF of
+> the Geometric Distribution. The calculator can be found here:
+> https://aakselrod.github.io/gcs_calc.html. Alex also has an empirical
+> script he's been running on actual data, and the results seem to match up
+> rather nicely.
+
+I haven't tried the tool yet, and maybe it will answer some of my questions.
+
+On what data were the simulated wallets on actual data based? How did
+false positive rates for wallets with lots of items (pubkeys etc) play
+out? Is there a maximum number of items for a wallet before it becomes
+too bandwidth costly to use digests?
+
+> We we're excited to see that Karl Johan Alm (kallewoof) has done some
+> (rather extensive!) analysis of his own, focusing on a distinct encoding
+> type [5]. I haven't had the time yet to dig into his report yet, but I
+> think I've read enough to extract the key difference in our encodings: his
+> filters use a binomial encoding _directly_ on the filter contents, will we
+> instead create a Golomb-Coded set with the contents being _hashes_ (we use
+> siphash) of the filter items.
+
+I will definitely try to reproduce my experiments with Golomb-Coded
+sets and see what I come up with. It seems like you've got a little
+less than half the size of my digests for 1-block digests but I
+haven't tried making digests for all blocks (and lots of early blocks
+are empty).
+
+On the BIP proposal itself:
+
+In Compact Filter Header Chain, you mention that clients should
+download filters from nodes if filter_headers is not identical, and
+ban offending nodes. What about temporary forks in the chain? What
+about longer forks? In general, I am curious how you will deal with
+reorgs and temporary non-consensus related chain splits.
+
+I am also curious if you have considered digests containing multiple
+blocks. Retaining a permanent binsearchable record of the entire chain
+is obviously too space costly, but keeping the last X blocks as
+binsearchable could speed up syncing for clients tremendously, I feel.
+
+It may also be space efficient to ONLY store older digests in chunks
+of e.g. 8 blocks. A client syncing up finding a match in an 8-block
+chunk would have to grab those 8 blocks, but if it's not recent, that
+may be acceptable. It may even be possible to make 4-, 2-, 1-block
+digests on demand.
+
+How fast are these to create? Would it make sense to provide digests
+on demand in some cases, rather than keeping them around indefinitely?
