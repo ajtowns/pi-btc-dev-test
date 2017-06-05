@@ -1,0 +1,67 @@
+From: karljohan-alm@garage.co.jp (Karl Johan Alm)
+Date: Mon, 5 Jun 2017 11:06:32 +0900
+Subject: [bitcoin-dev] BIP Proposal: Compact Client Side Filtering for
+ Light Clients
+In-Reply-To: <CAE0pnxK5r2XfVks=emkK=v66XRN5c-Sz-Lm_dKY+6nO=kPk6Vw@mail.gmail.com>
+References: <CAO3Pvs8ccTkgrecJG6KFbBW+9moHF-FTU+4qNfayeE3hM9uRrg@mail.gmail.com>
+	<CALJw2w5gUgbdX7XnxPsK2FZ6PZ5cSTgmCEqiPu7-S4gwXBM-_Q@mail.gmail.com>
+	<CAE0pnx+RRAP269VeWAcxKbrcS9qX4LS8_6nY_js8X5NtQ22t_A@mail.gmail.com>
+	<CAE0pnxLKYnwHnktTqW949s1AA9uK=6WnVYWmRoau8B1SszzYEg@mail.gmail.com>
+	<CAE0pnxJxHYQ4+2pt3tt=1WZ0-K0vDxGB4KBXY+R=WfktMmATwA@mail.gmail.com>
+	<CAE0pnxK5r2XfVks=emkK=v66XRN5c-Sz-Lm_dKY+6nO=kPk6Vw@mail.gmail.com>
+Message-ID: <CALJw2w6Vzq8PO3x607=ERK4XKU2vrHApqKP2rWm-sw2r1ZOJMw@mail.gmail.com>
+
+On Sat, Jun 3, 2017 at 2:55 AM, Alex Akselrod via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Without a soft fork, this is the only way for light clients to verify that
+> peers aren't lying to them. Clients can request headers (just hashes of the
+> filters and the previous headers, creating a chain) and look for conflicts
+> between peers. If a conflict is found at a certain block, the client can
+> download the block, generate a filter, calculate the header by hashing
+> together the previous header and the generated filter, and banning any peers
+> that don't match. A full node could prune old filters if you wanted and
+> recalculate them as necessary if you just keep the filter header chain info
+> as really old filters are unlikely to be requested by correctly written
+> software but you can't guarantee every client will follow best practices
+> either.
+
+Ahh, so you actually make a separate digest chain with prev hashes and
+everything. Once/if committed digests are soft forked in, it seems a
+bit overkill but maybe it's worth it. (I was always assuming committed
+digests in coinbase would come after people started using this, and
+that people could just ask a couple of random peers for the digest
+hash and ensure everyone gave the same answer as the hash of the
+downloaded digest..).
+
+> The simulations are based on completely random data within given parameters.
+
+I noticed an increase in FP hits when using real data sampled from
+real scriptPubKeys and such. Address reuse and other weird stuff. See
+"lies.h" in github repo for experiments and chainsim.c initial part of
+main where wallets get random stuff from the chain.
+
+> I will definitely try to reproduce my experiments with Golomb-Coded
+> sets and see what I come up with. It seems like you've got a little
+> less than half the size of my digests for 1-block digests but I
+> haven't tried making digests for all blocks (and lots of early blocks
+> are empty).
+>
+>
+> Filters for empty blocks only take a few bytes and sometimes zero when the
+> coinbase output is a burn that doesn't push any data (example will be in the
+> test vectors that I'll have ready shortly).
+
+I created digests for all blocks up until block #469805 and actually
+ended up with 5.8 GB, which is 1.1 GB lower than what you have, but
+may be worse perf-wise on false positive rates and such.
+
+> How fast are these to create? Would it make sense to provide digests
+> on demand in some cases, rather than keeping them around indefinitely?
+>
+>
+> They're pretty fast and can be pruned if desired, as mentioned above, as
+> long as the header chain is kept.
+
+For comparison, creating the digests above (469805 of them) took
+roughly 30 mins on my end, but using the kstats format so probably
+higher on an actual node (should get around to profiling that...).
