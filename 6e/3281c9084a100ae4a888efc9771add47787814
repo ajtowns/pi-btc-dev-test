@@ -1,0 +1,166 @@
+From: laolu32@gmail.com (Olaoluwa Osuntokun)
+Date: Fri, 09 Jun 2017 03:03:51 +0000
+Subject: [bitcoin-dev] BIP Proposal: Compact Client Side Filtering for
+ Light Clients
+In-Reply-To: <CALJw2w6Vzq8PO3x607=ERK4XKU2vrHApqKP2rWm-sw2r1ZOJMw@mail.gmail.com>
+References: <CAO3Pvs8ccTkgrecJG6KFbBW+9moHF-FTU+4qNfayeE3hM9uRrg@mail.gmail.com>
+	<CALJw2w5gUgbdX7XnxPsK2FZ6PZ5cSTgmCEqiPu7-S4gwXBM-_Q@mail.gmail.com>
+	<CAE0pnx+RRAP269VeWAcxKbrcS9qX4LS8_6nY_js8X5NtQ22t_A@mail.gmail.com>
+	<CAE0pnxLKYnwHnktTqW949s1AA9uK=6WnVYWmRoau8B1SszzYEg@mail.gmail.com>
+	<CAE0pnxJxHYQ4+2pt3tt=1WZ0-K0vDxGB4KBXY+R=WfktMmATwA@mail.gmail.com>
+	<CAE0pnxK5r2XfVks=emkK=v66XRN5c-Sz-Lm_dKY+6nO=kPk6Vw@mail.gmail.com>
+	<CALJw2w6Vzq8PO3x607=ERK4XKU2vrHApqKP2rWm-sw2r1ZOJMw@mail.gmail.com>
+Message-ID: <CAO3Pvs-0h=E0ZQmOHcNE9Q+XgJJb7761jz9QxgginMb6+n4ogw@mail.gmail.com>
+
+Karl wrote:
+
+> I am also curious if you have considered digests containing multiple
+> blocks. Retaining a permanent binsearchable record of the entire chain is
+> obviously too space costly, but keeping the last X blocks as binsearchable
+> could speed up syncing for clients tremendously, I feel.
+
+Originally we hadn't considered such an idea. Grasping the concept a bit
+better, I can see how that may result in considerable bandwidth savings
+(for purely negative queries) for clients doing a historical sync, or
+catching up to the chain after being inactive for months/weeks.
+
+If we were to purse tacking this approach onto the current BIP proposal,
+we could do it in the following way:
+
+   * The `getcfilter` message gains an additional "Level" field. Using
+     this field, the range of blocks to be included in the returned filter
+     would be Level^2. So a level of 0 is just the single filter, 3 is 8
+     blocks past the block hash etc.
+
+   * Similarly, the `getcfheaders` message would also gain a similar field
+     with identical semantics. In this case each "level" would have a
+     distinct header chain for clients to verify.
+
+> How fast are these to create? Would it make sense to provide digests on
+> demand in some cases, rather than keeping them around indefinitely?
+
+For larger blocks (like the one referenced at the end of this mail) full
+construction of the regular filter takes ~10-20ms (most of this spent
+extracting the data pushes). With smaller blocks, it quickly dips down to
+the nano to micro second range.
+
+Whether to keep _all_ the filters on disk, or to dynamically re-generate a
+particular range (possibly most of the historical data) is an
+implementation detail. Nodes that already do block pruning could discard
+very old filters once the header chain is constructed allowing them to
+save additional space, as it's unlikely most clients would care about the
+first 300k or so blocks.
+
+> Ahh, so you actually make a separate digest chain with prev hashes and
+> everything. Once/if committed digests are soft forked in, it seems a bit
+> overkill but maybe it's worth it.
+
+Yep, this is only a hold-over until when/if a commitment to the filter is
+soft-forked in. In that case, there could be some extension message to
+fetch the filter hash for a particular block, along with a merkle proof of
+the coinbase transaction to the merkle root in the header.
+
+> I created digests for all blocks up until block #469805 and actually ended
+> up with 5.8 GB, which is 1.1 GB lower than what you have, but may be worse
+> perf-wise on false positive rates and such.
+
+Interesting, are you creating the equivalent of both our "regular" and
+"extended" filters? Each of the filter types consume about ~3.5GB in
+isolation, with the extended filter type on average consuming more bytes
+due to the fact that it includes sigScript/witness data as well.
+
+It's worth noting that those numbers includes the fixed 4-byte value for
+"N" that's prepended to each filter once it's serialized (though that
+doesn't add a considerable amount of overhead).  Alex and I were
+considering instead using Bitcoin's var-int encoding for that number
+instead. This would result in using a single byte for empty filters, 1
+byte for most filters (< 2^16 items), and 3 bytes for the remainder of the
+cases.
+
+> For comparison, creating the digests above (469805 of them) took
+> roughly 30 mins on my end, but using the kstats format so probably
+> higher on an actual node (should get around to profiling that...).
+
+Does that include the time required to read the blocks from disk? Or just
+the CPU computation of constructing the filters? I haven't yet kicked off
+a full re-index of the filters, but for reference this block[1] on testnet
+takes ~18ms for the _full_ indexing routine with our current code+spec.
+
+[1]: 000000000000052184fbe86eff349e31703e4f109b52c7e6fa105cd1588ab6aa
+
+-- Laolu
+
+
+On Sun, Jun 4, 2017 at 7:18 PM Karl Johan Alm via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> On Sat, Jun 3, 2017 at 2:55 AM, Alex Akselrod via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > Without a soft fork, this is the only way for light clients to verify
+> that
+> > peers aren't lying to them. Clients can request headers (just hashes of
+> the
+> > filters and the previous headers, creating a chain) and look for
+> conflicts
+> > between peers. If a conflict is found at a certain block, the client can
+> > download the block, generate a filter, calculate the header by hashing
+> > together the previous header and the generated filter, and banning any
+> peers
+> > that don't match. A full node could prune old filters if you wanted and
+> > recalculate them as necessary if you just keep the filter header chain
+> info
+> > as really old filters are unlikely to be requested by correctly written
+> > software but you can't guarantee every client will follow best practices
+> > either.
+>
+> Ahh, so you actually make a separate digest chain with prev hashes and
+> everything. Once/if committed digests are soft forked in, it seems a
+> bit overkill but maybe it's worth it. (I was always assuming committed
+> digests in coinbase would come after people started using this, and
+> that people could just ask a couple of random peers for the digest
+> hash and ensure everyone gave the same answer as the hash of the
+> downloaded digest..).
+>
+> > The simulations are based on completely random data within given
+> parameters.
+>
+> I noticed an increase in FP hits when using real data sampled from
+> real scriptPubKeys and such. Address reuse and other weird stuff. See
+> "lies.h" in github repo for experiments and chainsim.c initial part of
+> main where wallets get random stuff from the chain.
+>
+> > I will definitely try to reproduce my experiments with Golomb-Coded
+> > sets and see what I come up with. It seems like you've got a little
+> > less than half the size of my digests for 1-block digests but I
+> > haven't tried making digests for all blocks (and lots of early blocks
+> > are empty).
+> >
+> >
+> > Filters for empty blocks only take a few bytes and sometimes zero when
+> the
+> > coinbase output is a burn that doesn't push any data (example will be in
+> the
+> > test vectors that I'll have ready shortly).
+>
+> I created digests for all blocks up until block #469805 and actually
+> ended up with 5.8 GB, which is 1.1 GB lower than what you have, but
+> may be worse perf-wise on false positive rates and such.
+>
+> > How fast are these to create? Would it make sense to provide digests
+> > on demand in some cases, rather than keeping them around indefinitely?
+> >
+> >
+> > They're pretty fast and can be pruned if desired, as mentioned above, as
+> > long as the header chain is kept.
+>
+> For comparison, creating the digests above (469805 of them) took
+> roughly 30 mins on my end, but using the kstats format so probably
+> higher on an actual node (should get around to profiling that...).
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170609/86813bd3/attachment.html>
