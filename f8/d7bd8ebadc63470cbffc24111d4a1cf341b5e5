@@ -1,0 +1,106 @@
+From: laolu32@gmail.com (Olaoluwa Osuntokun)
+Date: Fri, 09 Jun 2017 04:47:19 +0000
+Subject: [bitcoin-dev] BIP Proposal: Compact Client Side Filtering for
+ Light Clients
+In-Reply-To: <CAO3Pvs-_0scKqFnT-fE7aDd7gkw+epJkTcQ-jAYZwENsWt8b=A@mail.gmail.com>
+References: <CAO3Pvs8ccTkgrecJG6KFbBW+9moHF-FTU+4qNfayeE3hM9uRrg@mail.gmail.com>
+	<CAAS2fgRVTfsfXAyHBoBaCqAXpK+=QCFy-Lx3zH=d3tPteu7GcA@mail.gmail.com>
+	<CAO3Pvs-_0scKqFnT-fE7aDd7gkw+epJkTcQ-jAYZwENsWt8b=A@mail.gmail.com>
+Message-ID: <CAO3Pvs-P2WcNRKGfH_FA7DFNRZOi5H+szO58wBLKA8gVh7mxZQ@mail.gmail.com>
+
+> Correct me if I'm wrong, but from my interpretation we can't use that
+> method as described as we need to output 64-bit integers rather than
+> 32-bit integers.
+
+Had a chat with gmax off-list and came to the realization that the method
+_should_ indeed generalize to our case of outputting 64-bit integers.
+We'll need to do a bit of bit twiddling to make it work properly. I'll
+modify our implementation and report back with some basic benchmarks.
+
+-- Laolu
+
+
+On Thu, Jun 8, 2017 at 8:42 PM Olaoluwa Osuntokun <laolu32 at gmail.com> wrote:
+
+> Gregory wrote:
+> > I see the inner loop of construction and lookup are free of
+> > non-constant divmod. This will result in implementations being
+> > needlessly slow
+>
+> Ahh, sipa brought this up other day, but I thought he was referring to the
+> coding loop (which uses a power of 2 divisor/modulus), not the
+> siphash-then-reduce loop.
+>
+> > I believe this can be fixed by using this approach
+> >
+> http://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+> > which has the same non-uniformity as mod but needs only a multiply and
+> > shift.
+>
+> Very cool, I wasn't aware of the existence of such a mapping.
+>
+> Correct me if I'm wrong, but from my interpretation we can't use that
+> method as described as we need to output 64-bit integers rather than
+> 32-bit integers. A range of 32-bits would be constrain the number of items
+> we could encode to be ~4096 to ensure that we don't overflow with fp
+> values such as 20 (which we currently use in our code).
+>
+> If filter commitment are to be considered for a soft-fork in the future,
+> then we should definitely optimize the construction of the filters as much
+> as possible! I'll look into that paper you referenced to get a feel for
+> just how complex the optimization would be.
+>
+> > Shouldn't all cases in your spec where you have N=transactions be
+> > n=indexed-outputs? Otherwise, I think your golomb parameter and false
+> > positive rate are wrong.
+>
+> Yep! Nice catch. Our code is correct, but mistake in the spec was an
+> oversight on my part. I've pushed a commit[1] to the bip repo referenced
+> in the OP to fix this error.
+>
+> I've also pushed another commit to explicitly take advantage of the fact
+> that P is a power-of-two within the coding loop [2].
+>
+> -- Laolu
+>
+> [1]:
+> https://github.com/Roasbeef/bips/commit/bc5c6d6797f3df1c4a44213963ba12e72122163d
+> [2]:
+> https://github.com/Roasbeef/bips/commit/578a4e3aa8ec04524c83bfc5d14be1b2660e7f7a
+>
+>
+> On Wed, Jun 7, 2017 at 2:41 PM Gregory Maxwell <greg at xiph.org> wrote:
+>
+>> On Thu, Jun 1, 2017 at 7:01 PM, Olaoluwa Osuntokun via bitcoin-dev
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> > Hi y'all,
+>> >
+>> > Alex Akselrod and I would like to propose a new light client BIP for
+>> > consideration:
+>> >    *
+>> https://github.com/Roasbeef/bips/blob/master/gcs_light_client.mediawiki
+>>
+>> I see the inner loop of construction and lookup are free of
+>> non-constant divmod. This will result in implementations being
+>> needlessly slow (especially on arm, but even on modern x86_64 a
+>> division is a 90 cycle-ish affair.)
+>>
+>> I believe this can be fixed by using this approach
+>>
+>> http://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+>>    which has the same non-uniformity as mod but needs only a multiply
+>> and shift.
+>>
+>> Otherwise fast implementations will have to implement the code to
+>> compute bit twiddling hack exact division code, which is kind of
+>> complicated. (e.g. via the technique in "{N}-bit Unsigned Division via
+>> {N}-bit Multiply-Add" by Arch D. Robison).
+>>
+>> Shouldn't all cases in your spec where you have N=transactions be
+>> n=indexed-outputs? Otherwise, I think your golomb parameter and false
+>> positive rate are wrong.
+>>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170609/68033931/attachment.html>
