@@ -1,0 +1,139 @@
+From: chris@suredbits.com (Chris Stewart)
+Date: Sun, 18 Jun 2017 09:36:24 -0500
+Subject: [bitcoin-dev] Drivechain -- Request for Discussion
+In-Reply-To: <CAE-z3OXY2YiQ5fzxZBw4FooRsUzXricHmpv_+t+HbTf0MxP0kg@mail.gmail.com>
+References: <24f2b447-a237-45eb-ef9f-1a62533fad5c@gmail.com>
+	<dhstGQudLBiwjDlaRrmMfy-ixwvXcwMr1CzCkPKh285RLICGZixkbdwpTDc2Sgz8eYIqSem8lwxW6QeJCD7aFfwQjLDnZ2NmOw0Zzd-KgSs=@protonmail.com>
+	<CA+XQW1jZpJ9wnEg47fouyywL09=_vU8dMP3owkkuNqRvzTZUDg@mail.gmail.com>
+	<CAE-z3OUYuAXE2+h60A=r4UyGU4CSQuF98oFgHnD7iaj-=Z=yOw@mail.gmail.com>
+	<CA+XQW1hRhcxJBoOJ57YG0t5y5j1Qm3RO4wr2eXV5V-UzDaiPPw@mail.gmail.com>
+	<CAE-z3OVWXN58X-+nAFTm61G1=v_1xrniyrBy8x=VRG4N149aXQ@mail.gmail.com>
+	<141a0cd1-9d4f-c137-a349-17248f9cafd4@gmail.com>
+	<CAE-z3OXY2YiQ5fzxZBw4FooRsUzXricHmpv_+t+HbTf0MxP0kg@mail.gmail.com>
+Message-ID: <CAGL6+mFu-W9BXs+ipDQod33XZn85Rj=cDzhanVDY5wLzRbkFTQ@mail.gmail.com>
+
+>OP_RETURN <sidechain_id> <critical hash>
+
+I think it is redundant here to have the <sidechain id>, we can implicitly
+assume what the sidechain_id is since we have a fixed set of drivechains.
+I.e. mining reward is index 0, mimblewimble sidechain is index 1, etc.
+CryptAxe has specific indexes defined already in his implementation:
+https://github.com/drivechain-project/bitcoin/blob/mainchainBMM/src/sidechain.h#L26-L30
+.
+
+I think it would be wise to include a version byte to allow us to upgrade
+this commitment structure in the future. Similar to how witness program's
+are now versioned.
+
+><block height> <sidechain_id> <critical hash> OP_BRIBE_VERIFY
+
+If <block height> is an argument that OP_BRIBE_VERIFY takes, doesn't that
+mean the mainchain miner has to validate this *is* the actual block height
+on the sidechain? Does that take the 'blindness' away from BMM?
+
+Overall, I think we need to work on the commitment structure to the
+coinbase tx. If I understand the current implementation correctly we can
+have up to 256 OP_RETURNs embedded in the coinbase tx signifying new blocks
+mined on drivechains.. this seems less than ideal. It might be prudent to
+make these outputs ANYONECANSPEND, and then have miners spending these
+outputs to themselves for every block mined.. maybe this doesn't have a
+benefit over using OP_RETURNs though?
+
+The structure could be something like:
+<version> <critical hash>
+
+and then in a subsequent block the miner spends that output to themselves.
+I will admit I'm not super familiar with how OP_RETURNs work with the UTXO
+set -- maybe this scheme doesn't have any benefit.
+
+-Chris
+
+On Wed, May 24, 2017 at 3:50 AM, Tier Nolan via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> On Tue, May 23, 2017 at 3:22 PM, Paul Sztorc <truthcoin at gmail.com> wrote:
+>
+>>
+>> If you haven't seen http://www.truthcoin.info/blog/drivechain/ , that is
+>> probably the most human-readable description.
+>>
+>
+> I guess I was looking for the detail you get in the code, but without
+> having to read the code.
+>
+> My quick reading gives that the sidechain codes (critical hashes) are
+> added when a coinbase is processed.
+>
+> Any coinbase output that has the form "OP_RETURN <32 byte push>" counts as
+> a potential critical hash.
+>
+> When the block is processed, the key value pair (hash, block_height) is
+> added to a hash map.
+>
+> The OP_BRIBE opcode checks that the given hash is in the hash map and
+> replaces the top element on the stack with the pass/fail result.
+>
+> It doesn't even check that the height matches the current block, though
+> there is a comment that that is a TODO.
+>
+> I agree with ZmnSCPxj, when updating a nop, you can't change the stack.
+> It has to fail the script or do nothing.
+>
+> OP_BRIBE_VERIFY would cause the script to fail if the hash wasn't in the
+> coinbase, or cause a script failure otherwise.
+>
+> Another concern is that you could have multiple bribes for the same chain
+> in a single coinbase.  That isn't fair and arguably what the sidechain
+> miner is paying for is to get his hash exclusively into the block.
+>
+> I would suggest that the output is
+>
+> OP_RETURN <sidechain_id> <critical hash>
+>
+> Then add the rule that only the first hash with a particular sidechain id
+> actually counts.
+>
+> This forces the miner to only accept the bribe from 1 miner for each
+> sidechain for each block.  If he tries to accept 2, then only the first one
+> counts.
+>
+> OP_BRIBE_VERIFY could then operate as follows
+>
+> <block height> <sidechain_id> <critical hash> OP_BRIBE_VERIFY
+>
+> This causes the script to fail if
+>   <block height> does not match the block height, or
+>   <critical hash> is not the hash for the sidechain with <sidechain_id>, or
+>   there is no hash for that sidechain in the block's coinbase
+>
+> If you want reduce the number of drops, you could serialize the info into
+> a single push.
+>
+> This has the advantage that a sidechain miner only has to pay if his block
+> is accepted in the next bitcoin block.  Since he is the only miner for that
+> sidechain that gets into the main bitcoin block, he is pretty much
+> guaranteed to form the longest chain.
+>
+> Without that rule, sidechain miners could end up having to pay even though
+> it doesn't make their chain the longest.
+>
+> How are these transactions propagated over the network?  For relaying, you
+> could have the rule that the opcode passes as long as <block height> is
+> near the current block height.  Maybe require that they are in the future.
+> They should be removed from the memory pool once the block height has
+> arrived, so losing miners can re-spend those outputs.
+>
+> This opcode can be validated without needing to look at other blocks,
+> which is good for validating historical blocks.
+>
+> I am still looking at the deposit/withdrawal code.
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170618/03f7a3c8/attachment.html>
