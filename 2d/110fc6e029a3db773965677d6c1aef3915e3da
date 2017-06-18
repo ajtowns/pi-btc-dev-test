@@ -1,0 +1,94 @@
+From: cryptaxe@gmail.com (CryptAxe)
+Date: Sun, 18 Jun 2017 14:27:52 -0700
+Subject: [bitcoin-dev] Drivechain -- Request for Discussion
+In-Reply-To: <CAGL6+mFu-W9BXs+ipDQod33XZn85Rj=cDzhanVDY5wLzRbkFTQ@mail.gmail.com>
+References: <24f2b447-a237-45eb-ef9f-1a62533fad5c@gmail.com>
+	<dhstGQudLBiwjDlaRrmMfy-ixwvXcwMr1CzCkPKh285RLICGZixkbdwpTDc2Sgz8eYIqSem8lwxW6QeJCD7aFfwQjLDnZ2NmOw0Zzd-KgSs=@protonmail.com>
+	<CA+XQW1jZpJ9wnEg47fouyywL09=_vU8dMP3owkkuNqRvzTZUDg@mail.gmail.com>
+	<CAE-z3OUYuAXE2+h60A=r4UyGU4CSQuF98oFgHnD7iaj-=Z=yOw@mail.gmail.com>
+	<CA+XQW1hRhcxJBoOJ57YG0t5y5j1Qm3RO4wr2eXV5V-UzDaiPPw@mail.gmail.com>
+	<CAE-z3OVWXN58X-+nAFTm61G1=v_1xrniyrBy8x=VRG4N149aXQ@mail.gmail.com>
+	<141a0cd1-9d4f-c137-a349-17248f9cafd4@gmail.com>
+	<CAE-z3OXY2YiQ5fzxZBw4FooRsUzXricHmpv_+t+HbTf0MxP0kg@mail.gmail.com>
+	<CAGL6+mFu-W9BXs+ipDQod33XZn85Rj=cDzhanVDY5wLzRbkFTQ@mail.gmail.com>
+Message-ID: <a60d1d58-59cd-e304-3b49-ba29ddf4de45@gmail.com>
+
+> >OP_RETURN <sidechain_id> <critical hash>
+>
+> I think it is redundant here to have the <sidechain id>, we can
+> implicitly assume what the sidechain_id is since we have a fixed set
+> of drivechains. I.e. mining reward is index 0, mimblewimble sidechain
+> is index 1, etc. CryptAxe has specific indexes defined already in his
+> implementation: 
+> https://github.com/drivechain-project/bitcoin/blob/mainchainBMM/src/sidechain.h#L26-L30.
+>
+
+Since the sidechain has the sidechain BMM headers that they want the LD
+(bribe) data for, I think that they could specifically request LD data
+relevant only to that sidechain by providing a list of hashes to the
+mainchain, and the mainchain can return a list of boolean values telling
+the sidechain if the LD data exists. That way the data never even has to
+go over the network, just a verification that it exists on the mainchain
+and we can drop the sidechain_id from the script.
+
+
+> I think it would be wise to include a version byte to allow us to
+> upgrade this commitment structure in the future. Similar to how
+> witness program's are now versioned.
+
+Agreed, we need that.
+
+
+>
+> ><block height> <sidechain_id> <critical hash> OP_BRIBE_VERIFY
+>
+> If <block height> is an argument that OP_BRIBE_VERIFY takes, doesn't
+> that mean the mainchain miner has to validate this *is* the actual
+> block height on the sidechain? Does that take the 'blindness' away
+> from BMM?
+
+No, OP_BRIBE (the old version) didn't care about the block height. Where
+the blockheight was relevant is when bribe data is added to LD. In order
+to be added to LD, the bribe needed to either be a fork (block height
+less than the sidechain tip height) or extending the current side-chain
+(block height = sidechain tip height + 1). The goal of this was to allow
+for reorgs, and also make it so that people cannot skip forward (which
+would never be valid so it's a waste of time and space) so that the
+sidechain makes progress. With the new design that we have been talking
+about, I think that we will need to drop this requirement from the
+mainchain, and have the sidechain handle filtering out invalid LD data /
+only requesting the verification of LD data that they know to be valid
+as far as chain order goes.
+
+
+>
+> Overall, I think we need to work on the commitment structure to the
+> coinbase tx.
+
+Agreed. It might be helpful if you outlined the idea you had on IRC to
+the mailing list.
+
+
+> If I understand the current implementation correctly we can have up to
+> 256 OP_RETURNs embedded in the coinbase tx signifying new blocks mined
+> on drivechains.. this seems less than ideal. It might be prudent to
+> make these outputs ANYONECANSPEND, and then have miners spending these
+> outputs to themselves for every block mined.. maybe this doesn't have
+> a benefit over using OP_RETURNs though?
+>
+> The structure could be something like:
+> <version> <critical hash>
+>
+> and then in a subsequent block the miner spends that output to
+> themselves. I will admit I'm not super familiar with how OP_RETURNs
+> work with the UTXO set -- maybe this scheme doesn't have any benefit.
+>
+> -Chris
+
+I might be wrong but I thought that OP_RETURN outputs do not go into the
+UTXO set. Anyone else want to chime in?
+
+
+
+
+
