@@ -1,0 +1,43 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Wed, 28 Jun 2017 17:01:33 +1000
+Subject: [bitcoin-dev] Replay protection via CHECKSIG
+Message-ID: <20170628070133.GA2421@erisian.com.au>
+
+Hi,
+
+I thought of a possibly interesting way to prevent transaction replay in
+the event of a chain split, that seems better to the other approaches
+I've seen. Basically, update OP_CHECKSIG (and MULTISIG and the VERIFY
+variants, presumably via segwit versioning or using a NOP opcode) so that
+signatures can optionally specify an additional integer block-height. If
+this is provided, the message hash is combined with the block hash at
+the given height, before the signature is created/verified, and therefore
+the signature becomes invalid if used on a chain that does not have that
+particular block in its history [0].
+
+It adds four bytes to a signature that uses the feature [1], along with
+a block hash lookup, and some extra sha ops when verifying the signature,
+but it otherwise seems pretty lightweight, and scales to an arbitrary
+number of forks including a pretty fair range of hard forks, as far
+as I can see, without requiring any coordination between any of the
+chains. So I think it's superior to what Johnson Lau proposed in January
+[2] or BIP 115 from last year [3].
+
+Thoughts? Has this been proposed before and found wanting already?
+
+Cheers,
+aj
+
+[0] For consistency, you could use the genesis block hash if the signature
+    doesn't specify a block height, which would lock a given signature to
+    "bitcoin" or "testnet" or "litecoin", which might be beneficial.
+
+[1] Conceivably a little less if you allow "-5" to mean "5 blocks ago"
+    and miners replace a four byte absolute reference ("473000") with a
+    one or two byte relative reference ("-206") when grabbing transactions
+    from the mempool to put in the block template.
+
+[2] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/013473.html
+
+[3] https://github.com/bitcoin/bips/blob/master/bip-0115.mediawiki
+
