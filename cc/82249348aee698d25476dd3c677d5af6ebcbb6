@@ -1,0 +1,126 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Wed, 28 Jun 2017 04:26:37 -0400
+Subject: [bitcoin-dev] BIP: OP_BRIBVERIFY - the op code needed for Blind
+	Merge Mined drivechains
+In-Reply-To: <CAGL6+mHQ_vMc2JYVqwfP89WOZdUF2WDtWfh7ccL1PQve=nC+zQ@mail.gmail.com>
+References: <CAGL6+mHQ_vMc2JYVqwfP89WOZdUF2WDtWfh7ccL1PQve=nC+zQ@mail.gmail.com>
+Message-ID: <OozQK1_gWeExd5578AYH_dHnSKSvx63FJc2rIBBcaJF4f07qzsR8rr-ka5epwMFCjqDuidAWZiZqqlvn4xvSuUpDY0KkV014VQs6_E3Rp_A=@protonmail.com>
+
+Good morning.
+I still do not see what this does that cannot be done by:
+OP_RETURN <sidechain-id> <sidechain-block-id>
+A transaction with such an output would allow sidechain-miners to bribe mainchain-miners by paying a transaction fee if the transaction containing this OP_RETURN is included in a block and committed to by a mainchain-miner in the Merkle tree root.
+It would not require a softfork.
+--
+I have an alternate proposal that sidechains and altcoins that want to do "blinded" merge mining can use without a softfork:
+1. Encode a block header as a simple cons-pair, with the head as the block and the tail as the parent cons-pair.
+1.1. This can be encoded as a 32-byte hash of the block including its header, and the 32-byte hash of the parent cons-pair.
+1.2. This is now the actual "chain" in the sidecoin/altcoin blockchain.
+2. When a sidechain-node wants to know the consensus, it downloads mainchain-blocks and looks for OP_RETURN's.
+2.1. Starting with its genesis cons-pair hash (equivalent to the empty list) as the current cons-pair, it scans each OP_RETURN transaction.
+2.1.1. If an OP_RETURN is 64-byte and has the parent cons-pair equal to the current cons-pair, look for the side block indicated and confirm its correctness. If correct, update the current cons-pair for the hash of the OP_RETURN data.
+2.2. When reaching the latest mainchain block, the current cons-pair is now the sidecoin/altcoin latest block.
+2.3. Note that if multiple OP_RETURN in a block match the current cons-pair, the first one is considered the correct chain. This property means that the sidechain/altchain can only have a chainsplit if the mainchain has a chainsplit.
+3. When a sidechain-miner wants to create a side-block, it generates a new cons-pair and creates an OP_RETURN transaction for it, paying a mainchain-miner to include it in the next mainchain-block.
+3.1. The sidechain-miner risks that its competitors will outbid it and get its OP_RETURN earlier in a mainchain-block (or earlier in the order of transactions). It can mitigate this risk by updating itself to become a mainchain-miner, it can then keep its OP_RETURN transaction private and put it earlier in the block, ensuring it will "win" the sidechain-consensus if it wins the mainchain-consensus.
+Regards,
+ZmnSCPxj
+-------- Original Message --------
+Subject: [bitcoin-dev] BIP: OP_BRIBVERIFY - the op code needed for Blind Merge Mined drivechains
+Local Time: June 28, 2017 8:37 AM
+UTC Time: June 28, 2017 12:37 AM
+From: bitcoin-dev at lists.linuxfoundation.org
+To: Bitcoin Protocol Discussion <bitcoin-dev at lists.linuxfoundation.org>
+<pre>
+BIP: <BIP number>
+Layer: Consensus (Soft fork)
+Title: OP_BRIBEVERIFY
+Author: Chris Stewart <chris at suredbits.com>
+Status: Draft
+Type: Standards Track
+Created: 2017-06-27
+</pre>
+==Abstract==
+This BIP describes a new opcode, OP_BRIBEVERIFY, for the Bitcoin
+scripting system that allows for a user to bribe a miner to include a hash
+in the coinbase transaction's output.
+==Summary==
+BRIBEVERIFY redefines the existing NOP4 opcode. When executed, if the given
+critical hash is included at the given vout index in the coinbase transaction
+the script evaluates to true. Otherwise, the script will fail.
+This allows sidechains to be merged mined against
+bitcoin without burdening bitcoin miners with extra resource requirements.
+==Motivation==
+The current political climate of bitcoin is extremely contentious. Many community members
+have different visions of what bitcoin is. This op code is meant to
+enable [http://www.truthcoin.info/blog/blind-merged-mining/ Blind Merge Mining].
+This enables sidechains in Bitcoin. With OP_BRIBEVERIFY, sidechains miners can
+bribe bitcoin miners to to include their block hash in the bitcoin blockchain. If their block
+is included in the coinbase transaction's vout, it is assumed that block is a mined block on the sidechain.
+This will allow various factions of the community to realize their vision on their own separate
+blockchain that is interoperable with the bitcoin blockchain. This allows those factions to use
+bitcoin as a 'reserve currency' for their own network.
+===Commitment Structure===
+A new block rule is added which requires that the miner's coinbase reward be at index 0 in the coinbase transaction's output vector.
+It also fixes the witness commitment output to be at index 1 of the coinbase transaction's output vector.
+This is needed so we can reliably tell what vout corresponds to what drivechain. For instance, the mimblewimble sidechain
+could correspond to index 2 of the vector outputs on the coinbase transaction.
+The commitment is recorded in a <code>scriptPubKey</code> of the coinbase transaction. It must be at least 34 bytes in size
+1-byte - OP_RETURN (0x6a)
+1-byte - Push the following 32 bytes (0x20)
+32-byte - block hash
+the 35th byte and onward have no consensus meaning.
+===OP_BRIBEVERIFY op code===
+This op code reads two arguments from the stack. The stack top is expected to be a sidechain id for which this user attempting to blind merge mine for.
+The next element on the stack is expected to be a block hash. This op code looks into the coinbase transaction's output vector at the given index (which is derived from the sidechain id) and checks
+to see if the hash in the block matches the hash inside of the BRIBEVERIFY program. If the hashes match, the OP_BRIBEVERIFY acts as an OP_NOP. If the
+comparison between the two hashes fail, the script fails.
+===BRIBEVERIFY program===
+A standard BRIBEVERIFY program has the format:
+1-byte - Push the following 32 bytes (0x20)
+32-byte - block hash
+1 byte - Push operation? (needed if number can't be encoded as OP_0 - OP_16)
+1 byte - sidechain id
+1 byte - OP_BRIBEVERIFY op code
+==Detailed Specification==
+Refer to the reference implementation, reproduced below, for the precise
+semantics and detailed rationale for those semantics.
+case OP_NOP4:
+{
+//format: block_hash sidechain_id OP_BRIBEVERIFY
+if (!(flags & SCRIPT_VERIFY_BRIBEVERIFY)) {
+// not enabled; treat as a NOP4
+if (flags & SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS) {
+return set_error(serror, SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS);
+}
+break;
+}
+if (stack.size() < 2)
+return set_error(serror, SCRIPT_ERR_INVALID_STACK_OPERATION);
+const CScriptNum scriptNumSidechainId(stacktop(-1),fRequireMinimal);
+uint8_t nSidechainId;
+if (!checker.CheckSidechainId(scriptNumSidechainId,nSidechainId)) {
+return set_error(serror, SCRIPT_ERR_UNKNOWN_SIDECHAIN);
+}
+// Check block hash
+bool fHashCritical = checker.CheckCriticalHash(stacktop(-2),nSidechainId);
+if (!fHashCritical) {
+return set_error(serror, SCRIPT_ERR_UNSATISFIED_BRIBE);
+}
+break;
+}
+https://github.com/Christewart/bitcoin/blob/94b6f33f2278c42d4d8758a3c8ffe2078e4ec933/src/script/interpreter.cpp#L427
+https://github.com/drivechain-project/bitcoin/pull/13
+==Deployment==
+TODO
+==Credits==
+Credit to Paul Sztorc for the original idea of Blind Merge Mined sidechains.
+Credit to CryptAxe for writing the foundational layer of software for drivechains so I could implement OP_BRIBEVERIFY.
+==References==
+Blind Merge Mined Sidechains - http://www.truthcoin.info/blog/blind-merged-mining/
+Mailing list discussion - https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-May/014408.html
+==Copyright==
+This document is placed in the public domain.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170628/ed97475f/attachment.html>
