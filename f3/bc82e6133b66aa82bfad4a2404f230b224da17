@@ -1,0 +1,110 @@
+From: truthcoin@gmail.com (Paul Sztorc)
+Date: Wed, 28 Jun 2017 12:35:32 -0400
+Subject: [bitcoin-dev] BIP: OP_BRIBVERIFY - the op code needed for Blind
+ Merge Mined drivechains
+In-Reply-To: <CAAS2fgS7Fn=k0mFt04-+0kPqZYFZXjaOQ7J3JzNXSnCgQiSSOw@mail.gmail.com>
+References: <CAGL6+mHQ_vMc2JYVqwfP89WOZdUF2WDtWfh7ccL1PQve=nC+zQ@mail.gmail.com>
+	<CAAS2fgS7Fn=k0mFt04-+0kPqZYFZXjaOQ7J3JzNXSnCgQiSSOw@mail.gmail.com>
+Message-ID: <53ce81c2-4eac-986c-a204-2f9b7d476260@gmail.com>
+
+Chris/Greg,
+
+For pending withdrawals (side-to-main transfers), all of the data is
+stored in a teeny tiny extension block which contains all the drivechain
+data (which we called "MinerDB"). And miners were supposed to commit to
+this and put it in the coinbase in some locate-able place (for example,
+index 1).
+
+I had assumed that this would go the same for BMM, since it is all
+drivechain-themed. Thus, all drivechains, and all drivechain-stuff (BMM
+included), would claim one output index.
+
+Moreover, while DC claims an output "slot", the claim doesn't need to be
+permanent...if the BTC-value of the relevant output is not equal to
+zero, the BMM code could just ignore it. The sidechains would each
+assume that no sidechain block was merged-mined in this period. And DC
+would assume that no forward progress was made on any side-to-main
+transfers (ie, that everyone "abstained").
+
+Perhaps that addresses Greg's third, first, and second concerns.
+
+I am having some trouble understanding concern #4. I think you mean to
+say that the output coins of a transaction which is encumbered by OP
+BribeVerify are different from other coins. Indeed they are, and coins
+locked by OP BribeVerify cannot be moved until their associated
+sidechain header ("h*") is ~100 blocks deep in the sidechain (hence the
+earlier conversation about the "ratchet", which attempts to measure this).
+
+The timeline that CryptAxe and I discussed, as I last remember it, is that:
+0. (setup) The sidechain node is run by a briber, and this briber
+constructs a sidechain block paying himself all the fees. These fees
+total q=4 BTC.
+1. Negotiations happen out of bound, between Briber and all miners.
+(still setting up) Each new transaction the Briber makes, he chooses a
+completely new h* (which is trivial for him to do by incrementing a
+nonce/anything), and he may as well also fund each of these txns with
+the same unspent output (owned by him). This prevents a miner from
+annoying the Briber by including many ultimately-invalid transactions.
+2. Miner1 includes h* in the coinbase of today's block thus BMMing a
+sidechain block today, he also includes the transaction he just
+negotiated with the Briber (call it, "tx1"). This tx1 is one where
+Briber pays z=(q-0.001) to an op_bribe script that will eventually pay z
+BTC to Bitcoin address M owned by "miner1".
+3. After ~123 blocks, the ratchet (on mainchain) indicates that the
+sidechain headers have advanced sequentially by x=100 places. This
+allows miner1 to spend from tx1 to address M.
+3. OR, after ~250 blocks, the second timing threshold is reached*, and
+the Briber can spend from his script back to an address he controls
+(also predefined in steps 1 and 2).
+
+
+*This is the dual-threshold time-locking technique that the LN uses to
+prove a negative.
+
+The second timelock setup is required because it is possible that miner
+will earnestly BMM a sidechain block, but then reorg such that this
+block is orphaned out of the longest (side)chain. In this case, the
+Briber doesn't get paid his tx-fees, so he is entitled to a refund.
+
+
+So, maybe this BIP will need to be edited a little. : ) Nonetheless, I'm
+glad Chris is taking the initiative and doing this work. And I'm sorry
+if the documentation has shifted too much. At the bottom of the spec
+blog post there are some notes, but they probably aren't very helpful.
+
+
+
+On 6/28/2017 12:07 AM, Gregory Maxwell via bitcoin-dev wrote:
+> On Wed, Jun 28, 2017 at 12:37 AM, Chris Stewart via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> A new block rule is added which requires that the miner's coinbase reward be
+>> at index 0 in the coinbase transaction's output vector.
+> 
+> This is an absurd restriction-- I hope it was not your intent to
+> directly ban P2Pool and probably any other form of decentralized or
+> less centralized mining pooling... but thats what doing that does.
+> 
+>> It also fixes the witness commitment output to be at index 1 of the coinbase transaction's output vector.
+> 
+> This removes important flexibility that was intentionally preserved.
+> What happens when an additional commitment is needed for bitcoin?
+> must some sidechain be irreparably destroyed? looks like it in  your
+> proposal.
+> 
+>> For instance, the mimblewimble sidechain could correspond to index 2 of the vector outputs on the coinbase transaction.
+> 
+> And what happens if index 1 isn't present? if index 35 is used must
+> there be 34 dummy outputs?
+> 
+>> This op code looks into the coinbase transaction's output vector at the given index (which is derived from the sidechain id) and checks to see if the hash in the block matches the hash inside of the BRIBEVERIFY progra
+> 
+> This is not monotone/reorg safe. It means that the output coins (if
+> any) are not equivalently fungible with other bitcoins (for, e.g. 100
+> blocks) because if there is a reorg this transaction cannot be
+> restored to the chain.  It's also impure and not compatible with
+> caching, which would be unfortunate and slow block propagation.
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
