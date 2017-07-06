@@ -1,0 +1,165 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Thu, 6 Jul 2017 10:41:52 -0700
+Subject: [bitcoin-dev] Height based vs block time based thresholds
+In-Reply-To: <CABm2gDo0CdyXJkpMJ7dL82xJ0LuNSq6H7sHCC8Yt9RamvhF1YQ@mail.gmail.com>
+References: <KXL-Ie0q1dKTlbQ2XCyTRCzoQLND-Q7M9CFvYTfhjgeiZ4K3knpetQSwwLviO6whuHXQnFPg-rg8q1xW8w5mNnYFxalvx5_9Vci63lC9ju4=@protonmail.ch>
+	<201707050350.53122.luke@dashjr.org>
+	<00qcLaDJFDoC9D6644P_aLf7_n5B1pqCPj_c02QlqySsrJLsB6TZipXMD8L7l3lJcw5NoLP6dphCMruKJCIMkJUIDYbIw0iDd322vsNFmNw=@protonmail.ch>
+	<201707050410.45217.luke@dashjr.org>
+	<CAFMkqK9ezq_AdOpeA08jpr9haHP_jEHaJaQ2KZC=yMy6UXaJyA@mail.gmail.com>
+	<CABm2gDo0CdyXJkpMJ7dL82xJ0LuNSq6H7sHCC8Yt9RamvhF1YQ@mail.gmail.com>
+Message-ID: <3248E9A6-F729-4EC2-85F7-E18FD9CA15F8@voskuil.org>
+
+Just as an implementation consideration, time basis creates complexity. There are no other reasons to index by time, but many to index by height. The time-based activation window of BIP9 forces nodes to either index by time or scan the chain.
+
+e
+
+> On Jul 6, 2017, at 10:20 AM, Jorge Tim?n via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> I'm all for using height instead of time. That was my preference for
+> bip9 all along, but my arguments at the time apparently weren't
+> convincing.
+> 
+> Regarding luke's proposal, the only advantage I see is that it would
+> allow nodes that don't know a deployment that gets activated to issue
+> a warning, like bip9 always does when an unknown deployment is locked
+> in.
+> 
+> But there's a simpler way to do that which doesn't require to add
+> consensus rules as to what versionbits should be.
+> I'm honestly not worried about it being "coersive" and I don't think
+> it's inherently reckless (although used with short deployment times
+> like bip148 it can be IMO). But it adds more complexity to the
+> consensus rules, with something that could merely be "warning code".
+> 
+> You can just use a special bit in versionbits for nodes to get the warning.
+> My proposal doesn't guarantee that the warning will be signaled, for
+> example, if the miner that mines the block right after lock in doesn't
+> know about the deployment, he can't possibly know that he was supposed
+> to signal the warning bit, even if he has the best intentions. Miners
+> can also intentionally not signal it out of pure malice. But that's no
+> worse than the current form, when deployments activated by final date
+> instead of miner signaling never get a warning.
+> 
+> Shaolinfry had more concerns with my proposed modification, but I
+> think I answered all of them here:
+> 
+> https://github.com/bitcoin/bitcoin/pull/10462#issuecomment-306266218
+> 
+> The implementation of the proposal is there too. I'm happy to reopen
+> and rebase to simplify (#10464 was merged and there's at least 1
+> commit to squash).
+> 
+>> It also enables deploying softforks as a MASF, and only upgrading them to UASF
+> on an as-needed basis.
+> 
+> You can also do
+> 
+> consensus.vDeployments[Consensus::DEPLOYMENT_MASF].bit = 0;
+> consensus.vDeployments[Consensus::DEPLOYMENT_MASF].nStartHeight = 500000;
+> consensus.vDeployments[Consensus::DEPLOYMENT_MASF].nTimeoutHeight = 510000;
+> consensus.vDeployments[Consensus::DEPLOYMENT_MASF].lockinontimeout = false;
+> 
+> and "if needed", simply add the following at any time (before the new
+> nStartHeight, obviously):
+> 
+> 
+> consensus.vDeployments[Consensus::DEPLOYMENT_UASF].bit = 0;
+> consensus.vDeployments[Consensus::DEPLOYMENT_UASF].nStartHeight = 510000;
+> consensus.vDeployments[Consensus::DEPLOYMENT_UASF].nTimeoutHeight = 515000;
+> consensus.vDeployments[Consensus::DEPLOYMENT_UASF].lockinontimeout = true;
+> 
+> 
+> On Wed, Jul 5, 2017 at 9:44 PM, Hampus Sj?berg via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> From the PR change:
+>> 
+>>> Miners must continue setting the bit in LOCKED_IN phase so uptake is
+>>> visible and acknowledged. Blocks without the applicable bit set are invalid
+>>> during this period
+>> 
+>> Luke, it seems like the amendments to BIP8 make it drastically different to
+>> how it first was designed to work.
+>> It now looks more akin to BIP148, which was AFAICT not how BIP8 was
+>> originally intended to work.
+>> Perhaps this should be made into its own BIP instead, or make it so it's
+>> possible to decide how the LOCKED_IN state should work when designing the
+>> softfork.
+>> 
+>> Hampus
+>> 
+>> 2017-07-05 6:10 GMT+02:00 Luke Dashjr via bitcoin-dev
+>> <bitcoin-dev at lists.linuxfoundation.org>:
+>>> 
+>>> It's not pointless: it's a wake-up call for miners asleep "at the wheel",
+>>> to
+>>> ensure they upgrade in time. Not having a mandatory signal turned out to
+>>> be a
+>>> serious bug in BIP 9, and one which is fixed in BIP 148 (and remains a
+>>> problem
+>>> for BIP 149 as-is). Additionally, it makes the activation decisive and
+>>> unambiguous: once the lock-in period is complete, there remains no
+>>> question as
+>>> to what the correct protocol rules are.
+>>> 
+>>> It also enables deploying softforks as a MASF, and only upgrading them to
+>>> UASF
+>>> on an as-needed basis.
+>>> 
+>>> Luke
+>>> 
+>>> 
+>>>> On Wednesday 05 July 2017 4:00:38 AM shaolinfry wrote:
+>>>> Luke,
+>>>> I previously explored an extra state to require signalling before
+>>>> activation in an earlier draft of BIP8, but the overall impression I got
+>>>> was that gratuitous orphaning was undesirable, so I dropped it. I
+>>>> understand the motivation behind it (to ensure miners are upgraded), but
+>>>> it's also rather pointless when miners can just fake signal. A properly
+>>>> constructed soft fork is generally such that miners have to deliberately
+>>>> do something invalid - they cannot be tricked into it... and miners can
+>>>> always chose to do something invalid anyway.
+>>>> 
+>>>>> -------- Original Message --------
+>>>>> From: luke at dashjr.org
+>>>>> To: bitcoin-dev at lists.linuxfoundation.org, shaolinfry
+>>>>> <shaolinfry at protonmail.ch> I"ve already opened a PR almost 2 weeks ago
+>>>>> to do this and fix the other issues BIP 9 has.
+>>>>> https://github.com/bitcoin/bips/pull/550
+>>>>> It just needs your ACK to merge.
+>>>>> 
+>>>>>> On Wednesday 05 July 2017 1:30:26 AM shaolinfry via bitcoin-dev wrote:
+>>>>>> Some people have criticized BIP9"s blocktime based thresholds arguing
+>>>>>> they are confusing (the first retarget after threshold). It is also
+>>>>>> vulnerable to miners fiddling with timestamps in a way that could
+>>>>>> prevent or delay activation - for example by only advancing the block
+>>>>>> timestamp by 1 second you would never meet the threshold (although
+>>>>>> this
+>>>>>> would come a the penalty of hiking the difficulty dramatically). On
+>>>>>> the
+>>>>>> other hand, the exact date of a height based thresholds is hard to
+>>>>>> predict a long time in advance due to difficulty fluctuations.
+>>>>>> However,
+>>>>>> there is certainty at a given block height and it"s easy to monitor.
+>>>>>> If
+>>>>>> there is sufficient interest, I would be happy to amend BIP8 to be
+>>>>>> height based. I originally omitted height based thresholds in the
+>>>>>> interests of simplicity of review - but now that the proposal has
+>>>>>> been
+>>>>>> widely reviewed it would be a trivial amendment.
+>>> _______________________________________________
+>>> bitcoin-dev mailing list
+>>> bitcoin-dev at lists.linuxfoundation.org
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>> 
+>> 
+>> 
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
