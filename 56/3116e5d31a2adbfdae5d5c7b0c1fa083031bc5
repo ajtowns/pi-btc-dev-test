@@ -1,0 +1,43 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Wed, 12 Jul 2017 04:50:52 -0400
+Subject: [bitcoin-dev] BIP: OP_BRIBVERIFY - the op code needed for Blind
+	Merge Mined drivechains
+In-Reply-To: <CAGL6+mEeuhQp3TiLFOOAWO_wcRZXsfASKNT4364SSNzER6_xgw@mail.gmail.com>
+References: <CAGL6+mHQ_vMc2JYVqwfP89WOZdUF2WDtWfh7ccL1PQve=nC+zQ@mail.gmail.com>
+	<OozQK1_gWeExd5578AYH_dHnSKSvx63FJc2rIBBcaJF4f07qzsR8rr-ka5epwMFCjqDuidAWZiZqqlvn4xvSuUpDY0KkV014VQs6_E3Rp_A=@protonmail.com>
+	<2f2e6b7c-2d47-518a-5a8f-0b5333607aac@gmail.com>
+	<lYqi6yZAdUknHWs2DvSaM3h1tf3EVLngILZV9gbVBm5JVI96RvBGZaPBEFYNzt0QBkjdJ614BTsWjUkmuuqSd7RPFx-ihUL6SIXocqyW_ss=@protonmail.com>
+	<98d35291-5948-cb06-c46a-9d209276cee2@gmail.com>
+	<GDZ42AMqaETJGYZovJzkVZkxZE3UmCQ8q5fFTAajV6sX2LHFol6iEYahkY_sMrPv5m11lHZvuKXmD_PwXa5_S7x18vcP1FkQr0ZBROxj6HE=@protonmail.com>
+	<CAGL6+mEeuhQp3TiLFOOAWO_wcRZXsfASKNT4364SSNzER6_xgw@mail.gmail.com>
+Message-ID: <hvQJ5M9JSIbEjJuabefPJi_DBqDTTXYnJ1xEg7_rBozOBrI8WDzL6zwn9Zt7au5QHc3P3DPNYDBrsQCTkSB6lOFWPJ8UuY_W4GyIzQ-Qvfs=@protonmail.com>
+
+>>In my scheme, if you read carefully through the pseudocode, a block list node is valid only if its block is valid.
+>
+>It seems this is a contradiction against the "blind" part of blind merge mining. How can a bitcoin blockchain node enforce this without tracking the sidechain?
+From: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-June/014668.html
+>>>>2. When a sidechain-node wants to know the consensus, it downloads mainchain-blocks and looks for OP_RETURN's.
+>>>>2.1. Starting with its genesis cons-pair hash (equivalent to the empty list) as the current cons-pair, it scans each OP_RETURN transaction.
+>>>>2.1.1. If an OP_RETURN is 64-byte and has the parent cons-pair equal to the current cons-pair, look for the side block indicated and confirm its correctness. If correct, update the current cons-pair for the hash of the OP_RETURN data.
+>>>>2.2. When reaching the latest mainchain block, the current cons-pair is now the sidecoin/altcoin latest block.
+>>>>2.3. Note that if multiple OP_RETURN in a block match the current cons-pair, the first one is considered the correct chain. This property means that the sidechain/altchain can only have a chainsplit if the mainchain has a chainsplit.
+It's the sidechain node which needs to learn about the sidechain blockchain anyway. So it's the one that does the checking of this.
+For that matter, a mainchain miner can be bribed to commit to a random number rather than a valid h* block, and it will still lead all the sidechain nodes on a random chase to look for the indicated block.
+>I'll follow your discussion with Paul about sidechain reorgs, but I think his proposal is more desirable -- it follows what actually happens in the bitcoin mining process where we *can* have chain splits when
+>miners simultaneously find a block. Other miners will pick one of the two blocks to mine on top of and eventually one chain will become longer than the other. Therefore that chain will have it's block's
+>orphaned and the miners/nodes following the dead chain will reorg on top of the longest chain.
+In this paper: http://diyhpl.us/~bryan/papers2/bitcoin/On%20the%20instability%20of%20Bitcoin%20without%20the%20block%20reward%20-%202016.pdf
+As far as I understood that paper, it means that if the block reward no longer exists, miners can profitably attempt to undercut any full blocks.
+Sidechains do not have block rewards (unless the sidechain issues its own asset type that is separate from and not convertible to mainchain bitcoins).
+Thus, to protect against undercutting attacks in the sidechain, we would need to ensure that the sidechain cannot be reorged without the mainchain (which currently still has a block reward) being reorged.
+At least, this is my consideration. Perhaps the paper is wrong?
+---
+In any case, let me propose actual improvements to the OP_BRIBEVERIFY proposal:
+1. Remove the necessity of coinbase commitments. The miner commits to the sidechain_id and h* in the transaction that pays the OP_BRIBEVERIFY anyway. That way the h* commitment occurs only once in the block, in the transaction that does the OP_BRIBEVERIFY. In addition, there is no need to impose particular ordering on the coinbase outputs, which would be problematic as pointed out by others, for example if the miner is interested only in merge mining for sidechain id #35 and nobody else.
+2. When verifying a block, keep a set of sidechain ID's. When processing a transaction in that block with OP_BRIBEVERIFY, check if the sidechain ID is in that set. If not in that set, add it to that set and continue script processing. If already in the set, fail the script processing. This ensures that at most one OP_BRIBEVERIFY exists for each sidechain_id in a mainchain block.
+3. Don't number sidechain_id from 0, 1, 2, 3..., because people will fight over the small numbers. Instead identify sidechains by, for example, the hash of their names or the hash of their genesis block or whatever. This allows true permissionless creation of sidechains, without some authority existing that centrally allocates sidechain ID's.
+Regards,
+ZmnSCPxj
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170712/be07f5d9/attachment.html>
