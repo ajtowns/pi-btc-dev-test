@@ -1,0 +1,138 @@
+From: hampus.sjoberg@gmail.com (=?UTF-8?Q?Hampus_Sj=C3=B6berg?=)
+Date: Fri, 14 Jul 2017 00:50:32 +0200
+Subject: [bitcoin-dev] how to disable segwit in my build?
+In-Reply-To: <4921ce4f-06bc-8ff1-4e70-5bd55d1ff5ca@osc.co.cr>
+References: <0119661e-a11a-6d4b-c9ec-fd510bd4f144@gmail.com>
+	<CAAS2fgRDVgdMYZo776iLwbm23aGNDWL85YgD=yF=M-0_vqJ5nQ@mail.gmail.com>
+	<1c1d06a9-2e9f-5b2d-42b7-d908ada4b09e@gmail.com>
+	<CAAS2fgTsjfMGw6D_OxDthSrrdLEFx2skGedLAjTwz3yCQijyug@mail.gmail.com>
+	<001b20f2-1f33-3484-8ad2-1420ae1a2df5@gmail.com>
+	<CAAS2fgR3FQ-wSwGwK6PDD_nZKpnBDAtM=5-fvR-smDa48xjW4Q@mail.gmail.com>
+	<03cf3326-ae84-96f9-5eee-158054341eff@osc.co.cr>
+	<CAAS2fgR1aGOpVoLyGWtO=Q5XU04gBMBEQARPtxMe4WnwQ2CO5w@mail.gmail.com>
+	<CAP=-fx6hju0NAa-HcYzivwNbJH0HXwUL=t7iD38XAK_Fwodjng@mail.gmail.com>
+	<CAFMkqK9+pvRRtcOomo6is5t8xQ2gLmGb7XaGV80TOm-eO6ZoqA@mail.gmail.com>
+	<0be972b9-328c-394a-1e90-bd7a37642598@osc.co.cr>
+	<CADL_X_cZc4K3k=JzVES7Jba6qqZwv0Lx7opCi8eL_GM5M01Y8A@mail.gmail.com>
+	<4921ce4f-06bc-8ff1-4e70-5bd55d1ff5ca@osc.co.cr>
+Message-ID: <CAFMkqK-s=Xtg_40dMY7B3ecbOsjtcekHa6qFn2h8dVhuUMv=pw@mail.gmail.com>
+
+> I would like to understand it a bit better, as I think it applies
+equally to any pre-segwit node, yes?   So let's say I am running 0.13.0
+and someone sends me bitcoins to a P2PKH address, but that person
+previously received them to a P2WPKH address.
+
+Yes, this applies to all non-SegWit nodes.
+
+> If I understand correctly, my node will accept the incoming tx inputs
+but obviously will not perform any segwit related validation, thus those
+inputs are not fully validated.
+
+Yes.
+So you have two choices to be fully secure:
+1. Validate using the new rules of the network (in other words, run a
+SegWit node)
+2. Avoid any chain of transaction that contains a SegWit transaction
+
+> I don't yet understand how my node
+thinks they are valid at all given that it does not understand P2WPKH
+address format, so either it doesn't need to, or P2WPKH is somehow
+already valid.
+
+So how softforks often work is that you make the transaction appear to be
+always spendable for old nodes, regardless if it really was spendable or
+not. This will make sure it is a softfork, the update is backwards
+compatible.
+If it would be the other way around, if new rules that the node doesn't
+understand would always be invalid, it would be hardfork, which is what
+we're trying to avoid in the first place.
+
+> so if
+someone can point me towards a document that explains it I'd be happy to
+read that.
+
+See
+https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#Backward_compatibility
+So the witness program is encoded in a new format that old nodes do not
+understand.
+This means that for old nodes, a number >0 will be put on the stack. When
+the script is done, it will be evaluated to true (because of >0) and be
+counted as a valid spend.
+
+https://github.com/bitcoin/bips/blob/master/bip-0143.mediawiki also
+explains the new witness program more in detail (I left out some details in
+my explanation).
+
+Cheers
+Hampus
+
+2017-07-13 23:58 GMT+02:00 Dan Libby via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org>:
+
+> On 07/13/2017 09:35 AM, Jameson Lopp wrote:
+> >
+> >
+> > On Thu, Jul 13, 2017 at 12:19 PM, Dan Libby via bitcoin-dev
+> > <bitcoin-dev at lists.linuxfoundation.org
+> > <mailto:bitcoin-dev at lists.linuxfoundation.org>> wrote:
+> >
+> >     On 07/13/2017 06:39 AM, Hampus Sj?berg via bitcoin-dev wrote:
+> >     >> I believe that a good reason not to wish your node to be segwit
+> >     > compliant is to avoid having to deal with the extra bandwidth that
+> >     > segwit could require.   Running a 0.14.2 node means being ok with
+> >1MB
+> >     > blocks, in case segwit is activated and widely used. Users not
+> >     > interested in segwit transactions may prefer to keep the cost of
+> their
+> >     > node lower.
+> >     >
+> >     > If the majority of the network decides to deploy SegWit, it would
+> be in
+> >     > your best interest to validate the SegWit transactions, because you
+> >     > might will be downgraded to near-SPV node validation.
+> >     > It would be okay to still run a "non-SegWit" node if there's no
+> SegWit
+> >     > transactions in the chain of transactions for your bitcoins,
+> otherwise
+> >     > you cannot fully verify the the ownership of your bitcoins.
+> >     > I'm not sure the practicality of this in the long run, but it
+> makes a
+> >     > case for having an up-to-date non-SegWit node, although I think
+> it's a
+> >     > bit of a stretch.
+> >
+> >     Right.  Well, if I never upgrade to segwit, then there seems little
+> >     (zero?) risk of having any segwit tx in my tx chain.
+> >
+> >
+> > If you mean you wish to avoid receiving UTXOs that have value that was
+> > at one point previously encumbered by a SegWit output then no, you can't
+> > avoid that. No more than you can currently avoid receiving BTC that were
+> > at one point in time encumbered by a P2SH output.
+>
+> fair enough.  This actually wasn't an area I'd considered much before
+> Hampus brought it up.
+>
+> I would like to understand it a bit better, as I think it applies
+> equally to any pre-segwit node, yes?   So let's say I am running 0.13.0
+> and someone sends me bitcoins to a P2PKH address, but that person
+> previously received them to a P2WPKH address.
+>
+> If I understand correctly, my node will accept the incoming tx inputs
+> but obviously will not perform any segwit related validation, thus those
+> inputs are not fully validated.  I don't yet understand how my node
+> thinks they are valid at all given that it does not understand P2WPKH
+> address format, so either it doesn't need to, or P2WPKH is somehow
+> already valid.  I know this has all been discussed in the past, so if
+> someone can point me towards a document that explains it I'd be happy to
+> read that.
+>
+> thanks!
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170714/6adac594/attachment-0001.html>
