@@ -1,0 +1,53 @@
+From: clark@clarkmoody.com (Clark Moody)
+Date: Fri, 14 Jul 2017 13:43:37 -0500
+Subject: [bitcoin-dev] A BIP proposal for conveniently referring to
+ confirmed transactions
+Message-ID: <CAHGSxGs8Dko1UeZbRLN0VEDfcV9t6fONv3_N48hV36wTzLwu1w@mail.gmail.com>
+
+(copying from GitHub per jonasschnelli's request)
+
+I can understand the desire to keep all reference strings to the nice
+14-character version by keeping the data payload to 40 bits, but it
+seems to place artificial limitations on the format (year 2048 & 8191
+transactions). I also understand that this might be addressed with
+Version 1 encoding. But current blocks are not that far from having
+8191 transactions.
+
+You could go with a variable-length encoding similar to Bitcoin's
+variable ints and gain the benefit of having a format that will work
+for very large blocks and the very far future.
+
+Also, the Bech32 reference libraries allow encoding from byte arrays
+into the base-5 arrays native to Bech32. It seems like bit-packing to
+these 40 bits might be overkill. As an alternative you could have one
+bit-packed byte to start:
+
+# First two bits are the protocol version, supporting values 0-3
+V = ((protocol version) & 0x03) << 6
+# Next two bits are magic for the blockchain
+# 0x00 = Bitcoin
+# 0x01 = Testnet3
+# 0x02 = Byte1 is another coin's magic code (gives 256 options)
+# 0x03 = Byte1-2 is treated as the coin magic code (gives 65280 more options)
+M = (magic & 0x03) << 4
+# Next two bits are the byte length of the block reference
+B = ((byte length of block reference) & 0x03) << 2
+# Final two bits are the byte length of the transaction index
+T = ((byte length of transaction index) & 0x03)
+# Assemble into the first byte
+Byte0 = V | M | B | T
+
+This gives you up to 3 bytes for each block and transaction reference,
+which is 16.7 M blocks, or year 2336, and 16.7 M transaction slots.
+
+Data part: [Byte0][optional magic bytes 1-2][block reference bytes][tx
+reference bytes]
+
+So the shortest data part would have 3 bytes in it, with the reference
+version 0 genesis coinbase transaction having data part 0x050000.
+
+I know this is a departure from your vision, but it would be much more
+flexible for the long term.
+
+
+Clark
