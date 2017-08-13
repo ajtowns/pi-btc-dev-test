@@ -1,0 +1,78 @@
+From: erik@q32.com (Erik Aronesty)
+Date: Sun, 13 Aug 2017 14:46:37 -0400
+Subject: [bitcoin-dev] Would anyone object to adding a dlopen message hook
+	system?
+Message-ID: <CAJowKgLXhS2SxwuJnfbHzKSzw+aZie5aO2EsC9qbwWJXMNDuRw@mail.gmail.com>
+
+I was thinking about something like this that could add the ability for
+module extensions in the core client.
+
+When messages are received, modules hooks are called with the message data.
+
+
+They can then handle, mark the peer invalid, push a message to the peer or
+pass through an alternate command.  Also, modules could have their own
+private commands prefixed by "x:" or something like that.
+
+The idea is that the base P2P layer is left undisturbed, but there is now a
+way to create "enhanced features" that some peers support.
+
+My end goal is to support using lightning network micropayments to allow
+people to pay for better node access - creating a market for node services.
+
+
+But I don't think this should be "baked in" to core.   Nor do I think it
+should be a "patch".   It should be a linked-in module, optionally compiled
+and added to bitcoin conf, then loaded via dlopen().    Modules should be
+slightly robust to Bitcoin versions changing out from under them, but not
+if the network layer is changed.   This can be ensured by a) keeping a
+module version number, and b) treating module responses as if they were
+just received from the network.   Any module incompatibility should throw
+an exception...ensuring broken peers don't stay online.
+
+In general I think the core reference would benefit from the ability to
+create subnetworks within the Bitcoin ecosystem.   Right now, we have two
+choices... full node and get slammed with traffic, or listen-only node, and
+do nothing.
+
+Adding a module/hook system would allow a complex ecosystem of
+participation - and it would seem to be far more robust in the long term.
+
+Something like this???
+
+class MessageHookIn {
+public:
+    int hookversion;
+    int64_t nodeid;
+    int nVersion;
+    int64_t serviceflags;
+    const char *strCommand;
+    const char *nodeaddr;
+    const char *vRecv;
+    int vRecvLen;
+    int64_t nTimeReceived;
+};
+
+class MessageHookOut {
+public:
+    int hookversion;
+    int misbehaving;
+    const char *logMsg;
+    const char *pushCommand;
+    const unsigned char *pushData;
+    int pushDataLen;
+    const char *passCommand;
+    CDataStream passStream;
+};
+
+class MessageHook {
+public:
+    int hookversion;
+    std::string name;
+    typedef bool (*HandlerType)(const MessageHookIn *in, MessageHookOut
+*out);
+    HandlerType handle;
+};
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170813/a3f72611/attachment.html>
