@@ -1,0 +1,83 @@
+From: erik@q32.com (Erik Aronesty)
+Date: Mon, 14 Aug 2017 21:33:34 -0400
+Subject: [bitcoin-dev] Would anyone object to adding a dlopen message
+	hook system?
+In-Reply-To: <CAOG=w-v8PnzLSKsZh1xcVpjXqtTczNBsh6qEjtQ-HqpoZQLoiA@mail.gmail.com>
+References: <CAJowKgLXhS2SxwuJnfbHzKSzw+aZie5aO2EsC9qbwWJXMNDuRw@mail.gmail.com>
+	<45BBAF76-CDB7-4D57-920C-70887CABFF48@jonasschnelli.ch>
+	<CAOG=w-v8PnzLSKsZh1xcVpjXqtTczNBsh6qEjtQ-HqpoZQLoiA@mail.gmail.com>
+Message-ID: <CAJowKgLd4u4xZJiRW3uCh823zgcTvcM3Q31VkEjXAorS8=1SxQ@mail.gmail.com>
+
+Actually the more I think about it, the more I realize that all I need is
+to listen on a new port, and use the RPC api to affect Bitcoin:
+
+- ban a peer (# of hours)
+- unban a peer (# of hours)
+
+As long as I have those two functions, I can do everything I need.
+
+On Sun, Aug 13, 2017 at 4:56 PM, Mark Friedenbach <mark at friedenbach.org>
+wrote:
+
+> Jonas, I think his proposal is to enable extending the P2P layer, e.g.
+> adding new message types. Are you suggesting having externalized
+> message processing? That could be done via RPC/ZMQ while opening up a
+> much more narrow attack surface than dlopen, although I imagine such
+> an interface would require a very complex API specification.
+>
+> On Sun, Aug 13, 2017 at 1:00 PM, Jonas Schnelli via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > Hi Erik
+> >
+> > Thanks for your proposal.
+> > In general, modularisation is a good thing, though proposing core to add
+> modules wie dlopen() seems the wrong direction.
+> > Core already has the problem of running to many things in the same
+> process. The consensus logic, p2p system as well as the wallet AND the GUI
+> do all share the same process (!).
+> >
+> > A module approach like you describe would be a security nightmare (and
+> Core is currently in the process of separating out the wallet and the GUI
+> into its own process).
+> >
+> > What does speak against using the existing IPC interfaces like RPC/ZMQ?
+> > RPC can be bidirectional using long poll.
+> >
+> > /jonas
+> >
+> >> I was thinking about something like this that could add the ability for
+> module extensions in the core client.
+> >>
+> >> When messages are received, modules hooks are called with the message
+> data.
+> >>
+> >> They can then handle, mark the peer invalid, push a message to the peer
+> or pass through an alternate command.  Also, modules could have their own
+> private commands prefixed by "x:" or something like that.
+> >>
+> >> The idea is that the base P2P layer is left undisturbed, but there is
+> now a way to create "enhanced features" that some peers support.
+> >>
+> >> My end goal is to support using lightning network micropayments to
+> allow people to pay for better node access - creating a market for node
+> services.
+> >>
+> >> But I don't think this should be "baked in" to core.   Nor do I think
+> it should be a "patch".   It should be a linked-in module, optionally
+> compiled and added to bitcoin conf, then loaded via dlopen().    Modules
+> should be slightly robust to Bitcoin versions changing out from under them,
+> but not if the network layer is changed.   This can be ensured by a)
+> keeping a module version number, and b) treating module responses as if
+> they were just received from the network.   Any module incompatibility
+> should throw an exception...ensuring broken peers don't stay online.
+> >
+> >
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170814/0700aadc/attachment-0001.html>
