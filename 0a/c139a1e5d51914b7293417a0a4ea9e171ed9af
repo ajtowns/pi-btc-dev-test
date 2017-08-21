@@ -1,0 +1,147 @@
+From: erik@q32.com (Erik Aronesty)
+Date: Mon, 21 Aug 2017 13:24:09 -0400
+Subject: [bitcoin-dev] UTXO growth scaling solution proposal
+In-Reply-To: <CACiOHGwdNb=R95mE=UJOynKBtOc43Cxbjff8uZ4qakLMNX=Lbw@mail.gmail.com>
+References: <CAAU88OoR7U3-hg9Mbf6iNB2V-V5Omd1y2UP7hwouc0jbwPPqgg@mail.gmail.com>
+	<CAGCathzWMVsmM1wO8eYAZmytEy1Q--ajdr0ssQHedaJWEPu0PA@mail.gmail.com>
+	<6e774a20-38f6-3932-4050-789c34f0c2b2@aei.ca>
+	<CACiOHGwdNb=R95mE=UJOynKBtOc43Cxbjff8uZ4qakLMNX=Lbw@mail.gmail.com>
+Message-ID: <CAJowKgKweWPjVC-Z5AeFA+47TL4Jdiub5ZLvSghLgCvnbSwHOg@mail.gmail.com>
+
+1. If it only affects "old dust" UTXO's where the # of coins in the UTXO
+aren't sufficient to pay some lower quantile of transaction fees, then
+there can be little argument of theft or loss.
+
+2. There's another use-case for demurrage as well.
+
+Computation power may grow rapidly if quantum computing becomes more
+common.  At some point, Bitcoin may have to change the public key format
+for coins and the POW used.
+
+In order to do this, old coins will have to transact on the network, moving
+their value to a new format, with many more bits in the public key, for
+example.   But since quantum computing isn't bounded by moore's law, so
+this may need to be a regular upgrade every X years.   Rather than a
+regular "bit widening hard fork", the number of bits needed in a public
+address format could be scaled to the difficulty of the new quantum hashing
+algorithm that *also must *now grow in the # of bits over time.   To ensure
+that coins are secure, those with too few bits must drop off the network.
+So the timing for old coin demurrage can effectively be based on the
+quantum POW difficulty adjustments.   As long as the subsequent exponential
+rate of computation increase can be reasonably predicted (quantum version
+of moore's law), the new rate of decay can be pegged to a number of years.
+
+
+
+On Mon, Aug 21, 2017 at 10:26 AM, Moral Agent via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> A more forgiving option would be to have coins past a certain age
+> evaporate into mining rewards at some rate, rather than all at once. People
+> might find this approach easier to stomach as it avoids the "I waited 1
+> block to many and all of my coins vanished" scenario.
+>
+> Another approach would to demand that a certain minimum mining fee be
+> included that is calculated based on the age of an input like this idea:
+> https://www.reddit.com/r/Bitcoin/comments/35ilir/
+> prioritizing_utxos_using_a_minimum_mining_fee/
+>
+> This would result in the coins continuing to exist but not being
+> economically spendable, and therefore the UTXO information could be
+> archived.
+>
+> On Mon, Aug 21, 2017 at 9:35 AM, Thomas Guyot-Sionnest via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> On 21/07/17 03:59 PM, Lucas Clemente Vella via bitcoin-dev wrote:
+>> > 2017-07-21 16:28 GMT-03:00 Major Kusanagi via bitcoin-dev
+>> > <bitcoin-dev at lists.linuxfoundation.org
+>> > <mailto:bitcoin-dev at lists.linuxfoundation.org>>:
+>> >
+>> >     [...] But the fact is that if we want to make bitcoins last forever,
+>> >     we have the accept unbounded UTXO growth, which is unscalable. So
+>> >     the only solution is to limit UTXO growth, meaning bitcoins cannot
+>> >     last forever. This proposed solution however does not prevent
+>> >     Bitcoin from lasting forever.
+>> >
+>> >
+>> > Unless there is a logical contradiction in this phrasing, the proposed
+>> > solution does not improves scalability:
+>> >  - "Bitcoins lasting forever" implies "unscalable";
+>> >  - "not prevent Bitcoin from lasting forever" implies "Bitcoins lasting
+>> > forever";
+>> >  - Thus: "not prevent Bitcoin from lasting forever" implies
+>> "unscalable".
+>> >
+>> > In practice, the only Bitcoin lost would be those whose owners forgot
+>> > about or has lost the keys, because everyone with a significant amount
+>> > of Bitcoins would always shift them around before it loses any luster (I
+>> > wouldn't bother to move my Bitcoins every 10 years). I don't know how to
+>> > estimate the percentage of UTXO is actually lost/forgotten, but I have
+>> > the opinion it isn't worth the hassle.
+>> >
+>> > As a side note, your estimate talks about block size, which is
+>> > determines blockchain size, which can be "safely" pruned (if you are not
+>> > considering new nodes might want to join the network, in case the full
+>> > history is needed to be stored somewhere). But UTXO size, albeit related
+>> > to the full blockchain size, is the part that currently can not be
+>> > safely pruned, so I don't see the relevance of the analysis.
+>>
+>> I think if we wanted to burn lost/stale coins a better approach would be
+>> returning them to miner's as a fee - there will always be lost coins and
+>> miners will be able to get that additional revenue stream as the mining
+>> reward halves. I also don't think we need to worry about doing a gradual
+>> value loss neither, we should just put a limit on UTXO age in block
+>> count (actually I would round it up to 210k blocks as explained below...).
+>>
+>>
+>> So lets say for example we decide to keep 5 210k blocks "generations"
+>> (that's over 15 years), then on the first block of the 6th generation
+>> all UTXO's from the 1st generation are invalidated and returned into a
+>> "pool".
+>>
+>> Given these (values in satoshis):
+>>
+>> Pool "P" (invalided UTXO minus total value reclaimed since last halving)
+>> Leftover blocks "B" (210,000 minus blocks mined since last halving)
+>>
+>> Then every mined block can reclaim FLOOR(P/B) satoshi in addition to
+>> miner's reward and tx fees.
+>>
+>> If the last block of a generation does not get the remainder of the pool
+>> (FLOOR(P/1) == P) it should get carried over.
+>>
+>>
+>> This would ensure we can clear old blocks after a few generations and
+>> that burnt/lost coins eventually get back in circulation. Also it would
+>> reduce the reliance of miners on actual TX fees.
+>>
+>>
+>> To avoid excessive miner reward initially, for the first few iterations
+>> the value of B could be increased (I haven't calculated the UTXO size of
+>> the first 210k blocks but it could be excessively high...) or the value
+>> each block can reclaim could be caped (so we would reclaim at an
+>> artificial capacity until the pool depletes...).
+>>
+>>
+>> Regards,
+>>
+>> --
+>> Thomas
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170821/6c3b768b/attachment.html>
