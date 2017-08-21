@@ -1,0 +1,108 @@
+From: gsanders87@gmail.com (Greg Sanders)
+Date: Mon, 21 Aug 2017 11:12:47 -0700
+Subject: [bitcoin-dev] [BIP Proposal] Partially Signed Bitcoin
+ Transaction (PSBT) format
+In-Reply-To: <CABaSBaxjGLmiM0+zTk2PoGTt1zEao-k0ADLkT47vx+mcnPACJw@mail.gmail.com>
+References: <CAP6ruDR0GrLRNb4TTub+wqpwVPyzHggbomV48kLZU3tvubH73Q@mail.gmail.com>
+	<CABaSBaxjGLmiM0+zTk2PoGTt1zEao-k0ADLkT47vx+mcnPACJw@mail.gmail.com>
+Message-ID: <CAB3F3Dv1kuJdu8veNUHa4b58TvWy=BT6zfxdhqEPBQ8rjDfWtA@mail.gmail.com>
+
+Some related thoughts and suggestion for an extension that kanzure
+suggested I post here:
+
+Hardware Wallet attacks by input ownership omission and fix
+----------------------------------------------------------------------------------
+So a while back I realized that to have HW wallets do safe automated
+coinjoins(without any user interaction be sure there are no fee dumps or
+handing money to others) you have to protect yourself from the case of
+signing one set of inputs while the other owned set is hidden from the
+device, then repeating the same action with the two sets reversed.
+
+Note that there is no support for such a mode in HW wallets today, but
+could possibly greatly increase liquidity of JoinMarket like systems.
+
+First signing pass:
+1 BTC (yours, host tells ledger about it) --------
+                                                >   1.5 BTC
+1 BTC (yours, host fails to tell ledger about it)-
+
+Second signing pass:
+
+1 BTC (yours, host fails to tell ledger) ---------
+                                                >   1.5 BTC
+1 BTC (yours, host tells ledger about it)---------
+
+In this scenario, you sign the first input, thinking "great I'm getting 0.5
+BTC for running coinjoin" when in reality this will simply be re-played
+again later with the inputs switched, *costing* you 0.5 BTC. (Ledger
+doesn't support "negative fees", but imagine more more inputs are included
+that aren't yours.)
+
+More recently I noticed a more common issue along the same lines:
+
+With Segwit inputs, the entire transaction referred to in the prevout is
+generally no longer included for HW wallet signing API. This greatly speeds
+up signing since potentially multiple MBs of transactions are no longer
+passed into the device, but comes with a cost: An attacker can claim
+certain inputs' value is much lower than it actually is. In the first pass,
+the host reports the first input's value properly, and the second as lower.
+The signature on the first input will go through fine(value included in the
+sighash is only for that input), then attacker prompts a restart of
+signing, reporting the 2nd value properly, and first value improperly low,
+which allows the attacker to report the same fee twice on the device. Both
+signatures over each input are correct, but the user was prompted with an
+invalid fee amount(too low).
+
+To fix this I consulted with andytoshi and got something we think works for
+both cases:
+
+1) When a signing device receives a partially signed transaction, all
+inputs must come with a ownership proof:
+- For the input at address A, a signature over H(A || x) using the key for
+A. 'x' is some private fixed key that only the signing device knows(most
+likely some privkey along some unique bip32 path).
+- For each input ownership proof, the HW wallet validates each signature
+over the hashed message, then attempts to "decode" the hash by applying its
+own 'x'. If the hash doesn't match, it cannot be its own input.
+- Sign for every input that is yours
+
+This at a minimum makes sure that the wallet's total "balance" will not go
+down more than the reported fee.
+
+Benefits:
+- Still small memory footprint compared to legacy signing
+- Allows user-interactionless coinjoins without putting funds at risk
+- These proofs can be created at any time, collected at the front of any
+CoinJoin like protocol.
+- These proofs can be passed around as additional fields for Partially
+Signed Bitcoin Transactions:
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-August/014838.html
+
+On Sun, Aug 20, 2017 at 5:00 PM, Bryan Bishop via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> On Fri, Aug 18, 2017 at 5:11 PM, Andrew Chow via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>
+>> I would like to propose a standard format for unsigned and partially
+>> signed transactions.
+>>
+>
+> Just a quick note but perhaps you and other readers would find this thread
+> (on hardware wallet BIP drafting) to be tangentially related and useful:
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> 2016-August/013008.html
+>
+> - Bryan
+> http://heybryan.org/
+> 1 512 203 0507 <(512)%20203-0507>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170821/27651b93/attachment-0001.html>
