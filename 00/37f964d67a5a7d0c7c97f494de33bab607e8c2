@@ -1,0 +1,86 @@
+From: a@colourful.land (Weiwu)
+Date: Sun, 27 Aug 2017 10:27:49 +1000 (AEST)
+Subject: [bitcoin-dev] Solving the Scalability Problem on Bitcoin
+In-Reply-To: <CACQPdjphPmSC7bmicXGytuD3YAXYmsEGOECTTTuLfB_5iqDQGw@mail.gmail.com>
+References: <CACQPdjphPmSC7bmicXGytuD3YAXYmsEGOECTTTuLfB_5iqDQGw@mail.gmail.com>
+Message-ID: <alpine.OSX.2.21.1708270923010.933@jamess-macbook-pro.local>
+
+
+On Sat, 26 Aug 2017, Adam Tamir Shem-Tov via bitcoin-dev wrote:
+> For example:
+> 
+> A = 2.3 BTC, B=0, C=1.4. (Block 1)
+> 
+> If A sends 2.3 BTC to B. (Block 2)
+> 
+> And then B sends 1.5 to C. (Block 3)
+> 
+> The pruning block will report:
+> 
+> B = 0.8 and C=2.9.
+
+You effecitvely want these two transactions:
+
+A -(2.30)-> B; B -(1.5)-> C;
+
+To be shorten to one transaction:
+
+A -(0.8)-> B  -(1.5)-> C;
+
+For that to work a lot of changes has to be done to Bitcoin. For
+simplicity of the discussion I'll assume all transactions are
+standard transactions.
+
+First, a block has to refer to the hash of the "balance sheet" (with
+nonce), not the hash of the previous block. This way, a previous block
+can be replaced with a smaller one without affecting the hash
+reference. To add problem to this significant change, Bitcoin uses
+UTXO table instead of "balance sheet". The difference is that UTXO is
+indexed by transaction ID while a balance sheet is indexed by owner's
+public keys. The shortening you suggested wouldn't affect the balance
+sheet but would totally replace UTXOs for B and C, and probably even
+A, if A has some changes left.
+
+Second, Alice has to place a new signature on the shortened
+transaction. The design challenge is how do we motivate A to do so,
+since A needs to do it after "B->C", at which time Alice's business is
+done and her wallet offline. Luckily, all bitcoins come from
+miners. Imagine A gets her money from A', and all the way back, the
+originating A" must be a miner. We just need to design a different
+reward mechanism, where miners are not only rewarded by finding
+blocks, but also by shortening transactions after his
+expenses. Whatever new reward mechanism it may be, it will interfer
+with block hash reference discussed in the previous paragraph.
+
+Third, hash references are stablized by work. This is necessary,
+otherwise a smaller block intended to replace a long one will not be
+forced to maintain the same balance sheet. However, because work is
+done on blocks, shortening can only happen within one block. Normally,
+Bob who receives a transaction in a block, will not spend it to Carol
+in the same block, because he wants 6 confirmations before being sure,
+therefore, there will be little opportunity of shortening in one
+block. You mentioned the idea of shortening between 1000 blocks - that
+surely give a lot of opportunities to shorten a large directed
+transaction graph, but you would abandon the proof of work in those
+999 blocks in between.
+
+There are three major design issue that needs to be worked out, but
+almost all unique aspects of Bitcoin will be affected. Just to name a few:
+
+- wallets need to be aware that the UTXO in it may change to some
+   other UTXO with the same sum value.
+
+- nLockTime transactions are affected. Such transactions timed for
+   near future probably can stay by ruling that shortening can only
+   happen after a year; however, those timed for years to come will
+   find itself losing UTXO referenes (e.g. a will).
+
+- I assumed all transactions standard, but if they are not, those who can
+   redeem them will lose the UTXO references to them after shortening.
+
+I am, like you, risking proposing what is already proposed or
+explaining what is already explained. The thinking around Bitcoin is a
+big tome!
+
+Regards
+Weiwu Z.
