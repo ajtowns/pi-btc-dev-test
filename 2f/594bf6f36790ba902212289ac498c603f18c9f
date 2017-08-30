@@ -1,0 +1,252 @@
+From: belcher@riseup.net (Chris Belcher)
+Date: Wed, 30 Aug 2017 17:15:56 +0100
+Subject: [bitcoin-dev] Payment Channel Payouts: An Idea for Improving P2Pool
+	Scalability
+Message-ID: <bf9d6c9d-7cd4-bdce-c4f9-aacc09d4a06e@riseup.net>
+
+Pooled mining in bitcoin contributes to miner centralization. P2Pool is
+one solution but has bad scalability; additional hashers require the
+coinbase transaction to be larger, bigger miners joining increase the
+variance of payouts for everyone else, and smaller miners must pay extra
+to consolidate dust payouts. In this email I propose an improved scheme
+using payment channels which would allow far more individual hashers to
+mine on p2pool and result in a much lower payout variance.
+
+
+== Intro ==
+
+P2Pool is a decentralized pool that works by creating a P2P network of
+hashers. These hashers work on a chain of shares similar to Bitcoin's
+blockchain. Each hasher works on a block that includes payouts to the
+previous shares' owners and the node itself. The point of pooling is to
+reduce the variance of payout, even though on average the reward is the
+same (or less with fees). The demand for insurance, and the liquid
+markets for options show that variance does have costs that people are
+willing to pay to avoid.
+
+Here is an example of a p2pool coinbase transaction:
+https://blockchain.info/tx/d1a1e125ed332483b6e8e2f128581efc397582fe4c950dc48fadbc0ea4008022
+
+It is 5803 bytes in size, which at a fee rate of 350 sat/b is worth
+0.02031050 btc of block space that p2pool cannot sell to any other
+transaction. As bitcoin inflation goes down and miners are funded more
+by fees, this puts p2pool at more and more of a disadvantage compared to
+trusted-third-party mining pools.
+
+As each hasher is paid to their own bitcoin address, this limits the
+number of hashers taking part as adding more individual people to the
+payout transaction increases its size. Also small payouts cost a
+disproportionate amount in miner fees to actually spend, which hurts
+small miners who are essential to a decentralized mining ecosystem.
+
+This could maybe be solved by keeping a separate balance state for each
+user that is independent from the payouts, and make payouts only when
+that balance state exceeds some reasonable threshold. But this increases
+the variance which goes against the aim of pooled mining.
+
+
+== Payment Channels ==
+
+What's needed is a way to use off-chain payments where any number of
+payments can be sent to each individual hasher without using the
+blockchain. Then the N of the pay-per-last-N-shares (PPLNS) of p2pool
+can be increased to something like 6-12 months of shares and so as long
+as a small miner can mine a share every few months they will always get
+a payout when p2pool finds a block. The payment channels would be in a
+hub-and-spokes system and would work in a similar way to coinswap,
+lightning network, atomic cross-chain swaps or any other contract
+involving hashlocks and timelocks.
+
+There would still be a sharechain but with hashers paying the entire
+block reward to a hub. This hub would have a one-way payment channel
+open to every hasher in p2pool and there would be created a situation
+where if the hub gets paid then the hashers cannot fail to get paid.
+Because cheating is impossible, the hub and hashers will agree to just
+release the money to each other without resorting to the blockchain.
+
+The coinbase address scriptPubKey would be this, block rewards are paid
+to here:
+
+     2of2 multisig
+     hub + successful hasher
+  OR
+     hub pubkey + H(X)
+  OR
+     successful hasher pubkey + OP_CSV 6 months
+
+A 2of2 multisig between the hub and the "successful" hasher which found
+the block, although with a hashlock and timelock. H(X) is a hash value,
+where the preimage X is generated randomly by the hub and kept secret,
+but X will be revealed if the hub spends via that execution path. The
+OP_CSV execution path is there to stop any holdups or ransom, in the
+worst case if the hub stalls then the successful hasher can steal the
+entire coinbase as punishment after 6 months.
+
+Each payment channel address has this scriptPubKey:
+
+     2of2 multisig
+     hub-C + hasher-C
+  OR
+     2of2 multisig + H(X)
+     hub-U + hasher-U
+
+The pubkeys hub-C/hasher-C refer to 'cooperative' pubkeys.
+Hub-U/hasher-U refer to 'uncooperative' pubkeys. Before a hasher starts
+mining the hub will open a one-way payment channel to the hasher, and
+pays some bitcoin to it (let's say 0.5btc for example).
+
+The hashers mine a sharechain, a solved share contains the hasher's
+cooperative and uncooperative pubkey. The hub keeps up with the
+sharechain and announces partially-signed transactions going to each
+hasher. The transactions are updated states of the payment channel, they
+pay money to each hasher in proportion to the work that the hasher
+contributed to the sharechain. The transaction contains a signature
+matching the hub-U pubkey, the hasher could sign it with their hasher-U
+key and broadcast except they still need the value of X.
+
+If a hasher is successful and finds a share that is also a valid bitcoin
+block, they broadcast it to the network.
+
+Now, the hub can spend the block reward money on its own but only by
+revealing X. Each hasher could then take that X and combine it with the
+partially-signed transaction and broadcast that to get their money. So
+if the hub gets paid then the hashers cannot fail to get paid. Since
+defecting is pointless, the hub signs the hub-C signature of the
+partially-signed transaction and sends it to each hasher, then the
+successful hasher signs the 2of2 multisig sending the block reward money
+to the hub. The successful hasher gets a small bonus via an updated
+payment channel state for finding the block, to discourage withholding
+same as today's p2pool.
+
+These payment channels can be kept open indefinitely, as new blocks are
+found by p2pool the hub creates new partially-signed transactions with
+more money going to each hasher. When the hasher wants to stop mining
+and get the money, they can add their own hasher-C signature and
+broadcast it to the network.
+
+If there's ever a problem and the hub has to reveal X, then all the
+payment channels to hashers will have to be closed and reopened with a
+new X, because their security depends on X being unknown.
+
+
+== Hubs ==
+
+The hub is a central point of failure. It cannot steal the money, but if
+it gets DDOS'd or just becomes evil then the whole thing would stop
+working. This problem could be mitigated by having a federated system,
+where there are several hubs to choose from and hashers have payment
+channels open with each of them. It's worth noting that if someone has a
+strong botnet they could probably DDOS individual p2pool hashers in the
+same way they DDOS hubs or even centralized mining pools.
+
+The hub would need to own many bitcoins in order to have payment
+channels while waiting for blocks to be mined. Maybe 50 times the block
+reward which today would be about 650 bitcoins. The hub should receive a
+small percentage of each block reward to provide them with an incentive,
+we know from JoinMarket that this percentage will probably be around
+0.1% or less for large amounts of bitcoin. Prospostive hub operators
+should write their bids on a forum somewhere and have their details
+added to some list on github. Hashers should have an interface for
+blacklisting, whitelisting, lowering and raising priority for certain
+hubs in case the hub operators behave badly.
+
+As well as the smart contract, there are iterated prisoner's dilemma
+effects between the hub and the hashers. If the hub cooperates it can
+expect to make a predictable low-risk income from its held bitcoins for
+a long time to come, if it does something bad then the hashers can
+easily call off the deal. The hub operator will require a lot of profit
+in order to burn its reputation and future income stream, and by
+damaging the bitcoin ecosystem it will have indirectly damaged its own
+held bitcoins. A fair pricing plan will probably have the hub taking a
+small percent to start with and then 12 months later that percentage
+goes up to take into account the hub's improved reputation.
+
+
+== Transaction Selection ==
+
+All the hashers and hub need to know the exact value of the block reward
+in advance, this means they must know what the miner fees will be. This
+is probably the most serious problem with this proposal.
+
+One possible way to solve this is to mine transactions into shares and
+so use the sharechain to make all the hashers and hubs come to consensus
+about exactly which transactions they will mine, and so exactly what the
+total miner fee will be. A problem here is that this consensus mechanism
+is slow, immediately after a bitcoin block is found all the p2pool
+hashers will have to wait 30-120 seconds before they know what
+transactions to mine, so this would make them uncompetitive as a mining
+operation.
+
+Another way to deal with this is to have the hub just choose all the
+transactions, announcing the transactions, total miner fee and merkle
+root for the hashers to mine. This would work but allows the hub to
+control and censor bitcoin transactions, which mostly defeats the point
+of p2pool as an improvement to bitcoin miner centralization.
+
+Another way is to have the hashers and hub estimate what the total miner
+fee value will be. The estimate could start from the median miner fee of
+the last few blocks, or from the next 1MB of the mempool. The hub would
+announce all the partially-signed transactions to every hasher, and then
+periodically (say every 60 seconds) announce updated versions depending
+on how the mempool changes. Let's analyze what happens if the estimated
+and actual rewards are different. If the actual block reward is lower
+than the estimated reward, then the hub can update the payment channel
+state to slightly lower values to take that into account when it
+announces the cooperative hub-C signatures. The hashers can't use the
+higher channel state without knowing X. The successful hasher will get
+their bonus for finding the block which should help in encouraging them
+to actually sign the hub's payout transaction. If the actual block
+reward is higher than the estimated reward, the hub would hopefully
+still update the hasher's payment channel states because of the
+interated-prisoners-dilemma effects. But if the actual reward is much
+higher then the hub may find it profitable to burn its reputation and
+take the money by revealing X, one situation where this might happen is
+if someone accidently pays a very high miner fee and a hasher mines it
+without it being taken into account in the hub's regular payment channel
+state updates. Apart from that very specific situation, this scheme of
+estimating the total miner fee should work.
+
+
+== Some Notes ==
+
+*) Block rewards are locked for 100 blocks before they can be spent, so
+the cooperative signatures should be exchanged after 100 blocks just in
+case the block gets made stale/orphaned. While the hashers are waiting
+for the 100 reward maturity period, they should mine with another hub as
+the payout.
+
+*) Today's p2pool has a feature for donating to individual hashers, this
+could be replicated in the payment channel system by having each share
+also contain the hasher's bitcoin address for donations (or possibly
+their LN payment code)
+
+*) Each hasher should probably be made to pay some bitcoins into the
+payment channel address too, to stop DOSers locking up all the hub's
+bitcoins. If the hasher doesn't find a share within some timeout then
+the hub should close the payment channel.
+
+*) Now that we have segwit all these payment channel schemes are much
+easier to code.
+
+*) The hashers must keep their money locked up in the payment channel
+for months before enough collects. This could be a problem because some
+miners don't really want to hold bitcoin long term. I wonder if theres
+some way to link up these channels to LN so they can sold straight away.
+They could also use futures contracts to sell the coins today at a
+discount and actually deliver the coins later when they close the channel.
+
+
+== References ==
+
+*) https://en.bitcoin.it/wiki/P2Pool how p2pool works
+
+*) https://bitcointalk.org/index.php?topic=18313.msg13057899#msg13057899
+the scaleability problems of p2pool
+
+*) https://bitcointalk.org/index.php?topic=18313.msg20943086#msg20943086
+making the PPLNS window longer
+
+*) book: The Evolution of Co-Operation by Robert Axelrod, for explaining
+iterated prisoner's dilemma effects in detail
+
+Thanks to the p2pool developer veqtrus for reviewing this
