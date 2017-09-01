@@ -1,0 +1,179 @@
+From: omarshib@gmail.com (Omar Shibli)
+Date: Fri, 1 Sep 2017 10:16:41 +0300
+Subject: [bitcoin-dev] BIP proposal, Pay to Contract BIP43 Application
+In-Reply-To: <CAE3EOfh+mEB6P0ZO7AVs-i92Y1Fyppj+zNHGF4MbCohFCyZaSg@mail.gmail.com>
+References: <CAE3EOfgJdrO29GCftwORcq0087X0Y74gYtuMWvO1EWEkrT-7rg@mail.gmail.com>
+	<CAAS2fgSbK=Hf7nViHScLezCAUdKkFT1MxEM4VZhZxoj990O8PQ@mail.gmail.com>
+	<CAE3EOfh+mEB6P0ZO7AVs-i92Y1Fyppj+zNHGF4MbCohFCyZaSg@mail.gmail.com>
+Message-ID: <CAE3EOfgSEveQQesGLDAAwOgHn8+sjkzc1ayvv7ieRS19k=d63A@mail.gmail.com>
+
+Hello Gregory,
+
+Thanks for you feedback.
+
+The BIP has been updated to explicitly specify the multiparty key
+derivation scheme which hopefully addresses your concerns.
+
+Please have a look at the updated draft of the BIP at the link below:
+
+https://github.com/commerceblock/pay-to-contract-protocol-specification/blob/master/bip-draft.mediawiki
+
+Any feedback is highly appreciated.
+
+Regards,
+Omar
+
+On Tue, Aug 15, 2017 at 7:40 PM, omar shibli <omarshib at gmail.com> wrote:
+
+> Thank you for your time Gregory, I really appreciate that.
+>
+> What we are describing here is a method to embed cryptographic signatures
+> into a public key based on HD Wallets - BIP32.
+> In a practical application, we should have two cryptographic signatures
+> from both sides, I don't think in that case your scenario would be an issue.
+>
+> More specifically in our application, we do the following construction:
+>
+> contract base: m/200'/0'/<contract_number>'
+> payment base (merchant commitment): contract_base/<merchant_
+> contract_signature>
+> payment address (customer commitment): contract_base/<merchant_
+> contract_signature>/<customer_contract_signature>
+>
+> payment address funds could be reclaimed only if the
+> customer_contract_signature is provided by the customer.
+>
+> In terms of durability, our app is pretty simple at this point, we don't
+> store anything, we let customer download and manage the files.
+>
+> I will update the BIP to address your concerns.
+>
+> On Tue, Aug 15, 2017 at 8:12 AM, Gregory Maxwell <greg at xiph.org> wrote:
+>
+>> This construction appears to me to be completely insecure.
+>>
+>>
+>> Say my pubkey (the result of the derivation path) is P.
+>>
+>> We agree to contract C1.   A payment is made to P + G*H(C1).
+>>
+>> But in secret, I constructed contract C2 and pubkey Q and set P = Q +
+>> G*H(C2).
+>>
+>> Now I can take that payment (paid to Q + G*(C1) + G*H(C2)) and assert
+>> it was in act a payment to P' + G*H(C2).   (P' is simply Q + G*H(C1))
+>>
+>> I don't see anything in the proposal that addresses this. Am I missing it?
+>>
+>> The applications are also not clear to me, and it doesn't appear to
+>> address durability issues (how do you avoid losing your funds if you
+>> lose the exact contract?).
+>>
+>>
+>>
+>>
+>> On Mon, Aug 14, 2017 at 6:05 AM, omar shibli via bitcoin-dev
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> > Hey all,
+>> >
+>> > A lot of us familiar with the pay to contract protocol, and how it uses
+>> > cleverly the homomorphic property of elliptic curve encryption system to
+>> > achieve it.
+>> > Unfortunately, there is no standard specification on how to conduct such
+>> > transactions in the cyberspace.
+>> >
+>> > We have developed a basic trade finance application that relies on the
+>> > original idea described in the Homomorphic Payment Addresses and the
+>> > Pay-to-Contract Protocol paper, yet we have generalized it and made it
+>> BIP43
+>> > complaint.
+>> >
+>> > We would like to share our method, and get your feedback about it,
+>> hopefully
+>> > this effort will result into a standard for the benefit of the
+>> community.
+>> >
+>> > Abstract idea:
+>> >
+>> > We define the following levels in BIP32 path.
+>> > m / purpose' / coin_type' / contract_id' / *
+>> >
+>> > contract_id is is an arbitrary number within the valid range of indices.
+>> >
+>> > Then we define, contract base as following prefix:
+>> > m / purpose' / coin_type' / contract_id'
+>> >
+>> > contract commitment address is computed as follows:
+>> > hash document using cryptographic hash function of your choice (e.g.
+>> blake2)
+>> > map hash to partial derivation path
+>> > Convert hash to binary array.
+>> > Partition the array into parts, each part length should be 16.
+>> > Convert each part to integer in decimal format.
+>> > Convert each integer to string.
+>> > Join all strings with slash `/`.
+>> > compute child public key by chaining the derivation path from step 2
+>> with
+>> > contract base:
+>> > m/<contract_base>/<hash_derivation_path>
+>> > compute address
+>> > Example:
+>> >
+>> > master private extended key:
+>> > xprv9s21ZrQH143K2JF8RafpqtKiTbsbaxEeUaMnNHsm5o6wCW3z8ySyH4Ux
+>> FVSfZ8n7ESu7fgir8imbZKLYVBxFPND1pniTZ81vKfd45EHKX73
+>> > coin type: 0
+>> > contract id: 7777777
+>> >
+>> > contract base computation :
+>> >
+>> > derivation path:
+>> > m/999'/0'/7777777'
+>> > contract base public extended key:
+>> > xpub6CMCS9rY5GKdkWWyoeXEbmJmxGgDcbihofyARxucufdw7k3oc1JNnnii
+>> D5H2HynKBwhaem4KnPTue6s9R2tcroqkHv7vpLFBgbKRDwM5WEE
+>> >
+>> > Contract content:
+>> > foo
+>> >
+>> > Contract sha256 signature:
+>> > 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+>> >
+>> > Contract partial derivation path:
+>> > 11302/46187/26879/50831/63899/17724/7472/16692/4930/11632/25
+>> 731/49056/63882/24200/25190/59310
+>> >
+>> > Contract commitment pub key path:
+>> > m/999'/0'/7777777'/11302/46187/26879/50831/63899/17724/7472/
+>> 16692/4930/11632/25731/49056/63882/24200/25190/59310
+>> > or
+>> > <contract_base_extended_pub_key>/11302/46187/26879/50831/638
+>> 99/17724/7472/16692/4930/11632/25731/49056/63882/24200/25190/59310
+>> >
+>> > Contract commitment pub key:
+>> > xpub6iQVNpbZxdf9QJC8mGmz7cd3Cswt2itcQofZbKmyka5jdvQKQCqYSDFj
+>> 8KCmRm4GBvcQW8gaFmDGAfDyz887msEGqxb6Pz4YUdEH8gFuaiS
+>> >
+>> > Contract commitment address:
+>> > 17yTyx1gXPPkEUN1Q6Tg3gPFTK4dhvmM5R
+>> >
+>> >
+>> > You can find the full BIP draft in the following link:
+>> > https://github.com/commerceblock/pay-to-contract-protocol-
+>> specification/blob/master/bip-draft.mediawiki
+>> >
+>> >
+>> > Regards,
+>> > Omar
+>> >
+>> > _______________________________________________
+>> > bitcoin-dev mailing list
+>> > bitcoin-dev at lists.linuxfoundation.org
+>> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>> >
+>>
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170901/94a90deb/attachment.html>
