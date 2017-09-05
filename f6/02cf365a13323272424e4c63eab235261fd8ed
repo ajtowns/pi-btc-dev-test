@@ -1,0 +1,127 @@
+From: tomas@tomasvdw.nl (Tomas)
+Date: Tue, 05 Sep 2017 16:17:26 +0200
+Subject: [bitcoin-dev] Partial UTXO tree as commitment
+Message-ID: <1504621046.2505938.1095808376.49C6DC53@webmail.messagingengine.com>
+
+I would like to propose an efficient UTXO commitment scheme.
+
+A UTXO commitment can be useful for:
+
+1. Fast syncing a full node, by downloading the UTXO-set
+2. Proofing (non) existence of a UTXO..
+
+Various schemes have been proposed:
+
+* Merkle/radix trees and variants; all of which have the problem that
+they significantly increase the burden of maintaining the UTXO set.
+Furthermore, such schemes tend to practically prescribe the UTXO storage
+format severely limiting continuous per-implementation optimizations.
+* A "flat" rolling hash, eg the ECMH proposed by Pieter Wiulle which is
+cheap to calculate but only solves (1) and not (2).
+
+I propose a hybrid approach, with very limited extra burden to maintain
+and reasonably small proofs: 
+
+We divide the UTXO set in buckets by prefix of their TXID, then maintain
+a rolling hash for each bucket. The commitment is then the root of the
+tree constructed from the resulting bucket hashes. To construct the
+tree: For each depth, we group the hashes of the next depth per 64
+hashes and calculate the rolling hash of each. (Effectively, this is a
+prefix tree with a fixed branch-size of 64).
+
+Bucketcount
+-------------------
+txcount = number of TXIDs in the UTXO set
+bucketcount = (smallest power of 2 larger than sqrt(txcount))  << 6
+
+Rationale for bucketcount:
+
+* This currently gives a bucketcount of 2^19, which is very cheap to
+maintain with a 16mb array of rolling hashes.
+* This currently gives an average bucket size of 4kb. With a rolling
+hash, full nodes don't need to maintain the buckets themselves, but they
+are used for proofs.
+* The burden of future UTXO growth is divided among maintaining the
+rolling hashes and size of the proof: 10,000x as large UTXO set (20TB),
+gives ~400kb buckets and ~1.6gb in maintaining rolling hashes.
+* This gives a tree depth of 5, which means the cost of every UTXO
+update is increased  by ~3 rolling hashes (and a double SHA), as the
+lowest depths don't benefit from caching.
+* A proof for (non) existence of a UTXO is ~ 4*64*32 =8kb (branch-nodes)
++ 4kb (bucket) = ~12kb
+
+Specification [WIP]
+---------------------------
+We define the "UTXO commitment" as the serialized byte array: "U" "T"
+"X" "O" VARINT(version) VARINT(txcount) UINT256(UTXO-root)    [todo
+clarify]
+
+A block that contains an output in the coinbase whose scriptPubKey
+consists solely of OP_RETURN [UTXO commitment] must be rejected if in
+the UTXO commitment the version equals 1 and either 
+* After updating the UTXO state, the number of distinct TXIDs in the
+UTXO set is not equal to the txcount value of the UTXO commitment
+* After updating the UTXO state, the UTXO-root in the UTXO commitment is
+not equal to the UTXO-root defined below.
+
+The UTXO-root can be calculated as follows:
+
+* Define _bucketcount_ as (smallest power of 2 larger than
+sqrt(txcount))  << 6
+* Given a TXID in the UTXO set, define UTXO(TXID) as the double SHA256
+of (TXID + coins). (coins is the serialization of unspent outputs to be
+spec'ed). 
+* Let bucket N be the set of values UTXO(TXID) for each TXID in the
+UTXO-set where (TXID mod _bucketcount_) equals N.
+* Let rhash N be the rolling hash (TBD) of all values in bucket N
+* Let the hash sequence be the ordered sequence  rhash
+[0,_bucketcount_).
+
+1. If the hash sequence contains at most 64 entries, then the UTXO-root
+is the rolling hash of all entries in the hash sequence, otherwise:
+2. Group the hash sequence in ordered subsequences of 64 entries each.
+3. Find the rolling hash of each subsequence
+4. Continue with 1., with the hash sequence being the ordered sequence
+of these rolling hashes.
+
+Note: an implementation may want to maintain and update the set of
+rolling hashes at higher depths on each UTXO set operation.
+
+Note: the secure ECMH is a good candidate for the bucket hash. This
+could also be used for the branch rolling hashes, but it might be worth
+considering XOR for those as there seem to be simply not enough
+candidates to find a colliding set?
+
+Note: two magic numbers are used: "<< 6" for the bucket count, and "64"
+for the branch size. They work nicely but are pulled out of a dark place
+and merit some experimentation.
+
+Use cases for light clients
+-------------------------------------
+These UTXO proofs could be used as compact fraud proofs, although the
+benefit of this is not generally agreed upon.
+
+They can also be used to increase low-conf security to light clients, by
+validating the signatures and order-validity of incoming transactions
+against the right bucket of the current UTXO set.
+
+An interesting use case may be another type of light client. It could be
+interesting for a light client to abandon the bloom filters, and instead
+use the UTXO proofs to verify whether an incoming or outgoing
+transaction is confirmed. This could be beneficial for "rarely active"
+light clients such as smartphone apps, as it prevents the need to
+synchronize previous blocks with bloom filters, and allows syncing to
+the latest block with 12kb/output.
+
+Summary 
+--------------
+* Allows fast full node syncing.
+* Costs full nodes ~20mb extra in RAM
+* Costs full nodes ~3 rolling hash operations per UTXO operation.
+* Allows UTXO (non) existence proofs for currently avg ~12kb.
+* Size of proof grows O(sqrt(N)) with UTXO set
+* Size of extra full node memory grows O(sqrt(N)) with UTXO set
+
+
+Tomas van der Wansem
+bitcrust
