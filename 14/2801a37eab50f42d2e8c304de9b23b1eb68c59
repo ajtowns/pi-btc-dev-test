@@ -1,0 +1,145 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Tue, 05 Sep 2017 04:21:59 -0400
+Subject: [bitcoin-dev] Sidechain headers on mainchain (unification of
+	drivechains and spv proofs)
+Message-ID: <H7RPmZGfkVC8opGMMCW7Orav6yD05-AVB9bNtNU8C0hKYokiXL32VSmn0wkjn77qh4MvacPOePdVQ5gQZuAMF6q2oEuvKDSu6crNcEoXx_0=@protonmail.com>
+
+Good morning all,
+
+I have started to consider a unification of drivechains, blind merged mining, and sidechain SPV proofs to form yet another solution for sidechains.
+
+Briefly, below are the starting assumptions:
+
+1.  SPV proofs are a short chain of sidechain block headers.  This is used to prove to the mainchain that some fund has been locked in the sidechain and the mainchain should unlock an equivalent fund to the redeemer.
+
+2.  SPV proofs are large and even in compact form, are still large.  We can instead use miner voting to control whether some mainchain fund should be unlocked.  Presumably, the mainchain miners are monitoring that the sidechain is operating correctly and can know directly if a side-to-main peg is valid.
+
+3.  To maintain mainchain's security, we should use merged mining for sidechain mining rather than have a separate set of miners for mainchain and each sidechain.
+
+4.  A blockchain is just a singly-linked list.  Genesis block is the NULL of the list.  Additional blocks are added at the "front" of the singly-linked list.  In Bitcoin, the Merkle tree root is the "pointer to head" and the previous block header ID is the "pointer to tail"; additional data like proof-of-work nonce, timestamp, and version bits exist but are not inherent parts of the blockchain linked list.
+
+5.  In addition to SPV proofs, we should also support reorg proofs.  Basically, a reorg proof is a longer SPV proof that shows that a previous SPV proof is invalid.
+
+--
+
+With those, I present the idea, "sidechain headers in mainchain".
+
+Let us modify Sztorc's OP_BRIBEVERIFY to require the below SCRIPT to use:
+
+<Previous Sidechain Block Header Hash> <Current Sidechain Block Merkle Tree> <Sidechain ID> OP_BRIBEVERIFY OP_DROP OP_DROP OP_DROP
+
+We also require that <Sidechain ID> be filled only once per mainchain block, as per the "blind" merge mining of Sztorc.
+
+The key insight is that the <Previous Sidechain Block Header Hash> and <Current Sidechain Block Merkle Tree> are, in fact, the sidechain header.  Concatenating those data and hashing them is the block header hash.  Just as additional information (like extranonce and witness commitment) are put in the mainchain coinbase transaction, any additional information that the sidechain would have wanted to put in its header can be committed to in the sidechain's equivalent of a coinbase transaction (i.e. a sidechain header transaction).
+
+(All three pieces of data can be "merged" into a single very long data push to reduce the number of OP_DROP operations, this is a detail)
+
+Thus, the sidechain header chain (but not the block data) is embedded in the mainchain itself.
+
+Thus, SPV proofs do not need to present new data to the mainchain.  Instead, the mainchain already embeds the SPV proof, since the headers are already in the mainchain's blocks.  All that is needed to unlock a lockbox is to provide some past sidechain header hash (or possibly just a previous mainchain block that contains the sidechain header hash, to make it easier for mainchain nodes to look up) and the Merkle path to a sidechain-side side-to-main peg  transaction.  If the sidechain header chain is "long enough" (for example, 288 sidechain block headers) then it is presumably SPV-safe to release the funds on the mainchain side.
+
+--
+
+Suppose a sidechain is reorganized, while a side-to-main peg transaction is in the sidechain that is to be reorganized away.
+
+Let us make our example simpler by requiring an SPV proof to be only 4 sidechain block headers.
+
+In the example below, small letters are sidechain block headers to be reorganized, large letters are sidechain block headers that will be judged valid.  The sidechain block header "Aa" is the fork point.  b' is the sidechain block containing the side-to-main peg that is lost.
+
+Remember, for each mainchain block, only a single sidechain block header for a particular sidechain ID can be added.
+
+The numbers in this example below are mainchain block height numbers.
+
+0: Aa
+1: b'
+2: c
+4: C
+5: d
+6: D
+7: E
+8: F
+9: G
+10: H <- b' side-to-main is judged as "not valid"
+
+Basically, in case of a sidechain fork, the mainchain considers the longest chain to be valid if it is longer by the SPV proof required length.  In the above, at mainchain block 10, the sidechain H is now 4 blocks (H,G,F,E) longer than the other sidechain fork that ended at d.
+
+Mainchain nodes can validate this rule because the sidechain headers are embedded in the mainchain block's coinbase.  Thus, mainchain fullnodes can validate this part of the sidechain rule of "longest work chain".
+
+--
+
+Suppose I wish to steal funds from sidechain, by stealing the sidechain lockboxes on the mainchain.  I can use the OP_BRIBEVERIFY opcode which Sztorc has graciously provided to cause miners that are otherwise uninterested in the sidechain to put random block headers on a sidechain fork.  Since the mainchain nodes are not going to verify the sidechain blocks (and are unaware of sidechain block formats in detail, just the sidechain block headers), I can get away with this on the mainchain.
+
+However, to do so, I need to pay OP_BRIBEVERIFY multiple times.  If our rule is 288 sidechain blocks for an SPV proof, then I need to pay OP_BRIBEVERIFY 288 times.
+
+This can then be used to reduce the risk of theft.  If lockboxes have a limit in value, or are fixed in value, that maximum/fixed value can be made small enough that paying OP_BRIBEVERIFY 288 times is likely to be more expensive than the lockbox value.
+
+In addition, because only one sidechain header can be put for each mainchain header, I will also need to compete with legitimate users of the sidechain.  Those users may devote some of their mainchain funds to keep the sidechain alive and valid by paying OP_BRIBEVERIFY themselves.  They will reject my invalid sidechain block and build from a fork point before my theft attempt.
+
+Because the rule is that the longest sidechain must beat the second-longest chain by 288 (or however many) sidechain block headers, legitimate users of the sidechain will impede my progress to successful theft.  This makes it less attractive for me to attempt to steal from the sidechain.
+
+The effect is that legitimate users are generating reorg proofs while I try to complete my SPV proof.  As the legitimate users increase their fork, I need to keep up and overtake them.  This can make it unattractive for me to steal from the sidechain.
+
+Note however that we assume here that a side-to-main peg cannot occur more often than an entire SPV proof period.
+
+--
+
+Suppose I am a major power with influence over >51% of mainchain miners.  What happens if I use that influence to cause the greatest damage to the sidechain?
+
+I can simply ask my miners to create invalid side-to-main pegs that unlock the sidechain's lockboxes.  With a greater than 51% of mainchain miners, I do not need to do anything like attempt to double-spend mainchain UTXO's.  Instead, I can simply ask my miners to operate correctly to mainchain rules, but violate sidechain rules and steal the sidechain's lockboxes.
+
+With greater than 51% of mainchain miners, I can extend my invalid sidechain until we reach the minimum necessary SPV proof.  Assuming a two-way race between legitimate users of the sidechain and me, since I have >51% of mainchain miners, I can build the SPV proof faster than the legitimate users can create a reorg proof against me.  This is precisely the same situation that causes drivechain to fail.
+
+An alternative is to require that miners participating in sidechains to check the sidechain in full, and to consider mainchain blocks containing invalid sidechain headers as invalid.  However, this greatly increases the amount of data that a full miner needs to be able to receive and verify, effectively increasing centralization risk for the mainchain.
+
+--
+
+The central idea of drivechain is simply that miners vote on the validity of sidechain side-to-main pegs.  But this is effectively the same as miners - and/or OP_BRIBEVERIFY users - only putting valid sidechain block headers on top of valid sidechain block headers.  Thus, if we instead use sidechain-headers-on-mainchain, the "vote" that the sidechain side-to-main peg is valid, is the same as a valid merge-mine of the sidechain.
+
+SPV proofs are unnecessary in drivechain.  In sidechain-header-on-mainchain, SPV proofs are already embedded in the mainchain.  In drivechain, we ask mainchain fullnodes to trust miners.  In sidechain-header-on-mainchain, mainchain fullnodes validate SPV proofs on the mainchain, without trusting anyone and without running sidechain software.
+
+To validate the mainchain, a mainchain node keeps a data structure for each existing sidechain's fork.
+
+When the sidechain is first created (perhaps by some special transaction that creates the sidechain's genesis block header and/or sidechain ID, possibly with some proof-of-burn to ensure that Bitcoin users do not arbitrarily create "useless" sidechains, but still allowing permissionless creation of sidechains), the mainchain node creates that data structure.
+
+The data structure contains:
+
+1.  A sidechain block height, a large number initially 0 at sidechain genesis.
+2.  A side-to-main peg pointer, which may be NULL, and which also includes a block height at which the side-to-main peg is.
+3.  Links to other forks of the same sidechain ID, if any.
+4.  The top block header hash of the sidechain (sidechain tip).
+
+If the sidechain's block header on a mainchain block is the direct descendant of the current sidechain tip, we just update the top block header hash and increment the block height.
+
+If there is a side-to-main peg on the sidechain block header, if the side-to-main peg pointer is NULL, we initialize it and store the block height at which the side-to-main peg exists.  If there is already a pending side-to-main peg, the mainchain block is judged invalid; thus for a 288-block region only one side-to-main peg can be done.
+
+If, for a mainchain block, the sidechain header does NOT extend the most recent sidechain tip, we have detected a sidechain split condition.  We then create a copy of the data structure for the tallest fork, then roll it back until we reach the split point; this rollback should also clear the side-to-main pointer, if we rollback to a blockheight below the side-to-main peg.  Rollback is delimited: if after 288 sidechain headers we have not found the split point, the mainchain node rejects the mainchain block as invalid.  Thus new sidechain forks cannot be started further back than our SPV proof size on the current longest sidechain.  This allows powerful individuals to kill the sidechain by spending sufficient OP_BRIBEVERIFY to put random numbers on the sidechain headers, preventing the sidechain from ever operating correctly unless the sidechain accepts this loss of valid headers specially.
+
+If there is only a single such structure for a sidechain, the sidechain is single-chained and not under attack.  If the side-to-main peg pointer is non-null and the block height of the sidechain is 288 higher than the recorded block height, the side-to-main peg is added as a UTXO to our UTXO set.
+
+If there are multiple such structures, the sidechain is in a contentious chainsplit condition (the "under attack" flag).  A side-to-main peg is valid (becomes a UTXO) only if it exists (i.e. is the same) on all forks of the sidechain, and the shortest fork is 288 higher than the side-to-main peg height.  This allows side-to-main pegs occurring before a contentious fork to be redeemed.
+
+When there are multiple forks of a sidechain, the mainchain node keeps track of all of them.  It sorts these forks by blockheight.  The tallest chain is the reference.  If some fork has height less than the height of the tallest chain minus 288 (the SPV proof size), the mainchain node drops it.  Then that sidechain fork can no longer be extended; if it is the only fork lacking a particular side-to-main peg that exists on all the other forks, then the side-to-main peg becomes a UTXO.  Once all contentious forks have been dropped, the sidechain returns to normal operation.
+
+Note that this implies that side-to-main pegs that occur after a contentious sidechain fork will be delayed.  This is to be expected as there is contention as to which chain is correct.
+
+Note that this implies that sidechains must "run in lockstep" with mainchain.  In particular, if the mainchain splits, the sidechain also splits.  This allows two-way pegs to be asymmetrical, with sidechain fullnodes also being mainchain fullnodes, and immediate main-to-side pegs.
+
+Finally, mainchain fullnodes validate side-to-main transfers, but do not need to run sidechain software.  Users of sidechains are expected to protect themselves by ensuring they have mainchain miners that will do their best to protect the sidechain by only extending the valid longest sidechain, and by spending maincoin on OP_BRIBEVERIFY.
+
+--
+
+Suppose I want to use a sidechain, but I worry some troll will want to attack the sidechain via the OP_BRIBEVERIFY vulnerability.  What can I do to protect my investment?
+
+Perhaps a "protector" can be hired.  Such a protector will be paid in sidechain funds, at a premium, for use of its mainchain funds.  Such a protector will then use OP_BRIBEVERIFY on the mainchain to ensure a valid sidechain is extended on the mainchain.  Indeed, this is exactly the "sidechain miner" envisioned by Sztorc in blind merged mining: sidechain users offer a sidecoin fee to these protectors, who spend maincoin to perform OP_BRIBEVERIFY on the mainchain.  These protectors are paid in sidecoin in order to encourage them to protect the sidechain; they cannot spend sidecoin if the sidechain is successfully attacked.
+
+Mainchain miners who wish to take on "protector" role can simply act as if they are being paid OP_BRIBEVERIFY for the sidechain they wish to protect.  However, in particular mainchain miners should not treat sidechain rules at the same level as mainchain rules: even if a sidechain block header is judged to be invalid, the mainchain miner should not reject the mainchain block.  It can only refuse to build a sidechain block header on top of an invalid sidechain block header.  Only if a sidechain is sufficiently in use can we propose the sidechain's rules to be added to mainchain as mainchain rules in a softfork.  Needless to say, miners taking on this role must have even larger datacenters in order to handle the increased bandwidth, storage, and processing load to handle both mainchain mining and sidechain protection.
+
+--
+
+The number 288 in all cases is a parameter that can be endlessly debated.
+
+Regards,
+ZmnSCPxj
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170905/def51eaf/attachment-0001.html>
