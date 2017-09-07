@@ -1,0 +1,96 @@
+From: cryptaxe@gmail.com (CryptAxe)
+Date: Wed, 6 Sep 2017 20:41:49 -0700
+Subject: [bitcoin-dev] SF proposal: prohibit unspendable outputs with
+ amount=0
+In-Reply-To: <CALqxMTHxdLqms_OgT71EtS2kY2=_8yfNsatNNnOjfSHrLnQL-Q@mail.gmail.com>
+References: <CABm2gDojDQWMhw8wW1UkRGKtdbby2+6AFFZLPuRcUb7WF_u5qQ@mail.gmail.com>
+	<CAF5CFkh4DWE6Ca-5LFrgkGxWgYqqJdEdv+JZ+3wp+0eTm_vqCw@mail.gmail.com>
+	<CALqxMTHxdLqms_OgT71EtS2kY2=_8yfNsatNNnOjfSHrLnQL-Q@mail.gmail.com>
+Message-ID: <1ffab7c0-7005-283e-07e5-4e85fc54de51@gmail.com>
+
+After reading
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-January/012194.html
+I see that Adam is correct. Unfortunately this SF would make Felix's
+confidential transactions
+more complicated. The blinding and unblinding transactions would have to
+be created with
+minimal output values, and this will need to be considered when checking
+that the fee is equal
+to the total amount of input. (it would now be SUM(inputs) -
+SUM(minimalOutputs))
+
+Blinding transaction:
+  Ins:
+    All non-confidential inputs are valid
+  Outs:
+  - 0..N: (new confidential outputs)
+    amount: 0
+    scriptPubkey: OP_2 <0x{32-byte-hash-value}>
+    witnessOut: <0x{petersen-commitment}> <0x{range-proof}>
+  - last:
+    amount: 0
+    scriptPubkey: OP_RETURN OP_2 {blinding-fee-amount}
+  Fee: Sum of the all inputs value
+
+
+However, looking at the format of the blinding transaction, and how the
+GCTXO is added to the UTXO set
+by miners, it seems that a change to the blinding scriptPubKey could
+allow for the use of 0 value
+outputs. Even with the SF proposed by this email thread.
+
+OP_RETURN could be added to the scriptPubKey during blinding. The amount
+and scriptPubKey destination of
+unblinded funds is part of the witness and the outputs of an unblinded
+transaction are unspendable, so
+why not also make them unspendable in the blind transaction? As far as I
+can tell those outputs don't need to
+be spendable, they are really just encoding data. It doesn't seem like
+anything besides the confidential base
+transaction and the fee output from the blind transaction need to be in
+the UTXO set.
+
+Is it still possible to add this data to the witness if the scriptPubKey
+is unspendable? :
+
+witnessOut: <0x{petersen-commitment}> <0x{range-proof}>
+
+I think I'm missing something obvious, someone point out why this is
+stupid please :)
+
+On 09/06/2017 06:29 PM, Adam Back wrote:
+> The pattern used by Felix Weiss' BIP for Confidential Transactions
+> depends on or is tidier with 0-value outputs.
+>
+> Adam
+>
+>
+> On 7 September 2017 at 00:54, CryptAxe via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> As long as an unspendable outputs (OP_RETURN outputs for example) with
+>> amount=0 are still allowed I don't see it being an issue for anything.
+>>
+>> On Sep 5, 2017 2:52 PM, "Jorge Tim?n via bitcoin-dev"
+>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>> This is not a priority, not very important either.
+>>> Right now it is possible to create 0-value outputs that are spendable
+>>> and thus stay in the utxo (potentially forever). Requiring at least 1
+>>> satoshi per output doesn't really do much against a spam attack to the
+>>> utxo, but I think it would be slightly better than the current
+>>> situation.
+>>>
+>>> Is there any reason or use case to keep allowing spendable outputs
+>>> with null amounts in them?
+>>>
+>>> If not, I'm happy to create a BIP with its code, this should be simple.
+>>> _______________________________________________
+>>> bitcoin-dev mailing list
+>>> bitcoin-dev at lists.linuxfoundation.org
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+
