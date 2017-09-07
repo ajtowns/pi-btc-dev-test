@@ -1,0 +1,90 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Thu, 7 Sep 2017 11:43:52 -0400
+Subject: [bitcoin-dev] Fast Merkle Trees
+In-Reply-To: <F1D041D0-FC5A-425C-835D-37E7A9C0CFC5@friedenbach.org>
+References: <CAMZUoKmD4v4vn9L=kdyJNk-km3XHpNVkD_tmS+SseMsf6YaVPg@mail.gmail.com>
+	<F1D041D0-FC5A-425C-835D-37E7A9C0CFC5@friedenbach.org>
+Message-ID: <CAMZUoKmhN=m4TFwJi7u1bibLJ6mYvpnkddWTZZWdHn7+mVcJvw@mail.gmail.com>
+
+In that case, you may as well remove all references to leaves and double
+SHA-256 from your BIP since your design has no method for distinguishing
+between internal nodes and leaves.
+
+I think that if this design stands, it will play a role in some future
+CVEs.  The BIP itself is too abstract about its data contents to
+specifically say that it has a vulnerability; however, I believe it is
+inviting vulnerabilities.
+For example, I might agree with a counterparty to a design of some sort of
+smart contract in the form of a MAST.  My counterparty has shown me all the
+"leaves" of our MAST and I can verify its Merkle root computation.
+After being deployed, I found out that one of the leaves wasn't really a
+leaf but is instead a specially crafted "script" with a fake pubkey chosen
+by my couterparty so that this leaf can also be interpreted as a fake
+internal node (i.e. an internal node with a right branch of 0x8000...100).
+Because the Fast Merkle Tree design doesn't distinguish between leaves and
+internal nodes my counter party gets away with building an Inclusion Proof
+through this "leaf" to reveal the evil code that they had designed into the
+MAST at a deeper level.
+
+Turns out my counterparty was grinding their evil code to produce an
+internal node that can also be parsed as an innocent script.  They used
+their "pubkey" to absorb excess random data from their grinding that they
+cannot eliminate.
+(The counterparty doesn't actually know the discrete log of this "pubkey",
+they just claimed it was their pubkey and I believed them).
+
+
+Having ambiguity about whether a node is a leaf or an internal node is a
+security risk. Furthermore, changing the design so that internal node and
+leaves are distinguishable still allows chained invocations.
+Arbitrary data can be stored in Fast Merkle Tree leaves, including the
+Merkle root of another Fast Merkle Tree.
+Applications that are limited to proof with paths no longer than 32
+branches can still circumvent this limit by staging these Fast Merkle Trees
+in explicit layers (as opposed to the implicit layers with the current
+design).
+
+By storing a inner Fast Merkle Tree root inside the (explicit) leaf of an
+outer Fast Merkle Tree, the application can verify a Inclusion Proof of the
+inner Fast Merkle Tree Root in the outer Fast Merkle Tree Root, and then
+verify a second Inclusion Proof of the desired data in the inner Faster
+Merkle Tree Root.  The application will need to tag their data to
+distinguish between inner Fast Merkle Tree Roots and other application
+data, but that is just part of the general expectation that applications
+not store ambiguous data inside the leaves of Fast Merkle Trees.
+
+
+On Wed, Sep 6, 2017 at 10:20 PM, Mark Friedenbach <mark at friedenbach.org>
+wrote:
+
+> This design purposefully does not distinguish leaf nodes from internal
+> nodes. That way it chained invocations can be used to validate paths longer
+> than 32 branches. Do you see a vulnerability due to this lack of
+> distinction?
+>
+> On Sep 6, 2017, at 6:59 PM, Russell O'Connor <roconnor at blockstream.io>
+> wrote:
+>
+> The fast hash for internal nodes needs to use an IV that is not the
+> standard SHA-256 IV. Instead needs to use some other fixed value, which
+> should itself be the SHA-256 hash of some fixed string (e.g. the string
+> "BIP ???" or "Fash SHA-256").
+>
+> As it stands, I believe someone can claim a leaf node as an internal node
+> by creating a proof that provides a phony right-hand branch claiming to
+> have hash 0x80000..0000100 (which is really the padding value for the
+> second half of a double SHA-256 hash).
+>
+> (I was schooled by Peter Todd by a similar issue in the past.)
+>
+> On Wed, Sep 6, 2017 at 8:38 PM, Mark Friedenbach via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> Fast Merkle Trees
+>> BIP: https://gist.github.com/maaku/41b0054de0731321d23e9da90ba4ee0a
+>> Code: https://github.com/maaku/bitcoin/tree/fast-merkle-tree
+>>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170907/87bc87d5/attachment-0001.html>
