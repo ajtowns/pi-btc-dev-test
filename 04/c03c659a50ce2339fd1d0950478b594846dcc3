@@ -1,0 +1,82 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Thu, 7 Sep 2017 14:55:25 -0400
+Subject: [bitcoin-dev] Fast Merkle Trees
+In-Reply-To: <EB804508-715A-4CD6-9B87-09845368DAC0@friedenbach.org>
+References: <CAMZUoKmD4v4vn9L=kdyJNk-km3XHpNVkD_tmS+SseMsf6YaVPg@mail.gmail.com>
+	<F1D041D0-FC5A-425C-835D-37E7A9C0CFC5@friedenbach.org>
+	<CAMZUoKmhN=m4TFwJi7u1bibLJ6mYvpnkddWTZZWdHn7+mVcJvw@mail.gmail.com>
+	<EB804508-715A-4CD6-9B87-09845368DAC0@friedenbach.org>
+Message-ID: <CAMZUoKk7dHy6urnGRzAB2UG_fkwXmQrRHDfFYOHa0sTStr=yAQ@mail.gmail.com>
+
+On Thu, Sep 7, 2017 at 1:42 PM, Mark Friedenbach <mark at friedenbach.org>
+wrote:
+
+> I've been puzzling over your email since receiving it. I'm not sure it
+> is possible to perform the attack you describe with the tree structure
+> specified in the BIP. If I may rephrase your attack, I believe you are
+> seeking a solution to the following:
+>
+> Want: An innocuous script and a malign script for which
+>
+>    double-SHA256(innocuous)
+>
+> is equal to either
+>
+>    fast-SHA256(double-SHA256(malign) || r) or
+>    fast-SHA256(r || double-SHA256(malign))
+>
+
+or  fast-SHA256(fast-SHA256(double-SHA256(malign) || r1) || r0)
+or  fast-SHA256(fast-SHA256(r1 || double-SHA256(malign)) || r0)
+or ...
+
+
+> where r is a freely chosen 32-byte nonce. This would allow the
+> attacker to reveal the innocuous script before funds are sent to the
+> MAST, then use the malign script to spend.
+>
+> Because of the double-SHA256 construction I do not see how this can be
+> accomplished without a full break of SHA256.
+>
+
+The particular scenario I'm imagining is a collision between
+
+    double-SHA256(innocuous)
+
+and
+
+    fast-SHA256(fast-SHA256(fast-SHA256(double-SHA256(malign) || r2) || r1)
+|| r0).
+
+where innocuous is a Bitcoin Script that is between 32 and 55 bytes long.
+
+Observe that when data is less than 55 bytes then double-SHA256(data) =
+fast-SHA256(fast-SHA256(padding-SHA256(data)) || 0x8000...100) (which is
+really the crux of the matter).
+
+Therefore, to get our collision it suffices to find a collision between
+
+    padding-SHA256(innocuous)
+
+and
+
+    fast-SHA256(double-SHA256(malign) || r2) || r1
+
+r1 can freely be set to the second half of padding-SHA256(innocuous), so it
+suffices to find a collision between
+
+   fast-SHA256(double-SHA256(malign) || r2)
+
+and the first half of padding-SHA256(innocuous) which is equal to the first
+32 bytes of innocuous.
+
+Imagine the first opcode of innocuous is the push of a value that the
+attacker claims to be his 33-byte public key.
+So long as the attacker doesn't need to prove that they know the discrete
+log of this pubkey, they can grind r2 until the result of
+fast-SHA256(double-SHA256(malign) || r2) contains the correct first couple
+of bytes for the script header and the opcode for a 33-byte push.  I
+believe that is only about 3 or 4 bytes of they need to grind out.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170907/724c4de6/attachment.html>
