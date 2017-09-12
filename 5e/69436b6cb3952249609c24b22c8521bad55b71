@@ -1,0 +1,725 @@
+From: shiva@blockonomics.co (shiva sitamraju)
+Date: Tue, 12 Sep 2017 17:36:40 +0530
+Subject: [bitcoin-dev] Proposal: Extended serialization format for BIP-32
+Message-ID: <CABuOfugNbyF-O0p42ghHm546XvV3FcMscb-pb4MeQA_akNHipw@mail.gmail.com>
+
+Thanks Thomas for pointing me to bip173. If everyone is fine, we should go
+forward with formalizing Thomas' proposal asap. Already segwit wallet
+usage/demand is increasing !
+
+On Tue, Sep 12, 2017 at 4:54 PM, <
+bitcoin-dev-request at lists.linuxfoundation.org> wrote:
+
+> Send bitcoin-dev mailing list submissions to
+>         bitcoin-dev at lists.linuxfoundation.org
+>
+> To subscribe or unsubscribe via the World Wide Web, visit
+>         https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> or, via email, send a message with subject or body 'help' to
+>         bitcoin-dev-request at lists.linuxfoundation.org
+>
+> You can reach the person managing the list at
+>         bitcoin-dev-owner at lists.linuxfoundation.org
+>
+> When replying, please edit your Subject line so it is more specific
+> than "Re: Contents of bitcoin-dev digest..."
+>
+>
+> Today's Topics:
+>
+>    1. Re: Merkle branch verification & tail-call semantics for
+>       generalized MAST (Johnson Lau)
+>    2. Re: Proposal: Extended serialization format for BIP-32
+>       (Thomas Voegtlin)
+>    3. Re: Responsible disclosure of bugs (Sergio Demian Lerner)
+>
+>
+> ----------------------------------------------------------------------
+>
+> Message: 1
+> Date: Tue, 12 Sep 2017 16:55:59 +0800
+> From: Johnson Lau <jl2012 at xbt.hk>
+> To: Mark Friedenbach <mark at friedenbach.org>
+> Cc: bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+> Subject: Re: [bitcoin-dev] Merkle branch verification & tail-call
+>         semantics for generalized MAST
+> Message-ID: <DA22C531-2FAE-4332-B158-A3F96BF34002 at xbt.hk>
+> Content-Type: text/plain; charset=utf-8
+>
+>
+> > On 12 Sep 2017, at 10:03 AM, Mark Friedenbach <mark at friedenbach.org>
+> wrote:
+> >
+> > My apologies for a delay in responding to emails on this list; I have
+> > been fighting a cold.
+> >
+> > (Also my apologies to Johnson Lau, as I forgot to forward this to the
+> list.)
+> >
+> > On Sep 8, 2017, at 2:21 AM, Johnson Lau <jl2012 at xbt.hk> wrote:
+> >
+> >> Tail-call execution semantics require "unclean stake" , i.e. final
+> >> stake with more than one item. However, "unclean stake" is invalid
+> >> (not just non-standard) in BIP141, so you could only use it with
+> >> legacy P2SH (which is totally pointless....). A different design
+> >> like OP_EVAL might be needed, or you need a new witness script
+> >> version.
+> >
+> > I believe you meant "unclean stack," and you are correct. This was
+> > also pointed out last tuesday by a participant at the in-person
+> > CoreDev meetup where the idea was presented.
+> >
+> > This doesn't kill the idea, it just complicates the implementation
+> > slightly. A simple fix would be to allow tail-recursion to occur if
+> > the stack is not clean (as can happen with legacy P2SH as you point
+> > out, or yet to be defined version 1+ forms of segwit script), OR if
+> > there is a single item on the stack and the alt-stack is not empty.
+> > For segwit v0 scripts you then have to move any arguments to the alt
+> > stack before ending the redeem script, leaving just the policy script
+> > on the main stack.
+>
+> This is ugly and actually broken, as different script path may require
+> different number of stack items, so you don?t know how many OP_TOALTSTACK
+> do you need. Easier to just use a new witness version
+>
+> >
+> >> I think you have also missed the sigOp counting of the executed
+> >> script. As you can't count it without executing the script, the
+> >> current static analysability is lost. This was one of the reasons
+> >> for OP_EVAL being rejected. Since sigOp is a per-block limit, any
+> >> OP_EVAL-like operation means block validity will depend on the
+> >> precise outcome of script execution (instead of just pass or fail),
+> >> which is a layer violation.
+> >
+> > I disagree with this design requirement.
+> >
+> > The SigOp counting method used by bitcoin is flawed. It incorrectly
+> > limits not the number of signature operations necessary to validate a
+> > block, but rather the number of CHECKSIGs potentially encountered in
+> > script execution, even if in an unexecuted branch. (Admitedly MAST
+> > makes this less of an issue, but there are still useful compact
+> > scripts that use if/else constructs to elide a CHECKSIG.) Nor will it
+> > account for aggregation when that feature is added, or properly
+> > differentiate between signature operations that can be batched and
+> > those that can not.
+> >
+> > Additionally there are other resources used by script that should be
+> > globally limited, such as hash operations, which are not accounted for
+> > at this time and cannot be statically assessed, even by the flawed
+> > mechanism by which SigOps are counted. I have maintained for some time
+> > that bitcoin should move from having multiple separate global limits
+> > (weight and sigops, hashed bytes in XT/Classic/BCH) to a single linear
+> > metric that combines all of these factors with appropriate
+> > coefficients.
+> >
+>
+> I like the idea to have an unified global limit and suggested a way to do
+> it (https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-January/
+> 013472.html). But I think this is off-topic here.
+>
+>
+>
+> > A better way of handling this problem, which works for both SigOps and
+> > HashOps, is to have the witness commit to the maximum resources
+> > consumed by validation of the spend of the coin, to relay this data
+> > with the transaction and include it in the SigHash, and to use the
+> > committed maximum for block validation. This could be added in a
+> > future script version upgrade. This change would also resolve the
+> > issue that led to the clean stack rule in segwit, allowing future
+> > versions of script to use tail-call recursion without involving the
+> > alt-stack.
+> >
+> > Nevertheless it is constructive feedback that the current draft of the
+> > BIP and its implementation do not count SigOps, at all. There are a
+> > couple of ways this can be fixed by evaluating the top-level script
+> > and then doing static analysis of the resulting policy script, or by
+> > running the script and counting operations actually performed.
+>
+>
+> In any case, I think maintaining static analysability for global limit(s)
+> is very important. Ethereum had to give up their DAO softfork plan at the
+> last minute, exactly due to the lack of this:
+> http://hackingdistributed.com/2016/06/28/ethereum-soft-fork-dos-vector/
+>
+> Otherwise, one could attack relay and mining nodes by sending many small
+> size txs with many sigops, forcing them to validate, and discard due to
+> insufficient fees.
+>
+> Technically it might be ok if we commit the total validation cost (sigop +
+> hashop + whatever) as the first witness stack item, but that?d take more
+> space and I?m not sure if it is desirable. Anyway, giving up static
+> analysability for scripts is a fundamental change to our existing model.
+>
+> >
+> > Additionally, it is possible that we take this time to re-evaluate
+> > whether we should be counting SigOps other than for legacy consensus
+> > rule compliance. The speed of verification in secp256k1 has made
+> > signature operations no longer the chief concern in block validation
+> > times.
+>
+> Without the limit I think we would be DoS-ed to dead
+>
+>
+> >> Witness script versioning is by design fully compatible with P2SH
+> >> and BIP173, so there will be no hurdle for existing wallets to pay
+> >> to BIP114. Actually it should be completely transparent to them.
+> >
+> > This is correct. Your feedback will be incorporated.
+> >
+> >> For code complexity, the minimal BIP114 could be really simple, like
+> >> <30 lines of code? It looks complex now because it does much more
+> >> than simply hiding scripts in a hash.
+> >
+> > Is there a repo that contains the latest implementation of BIP 114,
+> > for comparison purposes?
+>
+>
+> You can find it here: https://github.com/jl2012/bitcoin/commits/vault
+> https://github.com/jl2012/bitcoin/commit/f3f201d232d3995db38e09b171e4d1
+> dea8d04ad2
+>
+> But this does more than your proposal as it allows users adding extra
+> scripts when spending a coin. The rationale is described in the revised
+> BIP114:
+> https://github.com/jl2012/bips/blob/vault/bip-0114.
+> mediawiki#Additional_scripts_in_witness
+>
+> So to make it functionally comparable with your proposal, the
+> IsMSV0Stack() function is not needed. The new 249-254 lines in
+> interpreter.cpp could be removed. The new 1480-1519 lines could be replaced
+> by a few lines copied from the existing P2WSH code. I can make a minimal
+> version if you want to see how it looks like
+>
+>
+> >
+> > Kind regards,
+> > Mark Friedenbach
+> >
+>
+>
+>
+>
+> ------------------------------
+>
+> Message: 2
+> Date: Tue, 12 Sep 2017 11:06:15 +0200
+> From: Thomas Voegtlin <thomasv at electrum.org>
+> To: bitcoin-dev at lists.linuxfoundation.org
+> Subject: Re: [bitcoin-dev] Proposal: Extended serialization format for
+>         BIP-32
+> Message-ID: <99643f72-f72f-e4e9-ac2b-72bf519c25b5 at electrum.org>
+> Content-Type: text/plain; charset=utf-8
+>
+>
+>
+> On 09.09.2017 16:08, shiva sitamraju via bitcoin-dev wrote:
+> > Hi,
+> >
+> > I understand the motivation of adding the birthdate field. However, not
+> > very comfortable with having this in the public key serialization. There
+> > are privacy implication of both the birthday field and having the
+> complete
+> > derivation path, which takes space.
+> > > I am fine with Thomas proposal of {x,y,z}. Having additional version
+> byte
+> > field looks modular but since since we already have the big enough
+> version
+> > field in bip32, better to use that instead of adding more bytes.
+> >
+> > Thomas, can you please explain why we require different version for
+> P2WPKH
+> > or P2WSH versus (P2WPKH or P2WSH) nested in P2SH. It looked to me that
+> they
+> > would have the same output bitcoin address and under same account.
+>
+> no, native scripts do not have the same address. see bip173
+>
+>
+> >
+> > On Fri, Sep 8, 2017 at 2:09 AM, <
+> > bitcoin-dev-request at lists.linuxfoundation.org> wrote:
+> >
+> >> Send bitcoin-dev mailing list submissions to
+> >>         bitcoin-dev at lists.linuxfoundation.org
+> >>
+> >> To subscribe or unsubscribe via the World Wide Web, visit
+> >>         https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >> or, via email, send a message with subject or body 'help' to
+> >>         bitcoin-dev-request at lists.linuxfoundation.org
+> >>
+> >> You can reach the person managing the list at
+> >>         bitcoin-dev-owner at lists.linuxfoundation.org
+> >>
+> >> When replying, please edit your Subject line so it is more specific
+> >> than "Re: Contents of bitcoin-dev digest..."
+> >>
+> >>
+> >> Today's Topics:
+> >>
+> >>    1. Re: Proposal: Extended serialization format for   BIP-32
+> >>       wallets (Andreas Schildbach)
+> >>    2. Re: Proposal: Extended serialization format for BIP-32
+> >>       wallets (Pavol Rusnak)
+> >>    3. Re: Fast Merkle Trees (Mark Friedenbach)
+> >>    4. Re: Proposal: Extended serialization format for BIP-32
+> >>       wallets (Thomas Voegtlin)
+> >>
+> >>
+> >> ----------------------------------------------------------------------
+> >>
+> >> Message: 1
+> >> Date: Thu, 7 Sep 2017 21:35:49 +0200
+> >> From: Andreas Schildbach <andreas at schildbach.de>
+> >> To: bitcoin-dev at lists.linuxfoundation.org
+> >> Subject: Re: [bitcoin-dev] Proposal: Extended serialization format for
+> >>         BIP-32 wallets
+> >> Message-ID: <oos72e$rjp$1 at blaine.gmane.org>
+> >> Content-Type: text/plain; charset=utf-8
+> >>
+> >> On 09/07/2017 06:23 PM, Pavol Rusnak via bitcoin-dev wrote:
+> >>> On 07/09/17 06:29, Thomas Voegtlin via bitcoin-dev wrote:
+> >>>> A solution is still needed to wallets who do not wish to use BIP43
+> >>>
+> >>> What if we added another byte field OutputType for wallets that do not
+> >>> follow BIP43?
+> >>>
+> >>> 0x00 - P2PKH output type
+> >>> 0x01 - P2WPKH-in-P2SH output type
+> >>> 0x02 - native Segwit output type
+> >>>
+> >>> Would that work for you?
+> >>
+> >> I think that would work.
+> >>
+> >>> The question is whether this field should be present only if
+> depth==0x00
+> >>> or at all times. What is your suggestion, Thomas?
+> >>
+> >> In case of Bitcoin Wallet, the depth is not null (m/0'/[0,1]) and still
+> >> we need this field. I think it should always be present if a chain is
+> >> limited to a certain script type.
+> >>
+> >> There is however the case where even on one chain, script types are
+> >> mixed. In this case the field should be omitted and the wallet needs to
+> >> scan for all (known) types. Afaik Bitcoin Core is taking this path.
+> >>
+> >>
+> >>
+> >> ------------------------------
+> >>
+> >> Message: 2
+> >> Date: Thu, 7 Sep 2017 22:00:05 +0200
+> >> From: Pavol Rusnak <stick at satoshilabs.com>
+> >> To: Andreas Schildbach <andreas at schildbach.de>, Bitcoin Protocol
+> >>         Discussion <bitcoin-dev at lists.linuxfoundation.org>
+> >> Subject: Re: [bitcoin-dev] Proposal: Extended serialization format for
+> >>         BIP-32 wallets
+> >> Message-ID: <40ed03a1-915c-33b0-c4ac-e898c8c733ba at satoshilabs.com>
+> >> Content-Type: text/plain; charset=windows-1252
+> >>
+> >> On 07/09/17 21:35, Andreas Schildbach via bitcoin-dev wrote:
+> >>> In case of Bitcoin Wallet, the depth is not null (m/0'/[0,1]) and still
+> >>> we need this field.
+> >>
+> >> But the depth of exported public key will be null. It does not make
+> >> sense to export xpub for m or m/0' for your particular case.
+> >>
+> >>> I think it should always be present if a chain is
+> >>> limited to a certain script type.
+> >>
+> >> I am fine with having the path there all the time.
+> >>
+> >>> There is however the case where even on one chain, script types are
+> >>> mixed. In this case the field should be omitted and the wallet needs to
+> >>> scan for all (known) types. Afaik Bitcoin Core is taking this path.
+> >>
+> >> Is that really the case? Why come up with a hierarchy and then don't use
+> >> it?
+> >>
+> >> --
+> >> Best Regards / S pozdravom,
+> >>
+> >> Pavol "stick" Rusnak
+> >> CTO, SatoshiLabs
+> >>
+> >>
+> >> ------------------------------
+> >>
+> >> Message: 3
+> >> Date: Thu, 7 Sep 2017 13:04:30 -0700
+> >> From: Mark Friedenbach <mark at friedenbach.org>
+> >> To: Russell O'Connor <roconnor at blockstream.io>
+> >> Cc: Bitcoin Protocol Discussion
+> >>         <bitcoin-dev at lists.linuxfoundation.org>
+> >> Subject: Re: [bitcoin-dev] Fast Merkle Trees
+> >> Message-ID: <40D6F502-3380-4B64-BCD9-80D361EED35C at friedenbach.org>
+> >> Content-Type: text/plain; charset="us-ascii"
+> >>
+> >> TL;DR I'll be updating the fast Merkle-tree spec to use a different
+> >>       IV, using (for infrastructure compatability reasons) the scheme
+> >>       provided by Peter Todd.
+> >>
+> >> This is a specific instance of a general problem where you cannot
+> >> trust scripts given to you by another party. Notice that we run into
+> >> the same sort of problem when doing key aggregation, in which you must
+> >> require the other party to prove knowledge of the discrete log before
+> >> using their public key, or else key cancellation can occur.
+> >>
+> >> With script it is a little bit more complicated as you might want
+> >> zero-knowledge proofs of hash pre-images for HTLCs as well as proofs
+> >> of DL knowledge (signatures), but the basic idea is the same. Multi-
+> >> party wallet level protocols for jointly constructing scriptPubKeys
+> >> should require a 'delinearization' step that proves knowledge of
+> >> information necessary to complete each part of the script, as part of
+> >> proving the safety of a construct.
+> >>
+> >> I think my hangup before in understanding the attack you describe was
+> >> in actualizing it into a practical attack that actually escalates the
+> >> attacker's capabilities. If the attacker can get you to agree to a
+> >> MAST policy that is nothing more than a CHECKSIG over a key they
+> >> presumably control, then they don't need to do any complicated
+> >> grinding. The attacker in that scenario would just actually specify a
+> >> key they control and take the funds that way.
+> >>
+> >> Where this presumably leads to an actual exploit is when you specify a
+> >> script that a curious counter-party actually takes the time to
+> >> investigate and believes to be secure. For example, a script that
+> >> requires a signature or pre-image revelation from that counter-party.
+> >> That would require grinding not a few bytes, but at minimum 20-33
+> >> bytes for either a HASH160 image or the counter-party's key.
+> >>
+> >> If I understand the revised attack description correctly, then there
+> >> is a small window in which the attacker can create a script less than
+> >> 55 bytes in length, where nearly all of the first 32 bytes are
+> >> selected by the attacker, yet nevertheless the script seems safe to
+> >> the counter-party. The smallest such script I was able to construct
+> >> was the following:
+> >>
+> >>     <fake-pubkey> CHECKSIGVERIFY HASH160 <preimage> EQUAL
+> >>
+> >> This is 56 bytes and requires only 7 bits of grinding in the fake
+> >> pubkey. But 56 bytes is too large. Switching to secp256k1 serialized
+> >> 32-byte pubkeys (in a script version upgrade, for example) would
+> >> reduce this to the necessary 55 bytes with 0 bits of grinding. A
+> >> smaller variant is possible:
+> >>
+> >>     DUP HASH160 <fake-pubkey-hash> EQUALVERIFY CHECKSIGVERIFY HASH160
+> >> <preimage> EQUAL
+> >>
+> >> This is 46 bytes, but requires grinding 96 bits, which is a bit less
+> >> plausible.
+> >>
+> >> Belts and suspenders are not so terrible together, however, and I
+> >> think there is enough of a justification here to look into modifying
+> >> the scheme to use a different IV for hash tree updates. This would
+> >> prevent even the above implausible attacks.
+> >>
+> >>
+> >>> On Sep 7, 2017, at 11:55 AM, Russell O'Connor <roconnor at blockstream.io
+> >
+> >> wrote:
+> >>>
+> >>>
+> >>>
+> >>> On Thu, Sep 7, 2017 at 1:42 PM, Mark Friedenbach <mark at friedenbach.org
+> >> <mailto:mark at friedenbach.org>> wrote:
+> >>> I've been puzzling over your email since receiving it. I'm not sure it
+> >>> is possible to perform the attack you describe with the tree structure
+> >>> specified in the BIP. If I may rephrase your attack, I believe you are
+> >>> seeking a solution to the following:
+> >>>
+> >>> Want: An innocuous script and a malign script for which
+> >>>
+> >>>    double-SHA256(innocuous)
+> >>>
+> >>> is equal to either
+> >>>
+> >>>    fast-SHA256(double-SHA256(malign) || r) or
+> >>>    fast-SHA256(r || double-SHA256(malign))
+> >>>
+> >>> or  fast-SHA256(fast-SHA256(double-SHA256(malign) || r1) || r0)
+> >>> or  fast-SHA256(fast-SHA256(r1 || double-SHA256(malign)) || r0)
+> >>> or ...
+> >>>
+> >>> where r is a freely chosen 32-byte nonce. This would allow the
+> >>> attacker to reveal the innocuous script before funds are sent to the
+> >>> MAST, then use the malign script to spend.
+> >>>
+> >>> Because of the double-SHA256 construction I do not see how this can be
+> >>> accomplished without a full break of SHA256.
+> >>>
+> >>> The particular scenario I'm imagining is a collision between
+> >>>
+> >>>     double-SHA256(innocuous)
+> >>>
+> >>> and
+> >>>
+> >>>     fast-SHA256(fast-SHA256(fast-SHA256(double-SHA256(malign) || r2)
+> ||
+> >> r1) || r0).
+> >>>
+> >>> where innocuous is a Bitcoin Script that is between 32 and 55 bytes
+> long.
+> >>>
+> >>> Observe that when data is less than 55 bytes then double-SHA256(data) =
+> >> fast-SHA256(fast-SHA256(padding-SHA256(data)) || 0x8000...100) (which
+> is
+> >> really the crux of the matter).
+> >>>
+> >>> Therefore, to get our collision it suffices to find a collision between
+> >>>
+> >>>     padding-SHA256(innocuous)
+> >>>
+> >>> and
+> >>>
+> >>>     fast-SHA256(double-SHA256(malign) || r2) || r1
+> >>>
+> >>> r1 can freely be set to the second half of padding-SHA256(innocuous),
+> so
+> >> it suffices to find a collision between
+> >>>
+> >>>    fast-SHA256(double-SHA256(malign) || r2)
+> >>>
+> >>> and the first half of padding-SHA256(innocuous) which is equal to the
+> >> first 32 bytes of innocuous.
+> >>>
+> >>> Imagine the first opcode of innocuous is the push of a value that the
+> >> attacker claims to be his 33-byte public key.
+> >>> So long as the attacker doesn't need to prove that they know the
+> >> discrete log of this pubkey, they can grind r2 until the result of
+> >> fast-SHA256(double-SHA256(malign) || r2) contains the correct first
+> >> couple of bytes for the script header and the opcode for a 33-byte
+> push.  I
+> >> believe that is only about 3 or 4 bytes of they need to grind out.
+> >>>
+> >>
+> >> -------------- next part --------------
+> >> An HTML attachment was scrubbed...
+> >> URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> >> attachments/20170907/63af0292/attachment-0001.html>
+> >>
+> >> ------------------------------
+> >>
+> >> Message: 4
+> >> Date: Thu, 7 Sep 2017 22:39:17 +0200
+> >> From: Thomas Voegtlin <thomasv at electrum.org>
+> >> To: "bitcoin-dev at lists.linuxfoundation.org"
+> >>         <bitcoin-dev at lists.linuxfoundation.org>
+> >> Subject: Re: [bitcoin-dev] Proposal: Extended serialization format for
+> >>         BIP-32 wallets
+> >> Message-ID: <9e74dc17-105c-b43c-7780-4fa690043fe2 at electrum.org>
+> >> Content-Type: text/plain; charset=windows-1252
+> >>
+> >>
+> >>
+> >> On 07.09.2017 18:23, Pavol Rusnak wrote:
+> >>> On 07/09/17 06:29, Thomas Voegtlin via bitcoin-dev wrote:
+> >>>> A solution is still needed to wallets who do not wish to use BIP43
+> >>>
+> >>> What if we added another byte field OutputType for wallets that do not
+> >>> follow BIP43?
+> >>>
+> >>> 0x00 - P2PKH output type
+> >>> 0x01 - P2WPKH-in-P2SH output type
+> >>> 0x02 - native Segwit output type
+> >>>
+> >>> Would that work for you?
+> >>>
+> >>> The question is whether this field should be present only if
+> depth==0x00
+> >>> or at all times. What is your suggestion, Thomas?
+> >>>
+> >>
+> >>
+> >> well, in my initial proposal, I wrote that this value should be user
+> >> visible. That is why I used version bytes. If you create an extra byte
+> >> field, and then use base58 or bech32 encoding, the value will not be
+> >> user visible anymore.
+> >>
+> >> The initial implementation of segwit xpub/xprv in Electrum used a flag
+> >> that was not user visible (I added 1 to the bip32 version bytes, which
+> >> leaves the xpub/xprv prefix unchanged). I have experimented with that
+> >> invisible flag for more than 6 months now, and I am now convinced that
+> >> it is better to make that flag user visible.
+> >>
+> >> The reason is that when users create wallets with multisig scripts, they
+> >> need to combine several master public keys. However, these master public
+> >> keys should all be of the same type: it would not make sense to create a
+> >> 2 of 3 multisig wallet with a one xpub, one ypub and one zpub. By
+> >> imposing that all master keys are of the same type, we ensure that all
+> >> cosigners agree on the script type that will be used to derive
+> addresses.
+> >>
+> >> In other words, if users are exposed to master keys and need to
+> >> manipulate them, it is better to let them see what they are doing.
+> >>
+> >> OTOH if you do not plan to expose your users to these keys, you probably
+> >> do not need a serialization format.
+> >>
+> >>
+> >> ------------------------------
+> >>
+> >> _______________________________________________
+> >> bitcoin-dev mailing list
+> >> bitcoin-dev at lists.linuxfoundation.org
+> >> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >>
+> >>
+> >> End of bitcoin-dev Digest, Vol 28, Issue 17
+> >> *******************************************
+> >>
+> >
+> >
+> >
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >
+>
+> --
+> Electrum Technologies GmbH / Waldemarstr 37a / 10999 Berlin / Germany
+> Sitz, Registergericht: Berlin, Amtsgericht Charlottenburg, HRB 164636
+> Gesch?ftsf?hrer: Thomas Voegtlin
+>
+>
+> ------------------------------
+>
+> Message: 3
+> Date: Tue, 12 Sep 2017 01:49:34 -0300
+> From: Sergio Demian Lerner <sergio.d.lerner at gmail.com>
+> To: Anthony Towns <aj at erisian.com.au>,  Bitcoin Protocol Discussion
+>         <bitcoin-dev at lists.linuxfoundation.org>
+> Subject: Re: [bitcoin-dev] Responsible disclosure of bugs
+> Message-ID:
+>         <CAKzdR-oYQ8EchpJVE56yJbfBgNHihx7WO_gtFtp6QKOcK7uT-w at mail.gmail.
+> com>
+> Content-Type: text/plain; charset="utf-8"
+>
+> Historically people have published vulnerabilities in Bitcoin only after
+> >80% of the nodes have upgraded. This seems to be the general (but not
+> publicly stated) policy. If you're a core developer and you know better,
+> please correct me.
+>
+> This means that:
+>
+> - a critical vulnerability, like a remote code execution, will be patched
+> immediately (without disclosing the actual problem) and all participants
+> will be notified asap. This is no different from any other open source
+> project. An example of this case was the OpenSSL Heartbleed vulnerability
+> that affected Bitcoin.
+>
+> - a non-critical vulnerability, either because miners only can exploit it
+> or because it requires vast resources to pull, may require a wait of years
+> before publication, after a vulnerability was found and reported. This is
+> because the "natural" node upgrade rate is slow.
+>
+> It also implies that some times a researcher works hard to investigate a
+> vulnerability and later he finds out it was previously reported. It also
+> means that the researcher cannot report to alt-coins which have a different
+> policy.
+>
+> This policy has nothing to do with a loyalty to Bitcoin Core (or in fact,
+> the two or so developers that actually receive the e-mails to
+> security at bitcoincore.org).
+>
+> This is a policy that has simply proven to work to protect Bitcoiners. It
+> began long long ago.
+>
+>
+>
+> On Tue, Sep 12, 2017 at 12:37 AM, Anthony Towns via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+> > On Mon, Sep 11, 2017 at 07:34:33AM -0400, Alex Morcos wrote:
+> > > I don't think I know the right answer here, but I will point out two
+> > things
+> > > that make this a little more complicated.
+> > > 1 - There are lots of altcoin developers and while I'm sure the
+> majority
+> > would
+> > > greatly appreciate the disclosure and would behave responsibly with the
+> > > information, I don't know where you draw the line on who you tell and
+> > who you
+> > > don't.
+> >
+> > If you can't pick even a small group that's trustworthy (top five by
+> > market cap as a start [0]? or just major bitcoin wallets / exchanges /
+> > alt node implementations?), then it still seems better to (eventually)
+> > disclose publically than keep it unrevealed and let it be a potential
+> > advantage for attackers against people who haven't upgraded for other
+> > reasons?
+> >
+> > I find it hard to imagine bitcoin's still obscure enough that people
+> > aren't tracking git commit logs to use them as inspiration for attacks
+> > on bitcoin users and businesses; at best I would have thought it'd
+> > only be a few months of development time between a fix being proposed
+> > as a PR or committed to master and black hats having the ability to
+> > exploit it in users who are running older nodes. (Or for that matter,
+> > being able to be exploited by otherwise legitimate bitcoin businesses
+> > with an agenda to push, a strong financial motive behind that agenda,
+> > and a legal team that says they'll get away with it)
+> >
+> > > 2- Unlike other software, I'm not sure good security for bitcoin is
+> > defined by
+> > > constant upgrading.  Obviously upgrading has an important benefit, but
+> > one of
+> > > the security considerations for Bitcoin is knowing that your definition
+> > of the
+> > > money hasn't changed.  Much harder to know that if you change software.
+> >
+> > Isn't that just an argument for putting more effort into backporting
+> > fixes/workarounds? (I don't see how you do that without essentially
+> > publically disclosing which patches have a security impact -- "oh,
+> > gosh, this patch gets a backport, I wonder if maybe it has security
+> > implications...")
+> >
+> > (In so far as bitcoin is a consensus system, there can sometimes be a
+> > positive network effect, where having other people upgrade can help your
+> > security, even if you don't upgrade; "herd immunity" if you will. That
+> > way a new release going out to other people helps keep you safe, even
+> > while you continue to maintain the same definition of money by not
+> > upgrading at all)
+> >
+> > If altcoin maintainers are inconvenienced by tracking bitcoin-core
+> > updates, that would be an argument for them to contribute back to their
+> > upstream to make their own job easier; either helping with backports,
+> > or perhaps contributing to patches like PR#8994 might help.
+> >
+> > All of those things seem like they'd help not just altcoins but bitcoin
+> > investors/traders too, so it's not even a trade-off between classes of
+> > bitcoin core users.  And if in the end various altcoins aren't able to
+> > keep up with security fixes, that's probably valuable information to
+> > provide to the market...
+> >
+> > Cheers,
+> > aj
+> >
+> > [0] Roughly: BCash, Litecoin, Dash, BitConnect, ZCash, Dogecoin?
+> >     I've no idea which of those might have trustworthy devs to work with,
+> >     but surely at least a couple do?
+> >
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> >
+> -------------- next part --------------
+> An HTML attachment was scrubbed...
+> URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> attachments/20170912/78a88c9e/attachment.html>
+>
+> ------------------------------
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+> End of bitcoin-dev Digest, Vol 28, Issue 26
+> *******************************************
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170912/39e7a072/attachment-0001.html>
