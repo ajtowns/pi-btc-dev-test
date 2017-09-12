@@ -1,0 +1,103 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Mon, 11 Sep 2017 19:03:42 -0700
+Subject: [bitcoin-dev] Merkle branch verification & tail-call semantics
+ for generalized MAST
+In-Reply-To: <26AD157C-A5A9-48C3-8D29-0AD1ED35EDDD@xbt.hk>
+References: <5B6756D0-6BEF-4A01-BDB8-52C646916E29@friedenbach.org>
+	<26AD157C-A5A9-48C3-8D29-0AD1ED35EDDD@xbt.hk>
+Message-ID: <2419914E-E196-44B4-8663-599AF616A897@friedenbach.org>
+
+My apologies for a delay in responding to emails on this list; I have
+been fighting a cold.
+
+(Also my apologies to Johnson Lau, as I forgot to forward this to the list.)
+
+On Sep 8, 2017, at 2:21 AM, Johnson Lau <jl2012 at xbt.hk> wrote:
+
+> Tail-call execution semantics require "unclean stake" , i.e. final
+> stake with more than one item. However, "unclean stake" is invalid
+> (not just non-standard) in BIP141, so you could only use it with
+> legacy P2SH (which is totally pointless....). A different design
+> like OP_EVAL might be needed, or you need a new witness script
+> version.
+
+I believe you meant "unclean stack," and you are correct. This was
+also pointed out last tuesday by a participant at the in-person
+CoreDev meetup where the idea was presented.
+
+This doesn't kill the idea, it just complicates the implementation
+slightly. A simple fix would be to allow tail-recursion to occur if
+the stack is not clean (as can happen with legacy P2SH as you point
+out, or yet to be defined version 1+ forms of segwit script), OR if
+there is a single item on the stack and the alt-stack is not empty.
+For segwit v0 scripts you then have to move any arguments to the alt
+stack before ending the redeem script, leaving just the policy script
+on the main stack.
+
+> I think you have also missed the sigOp counting of the executed
+> script. As you can't count it without executing the script, the
+> current static analysability is lost. This was one of the reasons
+> for OP_EVAL being rejected. Since sigOp is a per-block limit, any
+> OP_EVAL-like operation means block validity will depend on the
+> precise outcome of script execution (instead of just pass or fail),
+> which is a layer violation.
+
+I disagree with this design requirement.
+
+The SigOp counting method used by bitcoin is flawed. It incorrectly
+limits not the number of signature operations necessary to validate a
+block, but rather the number of CHECKSIGs potentially encountered in
+script execution, even if in an unexecuted branch. (Admitedly MAST
+makes this less of an issue, but there are still useful compact
+scripts that use if/else constructs to elide a CHECKSIG.) Nor will it
+account for aggregation when that feature is added, or properly
+differentiate between signature operations that can be batched and
+those that can not.
+
+Additionally there are other resources used by script that should be
+globally limited, such as hash operations, which are not accounted for
+at this time and cannot be statically assessed, even by the flawed
+mechanism by which SigOps are counted. I have maintained for some time
+that bitcoin should move from having multiple separate global limits
+(weight and sigops, hashed bytes in XT/Classic/BCH) to a single linear
+metric that combines all of these factors with appropriate
+coefficients.
+
+A better way of handling this problem, which works for both SigOps and
+HashOps, is to have the witness commit to the maximum resources
+consumed by validation of the spend of the coin, to relay this data
+with the transaction and include it in the SigHash, and to use the
+committed maximum for block validation. This could be added in a
+future script version upgrade. This change would also resolve the
+issue that led to the clean stack rule in segwit, allowing future
+versions of script to use tail-call recursion without involving the
+alt-stack.
+
+Nevertheless it is constructive feedback that the current draft of the
+BIP and its implementation do not count SigOps, at all. There are a
+couple of ways this can be fixed by evaluating the top-level script
+and then doing static analysis of the resulting policy script, or by
+running the script and counting operations actually performed.
+
+Additionally, it is possible that we take this time to re-evaluate
+whether we should be counting SigOps other than for legacy consensus
+rule compliance. The speed of verification in secp256k1 has made
+signature operations no longer the chief concern in block validation
+times.
+
+> Witness script versioning is by design fully compatible with P2SH
+> and BIP173, so there will be no hurdle for existing wallets to pay
+> to BIP114. Actually it should be completely transparent to them.
+
+This is correct. Your feedback will be incorporated.
+
+> For code complexity, the minimal BIP114 could be really simple, like
+> <30 lines of code? It looks complex now because it does much more
+> than simply hiding scripts in a hash.
+
+Is there a repo that contains the latest implementation of BIP 114,
+for comparison purposes?
+
+Kind regards,
+Mark Friedenbach
+
