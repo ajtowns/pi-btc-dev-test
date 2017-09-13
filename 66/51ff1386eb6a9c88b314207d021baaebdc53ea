@@ -1,0 +1,112 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Wed, 13 Sep 2017 10:09:52 +0100
+Subject: [bitcoin-dev] 2 softforks to cut the blockchain and IBD time
+In-Reply-To: <351373080.1326948.1505257115533@mail.yahoo.com>
+References: <351373080.1326948.1505257115533.ref@mail.yahoo.com>
+	<351373080.1326948.1505257115533@mail.yahoo.com>
+Message-ID: <CAE-z3OUeHfPh28MqjVhJ9pRZ=P8MecaGFwR48Ggw4UaHDjNr6A@mail.gmail.com>
+
+On Tue, Sep 12, 2017 at 11:58 PM, michele terzi via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+>
+> Pros:
+>
+> you gain a much faster syncing for new nodes.
+> full non pruning nodes need a lot less HD space.
+> dropping old history results in more difficult future chainanalysis (at
+> least by small entities)
+> freezing old history in one new genesis block means the chain can no
+> longer be reorged prior to that point
+>
+
+Current nodes allow pruning so you can save disk space that way.  Users
+still need to download/verify the new blocks though.
+
+Under your scheme, you don't need to throw the data away.  Nodes can decide
+how far back that they want to go.
+
+"Fast" IBD
+
+- download header chain from genesis (~4MB per year)
+- check headers against "soft" checkpoints (every 50k blocks)
+- download the UTXO set of the most recent soft checkpoint (and verify
+against hash)
+- download blocks starting from the most recent soft checkpoint
+- node is now ready to use
+- [Optional] Slowly download the remaining blocks
+
+This requires some new protocol messages to allow requesting and send the
+UTXO set, though the inv and getdata messages could be used.
+
+If you add a new services bit, NODE_NETWORK_RECENT, then nodes can find
+other nodes that have the most recent blocks.  This indicates that you have
+all blocks since the most recent snapshot.
+
+The slow download doesn't have to download the blocks in order.  It can
+just check against the header chain.  Once a node has all the blocks, it
+would switch from NODE_NETWORK_RECENT to NODE_NETWORK.
+
+(Multiple bits could be used to indicate that the node has 2 or more recent
+time periods).
+
+"Soft" checkpoints mean that re-orgs can't cause a network partition.  Each
+soft checkpoint is a mapping of {block_hash: utxo_hash}.
+
+A re-org of 1 year or more would be devastating so it is probably
+academic.  Some people may object to centralized checkpointing and soft
+checkpoints cover that objection.
+
+full nodes with old software can no longer be fired up and sync with the
+> existing network
+> full nodes that went off line prior to the second fork cannot sync back
+> once they turn back on line again.
+>
+>
+This is why having archive nodes (and a way to find them) is important.
+
+You could have a weaker requirement that nodes shouldn't delete blocks
+unless they are at least 3 time periods (~3 years) old.
+
+The software should have a setting which allows the user to specify maximum
+disk space.  Disk space is cheap, so it is likely that a reasonable number
+of people will leave that set to infinite.
+
+This automatically results in lots of archive nodes.  Another setting could
+decide how many time periods to download.  2-3 seem reasonable as a default
+(or maybe infinite too).
+
+
+> Addressing security concerns:
+>
+> being able to write a new genesis block means that an evil core has the
+> power to steal/destroy/censor/whatever coins.
+>
+> this is possible only in theory, but not in practice. right now devs can
+> misbehave with every softfork, but the community tests and inspects every
+> new release.
+>
+
+Soft forks are inherently backward compatible.  Coins cannot be stolen
+using a soft fork.  It has nothing to do with inspecting new releases.
+
+It is possible for a majority of miners to re-write history, but that is
+separate to a soft fork.
+
+A soft fork can lock coins away.  This effectively destroys the coins, but
+doesn't steal them.  It could be part of a extortion scheme I guess, but if
+a majority of miners did that, then I think Bitcoin has bigger problems.
+
+
+> the 2 forks will be tested and inspected as well so they are no more risky
+> than other softforks.
+>
+>
+For it to be a soft fork, you need to maintain archive nodes.  That is the
+whole point.  The old network and the new network rules agree that the new
+network rules are valid (and that miners only mine blocks that are valid
+under the new rules).  If IBD is impossible for old nodes, then that counts
+as a network split.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170913/c246eebe/attachment.html>
