@@ -1,0 +1,86 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 13 Sep 2017 06:03:28 -0400
+Subject: [bitcoin-dev] Minutia in CT for Bitcoin. Was: SF proposal:
+ prohibit unspendable outputs with amount=0
+In-Reply-To: <CAAS2fgTGhCztV5bwLQj28_M7e=uzwbdF2Rum_7gmQGjhgxqLuQ@mail.gmail.com>
+References: <CAAS2fgTGhCztV5bwLQj28_M7e=uzwbdF2Rum_7gmQGjhgxqLuQ@mail.gmail.com>
+Message-ID: <20170913100328.GA1613@savin.petertodd.org>
+
+On Wed, Sep 13, 2017 at 09:39:28AM +0000, Gregory Maxwell wrote:
+> On Wed, Sep 13, 2017 at 9:24 AM, Peter Todd via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > 2) Spending CT-shielded outputs to unshielded outputs
+> >
+> > Here one or more CT-shielded outputs will be spent. Since their value is zero,
+> > we make up the difference by spending one or more outputs from the CT pool,
+> > with the change - if any - assigned to a CT-pool output.
+> 
+> Can we solve the problem that pool inputs are gratuitously non-reorg
+> safe, without creating something like a maturity limit for shielded to
+> unshielded?
+
+So to be clear, we have two versions of this problem:
+
+1) CT signatures do *not* sign which pool input they're using
+
+Here, obviously the inputs can be changed at will by miners. An implementation
+could have the exact CT pool input be something miners add; the CT transactions
+broadcast on the P2P network wouldn't actually need them.
+
+
+2) CT signatures *do* sign which pool input they're using
+
+Wallets would pick the input at random. This is required if you want to have a
+transaction spending both CT and legacy inputs. This reduces the reorg risk to
+double-spends. While double-spends are always a potential problem, the problem
+is somewhat worse here, as even regular wallets are spending inputs that anyone
+can choose to spend.
+
+
+> So far the best I have is this:  Support unshielded coins in shielded
+> space too. So the only time you transition out of the pool is paying
+> to a legacy wallet.  If support were phased in (e.g. addresses that
+> say you can pay me in the pool after its enabled), and the pool only
+> used long after wallets supported getting payments in it, then this
+> would be pretty rare and a maturity limit wouldn't be a big deal.
+
+So basically, you're essentially observing that in the event that everyone uses
+CT, this isn't actually a problem; you're allowing everyone to "use" CT, by
+trying to allow even unshielded outputs to "use" it.
+
+Which means by "unshielded output", what you *actuall* mean is creating a CT
+transaction where the output - even though it's a zero-valued CT output - is
+constructed such that the value is public information.
+
+Or do you mean trying to have non-CT outputs in the pool somehow? I don't think
+that makes sense, because the whole point of the pool is that the outputs in it
+are anyone-can-spend, and thus any CT transaction may spend them; which CT
+transaction spends them gives no information about the ownership of the coins.
+This is incompatible with anything but anyone-can-spend outputs.
+
+> Can better be done?
+
+Note that the order in which outputs in the pool are spent can be
+deterministic. For example, you could say that each transaction must spend the
+oldest outputs in the pool (that sum to the value needed). You could probably
+come up with a scheme where the outputs that will be spent in the future in the
+event that the output is spent back to an unshielded output is fixed when the
+output was created, for example, by picking a random index. While this wouldn't
+prevent all collisions, it'd may be possible to make reorgs relatively safe, by
+constraining how miners could txids.
+
+Specifically, you could imagine a scheme where if a given input set can only be
+satisified by unspent pool outputs with index's >= i, then the miner would need
+to have the ability to mine a conflicting transaction that also happened to
+have the same pool output set. Given a sufficiently large set of pool outputs,
+this may be an impractical attack most of the time.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170913/ff9d3b6e/attachment.sig>
