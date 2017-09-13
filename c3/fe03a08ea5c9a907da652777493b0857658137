@@ -1,0 +1,87 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Wed, 13 Sep 2017 05:24:34 -0400
+Subject: [bitcoin-dev] SF proposal: prohibit unspendable outputs with
+ amount=0
+In-Reply-To: <CABm2gDpy3a0vc+4=0a2vFSQ2d1gaAWFkPtzdbXLpNKYFepDU3A@mail.gmail.com>
+References: <CABm2gDojDQWMhw8wW1UkRGKtdbby2+6AFFZLPuRcUb7WF_u5qQ@mail.gmail.com>
+	<20170907180014.GA13727@fedora-23-dvm>
+	<CABm2gDpy3a0vc+4=0a2vFSQ2d1gaAWFkPtzdbXLpNKYFepDU3A@mail.gmail.com>
+Message-ID: <20170913092434.GA1094@savin.petertodd.org>
+
+On Sat, Sep 09, 2017 at 11:11:57PM +0200, Jorge Tim?n wrote:
+> Tier Nolan, right, a new tx version would be required.
+> 
+> I have to look deeper into the CT as sf proposal.
+> 
+> What futures upgrades could this conflict with it's precisely the
+> question here. So that vague statement without providing any example
+> it's not very valuable.
+
+So with Confidential Transactions, the only thing that's changed relative to a
+normal Bitcoin transaction is that fact that the sum of input values is >= the
+sum of output values is proven via a CT proof, rather than revealing the actual
+sums. Other than that, CT transactions don't need to be any different from
+regular transactions.
+
+For CT to be a softfork, we have to ensure that each CT transaction's sum of
+inputs and outputs is valid. An obvious way to do this is to have a pool of
+"shielded" outputs, whose total value is the sum of all CT-protected outputs.
+Outputs in this pool would appear to be anyone-can-spend outputs to pre-CT
+nodes.
+
+This gives us three main cases:
+
+1) Spending unshielded outputs to CT-shielded outputs
+
+Since the CT-shielded output's value is unknown, we can simply set their value
+to zero. Secondly, we will add the newly CT-shielded value to the pool with an
+additional output whose value is the sum of all newly created CT-shielded
+outputs.
+
+
+2) Spending CT-shielded outputs to unshielded outputs
+
+Here one or more CT-shielded outputs will be spent. Since their value is zero,
+we make up the difference by spending one or more outputs from the CT pool,
+with the change - if any - assigned to a CT-pool output.
+
+
+3) Spending CT-shielded outputs to CT-shielded outputs
+
+Since both the inputs and outputs are zero-valued, to pre-CT nodes the
+transaction is perfectly valid: the sum of coins spent is 0 BTC, and the sum of
+coins created is also 0 BTC. We do have the problem of paying miners fees, but
+that could be done with an additional CT output that the miner can spend, a
+child-pays-for-parent transaction, or something else entirely that I haven't
+thought of.
+
+
+> Although TXO commitments are interesting, I don't think they make UTXO
+> growth a "non-issue" and I also don't think they justify not doing
+> this.
+> 
+> Yeah, the costs for spammers are very small and doesn't really improve
+> things all that much, as acknowledged in the initial post.
+
+Suppose zero-valued outputs are prohibited. In case #3 above, if there are more
+outputs than inputs, we need to add an additional input from the CT-shielded
+pool to make up the difference, and an additional change output back to the
+CT-shielded pool.
+
+If shielded-to-shielded transactions are common, these extra outputs could
+consume a significant % of the total blockchain space - that's a significant
+cost. Meanwhile the benefit is so small it's essentially theoretical: an
+additional satoshi per output is an almost trivial cost to an attacker.
+
+Quite simply, I just don't think the cost-benefit tradeoff of what you're
+proposing makes sense.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 455 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170913/e57a0a4e/attachment-0001.sig>
