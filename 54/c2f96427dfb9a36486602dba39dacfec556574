@@ -1,0 +1,54 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Tue, 19 Sep 2017 00:33:54 -0700
+Subject: [bitcoin-dev] cleanstack alt stack & softfork improvements
+ (Was: Merkle branch verification & tail-call semantics for generalized
+ MAST)
+In-Reply-To: <201709190309.08669.luke@dashjr.org>
+References: <5B6756D0-6BEF-4A01-BDB8-52C646916E29@friedenbach.org>
+	<C623794E-F061-4C7A-B05D-378798ED2BF7@friedenbach.org>
+	<201709190309.08669.luke@dashjr.org>
+Message-ID: <CAA2B000-6C54-4AD7-B931-43C99D615A61@friedenbach.org>
+
+
+> On Sep 18, 2017, at 8:09 PM, Luke Dashjr <luke at dashjr.org> wrote:
+> 
+> On Tuesday 19 September 2017 12:46:30 AM Mark Friedenbach via bitcoin-dev 
+> wrote:
+>> After the main discussion session it was observed that tail-call semantics
+>> could still be maintained if the alt stack is used for transferring
+>> arguments to the policy script.
+> 
+> Isn't this a bug in the cleanstack rule?
+
+Well in the sense that "cleanstack" doesn't do what it says, sure.
+
+However cleanstack was introduced as a consensus rule to prevent a
+possible denial of service vulnerability where a third party could
+intercept any* transaction broadcast and arbitrarily add data to the
+witness stack, since witness data is not covered by a checksig.
+
+Cleanstack as-is accomplishes this because any extra items on the
+stack would pass through all realistic scripts, remaining on the stack
+and thereby violating the rule. There is no reason to prohibit extra
+items on the altstack as those items can only arrive there
+purposefully as an action of the script itself, not a third party
+malleation of witness data. You could of course use DEPTH to write a
+script that takes a variable number of parameters and sends them to
+the altstack. Such a script would be malleable if those extra
+parameters are not used. But that is predicated on the script being
+specifically written in such a way as to be vulnerable; why protect
+against that?
+
+There are other solutions to this problem that could have been taken
+instead, such as committing to the number of items or maximum size of
+the stack as part of the sighash data, but cleanstack was the approach
+taken. Arguably for a future script version upgrade one of these other
+approaches should be taken to allow for shorter tail-call scripts.
+
+Mark
+
+* Well, almost any. You could end the script with DEPTH EQUAL and that
+  is a compact way of ensuring the stack is clean (assuming the script
+  finished with just "true" on the stack). Nobody does this however
+  and burning two witness bytes of every redeem script going forward
+  as a protective measure seems like an unnecessary ask.
