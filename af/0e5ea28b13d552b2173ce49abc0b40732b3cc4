@@ -1,0 +1,76 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 22 Sep 2017 01:38:01 +0800
+Subject: [bitcoin-dev] cleanstack alt stack & softfork improvements
+ (Was: Merkle branch verification & tail-call semantics for generalized
+ MAST)
+In-Reply-To: <201709211633.17714.luke@dashjr.org>
+References: <5B6756D0-6BEF-4A01-BDB8-52C646916E29@friedenbach.org>
+	<201709210411.50642.luke@dashjr.org>
+	<21D6060D-97F0-439A-86D3-065C21BACC3F@xbt.hk>
+	<201709211633.17714.luke@dashjr.org>
+Message-ID: <7BF7D0B8-A38C-44B9-B6E9-44A74782CC81@xbt.hk>
+
+
+> On 22 Sep 2017, at 12:33 AM, Luke Dashjr <luke at dashjr.org> wrote:
+> 
+> On Thursday 21 September 2017 8:02:42 AM Johnson Lau wrote:
+>> I think it?s possible only if you spend more witness space to store the
+>> (pubkey, message) pairs, so that old clients could understand the
+>> aggregation produced by new clients. But this completely defeats the
+>> purpose of doing aggregation.
+> 
+> SigAgg is a softfork, so old clients *won't* understand it... am I missing 
+> something?
+> 
+> For example, perhaps the lookup opcode could have a data payload itself (eg, 
+> like pushdata opcodes do), and the script can be parsed independently from 
+> execution to collect the applicable ones.
+
+I think the current idea of sigagg is something like this: the new OP_CHECKSIG still has 2 arguments: top stack must be a 33-byte public key, and the 2nd top stack item is signature. Depends on the sig size, it returns different value:
+
+If sig size is 0, it returns a 0 to the top stack
+If sig size is 1, it is treated as a SIGHASH flag, and the SignatureHash() ?message? is calculated. It sends the (pubkey, message) pair to the aggregator, and always returns a 1 to the top stack
+If sig size is >1, it is treated as the aggregated signature. The last byte is SIGHASH flag. It sends the (pubkey, message) pair and the aggregated signature to the aggregator, and always returns a 1 to the top stack.
+
+If all scripts pass, the aggregator will combine all pairs to obtain the aggkey and aggmsg, and verify against aggsig. A tx may have at most 1 aggsig.
+
+(The version I presented above is somewhat simplified but should be enough to illustrate my point)
+
+So if we have this script:
+
+OP_1 OP_RETURNTRUE <pubkey> OP_CHECKSIG
+
+Old clients would stop at the OP_RETURNTRUE, and will not send the pubkey to the aggregator
+
+If we softfork OP_RETURNTRUE to something else, even as OP_NOP11, new clients will send the (key, msg) pair to the aggregator. Therefore, the aggregator of old and new clients will see different data, leading to a hardfork.
+
+OTOH, OP_NOP based softfork would not have this problem because it won?t terminate script and return true.
+
+
+> 
+>>> This is another approach, and one that seems like a good idea in general.
+>>> I'm not sure it actually needs to take more witness space - in theory,
+>>> such stack items could be implied if the Script engine is designed for
+>>> it upfront. Then it would behave as if it were non-verify, while
+>>> retaining backward compatibility.
+>> 
+>> Sounds interesting but I don?t get it. For example, how could you make a
+>> OP_MUL out of OP_NOP?
+> 
+> The same as your OP_MULVERIFY at the consensus level, except new clients would 
+> execute it as an OP_MUL, and inject pops/pushes when sending such a 
+> transaction to older clients. The hash committed to for the script would 
+> include the inferred values, but not the actual on-chain data. This would 
+> probably need to be part of some kind of MAST-like softfork to be viable, and 
+> maybe not even then.
+> 
+> Luke
+
+I don?t think it?s worth the code complexity, just to save a few bytes of data sent over wire; and to be a soft fork, it still takes the block space.
+
+Maybe we could create many OP_DROPs and OP_2DROPs, so new VERIFY operations could pop the stack. This saves 1 byte and also looks cleaner.
+
+Another approach is to use a new script version for every new non-verify type operation. Problem is we will end up with many versions. Also, signatures from different versions can?t be aggregated. (We may have multiple aggregators in a transaction)
+
+
+
