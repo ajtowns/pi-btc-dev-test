@@ -1,0 +1,59 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Thu, 21 Sep 2017 16:02:42 +0800
+Subject: [bitcoin-dev] cleanstack alt stack & softfork improvements
+ (Was: Merkle branch verification & tail-call semantics for generalized
+ MAST)
+In-Reply-To: <201709210411.50642.luke@dashjr.org>
+References: <5B6756D0-6BEF-4A01-BDB8-52C646916E29@friedenbach.org>
+	<201709190309.08669.luke@dashjr.org>
+	<B8C5E7EF-9062-4431-9B63-06FF855B1D78@xbt.hk>
+	<201709210411.50642.luke@dashjr.org>
+Message-ID: <21D6060D-97F0-439A-86D3-065C21BACC3F@xbt.hk>
+
+
+> On 21 Sep 2017, at 12:11 PM, Luke Dashjr <luke at dashjr.org> wrote:
+> 
+> On Wednesday 20 September 2017 5:13:04 AM Johnson Lau wrote:
+>> 2. OP_RETURNTRUE does not work well with signature aggregation. Signature
+>> aggregation will collect (pubkey, message) pairs in a tx, combine them,
+>> and verify with one signature. However, consider the following case:
+>> 
+>> OP_RETURNTRUE OP_IF <pubkey> OP_CHECKSIGVERIFY OP_ENDIF OP_TRUE
+>> 
+>> For old nodes, the script terminates at OP_RETURNTRUE, and it will not
+>> collect the (pubkey, message) pair.
+>> 
+>> If we use a softfork to transform OP_RETURNTRUE into OP_17 (pushing the
+>> number 17 to the stack), new nodes will collect the (pubkey, message) pair
+>> and try to aggregate with other pairs. This becomes a hardfork.
+> 
+> This seems like a problem for signature aggregation to address, not a problem 
+> for OP_RETURNTRUE... In any case, I don't think it's insurmountable. Signature 
+> aggregation can simply be setup upfront, and have the Script verify inclusion 
+> of keys in the aggregation?
+
+I think it?s possible only if you spend more witness space to store the (pubkey, message) pairs, so that old clients could understand the aggregation produced by new clients. But this completely defeats the purpose of doing aggregation.
+
+We use different skills to save space. For example, we use 1-byte SIGHASH flag to imply the 32-byte message. For maximal space saving, sig aggregation will also rely on such skills. However, the assumption is that all signatures aggregated must follow exactly the same set of rules.
+
+
+> 
+>> Technically, we could create ANY op code with an OP_NOP. For example, if we
+>> want OP_MUL, we could have OP_MULVERIFY, which verifies if the 3rd stack
+>> item is the product of the top 2 stack items. Therefore, OP_MULVERIFY
+>> OP_2DROP is functionally same as OP_MUL, which removes the top 2 items and
+>> returns the product. The problem is it takes more witness space.
+> 
+> This is another approach, and one that seems like a good idea in general. I'm 
+> not sure it actually needs to take more witness space - in theory, such stack 
+> items could be implied if the Script engine is designed for it upfront. Then 
+> it would behave as if it were non-verify, while retaining backward 
+> compatibility.
+
+Sounds interesting but I don?t get it. For example, how could you make a OP_MUL out of OP_NOP?
+
+
+> 
+> Luke
+
+
