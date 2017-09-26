@@ -1,0 +1,52 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Tue, 26 Sep 2017 18:38:59 -0400
+Subject: [bitcoin-dev] Sidechains: Mainstake
+In-Reply-To: <CAGL6+mEXEzrWK0w58tXEzHWvMQLdUJVEcJ5wBiFO0ye0yrKaig@mail.gmail.com>
+References: <rRLvSIAs4ZyW4YTai9d_ON_xV2HH6NlhRIsU2C9mzTKiGuXmtJjafTtmK9lJIgBYVNVRGcfKAWON_l2ZE9bKuqON11NXGoKKn1SOGXi8Dbs=@protonmail.com>
+	<CAGL6+mEXEzrWK0w58tXEzHWvMQLdUJVEcJ5wBiFO0ye0yrKaig@mail.gmail.com>
+Message-ID: <XcdjnX4QElnhSZmxpbKIol_Purbp8BUaX4wpZhoHDCKh7PBgwGgba2zy9KUkjlbLQ7fXotLsoXnLz5cg-39C0T2sx65UPGnMWf0B__r1do0=@protonmail.com>
+
+Good morning,
+
+>>For each sidechain ID, for each mainchain block, at most one sidechain block header may be published. In addition, the sidechain block header
+>published on the mainchain blocks may only be published by the stake lottery winner from the end of the previous block.
+>
+>What happens if the stake winner disappears? It seems, in your scheme, that this would cause progress to come to a screeching halt.
+
+The stake winner is only valid for a specific mainchain block.  If the stake winner is unable to publish a sidechain header on that mainchain block, then the mainchain block contains no sidechain header.  On the next mainchain block, a new stake winner is selected based on the mainchain block header hash of the mainchain block containing no sidechain header, hopefully that will be a different mainstaker.  So the stake winner will only slow down the sidechain temporarily.
+
+Basically, the time to the next mainchain block is the "timeout" that the stake winner has to publish its sidechain header.  If we assume that mainchain will operate continuously (because a massive lack of mainchain activity would imply the death of the mainchain anyway) then the sidechain only gets slowed down (no block) if the stake winner does not respond.  Presumably this will not happen if the sidechain has pending transactions, as the stake winner would "lose its winning ticket" if it was unable to respond in a timely manner and lose its opportunity to earn sidechain transaction fees.
+
+If the stake winner has lost keys completely, then the stake has a lock time and after the lock time the stake will no longer be part of the stake lottery, so while it would slow down the sidechain until the lock time, after the lock time it will no longer have an effect.
+
+A passive attack, where a mainstaker just stakes and resets the stake when its lock time arrives, but does not publish any sidechain headers, will slow down the sidechain, but the mainstaker could have been earning sidechain fees if it were participating honestly instead, so the passive mainstaker suffers opportunity cost.
+
+>>Our weak mitigation against a mainchain miner >50% attack is weakened further; now the mainchain miner with 51% hashpower need only block the
+>creation of sidechain mainstake UTXOs except its own, and eventually the other mainstake UTXOs will time out and the miner can outright steal
+>costlessly
+>
+>Can we not nest mainstake outputs in p2wsh/p2sh scripts to mitigate this? This means that they cannot block the creation of mainstake utxos -- but I
+>guess they would still be able to block the spends of this utxo.
+
+The lottery needs to be executable by the mainchain fullnodes.  Thus the mainchain fullnodes need to be aware of which UTXOs are to be put in the lottery, not just the sidechain fullnodes.  This is why I use scriptPubKey, rather than P2SH redeemScript.  However, this does allow mainchain miners to be aware of which UTXOs are mainstakes also, and allows them to censor these transactions.
+
+>Another thing that is problematic with using a p2sh output is 'relocking' the stake. Unfortunately if the p2sh script hash's aren't identical I don't think we
+>can guarantee they didn't spend the stake to a non stake output. If the script hash's *are* identical then the miner can censor the transaction that
+>re-locks the output.
+>
+>Perhaps there is a hybrid that would work, however it depends on what you mean by 'creation'. If it is just the *initial* creation of the utxo -- and not
+>subsequent OP_STAKEVERIFY change outputs -- I think this strategy might work. You just won't be able to participate in the lottery while the utxo is
+>nested inside the p2sh output initially.
+
+Yes, it prevents the lottery from including the UTXO.  As it is not in the lottery, it cannot be a stake winner and cannot publish a sidechain block header until the lock time, when it can now publish openly that it is a stake UTXO using scriptPubKey.  This makes OP_STAKEVERIFY work almost as much as OP_CHECKLOCKTIMEVERIFY when inside a redeemScript.
+
+>This also brings back the problem above -- what if a stake winner disappears -- or a miners creates the illusion they disappeared via censorship? I
+>guess a miner would be losing out on transaction fees.
+
+Yes, although the mainchain transaction fees from publishing sidechain block headers will only be marginally higher than the prevailing fee rate of the block.  For a particular block, the stake winner has a monopoly (it is the only one allowed to publish a sidechain header for that block) and does not need to bid with other mainstakers, and can bid the minimum necessary just to get into the mainchain block.
+
+Regards,
+ZmnSCPxj
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170926/6965d03b/attachment.html>
