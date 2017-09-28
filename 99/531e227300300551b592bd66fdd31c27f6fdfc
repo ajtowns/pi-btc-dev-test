@@ -1,0 +1,89 @@
+From: sjors@sprovoost.nl (Sjors Provoost)
+Date: Thu, 28 Sep 2017 15:43:05 +0300
+Subject: [bitcoin-dev] Address expiration times should be added to
+	BIP-173
+In-Reply-To: <oqihpf$5gc$1@blaine.gmane.org>
+References: <20170927160654.GA12492@savin.petertodd.org>
+	<oqihpf$5gc$1@blaine.gmane.org>
+Message-ID: <B5DE4E92-C5B3-4C01-A148-E3C46C897323@sprovoost.nl>
+
+Peter Todd wrote:
+
+> 
+> Re-use of old addresses is a major problem, not only for privacy, but also
+> operationally: services like exchanges frequently have problems with users
+> sending funds to addresses whose private keys have been lost or stolen;
+
+[...]
+> 
+> To help combat this problem, I suggest that we add a UI-level expiration time
+> to the new BIP173 address format. Wallets would be expected to consider
+> addresses as invalid as a destination for funds after the expiration time is
+> reached.
+
+[...]
+
+Perhaps outside the scope of BIP173, but what about baking it into the protocol? That way a transaction that's sent too late, simply won't get confirmed. This removes the need for refund logic or asking a customer to pay just a few extra cents. You could also disallow a second payment.
+
+Two downsides I can think of:
+* privacy, as differences in expiration policy would be visible on chain
+* miners might be able to game it in their interaction with brokers
+
+> Being just an expiration time, seconds-level resolution is unnecessary, and
+> may give the wrong impression. I'd suggest either:
+> 
+> 1) Hour resolution - 2^24 hours = 1914 years
+> 2) Month resolution - 2^16 months = 5458 years
+
+So that's 4.8 characters for hours, or 3.2 for years, plus checksum space? The shorter the better. Perhaps one or two bits can be used to specify an exponent; a large range seems more useful than high precision. For instance a merchant doesn't care if the customer pays within 10:00:00 minutes or 10:00:01 minutes and you wouldn't care if your address is valid 50 years or 50 years and 3 minutes. This point may be mute if minute level resolution is not practical.
+
+> Both options have the advantage of working well at the UI level regardless of
+> timezone: the former is sufficiently short that UI's can simply display an
+> "exact" time (though note different leap second interpretations), while the
+> latter is long enough that rounding off to the nearest day in the local
+> timezone is fine.
+> 
+> Supporting hour-level (or just seconds) precision has the advantage of making
+> it easy for services like exchanges to use addresses with relatively short
+> validity periods, to reduce the risks of losses after a hack. Also, using at
+> least hour-level ensures we don't have any year 2038 problems.
+
+Greg Maxwell wrote:
+
+> One thing to keep in mind is that address format linked fields are
+> most efficient if they're multiples of 5 bits.  Perhaps use 1 bit to
+> indicate an embedded amount and 19 bits of 1 day precision, resulting
+> in a 1435 year span.
+
+Is this because 5 bits are one bech32 character (2^5=32) or there is another reason? And does that include the space needed for the checksum?
+
+
+Hopefully one day addresses can be abstracted away, because they really aren't what people intuitively think they are, but I don't see that happen on short notice. Until then they shouldn't exhibit "surprising" behavior.
+
+Embedding amounts in an address could confuse people when they reuse it. Wallets would e.g. have to ignore the amount value if they previously sent money, but without changing the address string displayed in the UI.
+
+
+> Keep in mind that high precision of the expiration times is asking the
+> sender to have a higher precision of idea of the time, date only is
+> kinda nice.  I think shorter expiration times are unlikely to be
+> useful due to clock skew-- you can't assume a signer has any access to
+> the Bitcoin network at all.
+
+Many merchant services and exchanges use 10-15 minute expiration though. At the wallet level, all sender and recipient need to agree on is their relative time. Fallback behavior for a signer with no access to time could be to ignore the deadline.
+
+Andreas Schildbach wrote:
+> 
+> This feels redundant to me; the payment protocol already has an
+> expiration time.
+
+The BIP-70 payment protocol has significant overhead and most importantly requires back and forth. Emailing a bitcoin address or printing it on an invoice is much easier, so I would expect people to keep doing that.
+
+Sjors
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 833 bytes
+Desc: Message signed with OpenPGP
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170928/48685946/attachment-0001.sig>
