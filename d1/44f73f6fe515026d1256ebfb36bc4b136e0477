@@ -1,0 +1,187 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Fri, 29 Sep 2017 01:53:55 +0000
+Subject: [bitcoin-dev] Rebatable fees & incentive-safe fee markets
+In-Reply-To: <359FFE85-86AF-4FBD-9491-3528382E5002@friedenbach.org>
+References: <359FFE85-86AF-4FBD-9491-3528382E5002@friedenbach.org>
+Message-ID: <DC1B3730-756E-4A9B-BE6E-481B78E4104D@mattcorallo.com>
+
+I'm somewhat curious what the authors envisioned the real-world implications of this model to be. While blindly asking users to enter what they're willing to pay always works in theory, I'd imagine in such a world the fee selection UX would be similar to what it is today - users are provided a list of options with feerates and expected confirmation times from which to select. Indeed, in a world where users pay a lower fee if they paid more than necessary fee estimation could be more willing to overshoot and the UX around RBF and CPFP could be simplified greatly, but I'm not actually convinced that it would result in higher overall mining revenue.
+
+The UX issues with RBF and CPFP, not to mention the UX issues involved in optimizing for quick confirmation are, indeed, quite significant, but I believe them to be solveable with rather striaght-forward changes. Making the market more useable (for higher or lower overall miner revenue) may be a sufficient goal, however, to want to consider something like this.
+
+On September 28, 2017 9:06:29 PM EDT, Mark Friedenbach via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>This article by Ron Lavi, Or Sattath, and Aviv Zohar was forwarded to
+>me and is of interest to this group:
+>
+>    "Redesigning Bitcoin's fee market"
+>    https://arxiv.org/abs/1709.08881
+>
+>I'll briefly summarize before providing some commentary of my own,
+>including transformation of the proposed mechanism into a relatively
+>simple soft-fork.  The article points out that bitcoin's auction
+>model for transaction fees / inclusion in a block is broken in the
+>sense that it does not achieve maximum clearing price* and to prevent
+>strategic bidding behavior.
+>
+>(* Maximum clearing price meaning highest fee the user is willing to
+>   pay for the amount of time they had to wait.  In other words, miner
+>   income.  While this is a common requirement of academic work on
+>   auction protocols, it's not obvious that it provides intrinsic
+>   benefit to bitcoin for miners to extract from users the maximum
+>   amount of fee the market is willing to support.  However strategic
+>   bidding behavior (e.g. RBF and CPFP) does have real network and
+>   usability costs, which a more "correct" auction model would reduce
+>   in some use cases.)
+>
+>Bitcoin is a "pay your bid" auction, where the user makes strategic
+>calculations to determine what bid (=fee) is likely to get accepted
+>within the window of time in which they want confirmation.  This bid
+>can then be adjusted through some combination of RBF or CPFP.
+>
+>The authors suggest moving to a "pay lowest winning bid" model where
+>all transactions pay only the smallest fee rate paid by any
+>transaction in the block, for which the winning strategy is to bid the
+>maximum amount you are willing to pay to get the transaction
+>confirmed:
+>
+>> Users can then simply set their bids truthfully to exactly the
+>> amount they are willing to pay to transact, and do not need to
+>> utilize fee estimate mechanisms, do not resort to bid shading and do
+>> not need to adjust transaction fees (via replace-by-fee mechanisms)
+>> if the mempool grows.
+>
+>
+>Unlike other proposed fixes to the fee model, this is not trivially
+>broken by paying the miner out of band.  If you pay out of band fee
+>instead of regular fee, then your transaction cannot be included with
+>other regular fee paying transactions without the miner giving up all
+>regular fee income.  Any transaction paying less fee in-band than the
+>otherwise minimum fee rate needs to also provide ~1Mvbyte * fee rate
+>difference fee to make up for that lost income.  So out of band fee is
+>only realistically considered when it pays on top of a regular feerate
+>paying transaction that would have been included in the block anyway.
+>And what would be the point of that?
+>
+>
+>As an original contribution, I would like to note that something
+>strongly resembling this proposal could be soft-forked in very easily.
+>The shortest explanation is:
+>
+>    For scriptPubKey outputs of the form "<max-42-byte-push>", where
+>    the pushed data evaluates as true, a consensus rule is added that
+>    the coinbase must pay any fee in excess of the minimum fee rate
+>    for the block to the push value, which is a scriptPubKey.
+>
+>Beyond fixing the perceived problems of bitcoin's fee auction model
+>leading to costly strategic behavior (whether that is a problem is a
+>topic open to debate!), this would have the additional benefits of:
+>
+>    1. Allowing pre-signed transactions, of payment channel close-out
+>       for example, to provide sufficient fee for confirmation without
+>       knowledge of future rates or overpaying or trusting a wallet to
+>       be online to provide CPFP fee updates.
+>
+>    2. Allowing explicit fees in multi-party transaction creation
+>       protocols where final transaction sizes are not known prior to
+>       signing by one or more of the parties, while again not
+>       overpaying or trusting on CPFP, etc.
+>
+>    3. Allowing applications with expensive network access to pay
+>       reasonable fees for quick confirmation, without overpaying or
+>       querying a trusted fee estimator.  Blockstream Satellite helps
+>       here, but rebateable fees provides an alternative option when
+>       full block feeds are not available for whatever reason.
+>
+>Using a fee rebate would carry a marginal cost of 70-100 vbytes per
+>instance.  This makes it a rather expensive feature, and therefore in
+>my own estimation not something that is likely to be used by most
+>transactions today.  However the cost is less than CPFP, and so I
+>expect that it would be a heavily used feature in things like payment
+>channel refund and uncooperative close-out transactions.
+>
+>
+>Here is a more worked out proposal, suitable for critiquing:
+>
+>1. A transaction is allowed to specify an _Implicit Fee_, as usual, as
+>   well as one or more explicit _Rebateable Fees_.  A rebateable fee
+>   is an ouput with a scriptPubKey that consists of a single, minimal,
+>   nonzero push of up to 42 bytes.  Note that this is an always-true
+>   script that requires no signature to spend.
+>
+>2. The _Fee Rate_ of a transaction is a fractional number equal to the
+>   combined implicit and rebateable fee divided by the size/weight of
+>   the transaction.
+>
+>   (A nontrivial complication of this, which I will punt on for the
+>    moment, is how to group transactions for fee rate calculation such
+>    that CPFP doesn't bring down the minimum fee rate of the block,
+>    but to do so with rules that are both simple, because this is
+>    consensus code; and fair, so as to prevent unintended use of a
+>    rebate fee by children or siblings.)
+>
+>3. The smallest fee rate of any non-coinbase transaction (or
+>   transaction group) is the _Marginal Fee Rate_ for the block and is
+>   included in the witness for the block.
+>
+>4. The verifier checks that each transaction or transaction grouping
+>   provides a fee greater than or equal to the threshold fee rate, and
+>   at least one is exactly equal to the marginal rate (which proves
+>   the marginal rate is the minimum for the block).
+>
+>This establishes the marginal fee rate, which alternatively expressed
+>is epsilon less than the fee rate that would have been required to get
+>into the block, assuming there was sufficient space.
+>
+>5. A per-block _Dust Threshold_ is calculated using the marginal fee
+>   rate and reasonable assumptions about transaction size.
+>
+>6. For each transaction (or transaction group), the _Required Fee_ is
+>   calculated to be the marginal fee rate times the size/weight of the
+>   transaction.  Implicit fee is applied towards this required fee and
+>   added to the _Miner's Fee Tally_.  Any excess implicit fee
+>   remaining is added to the _Implicit Fee Tally_.
+>
+>7. For each transaction (group), the rebateable fees contribute
+>   proportionally towards towards meeting the remaining marginal fee
+>   requirement, if the implicit fee failed to do so.  Of what's left,
+>   one of two things can happen based on how much is remaining:
+>
+>     A. If greater than or equal to the dust threshold is remaining in
+>        a specific rebateable fee, a requirement is added that an
+>        output be provided in the coinbase paying the remaining fee to
+>        a scriptPubKey equal to the push value (see #1 above).
+>
+>        (With due consideration for what happens if a script is reused
+>         in multiple explicit fees, of course.)
+>
+>     B. Otherwise, add remaining dust to the implicit fee tally.
+>
+>8. For the very last transaction in the block, the miner builds a
+>   transaction claiming ALL of these explicit fees, and with a single
+>   zero-valued null/data output, thereby forwarding the fees on to the
+>   coinbase, as far as old clients are concerned.  This is only
+>   concerns consensus in that this final transaction does not change
+>   any of the previously mentioned tallies.
+>
+>   (Aside: the zero-valued output is merely required because all
+>    transactions must have at least one output. It does however make a
+>    great location to put commitments for extensions to the block
+>    header, as being on the right-most path of the Merkle tree can
+>    mean shorter proofs.)
+>
+>9. The miner is allowed to claim subsidy + the miner's fee tally + the
+>   explicit fee tally for themselves in the coinbase.  The coinbase is
+>   also required to contain all rebated fees above the dust threshold.
+>
+>In summary, all transactions have the same actual fee rate equal to
+>the minimum fee rate that went into the creation of the block, which
+>is basically the marginal fee rate for transaction inclusion.
+>
+>A variant of this proposal is that instead of giving the implicit fee
+>tally to the miner (the excess non-rebateable fees beyond the required
+>minimum), it is carried forward from block to block in the final
+>transaction and the miner is allowed to claim some average of past
+>fees, thereby smoothing out fees or providing some other incentive.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20170929/8028683c/attachment.html>
