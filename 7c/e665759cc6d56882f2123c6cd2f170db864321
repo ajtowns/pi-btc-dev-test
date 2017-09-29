@@ -1,0 +1,105 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 29 Sep 2017 14:45:56 +1000
+Subject: [bitcoin-dev] Rebatable fees & incentive-safe fee markets
+In-Reply-To: <359FFE85-86AF-4FBD-9491-3528382E5002@friedenbach.org>
+References: <359FFE85-86AF-4FBD-9491-3528382E5002@friedenbach.org>
+Message-ID: <20170929044556.GA3996@erisian.com.au>
+
+On Thu, Sep 28, 2017 at 06:06:29PM -0700, Mark Friedenbach via bitcoin-dev wrote:
+> Unlike other proposed fixes to the fee model, this is not trivially
+> broken by paying the miner out of band.
+
+I think CPFP allows this to break: a miner getting paid out of band
+would just make the block look like:
+
+    (1) 100kB of 5s/byte transactions
+    (2) 850kB of 35s/byte transactions
+    (3) 50kB of 95s/byte transactions, miner paying themselves
+
+As long as every transaction in (1) has an output spent in (3), that seems
+like it would be perfectly legitimate for CPFP. 
+
+I think it would be cheaper overall than the fee refund transactions
+as well. People making arrangements with miners directly would have to
+pay for block space to cover:
+
+   out:
+     30-40B dest address
+     30-40B change address
+     10B    cpfp link
+   in:
+     36B    cpfp txid
+
+then to actual spend their change:
+
+   in:
+     36B+70B txid+idx + witness for change
+
+for a total of 142-162B plus 70B witness, as well as some sort of out of
+band payment to the miner (paying fees directly to miners via a lightning
+channel, comes to mind). 
+
+If I understand your suggestion correctly, it would look like:
+
+   coinbase:
+     30-40B fee overflow payment back to transactor
+
+   out:
+     30-40B dest address
+     30-40B change address
+     30-40B fee-overflow output marker
+
+and to spend their change:
+
+   in:
+     36B+70B txid+idx + witness for change
+     36B+70B txid+idx + witness for fee overflow
+
+for a total of 192-232B plus 140B witness; so that's 40%-50% more block
+weight used. The fee overflow would probably be pretty small amounts,
+as well, so kind of annoying to actually collect.
+
+If you end up with two change addresses per tx generally, that also seems
+like it might it annoyingly easy to link your transactions together
+(unless fees end up getting coinjoined or run through satoshidice or
+something). If you end up sending lots of fee overflows to a single
+address, that links your txes too of course.
+
+
+A miner might be willing to do that in order to charge a two-part tariff:
+ie, a very high "subscription" fee that's paid once a year or similar,
+along with very low per-tx fees. The only reason I can think of why
+someone would buy a subscription is if the miner's effectively a monopoly
+and submitting transactions via the p2p network isn't reliable enough;
+the whole point of a two-part tariff is to be as expensive as each user
+can bear, so it won't ever be any cheaper.
+
+
+FWIW, I think reliability-based-price-discrimination might allow higher
+mining revenue via having txes with differing fee rates in the same
+block: eg if people are happy to pay 100s/byte for confirmation within
+30 minutes, and likewise willing to pay 10s/byte for confirmation within
+3 hours, and there aren't enough transactions of either type to hit the
+block size limit, then a monopoly miner / mining cartel would do better
+by accepting 100s/byte txes at any time, while accepting 10s/byte txes
+in any given block, but only with about a 1-in-7 chance for any given tx.
+
+Looking at estimatefee.com, there's currently apparently ~200kB of 82s/B
+or more transactions, while to fill a 1MB block you'd have to go all the
+way down to 2.1s/B -- so if you have to charge all txes at the marginal
+fee rate, that's 200kB at 82s/B for 0.16 BTC rather than 1MB at 2.1s/B
+for 0.021 BTC.
+
+
+I think ideally, it would probably be better to let the block weight
+limit adjust to deal with high-frequency components to changes in demand,
+and have fee rates adjust more slowly to address the long-term trends
+in changes to demand: if fee rates only adjust slowly, then they're
+(by definition) easily predictable and you don't *have* to have much
+concern about getting them wrong. (You'd still need to add the correct
+fee at the time you want to publish a pre-signed transaction that was
+very old, but CPFP isn't too bad at that).
+
+Cheers,
+aj
+
