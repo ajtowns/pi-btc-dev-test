@@ -1,0 +1,81 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Sun, 1 Oct 2017 15:41:46 -0400
+Subject: [bitcoin-dev] Version 1 witness programs (first draft)
+In-Reply-To: <460EDF1F-2BFD-4DBE-A921-73469C2EA9B9@friedenbach.org>
+References: <201710010113.30518.luke@dashjr.org>
+	<5A220A8D-3A85-49D0-8DB2-6BDEC362EAEB@friedenbach.org>
+	<201710010247.42180.luke@dashjr.org>
+	<D811BF0D-8286-4A40-A443-09147E4EADDD@friedenbach.org>
+	<CAMZUoK=1fZUeKkA6V2pFwqj-Fd-YnZD4sffP9yc0Y7vv8-XvhQ@mail.gmail.com>
+	<460EDF1F-2BFD-4DBE-A921-73469C2EA9B9@friedenbach.org>
+Message-ID: <CAMZUoK=heF1FALyGbi7cpzLiQuhLnsq-5Z2-sTgq5b28sjjeUw@mail.gmail.com>
+
+On Sun, Oct 1, 2017 at 3:27 PM, Mark Friedenbach <mark at friedenbach.org>
+wrote:
+
+> > On Oct 1, 2017, at 12:05 PM, Russell O'Connor <roconnor at blockstream.io>
+> wrote:
+> >
+> > Given the proposed fixed signature size, It seems better to me that we
+> create a SIGHASH_WITNESS_WEIGHT flag as opposed to SIGHASH_WITNESS_DEPTH.
+>
+> For what benefit? If your script actually uses all the items on the stack,
+> and if your script is not written in such a way as to allow malleability
+> (which cannot be prevented in general), then they?re equivalent. Using
+> weight instead of depth only needlessly restricts other parties to select a
+> witness size up-front.
+>
+
+Creating a Bitcoin script that does not allow malleability is difficult and
+requires wasting a lot of bytes to do so, typically when handling issues
+around non-0-or-1 witness values being used with OP_IF, and dealing with
+non-standard-zero values, etc.  Adding a witness weight flag cuts through
+the worst of all this, and makes script design enormously simpler and makes
+scripts smaller and cheaper.
+
+
+> And to be clear, signing witness weight doesn?t mean the witness is not
+> malleable. The signer could sign again with a different ECDSA nonce. Or if
+> the signer is signing from a 2-of-3 wallet, a common scenario I hope, there
+> are 3 possible key combinations that could be used. If using MBV, a
+> 3-element tree is inherently unbalanced and the common use case can have a
+> smaller proof size.
+>
+> Witnesses are not 3rd party malleable and we will maintain that property
+> going forward with future opcodes.
+>
+> > Mark, you seem to be arguing that in general we still want weight
+> malleability even with witness depth fixed, but I don't understand in what
+> scenario we would want that.
+>
+> Any time all parties are not online at the same time in an interactive
+> signing protocol, or for which individual parties have to reconfigure their
+> signing choices due to failures. We should not restrict our script
+> signature system to such a degree that it becomes difficult to create
+> realistic signing setups for people using best practices (multi-key, 2FA,
+> etc.) to sign. If I am a participant in a signing protocol, it would be
+> layer violating to treat me as anything other than a black box, such that
+> internal errors and timeouts in my signing setup don?t propagate upwards to
+> the multi-party protocol.
+>
+> For example, I should be able to try to 2FA sign, and if that fails go
+> fetch my backup key and sign with that. But because it?s my infrequently
+> used backup key, it might be placed deeper in the key tree and therefore
+> signatures using it are larger. All the other signers need care is that
+> slot #3 in the witness is where my Merkle proof goes. They shouldn?t have
+> to restart and resign because my proof was a little larger than anticipated
+> ? and maybe they can?t resign because double-spend protections!
+>
+
+I'll argue that I don't want my counter-party going off and using a very
+deeply nested key in order to subvert the fee rate we've agreed upon after
+I've signed my part of the input.  If we are doing multi-party signing of
+inputs we need to communicate anyways to construct the transaction.  I see
+no problem with requiring my counter-party to choose their keys before I
+sign so that I know up front what our fee rate is going to be.  If they
+lose their keys and need a backup, they should have to come back to me to
+resign in order that we can negotiate a new fee rate for the transaction
+and who is going to be covering how much of the fee and on which inputs.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171001/a587d6ba/attachment.html>
