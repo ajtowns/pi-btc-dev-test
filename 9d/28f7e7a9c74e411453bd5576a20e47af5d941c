@@ -1,0 +1,83 @@
+From: luke@dashjr.org (Luke Dashjr)
+Date: Sun, 1 Oct 2017 02:47:41 +0000
+Subject: [bitcoin-dev] Version 1 witness programs (first draft)
+In-Reply-To: <5A220A8D-3A85-49D0-8DB2-6BDEC362EAEB@friedenbach.org>
+References: <201710010113.30518.luke@dashjr.org>
+	<5A220A8D-3A85-49D0-8DB2-6BDEC362EAEB@friedenbach.org>
+Message-ID: <201710010247.42180.luke@dashjr.org>
+
+Should it perhaps commit to the length of the serialised witness data instead 
+or additionally? Now that signatures are no longer variable-length, that'd be 
+possible...
+
+As far as tail-call needs are concerned, CLEANSTACK wouldn't have been checked 
+until AFTER the tail-call in the first draft. But I suppose eliminating it for 
+other possible future purposes is still useful.
+
+Luke
+
+
+On Sunday 01 October 2017 2:23:47 AM Mark Friedenbach wrote:
+> The CLEANSTACK rule should be eliminated, and instead the number of items
+> on the stack should be incorporated into the signature hash. That way any
+> script with a CHECKSIG is protected from witness extension malleability,
+> and those rare ones that do not use signature operations can have a ?DEPTH
+> 1 EQUALVERIFY? at the end. This allows for much simpler tail-call
+> evaluation as you don?t need to pass arguments on the alt-stack.
+> 
+> > On Sep 30, 2017, at 6:13 PM, Luke Dashjr via bitcoin-dev
+> > <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > 
+> > I've put together a first draft for what I hope to be a good next step
+> > for
+> > 
+> > Segwit and Bitcoin scripting:
+> >    https://github.com/luke-jr/bips/blob/witnessv1/bip-witnessv1.mediawiki
+> > 
+> > This introduces 5 key changes:
+> > 
+> > 1. Minor versions for witnesses, inside the witness itself. Essentially
+> > the witness [major] version 1 simply indicates the witness commitment is
+> > SHA256d, and nothing more.
+> > 
+> > The remaining two are witness version 1.0 (major 1, minor 0):
+> > 
+> > 2. As previously discussed, undefined opcodes immediately cause the
+> > script to exit with success, making future opcode softforks a lot more
+> > flexible.
+> > 
+> > 3. If the final stack element is not exactly true or false, it is
+> > interpreted as a tail-call Script and executed. (Credit to Mark
+> > Friedenbach)
+> > 
+> > 4. A new shorter fixed-length signature format, eliminating the need to
+> > guess the signature size in advance. All signatures are 65 bytes, unless
+> > a condition script is included (see #5).
+> > 
+> > 5. The ability for signatures to commit to additional conditions,
+> > expressed in the form of a serialized Script in the signature itself.
+> > This would be useful in combination with OP_CHECKBLOCKATHEIGHT (BIP
+> > 115), hopefully ending the whole replay protection argument by
+> > introducing it early to Bitcoin before any further splits.
+> > 
+> > This last part is a big ugly right now: the signature must commit to the
+> > script interpreter flags and internal "sigversion", which basically serve
+> > the same purpose. The reason for this, is that otherwise someone could
+> > move the signature to a different context in an attempt to exploit
+> > differences in the various Script interpretation modes. I don't consider
+> > the BIP deployable without this getting resolved, but I'm not sure what
+> > the best approach would be. Maybe it should be replaced with a witness
+> > [major] version and witness stack?
+> > 
+> > There is also draft code implementing [the consensus side of] this:
+> >    https://github.com/bitcoin/bitcoin/compare/master...luke-jr:witnessv1
+> > 
+> > Thoughts? Anything I've overlooked / left missing that would be
+> > uncontroversial and desirable? (Is any of this unexpectedly controversial
+> > for some reason?)
+> > 
+> > Luke
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
