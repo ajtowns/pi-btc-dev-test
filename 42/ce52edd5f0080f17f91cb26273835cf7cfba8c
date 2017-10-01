@@ -1,0 +1,61 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Sun, 1 Oct 2017 11:34:07 -0700
+Subject: [bitcoin-dev] Version 1 witness programs (first draft)
+In-Reply-To: <201710010113.30518.luke@dashjr.org>
+References: <201710010113.30518.luke@dashjr.org>
+Message-ID: <089161B1-9AD6-45A2-BE0A-215FECC19510@friedenbach.org>
+
+I would also suggest that the 520 byte push limitation be removed for v1 scripts as well. MERKLEBRANCHVERIFY in particular could benefit from larger proof sizes. To do so safely would require reworking script internals to use indirect pointers and reference counting for items on stack, but this is worth doing generally, and introducing a per-input hashing limit equal to a small multiple of the witness size (or retaining the opcount limit).
+
+> On Sep 30, 2017, at 6:13 PM, Luke Dashjr via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> I've put together a first draft for what I hope to be a good next step for 
+> Segwit and Bitcoin scripting:
+>    https://github.com/luke-jr/bips/blob/witnessv1/bip-witnessv1.mediawiki
+> 
+> This introduces 5 key changes:
+> 
+> 1. Minor versions for witnesses, inside the witness itself. Essentially the 
+> witness [major] version 1 simply indicates the witness commitment is SHA256d, 
+> and nothing more.
+> 
+> The remaining two are witness version 1.0 (major 1, minor 0):
+> 
+> 2. As previously discussed, undefined opcodes immediately cause the script to 
+> exit with success, making future opcode softforks a lot more flexible.
+> 
+> 3. If the final stack element is not exactly true or false, it is interpreted 
+> as a tail-call Script and executed. (Credit to Mark Friedenbach)
+> 
+> 4. A new shorter fixed-length signature format, eliminating the need to guess 
+> the signature size in advance. All signatures are 65 bytes, unless a condition 
+> script is included (see #5).
+> 
+> 5. The ability for signatures to commit to additional conditions, expressed in 
+> the form of a serialized Script in the signature itself. This would be useful 
+> in combination with OP_CHECKBLOCKATHEIGHT (BIP 115), hopefully ending the 
+> whole replay protection argument by introducing it early to Bitcoin before any 
+> further splits.
+> 
+> This last part is a big ugly right now: the signature must commit to the 
+> script interpreter flags and internal "sigversion", which basically serve the 
+> same purpose. The reason for this, is that otherwise someone could move the 
+> signature to a different context in an attempt to exploit differences in the 
+> various Script interpretation modes. I don't consider the BIP deployable 
+> without this getting resolved, but I'm not sure what the best approach would 
+> be. Maybe it should be replaced with a witness [major] version and witness 
+> stack?
+> 
+> There is also draft code implementing [the consensus side of] this:
+>    https://github.com/bitcoin/bitcoin/compare/master...luke-jr:witnessv1
+> 
+> Thoughts? Anything I've overlooked / left missing that would be 
+> uncontroversial and desirable? (Is any of this unexpectedly controversial for 
+> some reason?)
+> 
+> Luke
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
