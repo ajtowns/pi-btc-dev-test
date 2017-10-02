@@ -1,0 +1,56 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Sun, 1 Oct 2017 17:35:38 -0700
+Subject: [bitcoin-dev] Version 1 witness programs (first draft)
+In-Reply-To: <30B31B43-B603-4793-BDFB-B7E25FD96D1B@xbt.hk>
+References: <201710010113.30518.luke@dashjr.org>
+	<30B31B43-B603-4793-BDFB-B7E25FD96D1B@xbt.hk>
+Message-ID: <50CA8523-3D1A-409E-9B7D-51EA5FC4B898@friedenbach.org>
+
+
+> On Oct 1, 2017, at 2:32 PM, Johnson Lau <jl2012 at xbt.hk> wrote:
+> 
+> So there are 3 proposals with similar goal but different designs. I try to summarise some questions below:
+> 
+> 1. How do we allow further upgrade within v1 witness? Here are some options:
+> a. Minor version in witness. (Johnson / Luke) I prefer this way, but we may end up with many minor versions.
+
+I'm not sure I agree with the "minor version" nomenclature, or that we would necessarily end up with any consensus-visible fields beyond 2.  There are two separate soft-fork version fields that were, I think it is fair to say now, inappropriately merged in the "script version? feature of segregated witness as described in BIP141.
+
+First there is the witness type, which combined with the length of the commitment that follows specifies how data from the witness stack is used to calculate/verify the witness commitment in the scriptPubKey of the output being spent.  For v0 with a 20-byte hash, it says that those 20 bytes are the HASH160 of the top element of the stack.  For v0 with a 32-byte hash, it says that those 32 bytes are the HASH256 of the top element of the stack.
+
+Second there is the script version, which is not present as a separate field for witness type v0.  Implicitly though, the script version for v0,20-byte is that the witness consists of two elements, and these are interpreted as a pubkey and a signature.  For v0,32-byte the script version is that the witness consists of 1 or more elements; with max 520 byte size constraints for all but the top element, which has a higher limit of 10,000 bytes; and the top-most element is interpreted as a script and executed with the modified CHECKSIG behavior defined by BIP141 and the CLEANSTACK rule enforced.
+
+These are separate roles, one not being derivative of the other.  In an ideal world the witness type (of which there are only 16 remaining without obsoleting BIP141) is used only to specify a new function for transforming the witness stack into a commitment for verification purposes.  Merklized script would be one example: v2,32-byte could be defined to require a witness stack of at least two elements, the top most of which is a Merkle inclusion proof of the second item in a tree whose root is given in the 32-byte payload of the output.  Maybe v3 would prove inclusion by means of some sort of RSA accumulator or something.
+
+Such a specification says nothing about the features of the subscript drawn from the Merkle tree, or even whether it is bitcoin script at all vs something else (Simplicity, DEX, RISC-V, Joy, whatever).  All that is necessary is that a convention be adopted about where to find the script version from whatever data is left on the stack after doing the witness type check (hashing the script, calculating a Merkle root, checking inclusion in an RSA accumulator, whatever).  A simple rule is that it is serialized and prefixed to the beginning of the string that was checked against the commitment in the output.
+
+So v0,32-byte says that the top item is hashed and that hash must match the 32-byte value in the output.  This new v1,32-byte witness type being talked about in this thread would have exactly the same hashing rules, but will execute the resulting string based on its prefix, the script version, which is first removed before execution.
+
+Sure first script version used could be a cleaned up script with a bunch of the weirdness removed (CHECKMULTISIG, I'm looking at you!); CLTV, CSV, and MBV drop arguments; disabled opcodes and unassigned NOPs become "return true"; etc.  Maybe v2 adds new opcodes.  But we can imagine script version that do something totally different, like introduce a new script based on a strongly-typed Merklized lambda calculus, or a RISC-V executable format, or whatever.
+
+This has pragmatic implications with the separation of witness type and script version: we could then define a "MAST" output that proves the script used is drawn from a set represented by the Merkle tree.  However different scripts in that tree can use different versions.  It would be useful if the most common script is the key aggregated everyone-signs outcome, which looks like a regular bitcoin payment, and then contingency cases can be handled by means of a complicated script written in some newly added general computation language or a whole emulated RISC-V virtual machine.
+
+> b. OP_RETURNTRUE (Luke). I proposed this in an earlier version of BIP114 but now I think it doesn?t interact well with signature aggregation, and I worry that it would have some other unexpected effects.
+> c. Generalised NOP method: user has to provide the returned value, so even VERIFY-type code could do anything
+
+I see no reason to do either. Gate new behavior based on script execution flags, which are set based on the script version.  Script versions not understood are treated as "return true" to begin with.  The interpreter isn't even going to try to decode the script according to the old rules, let alone try to execute it, so there's no reason for the old soft-fork compatability tricks.
+
+The new soft-fork trick is that you increment the script version number.  That is all.
+
+> 2. Do we want to allow signature-time commitment of extra scripts?
+> I think all proposals allow this, just with different way
+> a. Tail-call semantics with CHECKSIGFROMSTACK (Mark). I think this is too rigid as it works only with specially designed scriptPubKey
+
+This is not signature-time commitment of extra script. Not without CHECKSIGFROMSTACK or something like it.
+
+> b. scriptWitCode: extra scripts are put in some fixed location in witness (Johnson). This makes sure static analysability.
+> c. Extra-data as script in OP_CHECKSIG (Luke)
+
+Propose these as their own script updates.  Script versioning makes such new features cheap.  There's no reason to create some sort of complex omnibus overhaul that does everything.
+
+> 3. Do we want to allow static analysis of sigop?
+> BIP114 and the related proposals are specifically designed to allow static analysis of sigop. I think this was one of the main reason of OP_EVAL not being accepted. This was also the main reason of Ethereum failing to do a DAO hacker softfork, leading to the ETH/ETC split. I?m not sure if we really want to give up this property. Once we do it, we have to support it forever.
+
+Again, this is off-topic for this thread.  I don't think a v1 witness type upgrade should do any of these things.  The v1 witness type should add a proper script version in the witness, and remove or simplify limits or unnecessary verification rules that are no longer necessary and/or hindering progress.  That?s it.
+
+For example, I don't think a v1 witness version should be coupled with my tail-call semantics or the introduction of MERKLEBRANCHVERIFY (but if MBV was released already we could have it drop its arguments, which would be nice).  However it should drop the CLEANSTACK rule in favor of something else (like signatures committing to the witness depth and/or weight) since the tail-call BIP demonstrates it to be an impediment to extensibility and alternatives are not.  And it should drop the 520 byte push limitation, as the MBV BIP demonstrates use cases that have serialized proofs larger than that, like a k-of-N threshold with N=16.
