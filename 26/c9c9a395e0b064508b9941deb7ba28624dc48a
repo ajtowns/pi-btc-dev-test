@@ -1,0 +1,112 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Mon, 9 Oct 2017 19:19:11 -0700
+Subject: [bitcoin-dev] New difficulty algorithm needed for SegWit2x
+	fork? (reformatted text)
+In-Reply-To: <1213518291.4328204.1507589852818@mail.yahoo.com>
+References: <1213518291.4328204.1507589852818.ref@mail.yahoo.com>
+	<1213518291.4328204.1507589852818@mail.yahoo.com>
+Message-ID: <B34C76A2-4FD7-4BA9-81AD-816B163463C9@friedenbach.org>
+
+The problem of fast acting but non vulnerable difficulty adjustment algorithms is interesting. I would certainly like to see this space further explored, and even have some ideas myself.
+
+However without commenting on the technical merits of this specific proposal, I think it must be said upfront that the stated goal is not good. The largest technical concern (ignoring governance) over B2X is that it is a rushed, poorly reviewed hard fork. Hard forks should not be rushed, and they should receive more than the usual level of expert and community review.
+
+I?m that light, doing an even more rushed hard fork on an even newer idea with even less review would be hypocritical at best. I would suggest reframing as a hardfork wishlist research problem for the next properly planned hard fork, if one occurs. You might also find the hardfork research group a more accommodating venue for this discussion:
+
+https://bitcoinhardforkresearch.github.io/
+
+> On Oct 9, 2017, at 3:57 PM, Scott Roberts via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> Sorry, my previous email did not have the plain text I intended.
+> 
+> Background: 
+> 
+> The bitcoin difficulty algorithm does not seem to be a good one. If there 
+> is a fork due to miners seeking maximum profit without due regard to 
+> security, users, and nodes, the "better" coin could end up being the 
+> minority chain. If 90% of hashrate is really going to at least initially go 
+> towards using SegWit2x, BTC would face 10x delays in confirmations 
+> until the next difficulty adjustment, negatively affecting its price relative 
+> to BTC1, causing further delays from even more miner abandonment 
+> (until the next adjustment). The 10% miners remaining on BTC do not 
+> inevitably lose by staying to endure 10x delays because they have 10x 
+> less competition, and the same situation applies to BTC1 miners. If the 
+> prices are the same and stable, all seems well for everyone, other things 
+> aside. But if the BTC price does not fall to reflect the decreased hashrate, 
+> he situation seems to be a big problem for both coins: BTC1 miners will 
+> jump back to BTC when the difficulty adjustment occurs, initiating a 
+> potentially never-ending oscillation between the two coins, potentially 
+> worse than what BCH is experiencing.  They will not issue coins too fast 
+> like BCH because that is a side effect of the asymmetry in BCH's rise and 
+> fall algorithm. 
+> 
+> Solution: 
+> 
+> Hard fork to implement a new difficulty algorithm that uses a simple rolling 
+> average with a much smaller window.  Many small coins have done this as 
+> a way to stop big miners from coming on and then suddenly leaving, leaving 
+> constant miners stuck with a high difficulty for the rest of a (long) averaging 
+> window.  Even better, adjust the reward based on recent solvetimes to 
+> motivate more mining (or less) if the solvetimes are too slow (or too fast). 
+> This will keep keep coin issuance rate perfectly on schedule with real time. 
+> 
+> I recommend the following for Bitcoin, as fast, simple, and better than any 
+> other difficulty algorithm I'm aware of.  This is the result of a lot of work the 
+> past year. 
+> 
+> === Begin difficulty algorithm === 
+> # Zawy v6 difficulty algorithm (modified for bitcoin) 
+> # Unmodified Zawy v6 for alt coins: 
+> # http://zawy1.blogspot.com/2017/07/best-difficulty-algorithm-zawy-v1b.html 
+> # All my failed attempts at something better: 
+> # https://github.com/seredat/karbowanec/commit/231db5270acb2e673a641a1800be910ce345668a 
+> # 
+> # Keep negative solvetimes to correct bad timestamps. 
+> # Do not be tempted to use: 
+> # next_D = sum(last N Ds) * T / [max(last N TSs) - min(last N TSs]; 
+> # ST= Solvetime, TS = timestamp 
+> 
+> # set constants until next hard fork: 
+> 
+> T=600; # coin's TargetSolvetime 
+> N=30; # Averaging window. Smoother than N=15, faster response than N=60. 
+> X=5; 
+> limit = X^(2/N); # limit rise and fall in case of timestamp manipulation 
+> adjust = 1/(1+0.67/N);  # keeps avg solvetime on track 
+> 
+> # begin difficulty algorithm 
+> 
+> avg_ST=0; avg_D=0; 
+> for ( i=height;  i > height-N;  i--) {  # go through N most recent blocks 
+> avg_ST += (TS[i] - TS[i-1]) / N; 
+> avg_D += D[i]/N; 
+> } 
+> avg_ST = T*limit if avg_ST > T*limit; 
+> avg_ST = T/limit if avg_ST < T/limit; 
+> 
+> next_D = avg_D * T / avg_ST * adjust; 
+> 
+> # Tim Olsen suggested changing reward to protect against hash attacks. 
+> # Karbowanek coin suggested something similar. 
+> # I could not find anything better than the simplest idea below. 
+> # It was a great surprise that coin issuance rate came out perfect. 
+> # BaseReward = coins per block 
+> 
+> next_reward = BaseReward * avg_ST / T; 
+> 
+> ======= end algo ==== 
+> 
+> Due to the limit and keeping negative solvetimes in a true average, 
+> timestamp errors resulting in negative solvetimes are corrected in the next 
+> block. Otherwise, one would need to do like Zcash and cause a 5-block 
+> delay in the response by resorting to the median of past 11 blocks (MPT) 
+> as the most recent timestamp, offsetting the timestamps from their 
+> corresponding difficulties by 5 blocks. (it does not cause an averaging 
+> problem, but it does cause a 5-block delay in the response.)
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171009/198043c0/attachment.html>
