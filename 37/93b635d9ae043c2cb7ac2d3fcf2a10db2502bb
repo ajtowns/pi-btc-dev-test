@@ -1,0 +1,129 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Mon, 30 Oct 2017 23:29:28 +0000
+Subject: [bitcoin-dev] Simplicity: An alternative to Script
+In-Reply-To: <E63C347E-5321-4F7F-B69C-75747E88AC06@mattcorallo.com>
+References: <CAMZUoK=VNRMda8oRCtxniE6-vLwG-b=je2Hx+sD9sCzS--v9kQ@mail.gmail.com>
+	<E63C347E-5321-4F7F-B69C-75747E88AC06@mattcorallo.com>
+Message-ID: <CAAS2fgRUAh2GJWbG74pef5tmj4NmbHX3_fy-_GMYWP3Tj4TNWA@mail.gmail.com>
+
+On Mon, Oct 30, 2017 at 9:42 PM, Matt Corallo via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> I admittedly haven't had a chance to read the paper in full details, but I
+> was curious how you propose dealing with "jets" in something like Bitcoin.
+> AFAIU, other similar systems are left doing hard-forks to reduce the
+> sigops/weight/fee-cost of transactions every time they want to add useful
+> optimized drop-ins. For obvious reasons, this seems rather impractical and a
+> potentially critical barrier to adoption of such optimized drop-ins, which I
+> imagine would be required to do any new cryptographic algorithms due to the
+> significant fee cost of interpreting such things.
+
+For some framing-- I think we're still a long way off from proposing
+something like this in Bitcoin, and _how_ it's ultimately proposed is
+an open question.
+
+There are many ways to use simplicity, for an extreme example:  one
+could define a collection of high level operations and combinators at
+the level of things in Bitcoin Script (op_sha256, op_equal, op_cat,
+etc.)  and make an interpreter that implements these operations as
+discounted jets and ONLY these operations at all.
+
+At that point you have a system which is functionally like Bitcoin
+Script-- with the same performance characteristics-- but with a pretty
+much perfectly rigorous formal specification and which is highly
+amenable to the formal analysis of smart contracts written in it.
+
+At the other extreme, you expose a full on Bitmachine and allow
+arbitrary simplicity--  But this is probably slow enough to not be
+very useful.  Simplicity itself is so simple that it doesn't natively
+have a concept of a _bit_, library code programs the concept of a bit,
+then the concept of a half adder ... and so on.   As a result a
+completely unjetted implementation is slow (actually remarkably fast
+considering that it's effectively interpreting a circuit constructed
+from pure logic).
+
+The most useful way of using it would probably be in-between: a good
+collection of high level functions, and mid-level functions (e.g.
+arithmetic and string operations) making a wide space of useful but
+general software both possible and high performance.  But to get there
+we need enough experience with it to know what the requisite
+collection of operations would be.
+
+One challenge is that I don't think we have a clear mental model for
+how nominal validation costs are allowed to be before there is a
+negative impact.  It's probably safe to assume 'pretty darn nominal'
+is a requirement, but there is still a lot that can be done within
+that envelope.
+
+As far as consensus discounted jets goes:
+
+>From my perspective there are three related ideas around this:
+
+Is a particular script-root jetted or not in an implementation?
+ -- In and of itself this is not of consensus consequence; esp.
+because a major design feature of simplicity is that it should be
+possible using to prove that an optimized C implementation of a
+simplicity program is complete and correct (using VST+COQ).
+
+Is a particular script-root 'standard and known' in the P2P network:
+ -- This means that you can skip communicating it when sending
+witnesses to peers; but this is something that could be negotiated on
+a peer by peer basis-- like compressing transactions, and isn't at all
+consensus normative.
+
+Is a particular jet discounted and what are the discounts:
+ -- This is inherently a consensus question; as the bitmachine costing
+for a program is consensus normative (assuming that you allow
+arbitrary simplicity code at all).
+
+A script-versioning like mechanism can provide for a straight-forward
+way to upgrade discounted cost tables in a compatible way--  if you're
+running old software that doesn't have the required jets to justify a
+particular discount collection -- well that's okay, you won't validate
+those scripts at all. (so they'll be super fast for you!)
+
+Another potential tool is the idea of sunsetting cost limits that
+sunset; e.g. after N years, the limits go away with an assumption that
+updated limits have been softforked in that ativate at that time and
+themselves expire in N years.  Old software would become slower
+validating due to newly discounted code they lack jets for... but
+would continue validating (at least until they run out of performance
+headroom).
+
+This is theoretically attractive in a number of regards, but
+unfortunately I think our industry hasn't shown sufficient maturity
+about engineering tradeoffs to make this a politically viable choice
+in the mid-term-- I known I'm personally uncomfortable with the
+outspokenness of parties that hold positions which I think can fairly
+be summarized "We should remove all limits and if the system crashes
+and burns as a result, we'll just make a new one! YOLO.". But it's
+interesting to think about in the long term.
+
+There are also hybrid approaches where you can imagine this decision
+being made by node operators, e.g. continuing to validate code that
+exceeds your effort limits on probabilistic and best effort basis;
+even more attractive if there were a protocol for efficiently showing
+others that an operation had an invalid witness. Though there is a lot
+to explore about the brittleness to partitioning that comes from any
+expectation that you'd learn about invalid updates by exception.
+
+In any case, these are all options that exist completely independently
+of simplicity.  I think we should think of simplicity as a rigorous
+base which we could _potentially_ use to build whatever future
+direction of script we like out of... by itself it doesn't mandate a
+particular depth or level of adoption.
+
+And for the moment it's still also mostly just a base-- I don't
+anticipate typical smart contracting end users programming directly w/
+simplicity even if Bitcoin did support arbitrary simplicity--  I
+expect they'd program in user friendly domain specific languages which
+are formally tied to their implementations in simplicity that allow-
+but do not force- closed loop formal reasoning about their contracts
+all the way from their high level business rules straight through to
+the machine code implementing the interpreter(s) that run in the
+network.
+
+But to get there we'll have to prove in practice that this is actually
+workable. We have some evidence that it is,  e.g. Roconnor's SHA2
+implementation in simplicity is proven to implement the same function
+that a C implementation implements (via the compcert formalization of
+C).  but there will need to be more.
