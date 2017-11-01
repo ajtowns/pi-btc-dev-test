@@ -1,0 +1,112 @@
+From: luke@dashjr.org (Luke Dashjr)
+Date: Wed, 1 Nov 2017 08:43:48 +0000
+Subject: [bitcoin-dev] Merkle branch verification & tail-call semantics
+	for generalized MAST
+In-Reply-To: <3FE16880-868C-40BA-BCC5-954B15478FB2@friedenbach.org>
+References: <5B6756D0-6BEF-4A01-BDB8-52C646916E29@friedenbach.org>
+	<3FE16880-868C-40BA-BCC5-954B15478FB2@friedenbach.org>
+Message-ID: <201711010843.49771.luke@dashjr.org>
+
+Mark,
+
+I think I have found an improvement that can be made.
+
+As you recall, a downside to this approach is that one must make two 
+commitments: first, to the particular "membership-checking script"; and then 
+in that script, to the particular merkle root of possible scripts.
+
+Would there be any harm in, instead of checking membership, *calculating* the 
+root? If not, then we could define that instead of the witness program 
+committing to H(membership-check script), it rather commits to H(membership-
+calculation script | data added by an OP_ADDTOSCRIPTHASH). This would, I 
+believe, securely reduce the commitment of both to a single hash.
+
+It also doesn't reduce flexibility, since one could omit OP_ADDTOSCRIPTHASH 
+from their "membership-calculation" script to get the previous membership-
+check behaviour, and use <hash> OP_EQUAL in its place.
+
+What do you think?
+
+Luke
+
+
+On Saturday 28 October 2017 4:40:01 AM Mark Friedenbach wrote:
+> I have completed updating the three BIPs with all the feedback that I have
+> received so far. In short summary, here is an incomplete list of the
+> changes that were made:
+> 
+> * Modified the hashing function fast-SHA256 so that an internal node cannot
+> be interpreted simultaneously as a leaf. * Changed MERKLEBRANCHVERIFY to
+> verify a configurable number of elements from the tree, instead of just
+> one. * Changed MERKLEBRANCHVERIFY to have two modes: one where the inputs
+> are assumed to be hashes, and one where they are run through double-SHA256
+> first. * Made tail-call eval compatible with BIP141?s CLEANSTACK consensus
+> rule by allowing parameters to be passed on the alt-stack. * Restricted
+> tail-call eval to segwit scripts only, so that checking sigop and opcode
+> limits of the policy script would not be necessary.
+> 
+> There were a bunch of other small modifications, typo fixes, and
+> optimizations that were made as well.
+> 
+> I am now ready to submit these BIPs as a PR against the bitcoin/bips repo,
+> and I request that the BIP editor assign numbers.
+> 
+> Thank you,
+> Mark Friedenbach
+> 
+> > On Sep 6, 2017, at 5:38 PM, Mark Friedenbach <mark at friedenbach.org>
+> > wrote:
+> > 
+> > I would like to propose two new script features to be added to the
+> > bitcoin protocol by means of soft-fork activation. These features are
+> > a new opcode, MERKLE-BRANCH-VERIFY (MBV) and tail-call execution
+> > semantics.
+> > 
+> > In brief summary, MERKLE-BRANCH-VERIFY allows script authors to force
+> > redemption to use values selected from a pre-determined set committed
+> > to in the scriptPubKey, but without requiring revelation of unused
+> > elements in the set for both enhanced privacy and smaller script
+> > sizes. Tail-call execution semantics allows a single level of
+> > recursion into a subscript, providing properties similar to P2SH while
+> > at the same time more flexible.
+> > 
+> > These two features together are enough to enable a range of
+> > applications such as tree signatures (minus Schnorr aggregation) as
+> > described by Pieter Wuille [1], and a generalized MAST useful for
+> > constructing private smart contracts. It also brings privacy and
+> > fungibility improvements to users of counter-signing wallet/vault
+> > services as unique redemption policies need only be revealed if/when
+> > exceptional circumstances demand it, leaving most transactions looking
+> > the same as any other MAST-enabled multi-sig script.
+> > 
+> > I believe that the implementation of these features is simple enough,
+> > and the use cases compelling enough that we could BIP 8/9 rollout of
+> > these features in relatively short order, perhaps before the end of
+> > the year.
+> > 
+> > I have written three BIPs to describe these features, and their
+> > associated implementation, for which I now invite public review and
+> > discussion:
+> > 
+> > Fast Merkle Trees
+> > BIP: https://gist.github.com/maaku/41b0054de0731321d23e9da90ba4ee0a
+> > Code: https://github.com/maaku/bitcoin/tree/fast-merkle-tree
+> > 
+> > MERKLEBRANCHVERIFY
+> > BIP: https://gist.github.com/maaku/bcf63a208880bbf8135e453994c0e431
+> > Code: https://github.com/maaku/bitcoin/tree/merkle-branch-verify
+> > 
+> > Tail-call execution semantics
+> > BIP: https://gist.github.com/maaku/f7b2e710c53f601279549aa74eeb5368
+> > Code: https://github.com/maaku/bitcoin/tree/tail-call-semantics
+> > 
+> > Note: I have circulated this idea privately among a few people, and I
+> > will note that there is one piece of feedback which I agree with but
+> > is not incorporated yet: there should be a multi-element MBV opcode
+> > that allows verifying multiple items are extracted from a single
+> > tree. It is not obvious how MBV could be modified to support this
+> > without sacrificing important properties, or whether should be a
+> > separate multi-MBV opcode instead.
+> > 
+> > Kind regards,
+> > Mark Friedenbach
