@@ -1,0 +1,58 @@
+From: wordsgalore@gmail.com (Scott Roberts)
+Date: Thu, 2 Nov 2017 19:31:55 -0400
+Subject: [bitcoin-dev] Bitcoin Cash's new difficulty algorithm
+Message-ID: <CADtTMvn8=uqCwwtvrqjLuN_6ADt+65YpEffSqnBozmWXWO--9A@mail.gmail.com>
+
+Bitcoin cash will hard fork on Nov 13 to implement a new difficulty
+algorithm.  Bitcoin itself might need to hard fork to employ a similar
+algorithm. It's about as good as they come because it followed the
+"simplest is best" route. Their averaging window is probably
+significantly too long (N=144). It's:
+
+next_D = sum (past 144 D's) * T / sum(past 144 solvetimes)
+
+They correctly did not use max(timestamp) - min(timestamp) in the
+denominator like others do.
+
+They've written the code and they're about to use it live, so Bitcoin
+will have a clear, simple, and tested path if it suddenly needs to
+hard fork due to having 20x delays for the next 2000 blocks (taking it
+a year to get unstuck).
+
+Details on it and the decision process:
+https://www.bitcoinabc.org/november
+
+It uses a nice median of 3 for the beginning and end of the window to
+help alleviate bad timestamp problems. It's nice, helps a little, but
+will also slow its response by 1 block.  They also have 2x and 1/2
+limits on the adjustment per block, which is a lot more than they will
+ever need.
+
+I recommend bitcoin consider using it and making it N=50 instead of 144.
+
+I have seen that any attempts to modify the above with things like a
+low pass filter, starting the window at MTP, or preventing negative
+timestamps will only reduce its effectiveness. Bitcoin's +12 and -6
+limits on the timestamps are sufficient and well chosen, although
+something a bit smaller than the +12 might have been better.
+
+One of the contenders to the above is new and actually better, devised
+by Degnr8 and they call it D622 or wt-144.It's a little better than
+they realize. It's the only real improvement in difficulty algorithms
+since the rolling average.  It gives a linearly higher weight to the
+more recent timestamps. Otherwise it is the same. Others have probably
+come across it, but there is too much noise in difficulty algorithms
+to find the good ones.
+
+# Degnr8's D622 difficulty algorithm
+# T=TargetTime, S=Solvetime
+# modified by zawy
+for i = 1 to N  (from oldest to most recent block)
+    t += T[i] / D[i] * i
+    j += i
+next i
+next_D = j / t * T
+
+I believe any modification to the above strict mathematical weighted
+average will reduce it's effectiveness. It does not oscillate anymore
+than regular algos and rises faster and drops faster, when needed.
