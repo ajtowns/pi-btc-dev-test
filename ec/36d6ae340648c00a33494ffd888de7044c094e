@@ -1,0 +1,58 @@
+From: mats@blockchain.com (Mats Jerratsch)
+Date: Sun, 5 Nov 2017 23:48:43 +0000
+Subject: [bitcoin-dev] Generalised Replay Protection for Future Hard Forks
+Message-ID: <7601C2CD-8544-4501-80CE-CAEB402A72D2@blockchain.com>
+
+
+Presented is a generalised way of providing replay protection for future hard forks. On top of replay protection, this schema also allows for fork-distinct addresses and potentially a way to opt-out of replay protection of any fork, where deemed necessary (can be beneficial for some L2 applications).
+
+## Rationale
+
+Currently when a hard fork happens, there is ad-hoc replay protection built within days with little review at best, or no replay protection at all. Often this is either resource problem, where not enough time and developers are available to sufficiently address replay protection, or the idea that not breaking compatibility is favourable. Furthermore, this is potentially a recurring problem with no generally accepted solution yet. Services that want to deal in multiple forks are expected to closely follow all projects. Since there is no standard, the solutions differ for each project, requiring custom code for every fork. By integrating replay protection into the protocol, we advocate the notion of non-hostile forks.
+
+Users are protected against accidentally sending coins on the wrong chain through the introduction of a fork-specific incompatible address space. The coin/token type is encoded in the address itself, removing some of the importance around the question _What is Bitcoin?_. By giving someone an address, it is explicitly stated _I will only honour a payment of token X_, enforcing the idea of validating the payment under the rules chosen by the payee.
+
+## Iterative Forks
+
+In this schema, any hard fork is given an incremented id, `nForkId`. `nForkId` starts at `1`, with `0` being reserved as a wildcard. When project X decides to make an incompatible change to the protocol, it will get assigned a new unique `nForkId` for this fork. A similar approach like for BIP43 can be taken here. Potentially `nForkId` can be reused if a project has not gained any amount of traction.
+
+When preparing the transaction for signing or validation, `nForkId` is appended to the final template as a 4B integer (similar to [1]). Amending BIP143, this would result in
+
+```
+ Double SHA256 of the serialization of:
+     1. nVersion of the transaction (4-byte little endian)
+     2. hashPrevouts (32-byte hash)
+     3. hashSequence (32-byte hash)
+     4. outpoint (32-byte hash + 4-byte little endian)
+     5. scriptCode of the input (serialized as scripts inside CTxOuts)
+     6. value of the output spent by this input (8-byte little endian)
+     7. nSequence of the input (4-byte little endian)
+     8. hashOutputs (32-byte hash)
+     9. nLocktime of the transaction (4-byte little endian)
+    10. sighash type of the signature (4-byte little endian)
+    11. nForkId (4-byte little endian)
+```
+
+
+For `nForkId=0` this step is ommitted. This will immediately invalidate signatures for any other branch of the blockchain than this specific fork. To distinguish between `nForkId=0` and `nForkId` hardcoded into the software, another bit has to be set in the 1B SigHashId present at the end of signatures.
+
+To make this approach more generic, payment addresses will contain the fork id, depending on which tokens a payee expects payments in. This would require a change on bech32 addresses, maybe to use a similar format used in lightning-rfc [2]. A wallet will parse the address, it will extract `nForkId`, and it displays which token the user is about to spend. When signing the transaction, it will use `nForkId`, such that the transaction is only valid for this specific token. This can be generalised in software to the point where replay protection *and* a new address space can be introduced for forks without breaking existing clients.
+
+For light clients, this can be extended by enforcing the coinbase/block header to contain the `nForkId` of the block. Then the client can distinguish between different chains and tokens it received on each. Alternatively, a new P2P message type for sending transactions could be introduced, where prevOut and `nForkId` is transmitted, such that the lite client can check for himself, which token he received.
+
+Allowing signatures with `nForkId=1` can be achieved with a soft fork by incrementing the script version of SegWit, making this a fully backwards compatible change.
+
+[1]
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-February/013542.html <https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-February/013542.html>
+[2]
+https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md <https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171105/41f5276f/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 842 bytes
+Desc: Message signed with OpenPGP
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171105/41f5276f/attachment.sig>
