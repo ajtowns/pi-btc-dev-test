@@ -1,0 +1,52 @@
+From: mats@blockchain.com (Mats Jerratsch)
+Date: Fri, 10 Nov 2017 11:28:06 +0000
+Subject: [bitcoin-dev] Generalised Replay Protection for Future Hard
+	Forks
+In-Reply-To: <CAAUaCyibOEHqw1J5O8yEp8v=j8t9sovn2vn=S8bZPZCzCY-gRw@mail.gmail.com>
+References: <7601C2CD-8544-4501-80CE-CAEB402A72D2@blockchain.com>
+	<CAAUaCyii2U5VBLS+Va+F3h4Hka0OWDnFFmjtsvyaaD4TKVzV3Q@mail.gmail.com>
+	<CAAUaCyiZ0bmWZLZc-yDvVHupzbdRR=Kdq4P8VkWqpU1L3G-u3A@mail.gmail.com>
+	<C9A47922-5777-44AC-871A-6C27A22054AC@blockchain.com>
+	<CAAUaCyjVxJbPrbBUdb9irK5CNnuqUSnzSjywpozhLqONcb_m_w@mail.gmail.com>
+	<45C2D68B-BA8E-47DE-BFA5-643922395B2A@sprovoost.nl>
+	<CAAUaCygeOxAK=EpzfWndx6uVvVO9B+=YTs1m-jHa3BFp82jA4w@mail.gmail.com>
+	<95ECB451-56AE-45E5-AAE6-10058C4B7FD7@sprovoost.nl>
+	<CAAUaCyg_PGT0F=RHfX89T54j-vuyz5wcbXaYoikJv95WKgsNPg@mail.gmail.com>
+	<55467A01-A8B2-4E73-8331-38C0A7CD90EF@sprovoost.nl>
+	<CAAUaCyhncyCt_ao9i0=33LswDOkCf6o-+36zrGxKWD+WranmZw@mail.gmail.com>
+	<46E317DF-C97C-4797-B989-594298BC6030@sprovoost.nl>
+	<CAAUaCyibOEHqw1J5O8yEp8v=j8t9sovn2vn=S8bZPZCzCY-gRw@mail.gmail.com>
+Message-ID: <3FBEE883-A15E-425C-8BF1-F7792FA63961@blockchain.com>
+
+I guess I wasn't clear on the wildcard, `nForkId=0`
+
+This proposal puts Bitcoin at `nForkId=1`, with the purpose of having `nForkId=0` valid on *all* future forks. This means you can create a `nLockTime` transaction, delete the private key and still be assured to not lose potential future tokens.
+
+In theory `nForkId=0` could be used for an address too, the sending wallet should display a warning message about unknown side effects though. This address would be future-safe, and you can put it into a safe-deposit box (even though I see little reason to back up an _address_. You would always back up a _private key_, which translates into funds on any fork.)
+
+Furthermore, `nForkId=0` can be used for L2 applications. Let's say Alice and Bob open a payment channel. One week later, project X decides to fork the network into a new token, implementing a custom way of providing strong two-way replay protection. The protocol Alice and Bob use for the payment channel has not implemented this new form of replay protection. Alice and Bob now have to make a choice:
+
+(1) Ignore this new token. This comes with an evaluation of how much this new token could be worth in the future. They will continue normal channel operation, knowing that their funds on the other branch will be locked up until eternity. When they close their payment channel, the closing transaction will get rejected from the other network, because it's not following the format for replay protected transactions.
+
+(2) Close the payment channel before the fork. The transaction, which closes the payment channel has to be mined before the fork, potentially paying a higher-than-normal fee.
+
+With this proposal implemented, there are two additional choices
+
+(3) Create the commitment transactions with `nForkId=0`. This ensures that when the channel gets closed, funds on other chains are released accordingly. This also means that after the fork, payments on the channel move both, the original token and the new token. Potentially, Alice and Bob want to wait before further transacting on the channel, to see if the token has substantial value. If it has, they can *then* close the channel and open a new channel again. (Note: The funding transaction can use a specific `nForkId`, preventing you from locking up multiple coins when funding the channel, but you can choose to settle with `nForkId=0` to not lock up future coins)
+
+(4) Make the protocol aware of different `nForkId`. After the fork, the participants can chose to *only* close the payment channel on the new token, making the payment channel Bitcoin-only again. This is the preferred option, as it means no disruption to the original network.
+
+> I like the idea of specifying the fork in bech32 [0]. On the other hand, the standard already has a human readable part. Perhaps the human readable part can be used as the fork id?
+
+I was considering this too. On the other hand, it's only _human readable_ because thy bytes used currently encode 'bc'. For future forks, this would just be two random letters than, but potentially acceptable.
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171110/ada18c4a/attachment-0001.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 842 bytes
+Desc: Message signed with OpenPGP
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171110/ada18c4a/attachment-0001.sig>
