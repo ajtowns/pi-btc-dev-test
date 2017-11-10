@@ -1,0 +1,93 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Fri, 10 Nov 2017 18:33:31 -0500
+Subject: [bitcoin-dev] OP_CHECKHARDFORKVERIFY - replay protection and fork
+	futures on off-chain payment channels
+Message-ID: <Nkh-LxiWyBgU4UwQlAnbIWB4PkI60pRPRMF7LAx_btNVbrq1lvSRbZ6HPPRVCRVI_MPIVvoFldGaUJAwwQfcQ5guHG8h_anIZ1FxiX4DDV4=@protonmail.com>
+
+Good morning list,
+
+I would like to speculate on the addition of an opcode which would provide replay protection and allow chain-backed trustless creation of hardfork futures payment channels.
+
+Note however that in order to work, the hardfork must "cooperate" by changing the operation of OP_CHECKHARDFORKVERIFY in the hardfork.
+
+The opcode is simple.  If the top stack is not the exact value 1, it fails.
+
+The intent is that a hardfork must "cooperate" by also changing OP_CHECKHARDFORKVERIFY so that the top stack must be some other, non-1 value after the hardfork date.  This is a consensus break, but as a hardfork is defined by the fact that it is a consensus break, this is deliberate.
+
+--
+
+In the below, I assume the creation of a future hardfork with a new "consensus version" value (<hardforkVersion>, the value required by OP_CHECKHARDFORKVERIFY) and a fork height (<hardforkHeight>, the block height at which the hardfork will diverge from legacy).
+
+It should be noted, that an "uncooperative" hardfork would not change its consensus version, and in that regard, OP_CHECKBLOCKATHEIGHTVERIFY is superior.
+
+--
+
+In order to prepare my funds for splitting.  I pay to the below P2SH/P2WSH script:
+
+OP_IF
+  1 OP_CHECKHARDFORKVERIFY OP_DROP <myPubKey1> OP_CHECKSIG
+OP_ELSE
+  <hardforkVersion> OP_CHECKHARDFORKVERIFY OP_DROP <myPubKey2> OP_CHECKSIG
+OP_END
+
+In the above, I can then create transactions that spend the first branch on legacy chain post fork, and create transactions that spend the second branch on the hardfork chain post fork.  In addition, if I suddenly need to access the fund before the fork date, I can use the first branch to recover my funds before the fork date.
+
+--
+
+Suppose I wish to make a bet with another randomly generated Internet person, MX06fRH.  I am of the opinion, that the hardfork will not have economic consensus, whereas MX06fRH is of the opinion that it will.  We resolve to each bet 1 BTC.
+
+We create a transaction spending our funds and paying a single combined output to the below P2SH/P2WSH:
+
+OP_DUP
+OP_IF
+  1 OP_EQUAL
+  OP_IF
+    <hardforkHeight> OP_CHECKLOCKTIMEVERIFY OP_DROP
+    1 OP_CHECKHARDFORKVERIFY OP_DROP
+    <ZmnSCPxjWinPubKey> OP_CHECKSIG
+  OP_ELSE
+    <hardforkVersion> OP_CHECKHARDFORKVERIFY OP_DROP
+    <MRX06fRHWinPubKey> OP_CHECKSIG
+  OP_ENDIF
+OP_ELSE
+  OP_DROP
+  2 <ZmnSCPxjExitPubKey> <MX06fRHExitPubKey> 2 OP_CHECKMULTISIG
+OP_ENDIF
+
+In the above, I can use <ZmnSCPxjWinPubKey> and an nLockTime transaction after the fork date to claim my legacy coin, if the legacy coin has value, wheres MRX06fRH can use <MRX06fRHWinPubKey> on the hardfork chain if it has value.  Alternatively, we can both agree to cancel the bet.
+
+--
+
+While the above is workable, it does not form a market where price discovery of legacy and hardfork future coins can be performed to determine consensus.  For that, we will need to use payment channel techniques.
+
+I and MRX06fRH can form a payment channel that can trade fork futures by creating an anchor transaction paying to:
+
+OP_DUP
+OP_IF
+  1 OP_EQUAL
+  OP_IF
+    <hardforkHeight> OP_CHECKLOCKTIMEVERIFY OP_DROP
+    1 OP_CHECKHARDFORKVERIFY OP_DROP
+    2 <ZmnSCPxjLegacyPubKey> <MX06fRHLegacyPubKey> 2 OP_CHECKMULTISIG
+  OP_ELSE
+    <hardforkVersion> OP_CHECKHARDFORKVERIFY OP_DROP
+    2 <ZmnSCPxjHardforkPubKey> <MX06fRHHardforkPubKey> 2 OP_CHECKMULTISIG
+  OP_ENDIF
+OP_ELSE
+  OP_DROP
+  2 <ZmnSCPxjExitPubKey> <MX06fRHExitPubKey> 2 OP_CHECKMULTISIG
+OP_ENDIF
+
+Of course, before the anchor transaction is signed, we should create commitment transactions first.  For a Poon-Drjya channel, we should create two commitment transactions, one for me and one for MX06fRH, but in fact we should create two versions of both, one for the legacy token and one for the hardfork token (four commitment transactions).  The contracts are differentiated by which branch of the above we activate.  Commitment transactions can only be claimed after the fork, but we can update them continuously using normal Poon-Dryja channel operations.
+
+If I have the same amount of legacy and hardfork tokens, then MX06fRH also has equal legacy and hardfork tokens, so we can agree to exit.
+
+--
+
+Unfortunately this can only reach up to payment channels.  To create a futures market we should have a payment channel network.  For Lightning we use HTLCs to create atomic swaps of coins in different payment channels.  However, the difference here is that commitment transactions can only be claimed after the fork, so any HTLCs on top of that will have expired before the commitment transactions can be claimed and the HTLCs enforced.  Unfortunately, I know of no other construction that would allow creation of a payment channel network on top of a payment channel primitive.  So much for OP_CHECKHARDFORKVERIFY.
+
+Regards,
+ZmnSCPxj
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171110/58bf0a84/attachment-0001.html>
