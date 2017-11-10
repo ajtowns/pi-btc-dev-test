@@ -1,0 +1,38 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Fri, 10 Nov 2017 12:01:14 +1030
+Subject: [bitcoin-dev] Covenants through merkelized txids.
+Message-ID: <87lgjex6l9.fsf@rustcorp.com.au>
+
+Hi all,
+
+        This is an alternative to jl2012's BIPZZZ (OP_PUSHTXDATA[1]).
+It riffs on the (ab)use of OP_CHECKSIGFROMSTACK that Russell[2]
+used to implement covenants[3].  I've been talking about it to random
+people for a while, but haven't taken time to write it up.
+
+The idea is to provide a OP_TXMERKLEVERIFY that compares the top stack
+element against a merkle tree of the current tx constructed like so[4]:
+
+        TXMERKLE = merkle(nVersion | nLockTime | fee, inputs & outputs)
+        inputs & outputs = merkle(inputmerkle, outputmerkle)
+        input = merkle(prevoutpoint, nSequence | inputAmount)
+        output = merkle(nValue, scriptPubkey)
+
+Many variants are possible, but if we have OP_CAT, this makes it fairly
+easy to test a particular tx property.  A dedicated OP_MERKLE would make
+it even easier, of course.
+
+If we one day HF and add merklized TXIDs[5], we could also use this method
+to inspect the tx *being spent* (which was what I was originally trying to
+do).
+
+Thanks for reading!
+Rusty.
+
+[1] https://github.com/jl2012/bips/blob/vault/bip-0ZZZ.mediawiki
+[2] Aka Dr. "Not Rusty" O'Connor.  Of course both of us in the same thread will
+    probably break the internet.
+[3] https://blockstream.com/2016/11/02/covenants-in-elements-alpha.html
+[4] You could put every element in a leaf, but that's less compact to
+    use: cheaper to supply the missing parts with OP_CAT than add another level.
+[5] Eg. use the high nVersion bit to say "make my txid a merkle".
