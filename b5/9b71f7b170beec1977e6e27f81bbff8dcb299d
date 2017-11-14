@@ -1,0 +1,119 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Tue, 14 Nov 2017 10:38:33 +0000
+Subject: [bitcoin-dev] Updates on Confidential Transactions efficiency
+In-Reply-To: <20171114091123.GA29286@savin.petertodd.org>
+References: <CAAS2fgQ0Cb2B=Ye2TnpfQqP4=kpZCxMWRXYB0CcFa71sQJaGuw@mail.gmail.com>
+	<20171114091123.GA29286@savin.petertodd.org>
+Message-ID: <CAAS2fgQVJU659NsX054YTTB1MCDWtSk9PXJo5+EgrBRRG+VDsw@mail.gmail.com>
+
+On Tue, Nov 14, 2017 at 9:11 AM, Peter Todd <pete at petertodd.org> wrote:
+> I _strongly_ disagree with this statement and urge you to remove it from the
+> paper.
+
+I very strongly disagree with your strong disagreement.
+
+> The worst-case risk of undetected inflation leading to the destruction of a
+> currency is an easily quantified risk: at worst any given participant loses
+> whatever they have invested in that currency. While unfortunate, this isn't a
+> unique or unexpected risk: cryptocurrencies regularly lose 50% - or even 90% -
+> of their value due to fickle markets alone. But cryptocurrency owners shrug
+> these risks off. After all, it's just money, and diversification is an easy way
+> to mitigate that risk.
+>
+> But a privacy break? For many users _that_ threatens their very freedom,
+> something that's difficult to even put a price on.
+
+Its important that people know and understand what properties a system has.
+
+Perhaps one distinction you miss is that perfectly hiding systems
+don't even exist in practice: I would take a bet that no software on
+your system that you can use with other people actually implements a
+perfectly hiding protocol (much less find on most other people's
+system system :)).
+
+In the case of practical use with CT perfect hiding is destroyed by
+scalability-- the obvious construction is a stealth address like one
+where a DH public key is in the address and that is used to scan for
+your payments against a nonce pubkey in the transactions.   The
+existence of that mechanism destroys perfect hiding.  No scheme that
+can be scanned using an asymmetric key is going to provide perfect
+hiding.
+
+Now, perhaps what you'd like is a system which is not perfect hiding
+but where the hiding rests on less "risky" assumptions.  That is
+something that can plausibly be constructed, but it's not itself
+incompatible with unconditional soundness.
+
+As referenced in the paper, there is also the possibility of having a
+your cake and eating it too-- switch commitments for example allow
+having computational-hiding-depending-on-the-hardness-of-inverting-hashes
+ (which I would argue is functionally as good as perfect hiding, esp
+since hiding is ultimately limited by the asymmetric crypto used for
+discovery)  and yet it retains an option to upgrade or block spending
+via unsound mechanisms in the event of a crypto break.
+
+> Furthermore, the risk of inflation is a risk that's easily avoided:
+
+Sounds like you are assuming that you know when there is a problem, if
+you do then the switch commitments scheme works and doesn't require
+any selling of anything. Selling also has the problem that everyone
+would want to do it at once if there was a concern; this would not
+have good effects. :) Without switch commitments though, you are just
+hosed.  And you cannot have something like switch commitments without
+abandoning perfect hiding ( though you get hiding which is good enough
+(tm), as mentioned above).
+
+On Tue, Nov 14, 2017 at 10:07 AM, Peter Todd <pete at petertodd.org> wrote:
+> Re: the unprunable accumulators, that doesn't need to be an inherent property
+> of Zcash/Monero style systems.
+>
+> It'd be quite feasible to use accumulator epochs and either make unspent coins
+> in a previous epoch unspendable after some expiry time is reached - allowing
+
+Miners to reduce coin supply, enhancing the value of their own
+holdings, by simply not letting near-expiry ones get spent...
+(This can be partially mediated by constructing proofs to hide if a
+coins in near expiration or not.)
+
+> or make use of a merkelized key-value scheme with transaction provided proofs to shift the costs of
+> maintaining the accumulator to wallets.
+
+Yes, that they can do-- though with the trade-offs inherent in that.
+It is worse than what you were imagining in the Bitcoin case because
+you cannot use one or two time-ordered trees, the spent coins list
+needs search-insertion; so maintaining it over time is harder. :(  The
+single time ordered tree trick doesn't work because you can't mutate
+the entries without blowing anonymity.
+
+I think it's still fair to say that ring-in and tree-in approaches
+(monero, and zcash) are fundamentally less scalable than
+CT+valueshuffle, but more private-- though given observations of Zcash
+behavior perhaps not that much more private.  With the right smart
+tricks the scalablity loss might be more inconvenient than fatal, but
+they're still a loss even if they're one that makes for a good
+tradeoff.
+
+As an aside, you shouldn't see Monero as entirely distinct now that
+we're talking about a framework which is fully general:  Extending
+this to a traceable 1 of N input for monero is simple-- and will add
+size log() in the number of ring inputs with good constant factors.
+One could also store inputs in a hash tree, and then have a
+bulletproof that verified membership in the tree.  This would provide
+tree-in style transactions with proofs that grow with the log() of the
+size of the tree (and a spent coins accumulator); the challenge there
+would be choosing a hash function that had a compact representation in
+the arithmetic circuit so that the constant factors aren't terrible.
+Effectively that's what bulletproofs does:   It takes a general scheme
+for ZKP of arbitrary computation, which could implement a range proof
+by opening the commitments (e.g. a circuit for EC point scalar
+multiply) and checking the value, and optimizes it to handle the
+commitments more directly. If you're free to choose the hash function
+there may be a way to make a hash tree check ultra efficient inside
+the proof, in which case this work could implement a tree-in scheme
+like zcash-- but with larger proofs and slower verification in
+exchange for much better crypto assumptions and no trusted setup.
+This is part of what I meant by it opening up "many other interesting
+applications".
+
+But as above, I think that the interactive-sparse-in (CJ) has its own
+attractiveness, even though it is not the strongest for privacy.
