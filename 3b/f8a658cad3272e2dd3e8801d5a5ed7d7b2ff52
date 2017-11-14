@@ -1,0 +1,113 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Tue, 14 Nov 2017 01:21:14 +0000
+Subject: [bitcoin-dev] Updates on Confidential Transactions efficiency
+Message-ID: <CAAS2fgQ0Cb2B=Ye2TnpfQqP4=kpZCxMWRXYB0CcFa71sQJaGuw@mail.gmail.com>
+
+Jump to "New things here" if you're already up to speed on CT and just
+want the big news.
+
+Back in 2013 Adam Back proposed that Bitcoin and related systems could
+use additive homomorphic commitments instead of explicit amounts in
+place of values in transactions for improved privacy.     (
+https://bitcointalk.org/index.php?topic=305791.0 )
+
+We've since adopted the name 'confidential transactions' for this
+particular approach to transaction privacy.
+
+This approach makes transaction amounts private--known only to the
+sender, the receiver, and whichever parties they choose to share the
+information with through sharing watching keys or through revealing
+single transactions. While that, combined with pseudonymous addresses,
+is a pretty nice privacy improvement in itself, it turns out that
+these blinded commitments also perfectly complement CoinJoin (
+https://bitcointalk.org/index.php?topic=279249.0 ) by avoiding the
+issue of joins being decoded due to different amounts being used. Tim
+Ruffing and Pedro Moreno-Sanchez went on to show that CJ can be
+dropped into distributed private protocols for CoinJoin (
+http://fc17.ifca.ai/bitcoin/papers/bitcoin17-final6.pdf ) which
+achieve the property where no participant learns which output
+corresponds to which other participant.
+
+The primary advantage of this approach is that it can be constructed
+without any substantial new cryptographic assumptions (e.g., only
+discrete log security in our existing curve), that it can be high
+performance compared to alternatives, that it has no trusted setup,
+and that it doesn't involve the creation of any forever-growing
+unprunable accumulators.  All major alternative schemes fail multiple
+of these criteria (e.g., arguably Zcash's scheme fails every one of
+them).
+
+I made an informal write-up that gives an overview of how CT works
+without assuming much crypto background:
+https://people.xiph.org/~greg/confidential_values.txt
+
+The main sticking point with confidential transactions is that each
+confidential output usually requires a witness which shows that the
+output value is in range.  Prior to our work, the smallest range
+proofs without trusted setup for the 0-51 bit proofs needed for values
+in Bitcoin would take up 160 bytes per bit of range proved, or 8160
+bytes needed for 51 bits--something like a 60x increase in transaction
+size for a typical transaction usage.
+
+I took Adam's suggestion and invented a number of new optimizations,
+and created a high performance implementation. (
+https://github.com/ElementsProject/secp256k1-zkp/tree/secp256k1-zkp/src/modules/rangeproof
+). With these optimizations the size is reduced to 128 bytes per two
+bits plus 32 bytes; about 40% of the prior size.  My approach also
+allowed a public exponent and minimum value so that you could use a
+smaller range (e.g., 32 bits) and have it cover a useful range of
+values (though with a little privacy trade-off). The result could give
+proof sizes of about 2.5KB per output under realistic usage.  But this
+is still a 20x increase in transaction size under typical usage--
+though some in the Bitcoin space seem to believe that 20x larger
+blocks would be no big deal, this isn't a view well supported by the
+evidence in my view.
+
+Subsequent work has been focused on reducing the range proof size further.
+
+In our recent publication on confidential assets (
+https://blockstream.com/bitcoin17-final41.pdf ) we reduce the size to
+96*log3(2)*bits + 32, which still leaves us at ~16x size for typical
+usage. (The same optimizations support proofs whose soundness doesn't
+even depend on the discrete log assumption with the same size as the
+original CT publication).
+
+-- New things here --
+
+The exciting recent update is that Benedikt B?nz at Standford was able
+to apply and optimize the inner product argument of Jonathan Bootle to
+achieve an aggregate range proof for CT with size 64 * (log2(bits *
+num_outputs)) + 288, which is ~736 bytes for the 64-bit 2-output case.
+
+This cuts the bloat factor down to ~3x for today's traffic patterns.
+Since the scaling of this approach is logarithmic with the number of
+outputs, use of CoinJoin can make the bloat factor arbitrarily small.
+E.g., combining 64 transactions still only results in a proof under
+1.1KB, so in that case the space overhead from the range proof is
+basically negligible.
+
+The log scaling in the number of range-bits also means that unlike the
+prior construction there is little reason to be skimpy with the number
+of bits of range at the potential expense of privacy: covering the
+full range of possible values takes only slightly longer proofs than
+covering a short range. This scheme also has a straightforward and
+efficient method for multi-party computation, which means that the
+aggregates can be used in all-party-private coinjoins like the value
+shuffle work mentioned above.
+
+Unlike prior optimizations, verification in this new work requires
+computation which is more than linear in the size of the proof (the
+work is linear in the size of the statement being proved).  So it's
+likely that in spite of the small proofs the verification will be
+similar in speed to the prior version, and likely that computation
+will be the bottleneck.  Andrew, Pieter, Jonas Nick, and I are working
+on an optimized implementation based on libsecp256k1 so we'll know
+more precise performance numbers soon.
+
+This work also allows arbitrarily complex conditions to be proven in
+the values, not just simple ranges, with proofs logarithmic in the
+size of the arithmetic circuit representing the conditions being
+proved--and still with no trusted setup. As a result it potentially
+opens up many other interesting applications as well.
+
+The pre-print on this new work is available at https://eprint.iacr.org/2017/1066
