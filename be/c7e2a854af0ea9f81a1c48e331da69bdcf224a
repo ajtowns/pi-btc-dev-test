@@ -1,0 +1,91 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Tue, 21 Nov 2017 09:00:21 -1000
+Subject: [bitcoin-dev] BIP159 - NODE_NETWORK_LIMITED service bits,
+ extendability
+In-Reply-To: <BF359C7E-7FEF-43A6-8ED9-05BED8E0EB64@sprovoost.nl>
+References: <BF359C7E-7FEF-43A6-8ED9-05BED8E0EB64@sprovoost.nl>
+Message-ID: <A226065E-A9FE-4BDC-BE4F-1D205D298C0F@jonasschnelli.ch>
+
+Hi Sjors
+
+Thanks for picking this up.
+
+There where some previous discussions about this [1] [2].
+Initially, the idea was to have two service bits to signal (up to three) states.
+But, since it is not clear what use-cases the bits signalling >288 blocks would fulfil, I have limited BIP159 to a single 288blocks-available signalling.
+
+Therefore, BIP159 aims to improve the block relay state around the tip (24h) which seems to be the most significant request peak (peers out of IBD).
+Also, it takes an acceptable transition for pruned node operators into account. Once BIP159 gets active on the network, pruned peer operators may see an increase in CPU and bandwidth usage.
+
+SPV peers may also connect to BIP159 nodes, scan the mempool and wait for unconfirmed transactions (they don?t do this now because pruned nodes don't signal any service).
+
+Future extensions are possible. Maybe a p2p command that could tell more infos about the pruning state would be useful.
+
+BIP159 also recommends to fix the fingerprinting weakness by fix limiting it to 288 blocks, making it impossible for an attacker to fingerprint your peer by scanning how deep the peer can serve blocks. This may be a reduction for possible use cases with todays pruned peers and an idea would be to relax this limit for whitelisted peers (or peers connecting via BIP150 [not implemented], and this is the only connection between BIP150 and BIP159).
+
+However, I think the scope of BIP159 should be kept as it is. More flexibility can be added later when we have gathered more information during BIP159 deployment.
+Also, the implementations is an advanced stage [3][4]
+
+?
+</jonas>
+
+[1] https://botbot.me/freenode/bitcoin-core-dev/2017-04-27/?msg=84827228&page=3
+[2] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-May/thread.html#14314
+[3] https://github.com/bitcoin/bitcoin/pull/10387
+[4] https://github.com/bitcoin/bitcoin/pull/11740
+
+
+> Am 21.11.2017 um 04:03 schrieb Sjors Provoost via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>:
+> 
+> I came across the proposed Bitcoin Core implementation of BIP159 [0] in this PR [1]. The goal is to allow pruned nodes to "serve a limited number of historical blocks" (as opposed to none at all).
+> 
+> It contains a counter-measure for peer fingerprinting. I'm trying to understand how that impacts extendibility.
+> 
+>> Peers may have different prune depths (depending on the peers configuration,
+>> disk space, etc.) which can result in a fingerprinting weakness (finding the
+>> prune depth through getdata requests). NODE_NETWORK_LIMITED
+>> supporting peers SHOULD avoid leaking the prune depth and therefore
+>> not serve blocks deeper then the signaled NODE_NETWORK_LIMITED
+>> thresholds.
+> 
+> This means pruned nodes can only serve the last 288 blocks:
+> 
+>> If signaled, the peer MUST be capable of serving at least the last 288 blocks (~2 day
+> 
+> As the blockchain keeps growing there will be ever more pruned nodes (perhaps offset by new nodes with more storage).  Although a strict improvement over todays situation, it seems a bit wasteful to have a node with 10-100 GB of storage only be able to share the most recent 288 blocks.
+> 
+> It would be nice if a future extension of this BIP allows more flexibility. To limit the ability to fingerprint nodes, we could limit the number of choices to e.g. 288 + 1000 * 2^n. That yields only 8 possibilities at the current chain size. A slightly better formula could take into account typical hard drive size increments, leaving enough space for the OS and other data. Node operators could opt-in to this if they think the increased fingerprint risk outweighs their desire to share archived blocks.
+> 
+> I can also imagine - but not implement :-) - a future scenario where nodes prune a random subset of their chain, meaning that even nodes with little storage can be of help during Initial Blockchain Download (IBD) of other nodes.
+> 
+> 
+> How would such extension be signaled for? Would we need a whole new version bit?
+> 
+> Would upgraded nodes need a new message type to communicate the chosen prune depth? Or can that information tag along some existing message?
+> 
+> Jonas Schnelli pointed out on the Github discussion that waiting for BIP150 would be appropriate. Can you explain how this is related? Although I can see why whitelisted peers can be exempted from the anti-fingerprinting measure, I would not want to restrict it to just those.
+> 
+> 
+> Some minor suggestions for improving the BIP itself:
+> * add link to mailinglist discussion(s) in reference section
+> * explain that 288 is not just the minimum limit for Bitcoin Core, but also the bulk of traffic (as I understand from earlier discussion [2])
+> 
+> Cheers,
+> 
+> Sjors
+> 
+> [0] https://github.com/bitcoin/bips/blob/master/bip-0159.mediawiki
+> [1] https://github.com/bitcoin/bitcoin/pull/10387
+> [2] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-May/thread.html#14315
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 833 bytes
+Desc: Message signed with OpenPGP
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171121/31852331/attachment-0001.sig>
