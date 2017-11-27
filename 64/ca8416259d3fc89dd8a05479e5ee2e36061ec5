@@ -1,0 +1,137 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Mon, 27 Nov 2017 16:33:37 -0500
+Subject: [bitcoin-dev] Making OP_CODESEPARATOR and FindAndDelete in
+ non-segwit scripts non-standard
+In-Reply-To: <44B74F02-D3D6-47B9-976E-A72042E5C84B@friedenbach.org>
+References: <53A587C3-DAC1-4055-875F-96B61717ACE6@xbt.hk>
+	<081A517B-B730-43AB-9D4E-4F696EFD91A3@friedenbach.org>
+	<56ca1248-6427-46f7-1645-84349cc8facc@mattcorallo.com>
+	<44B74F02-D3D6-47B9-976E-A72042E5C84B@friedenbach.org>
+Message-ID: <2c78e653-862d-afd3-0ae7-ebbbc9eec770@mattcorallo.com>
+
+Indeed, the PR in question does *not* change the semantics of
+OP_CODESEPARATOR within SegWit redeemScripts, where it is still allowed
+(and Nicolas Dorier pointed out that he was using it in TumbleBit), so
+there are still ways to use it, but only in places, like SegWit, where
+the potential validation complexity blowup is massively reduced.
+
+I am not sure that OP_CODESEPARATOR is entirely useless in pre-SegWit
+scripts (I believe Nicolas' construction may still be relevant
+pre-SegWit), though I strongly believe FindAndDelete is.
+
+I don't think CODESEPARATOR rises to the threshold of it being "widely
+known to be useless", but certainly the historical use of it (to
+separate the scriptSig and the scriptPubKey in the scriptCode, which was
+run as a single concatenated thing in the original design is no longer
+relevant). FindAndDelete is equally irrelevant if not significantly more
+irrelevant.
+
+Matt
+
+On 11/27/17 16:06, Mark Friedenbach wrote:
+> It is relevant to note that BIP 117 makes an insecure form of
+> CODESEPARATOR delegation possible, which could be made secure if some
+> sort of CHECKSIGFROMSTACK opcode is added at a later point in time. It
+> is not IMHO a very elegant way to achieve delegation, however, so I hope
+> that one way or another this could be resolved quickly so it doesn?t
+> hold up either one of those valuable additions.
+> 
+> I have no objections to making them nonstandard, or even to make them
+> invalid if someone with a better grasp of history can attest that
+> CODESEPARATOR was known to be entirely useless before the introduction
+> of P2SH?not the same as saying it was useless, but that it was widely
+> known to not accomplish what a early-days script author might think it
+> was doing?and the UTXO set contains no scriptPubKeys making use of the
+> opcode, even from the early days. Although a small handful could be
+> special cased, if they exist.
+> 
+>> On Nov 27, 2017, at 8:33 AM, Matt Corallo <lf-lists at mattcorallo.com
+>> <mailto:lf-lists at mattcorallo.com>> wrote:
+>>
+>> I strongly disagree here - we don't only soft-fork out transactions that
+>> are "fundamentally insecure", that would be significantly too
+>> restrictive. We have generally been willing to soft-fork out things
+>> which clearly fall outside of best-practices, especially rather
+>> "useless" fields in the protocol eg soft-forking behavior into OP_NOPs,
+>> soft-forking behavior into nSequence, etc.
+>>
+>> As a part of setting clear best-practices, making things non-standard is
+>> the obvious step, though there has been active discussion of
+>> soft-forking out FindAndDelete and OP_CODESEPARATOR for years now. I
+>> obviously do not claim that we should be proposing a soft-fork to
+>> blacklist FindAndDelete and OP_CODESEPARATOR usage any time soon, and
+>> assume that it would take at least a year or three from when it was made
+>> non-standard to when a soft-fork to finally remove them was proposed.
+>> This should be more than sufficient time for folks using such weird (and
+>> largely useless) parts of the protocol to object, which should be
+>> sufficient to reconsider such a soft-fork.
+>>
+>> Independently, making them non-standard is a good change on its own, and
+>> if nothing else should better inform discussion about the possibility of
+>> anyone using these things.
+>>
+>> Matt
+>>
+>> On 11/15/17 14:54, Mark Friedenbach via bitcoin-dev wrote:
+>>> As good of an idea as it may or may not be to remove this feature from
+>>> the code base, actually doing so?would be crossing a boundary that we
+>>> have not previously been willing to do except under extraordinary
+>>> duress. The nature of bitcoin is such that we do not know and cannot
+>>> know what transactions exist out there pre-signed and making use of
+>>> these features.
+>>>
+>>> It may be a good idea to make these features non standard to further
+>>> discourage their use, but I object to doing so with the justification of
+>>> eventually disabling them for all transactions. Taking that step has the
+>>> potential of destroying value and is something that we have only done in
+>>> the past either because we didn?t understand forks and best practices
+>>> very well, or because the features (now disabled) were fundamentally
+>>> insecure and resulted in other people?s coins being vulnerable. This
+>>> latter concern does not apply here as far as I?m aware.
+>>>
+>>> On Nov 15, 2017, at 8:02 AM, Johnson Lau via bitcoin-dev
+>>> <bitcoin-dev at lists.linuxfoundation.org
+>>> <mailto:bitcoin-dev at lists.linuxfoundation.org>
+>>> <mailto:bitcoin-dev at lists.linuxfoundation.org>> wrote:
+>>>
+>>>> In?https://github.com/bitcoin/bitcoin/pull/11423?I propose to
+>>>> make?OP_CODESEPARATOR and FindAndDelete in non-segwit scripts
+>>>> non-standard
+>>>>
+>>>> I think FindAndDelete() is one of the most useless and complicated
+>>>> functions in the script language. It is omitted from segwit (BIP143),
+>>>> but we still need to support it in non-segwit scripts. Actually,
+>>>> FindAndDelete() would only be triggered in some weird edge cases like
+>>>> using out-of-range SIGHASH_SINGLE.
+>>>>
+>>>> Non-segwit scripts also use a FindAndDelete()-like function to remove
+>>>> OP_CODESEPARATOR from scriptCode. Note that in BIP143, only executed
+>>>> OP_CODESEPARATOR are removed so it doesn?t have the
+>>>> FindAndDelete()-like function. OP_CODESEPARATOR in segwit scripts are
+>>>> useful for Tumblebit so it is not disabled in this proposal
+>>>>
+>>>> By disabling both, it guarantees that scriptCode serialized inside
+>>>> SignatureHash() must be constant
+>>>>
+>>>> If we use a softfork to remove FindAndDelete() and OP_CODESEPARATOR
+>>>> from non-segwit scripts, we could completely remove FindAndDelete()
+>>>> from the consensus code later by whitelisting all blocks before the
+>>>> softfork block. The first step is to make them non-standard in the
+>>>> next release.
+>>>>
+>>>>
+>>>> ?
+>>>> _______________________________________________
+>>>> bitcoin-dev mailing list
+>>>> bitcoin-dev at lists.linuxfoundation.org
+>>>> <mailto:bitcoin-dev at lists.linuxfoundation.org>
+>>>> <mailto:bitcoin-dev at lists.linuxfoundation.org>
+>>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>
+>>>
+>>> _______________________________________________
+>>> bitcoin-dev mailing list
+>>> bitcoin-dev at lists.linuxfoundation.org
+>>> <mailto:bitcoin-dev at lists.linuxfoundation.org>
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
