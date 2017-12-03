@@ -1,0 +1,134 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Sun, 3 Dec 2017 16:32:15 -0500
+Subject: [bitcoin-dev] Two Drivechain BIPs
+In-Reply-To: <d3497397-33c3-90c1-1be8-a733736eac0b@gmail.com>
+References: <d3497397-33c3-90c1-1be8-a733736eac0b@gmail.com>
+Message-ID: <1bb6cccd-3f6d-d62a-2825-4e6f46a4b525@mattcorallo.com>
+
+Process note: It looks like the BIPs have never been posted to
+bitcoin-dev, only high-level discussion around the idea. As I understand
+it, this is *not* sufficient for BIP number assignment nor
+(realistically) sufficient to call it a hard "proposal" for a change to
+consensus rules.
+
+Would love to get feedback from some others who are looking at deploying
+real-world sidechains, eg the RSK folks. We can't end up with *two*
+protocols for sidechains in Bitcoin.
+
+Comments on BIP 1:
+
+At a high level, I'm rather dissapointed by the amount of data that is
+going into the main chain here. Things such as a human readable name
+have no place in the chain, IMO. Further, the use of a well-known
+private key seems misplaced, why not just track the sidechain balance
+with something that looks like `OP_NOPX genesis_block_hash`?
+
+I'm not convinced by the full semantics of proposal/ack of new
+sidechains. Given the lack of convincing evidence of that "Risk of
+centralisation of mining" drawback in section 4.3 of the sidechains
+paper has been meaningfully addressed, I'd say its pretty important that
+new sidechains be an incredibly rare event. Thus, a much simpler system
+(eg a version-bits-based upgrade cycle with high threshold) could be
+used to add new sidechains based on well-known public parameters.
+
+The semantics of the deposit process seem very suboptimal. You note that
+only one user can deposit at a time, but this seems entirely
+unnecessary. As implemented in the first Elements Alpha release (though
+I believe subsequently removed in later versions due to the nature of
+Elements of targeting asymmetric "federated" sidechains), if you have
+outputs that look like `OP_NOPX genesis_block_hash` as the sidechain
+deposit/storage address, deposit can be fully parallel. To reduce
+blockchain bloat, spending them for the purpose of combining such
+outputs is also allowed. You could even go further and allow some new
+sighash type to define something like SIGHASH_ALL|SIGHASH_ANYONECANPAY
+which further specifies some semantics for combining inputs which all
+pay into the same output.
+
+Finally, you may also want to explore some process for the removal of
+sidechain balances from the main chain. As proposed it seems like a
+sidechain might, over time, fade into an insecure state as mining power
+shifts and new miners no longer consider it worth the value to mine an
+old sidechain (as has happened over time with namecoin, arguably).
+
+
+Comments on BIP 2:
+
+I may be missing something, but I find the security model here kind of
+depressing...Not only do hashpower-secured sidechains already have a
+significantly reduced security level, but now you're proposing to
+further (drastically) reduce it by requiring users to potentially pay in
+excess of the value an attacker is willing to pay to keep their chain
+secure, on a recurring basis? It seems like if a chain has 10 BTC stored
+in it, and I wish to reorg it for a potential gain of, lets say, 6 BTC,
+I can pay 6 * 1 BTC (1 per block) to reorg it, and users on the chain
+would be forced to pay >6 BTC to avoid this?
+
+While I appreciate the desire to implement the proposed mitigation in
+section 4.3 of the sidechains paper (delegating the mining effort of a
+merge-mined sidechain to an external entity), I believe it was primarily
+referencing pooling the sidechain work, not blindly taking the highest
+bidder. I suppose, indeed, that, ultimately, as long as the sidechain is
+of relatively small value in comparison to BTC, miners do not risk the
+value of their BTC/mining investment in simply taking the highest bidder
+of a merge-mined block, even if its a clear attack, but I don't think
+thats something to be celebrated, encouraged, or designed to be possible
+by default. Instead, I'd, in line with Peter Todd's (and others')
+objection to merged mining generally, call this one of the most critical
+issues with the security model.
+
+Ultimately, I dont believe your proposal here really solves the drawback
+in section 4.3 of the paper, and possibly makes it worse. Instead, it
+may be more useful to rely on a high threshold for the addition of new
+sidechains, though I'd love to see discussion on this point specifically
+on this list. Further, I'd say, at a minimum, a very stable
+default-available low-bandwidth implementation of at least the
+pool-based mitigation suggested in the paper must exist for something
+like this to be considered readily stable enough to be deployed into the
+Bitcoin ecosystem.
+
+Matt
+
+On 12/01/17 13:38, Paul Sztorc via bitcoin-dev wrote:
+> Hello,
+> 
+> First, Drivechain has vaguely escaped vaporware status. If you've ever
+> thought "I'd like to take a look into Drivechain when there is code",
+> then now is a pretty good time. (Unfinished items include M1, and M8_V2.)
+> 
+> https://github.com/drivechain-project/bitcoin/tree/mainchainBMM
+> 
+> Also,
+> Site:? http://www.drivechain.info/
+> Blank sidechain:
+> https://github.com/drivechain-project/bitcoin/tree/sidechainBMM
+> 
+> Second, I think drivechain's documentation / BIP-Drafts are tolerably
+> readable.
+> 
+> Here they are:
+> 
+> 1.
+> https://github.com/drivechain-project/docs/blob/master/bip1-hashrate-escrow.md
+> 2.
+> https://github.com/drivechain-project/docs/blob/master/bip2-blind-merged-mining.md
+> 
+> cc: Luke, I think they are ready to be assigned formal BIP Numbers.
+> 
+> This is also a request for code review. The most helpful review will
+> probably take place on GitHub.
+> 
+> Regular review is also welcome. Although, please read our
+> recently-updated FAQ, at: http://www.drivechain.info/faq .
+> And also see major earlier discussions:
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-May/014364.html
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-June/014559.html
+> 
+> Have a nice weekend everyone,
+> Paul
+> 
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
