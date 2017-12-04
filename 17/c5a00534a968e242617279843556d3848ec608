@@ -1,0 +1,416 @@
+From: truthcoin@gmail.com (Paul Sztorc)
+Date: Mon, 4 Dec 2017 14:05:09 -0500
+Subject: [bitcoin-dev] Two Drivechain BIPs
+In-Reply-To: <1bb6cccd-3f6d-d62a-2825-4e6f46a4b525@mattcorallo.com>
+References: <d3497397-33c3-90c1-1be8-a733736eac0b@gmail.com>
+	<1bb6cccd-3f6d-d62a-2825-4e6f46a4b525@mattcorallo.com>
+Message-ID: <dd2781a6-3e10-9f0c-6ee0-a2c070b7cf67@gmail.com>
+
+Hi Matt,
+
+Thanks for very much for your thoughtful review
+
+Comments below.
+
+On 12/3/2017 4:32 PM, Matt Corallo wrote:
+> ...
+>
+> ...
+>
+> Comments on BIP 1:
+>
+> At a high level, I'm rather dissapointed by the amount of data that is
+> going into the main chain here. Things such as a human readable name
+> have no place in the chain, IMO.
+
+Well, that is quite a minor quibble, because it is just a one-time cost
+of 120 bytes per sidechain.
+
+To address it, there could instead be a hash commitment to this
+information. That commitment could be "optional", in that old nodes
+wouldn't need to possess the 120 bytes. Although, all of the sidechains
+are themselves optional. And old nodes will be ignoring all of this data
+anyways. So I do not think
+
+The inclusion of this field is deliberate. Probably, you do not buy my
+lengthy argument about "categorical control".
+
+http://www.drivechain.info/faq/#categorical-control
+
+Perhaps you have seen my May 2016 presentation on the topic. It was
+itself a lengthy reply to comments that Greg Maxwell made about the
+original Nov 2015 Drivechain post.
+
+https://www.youtube.com/watch?v=xGu0o8HH10U&list=PLw8-6ARlyVciMH79ZyLOpImsMug3LgNc4&index=1
+
+Either you aren't aware [of why I want each sidechain to have a
+comprehensible category]. Or, you are aware and you disagree. But if it
+is the latter we might just have to agree to disagree.
+
+> ....???????????????????????????????? Further, the use of a well-known
+> private key seems misplaced, why not just track the sidechain balance
+> with something that looks like `OP_NOPX genesis_block_hash`?
+
+I agree. I myself am unhappy with the private key approach, as it
+results in a totally pointless signature being generated, and a
+pointless CheckSig operation. (Somewhere, buried in
+documentation/GitHub-issue purgatory, there is a discussion of replacing
+it with OP TRUE.)
+
+Basically, our way was just a hack to make sure uses knew where they had
+to send the money, and also to get the balances to show up in all user's
+wallets. I do not pretend to have any expertise in this area (or even
+experience) so it is surely an area for improvement.
+
+>
+> I'm not convinced by the full semantics of proposal/ack of new
+> sidechains.? ...?????????? I'd say its pretty important that
+> new sidechains be an incredibly rare event.
+
+Well, I partially agree.
+
+However, if drivechain is a soft fork, and if 51% hashrate can add new
+softforks at any time, then our ability to alter the rate of
+sidechain-creation is very low. While we might use the rules of
+"Drivechain I" to impose restrictions on the "add a sidechain" process,
+nothing prevents 51% hashrate from re-adding Drivechain to Core a second
+time, creating a "Drivechain II" system with its own "add a sidechain"
+rules. Thus, the activation speed can increase, even if miners are
+incapable of writing any code. Or, miners might add "Drivechain I" to
+one of the sidechains. (And of course the new-sidechain-rate can
+decrease, through mere miner-censorship.)
+
+So, I think there really is no threat model, other than to say: we
+either open Pandora's box or we do not. My vision (for any Redditors who
+may be reading this, years in the future!!) is of a stable, conservative
+Bitcoin Core with 3-8 sidechains, of which at least one is rather
+experimental, and at least one of which has its own sidechains. But who
+knows.
+
+More importantly, the problem you've outlined is much much worse for
+extension blocks.
+
+(It can scarcely be denied that hashrate wants more block space, and
+that they can easily add one or many extension blocks, in public or in
+secret, at any time. Will a UASF really be able to disable an in-use
+extension block? I think the UASF-case is much less persuasive,
+especially since it involves loss/freezing of user funds.)
+
+So I would argue that one of *the* greatest benefits of Drivechain is
+that it neutralizes the threat of extension blocks by giving everyone a
+better alternative. In fact, I do not know of any other way to
+neutralize this threat.
+
+>? ... Thus, a much simpler system
+> (eg a version-bits-based upgrade cycle with high threshold) could be
+> used to add new sidechains based on well-known public parameters.
+
+I don't have a problem with this. In fact that is mostly how we have it
+today.
+
+My concern is a scenario where:
+
+Person A: is running the latest version of Bitcoin (which has
+drivechain), and full nodes for 3 out of 3 sidechains
+Person B: is running the 2nd-latest version of Bitcoin (which has
+drivechain), and was disconnected when the 3rd sidechain activated
+Person C: is running the 3rd-latest version of Bitcoin (which has
+drivechain), but was disconnected for the activation of all sidechains.
+Person D: is running 0.5.3 and has no idea what drivechain is.
+
+Then, we consider a case where someone attempts a side-to-main
+withdrawal from sidechain #2, but which tries to cheat the drivechain
+rules (which are mainchain-enforced).
+
+In one setup, C's security is downgraded. But in other settings it is
+not. And in other settings it might do something complicated.
+
+(Although, I also plan to introduce minimum parameter values, both to
+prevent C from being harassed in this case, and to force all
+drivechain-killing actions to be comparable to each other.)
+
+My thought was to have all drivechain parts to either stand or fall by
+themselves. But I am open-minded on this.
+
+> The semantics of the deposit process seem very suboptimal. You note that
+> only one user can deposit at a time, but this seems entirely
+> unnecessary. As implemented in the first Elements Alpha release (though
+> I believe subsequently removed in later versions due to the nature of
+> Elements of targeting asymmetric "federated" sidechains), if you have
+> outputs that look like `OP_NOPX genesis_block_hash` as the sidechain
+> deposit/storage address, deposit can be fully parallel. To reduce
+> blockchain bloat, spending them for the purpose of combining such
+> outputs is also allowed. ....
+
+Well, your proposal doesn't reduce the bloat, it merely makes
+bloat-reduction possible. And your way relies (slightly) on
+miner-charity, because it imposes an opportunity cost on miners. (Miners
+could sell their blockspace for fees, but instead they must use it to
+make these combinations you describe.)
+
+In contrast, the one-user-deposits-at-a-time not only allows bloat to be
+addressed, but also forces it to be addressed. It is like forcing
+someone who uses a shared kitchen to leave it exactly as clean as they
+found it.
+
+While I am concerned by the one-at-a-time concept, I would point out:
+
+* It is NOT one deposit per block. Just one at a time. In general, there
+can be as many deposits as needed.
+* It will not be a problem if [a] transactions propagate very quickly,
+and [b] transactions are signed very quickly.
+* If the deposit fails, it will likely be easy for the user to re-do it
+(or, this will be made easy, in the UX eventually).
+* It may ultimately be the case, that the task of shepherding the coins
+around is one that is only ever performed by specialists. They would
+have their own ways of batching txns to deal with this issue. In
+contrast, regular users might always use atomic swaps / ShapeShift-like
+tools.
+
+Nonetheless, I think this is another opportunity for improvement.
+Probably, if someone goes deeper into the scripting language and block
+validation rules, they will be able to achieve all of the objectives
+simultaneously. As you say:
+
+> ...?????????????????????? You could even go further and allow some new
+> sighash type to define something like SIGHASH_ALL|SIGHASH_ANYONECANPAY
+> which further specifies some semantics for combining inputs which all
+> pay into the same output.
+
+
+> Finally, you may also want to explore some process for the removal of
+> sidechain balances from the main chain. As proposed it seems like a
+> sidechain might, over time, fade into an insecure state as mining power
+> shifts and new miners no longer consider it worth the value to mine an
+> old sidechain (as has happened over time with namecoin, arguably).
+
+Yes, I think there should be some kind of switch for saying "please
+withdraw all of your funds because this chain is being closed down".
+However, if miners stopped mining a chain, I think sidechain-users would
+notice because their blocktimes would start to increase (under blind
+merged mining, anyway).
+
+
+> Comments on BIP 2:
+>
+> I may be missing something, but I find the security model here kind of
+> depressing...Not only do hashpower-secured sidechains already have a
+> significantly reduced security level, but now you're proposing to
+> further (drastically) reduce it by requiring users to potentially pay in
+> excess of the value an attacker is willing to pay to keep their chain
+> secure, on a recurring basis?
+
+I think you are missing a few things.
+
+First of all, I think the security model for sidechains is the same as
+that of every blockchain
+
+People will say things, like "but with sidechains 51% hashrate can steal
+your coins!", but as I have repeated many times, this is also true of
+mainchain btc-tx. As I say on drivechain.info:
+
+?""" In theory, the incentives of miners and investors are very strongly
+aligned: both are compensated most when the exchange rate is highest.
+And, in practice, we do not see large reorganizations (where miners can
+?steal?, by first depositing BTC to major exchanges, then selling that
+BTC for fiat (which they withdraw), and finally rewriting the last 3 or
+4 days of chain history, to un-confirm the original deposits). These
+reorgs would devastate the exchange rate, as they would cast doubt on
+the entire Bitcoin experiment. The thesis of Drivechain is that
+sidechain-theft would also devastate the exchange rate, as it would cast
+doubt on the entire sidechain experiment (which would itself cast doubt
+on the Bitcoin experiment, given the anti-competitive power of
+sidechains). """
+
+In fact, it is true of everything, including the lightning network. LN
+has the advantage of allowing victims to spend the attacker's funds on
+tx fees (as these victims desperately try to get their txn included).
+But the LN loses the blockchain's "strength in numbers" advantage --
+miners can single-out unpopular individuals, figure out their channels,
+and steal from them (and only them) at an inopportune time.
+
+This is not to knock the lightning network -- I believe it is
+well-designed and likely to be secure. I am merely saying that this
+concept of stringing these security models on a line from "most secure"
+to "least secure" is a concept which is reductionist and incorrect.
+
+Drivechain will be more secure if sidechains are popular. But if they
+are not popular, the question of how secure they are is not really
+interesting, is it?
+
+Secondly, I think you have overlooked something very important indeed.
+Sidechains are optional, and so their use should be up to each
+individual user, and no one else. Users should be free to make their own
+mistakes -- specifically, they should be the ones to decide for
+themselves if they want to use an "insecure" system or not.
+
+It would be another matter, if you had a competing sidechain idea which
+accomplished the same goal. But you do not.
+
+Thirdly, I do not agree with your claim that the security model is
+reduced by BMM. In fact, the way I see it, it is the same as the model
+we already have, if not better.
+
+To make this point, let me ask: Who determines the contents (valid or
+otherwise) of "the next block that meets the difficulty requirement"?
+
+In Mainchain Bitcoin Core: "Highest Cumulative Difficulty"
+BMM Sidechain: "Highest BTC Payment"
+
+But these are actually the very same thing! We merely need to clarify
+our thinking with a few simplifications. First, substitute "Most Hashes"
+for "Cumulative Difficulty" (as these are expected converge to each
+other). Second, ignore *unexpected* fluctuations in the two denominator
+prices in the following:
+
+"Most Hashes" = "Most USD Spent on Mining" / (hashes-per-usd price)
+"Highest BTC Payment" = "Most USD Spent on Mining" / (btc-per-usd price)
+
+"Most Hashes" = "Highest BTC Payment" = "Most USD Spent on Mining"
+
+It should be clearer now that they are the same model. While the
+mainchain follows the heaviest chain, measured in hashes, the sidechain
+follows the heaviest chain, measured in BTC. Both are expressions of the
+same concept ("value sacrificed")...just expressed in different units.
+
+With that explained, let me bring in this:
+
+>????? ...????????????????? It seems like if a chain has 10 BTC stored
+> in it, and I wish to reorg it for a potential gain of, lets say, 6 BTC,
+> I can pay 6 * 1 BTC (1 per block) to reorg it, and users on the chain
+> would be forced to pay >6 BTC to avoid this?
+
+Your example (which is a great example) sounds bleak, but it is in fact
+the security model of Bitcoin itself, in the long future without the
+block subsidy. Likely, Bitcoin will have new advantages by then
+(assuming it survives that long). But this is a problem that just
+*can't* be solved without a new block subsidy (which can't be added to
+sidechains).
+
+So, you may be successfully arguing that sidechains can never work. (But
+that is different from saying that users should be prohibited from
+trying them out, as I said above). Or, you may be successfully arguing
+that Bitcoin itself will stop working when fees overwhelm the block
+subsidy. (Since that hour is rapidly approaching, we might as well start
+running experiments now).
+
+The equivalence between hashes and purchases is not perfect. Certainly,
+regular miners might be better-behaved than BM-miners, because r-miners
+stand to lose their entire hardware investment if the system fails,
+whereas BM-miners do not. On the other hand, BMM is *better* in a few
+ways, namely that it makes "mining" much more competitive, because it
+lowers the barriers to entry for sidechain-mining all the way to zero.
+Any node can do it. Furthermore, BM-miners are more cypherpunk-like:
+they will not be confined to any physical location, they do not give
+away their location (via power usage or thermal exhaust), when they
+greedily move into high-efficiency spaces (data centers, EC2 instances)
+they can instantly destroy themselves and reappear somewhere else.
+
+I'm not sure if that made you more, or less depressed. But here is a
+smiley face :-] .
+
+> While I appreciate the desire to implement the proposed mitigation in
+> section 4.3 of the sidechains paper (delegating the mining effort of a
+> merge-mined sidechain to an external entity), I believe it was primarily
+> referencing pooling the sidechain work, not blindly taking the highest
+> bidder.
+
+Well, BMM is more efficient when there are pools. Without them, the
+sidechain nodes would be trying to connect to all mainchain miners.
+
+And there's no need for that. In my view, pools are cannot really do
+anything wrong (ie, pools cannot do anything except what their members
+want them to do). If a pool operator goes rogue and attempts to censor a
+transaction, what has actually happened is just that the transaction is
+delayed (until the hashers learn about the inefficient policy, and
+switch pools). Same for everything else.
+
+In other words, yes pool operators would almost certainly be running a
+node of each sidechain.
+
+>? ...? I suppose, indeed, that, ultimately, as long as the sidechain is
+> of relatively small value in comparison to BTC, miners do not risk the
+> value of their BTC/mining investment in simply taking the highest bidder
+> of a merge-mined block, even if its a clear attack, ...
+
+It is not about the amount of BTC on the sidechain. It is about miner's
+estimations of user's valuation of their option to use the sidechain at
+any point in the future. The idea of "911 emergency response" is
+valuable, and people would complain about a motion to get rid of it,
+even though most of those people wouldn't currently be using it.
+
+> Ultimately, I dont believe your proposal here really solves the drawback
+> in section 4.3 of the paper, and possibly makes it worse.
+
+That is interesting because that section reads:
+
+?""" As miners provide work for more blockchains, more resources are
+needed to track and validate them all. Miners that provide work for a
+subset of blockchains are compensated less than those which provide work
+for every possible blockchain. Smaller-scale miners may be unable to
+afford the full costs to mine every blockchain, and could thus be put at
+a disadvantage compared to larger, established miners who are able to
+claim greater compensation from a larger set of blockchains. """
+
+?Which is exactly what BMM does address. It allows miners to ignore the
+resource-cost of the sidechain, and therefore smaller miners will not be
+at a revenue-disadvantage.
+
+Do you think that the drawback is something else?
+
+And, are you ever going to define "miner centralization"? Is it "the
+economic barrier-to-entry for mining", to you?
+
+Paul
+
+>
+> On 12/01/17 13:38, Paul Sztorc via bitcoin-dev wrote:
+>> Hello,
+>>
+>> First, Drivechain has vaguely escaped vaporware status. If you've ever
+>> thought "I'd like to take a look into Drivechain when there is code",
+>> then now is a pretty good time. (Unfinished items include M1, and M8_V2.)
+>>
+>> https://github.com/drivechain-project/bitcoin/tree/mainchainBMM
+>>
+>> Also,
+>> Site:? http://www.drivechain.info/
+>> Blank sidechain:
+>> https://github.com/drivechain-project/bitcoin/tree/sidechainBMM
+>>
+>> Second, I think drivechain's documentation / BIP-Drafts are tolerably
+>> readable.
+>>
+>> Here they are:
+>>
+>> 1.
+>>
+https://github.com/drivechain-project/docs/blob/master/bip1-hashrate-escrow.md
+>> 2.
+>>
+https://github.com/drivechain-project/docs/blob/master/bip2-blind-merged-mining.md
+>>
+>> cc: Luke, I think they are ready to be assigned formal BIP Numbers.
+>>
+>> This is also a request for code review. The most helpful review will
+>> probably take place on GitHub.
+>>
+>> Regular review is also welcome. Although, please read our
+>> recently-updated FAQ, at: http://www.drivechain.info/faq .
+>> And also see major earlier discussions:
+>>
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-May/014364.html
+>>
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-June/014559.html
+>>
+>> Have a nice weekend everyone,
+>> Paul
+>>
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+
+
