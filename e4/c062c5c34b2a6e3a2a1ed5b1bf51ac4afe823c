@@ -1,0 +1,77 @@
+From: jim.posen@gmail.com (Jim Posen)
+Date: Mon, 11 Dec 2017 12:40:00 -0800
+Subject: [bitcoin-dev] "Compressed" headers stream
+Message-ID: <CADZtCShywq_s9ZK3oBBTUdCgjrTxbyeb-p7QrhJJ3mwRAECCMA@mail.gmail.com>
+
+I want to resurrect this thread from August/September because it seems like
+a significant improvement for light clients at very little cost. From the
+mailing list, it seems like this got stalled in determining how many more
+bytes could be save in addition to the prev_block.
+
+The ideas I've gathered from Greg Maxwell's forwarded email are:
+
+1. Omit nBits altogether and have the receiving node determine it from
+chain context.
+2. Include nBits only on headers with a height that is a multiple of 2016
+since it does not change in between.
+3. Compress nTime to two bytes by using the bounds on allowed values from
+the consensus rules.
+
+I propose just moving ahead with only the exclusion of the prev_block, as
+IMO the other savings are not worth the added complexity.
+
+Firstly, I don't like the idea of making the net header encoding dependent
+on the specific header validation rules that Bitcoin uses (eg. the fact
+that difficulty is only recalculated every 2016 blocks). This would be
+coupling together the two layers, breaking net compatibility for some alts,
+and possibly making consensus rule changes even more difficult for a
+savings with insufficient benefit. So if you buy that argument, I'm not in
+favor of #2 or #3.
+
+Option 1 is still viable, though it has some downsides. The implementation
+leaks into the validation code, whereas calculating prev_block can occur
+just at the net layer (see implementation below). Also, nodes would now be
+*required* to sync the header chain from the genesis block, whereas they
+had the option of starting from some checkpoint before.
+
+So switching gears, I'd like to ask what the best way to actually implement
+this change is. Solutions I can think of are:
+
+1. New headers command name like "cmpctheaders" or "headersv2".
+2. Change serialization of existing headers message in a new protocol
+version.
+3. Change serialization of existing headers message with new service bit.
+
+I wrote up some proof-of-concept implementations in Core a) just omitting
+prev_block
+<https://github.com/bitcoin/bitcoin/compare/master...jimpo:compact-headers>
+and b) omitting nBits as well
+<https://github.com/bitcoin/bitcoin/compare/master...jimpo:compact-headers-difficulty>.
+If people think a) is reasonable, I'll write up a BIP.
+
+
+> Hi everyone, the Bitcoin headers are probably the most condensed and
+> important piece of data in the world, their demand is expected to grow.
+> When sending a stream of continuous block headers, a common case in IBD and
+> in disconnected clients, I think there is a possible optimization of the
+> transmitted data: The headers after the first could avoid transmitting the
+> previous hash cause the receiver could compute it by double hashing the
+> previous header (an operation he needs to do anyway to verify PoW). In a
+> long stream, for example 2016 headers, the savings in bandwidth are about
+> 32/80 ~= 40% without compressed headers 2016*80=161280 bytes with
+> compressed headers 80+2015*48=96800 bytes What do you think? In
+> OpenTimestamps calendars we are going to use this compression to give
+> lite-client a reasonable secure proofs (a full node give higher security
+> but isn't feasible in all situations, for example for in-browser
+> verification) To speed up sync of a new client Electrum starts with the
+> download of a file <https://headers.electrum.org/blockchain_headers>
+> ~36MB containing the first 477637 headers. For this kind of clients could
+> be useful a common http API with fixed position chunks to leverage http
+> caching. For example /headers/2016/0 returns the headers from the genesis
+> to the 2015 header included while /headers/2016/1 gives the headers from
+> the 2016th to the 4031. Other endpoints could have chunks of 20160 blocks
+> or 201600 such that with about 10 http requests a client could fast sync
+> the headers
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171211/86e7642f/attachment.html>
