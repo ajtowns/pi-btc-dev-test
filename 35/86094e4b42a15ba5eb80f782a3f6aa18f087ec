@@ -1,0 +1,52 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Mon, 11 Dec 2017 21:04:01 +0000
+Subject: [bitcoin-dev] "Compressed" headers stream
+In-Reply-To: <CADZtCShywq_s9ZK3oBBTUdCgjrTxbyeb-p7QrhJJ3mwRAECCMA@mail.gmail.com>
+References: <CADZtCShywq_s9ZK3oBBTUdCgjrTxbyeb-p7QrhJJ3mwRAECCMA@mail.gmail.com>
+Message-ID: <CAAS2fgROykenGH43_FXun+q4u+=94tKqnRW=kQQ2AQFeXKdW=Q@mail.gmail.com>
+
+On Mon, Dec 11, 2017 at 8:40 PM, Jim Posen via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Firstly, I don't like the idea of making the net header encoding dependent
+> on the specific header validation rules that Bitcoin uses (eg. the fact that
+> difficulty is only recalculated every 2016 blocks). This would be coupling
+
+In the last proposal I recall writing up, there was a one byte flag on
+each header to indicate what was included.
+
+Nbits _never_ needs to be sent even with other consensus rules because
+its more or less necessarily a strict function of the prior headers.
+This still holds in every clone of Bitcoin I'm aware of; sending it
+with the first header in a group probably makes sense so it can be
+checked independently.
+
+> with insufficient benefit.
+
+another >18% reduction in size beyond the removal of prev. is not
+insubstantial by any means.  I don't think it should lightly be
+ignored.
+
+Prev omission itself is not, sadly, magically compatible:  I am quite
+confident that if there is a bitcoin hardfork it would recover the
+nbits/4-guarenteed always-zero bits of prev to use as extra nonce for
+miners. This has been proposed many times, implemented at least once,
+and the current requirement for mining infrastructure to reach inside
+the coinbase txn to increment a nonce has been a reliable source of
+failures.  So I think we'd want to have the encoding able to encode
+leading prev bits.
+
+Many altcoins also change the header structures. If the better thing
+is altcoin incompatible, we should still do it. Doing otherwise would
+competitively hobble Bitcoin especially considering the frequent
+recklessly incompetent moves made by various altcoins and the near
+total lack of useful novel development we've seen come out of the
+clones.
+
+Probably the most important change in a new header message wouldn't be
+the encoding, but it would be changing the fetching mechanism so that
+header sets could be pulled in parallel, etc.
+
+I would rather not change the serialization of existing messages,
+nodes are going to have to support speaking both messages for a long
+time, and I think we already want a different protocol flow for
+headers fetching in any case.
