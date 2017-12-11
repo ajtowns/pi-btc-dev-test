@@ -1,0 +1,92 @@
+From: jim.posen@gmail.com (Jim Posen)
+Date: Mon, 11 Dec 2017 13:56:08 -0800
+Subject: [bitcoin-dev] "Compressed" headers stream
+In-Reply-To: <CAAS2fgROykenGH43_FXun+q4u+=94tKqnRW=kQQ2AQFeXKdW=Q@mail.gmail.com>
+References: <CADZtCShywq_s9ZK3oBBTUdCgjrTxbyeb-p7QrhJJ3mwRAECCMA@mail.gmail.com>
+	<CAAS2fgROykenGH43_FXun+q4u+=94tKqnRW=kQQ2AQFeXKdW=Q@mail.gmail.com>
+Message-ID: <CADZtCSi1vimZ88kqG=HQHa3sHeLtvMjdJrZuqS2=iYr-=EHaLw@mail.gmail.com>
+
+On Mon, Dec 11, 2017 at 1:04 PM, Gregory Maxwell <greg at xiph.org> wrote:
+
+> On Mon, Dec 11, 2017 at 8:40 PM, Jim Posen via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > Firstly, I don't like the idea of making the net header encoding
+> dependent
+> > on the specific header validation rules that Bitcoin uses (eg. the fact
+> that
+> > difficulty is only recalculated every 2016 blocks). This would be
+> coupling
+>
+> In the last proposal I recall writing up, there was a one byte flag on
+> each header to indicate what was included.
+>
+>
+Is there a link somewhere to that proposal? The only thing I could find was
+your forwarded email
+<https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-September/014904.html>
+on
+this thread.
+
+
+> Nbits _never_ needs to be sent even with other consensus rules because
+> its more or less necessarily a strict function of the prior headers.
+> This still holds in every clone of Bitcoin I'm aware of; sending it
+> with the first header in a group probably makes sense so it can be
+> checked independently.
+>
+> > with insufficient benefit.
+>
+> another >18% reduction in size beyond the removal of prev. is not
+> insubstantial by any means.  I don't think it should lightly be
+> ignored.
+>
+>
+Omitting nBits entirely seems reasonable, I wrote up a possible
+implementation here
+<https://github.com/bitcoin/bitcoin/compare/master...jimpo:compact-headers-difficulty>.
+The downside is that it is more complex because it leaks into the
+validation code. The extra 4 byte savings is certainly nice though.
+
+
+> Prev omission itself is not, sadly, magically compatible:  I am quite
+> confident that if there is a bitcoin hardfork it would recover the
+> nbits/4-guarenteed always-zero bits of prev to use as extra nonce for
+> miners. This has been proposed many times, implemented at least once,
+> and the current requirement for mining infrastructure to reach inside
+> the coinbase txn to increment a nonce has been a reliable source of
+> failures.  So I think we'd want to have the encoding able to encode
+> leading prev bits.
+>
+> Many altcoins also change the header structures. If the better thing
+> is altcoin incompatible, we should still do it. Doing otherwise would
+> competitively hobble Bitcoin especially considering the frequent
+> recklessly incompetent moves made by various altcoins and the near
+> total lack of useful novel development we've seen come out of the
+> clones.
+>
+> Probably the most important change in a new header message wouldn't be
+> the encoding, but it would be changing the fetching mechanism so that
+> header sets could be pulled in parallel, etc.
+>
+> I would rather not change the serialization of existing messages,
+> nodes are going to have to support speaking both messages for a long
+> time, and I think we already want a different protocol flow for
+> headers fetching in any case.
+>
+
+Can you elaborate on how parallel header fetching might work? getheaders
+requests could probably already be pipelined, where the node requests the
+next 2,000 headers before processing the current batch (though would make
+sense to check that they are all above min difficulty first).
+
+I'm open to more ideas on how to optimize the header download or design the
+serialization format to be more flexible, but I'm concerned that we forgo a
+40-45% bandwidth savings on the current protocol for a long time because
+something better might be possible later on or there might be a hard fork
+that at some point requires another upgrade. I do recognize that supporting
+multiple serialization formats simultaneously adds code complexity, but in
+this case the change seems simple enough to me that the tradeoff is worth
+it.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171211/995788a9/attachment-0001.html>
