@@ -1,0 +1,64 @@
+From: tier.nolan@gmail.com (Tier Nolan)
+Date: Mon, 11 Dec 2017 22:41:50 +0000
+Subject: [bitcoin-dev] "Compressed" headers stream
+In-Reply-To: <CADZtCSi1vimZ88kqG=HQHa3sHeLtvMjdJrZuqS2=iYr-=EHaLw@mail.gmail.com>
+References: <CADZtCShywq_s9ZK3oBBTUdCgjrTxbyeb-p7QrhJJ3mwRAECCMA@mail.gmail.com>
+	<CAAS2fgROykenGH43_FXun+q4u+=94tKqnRW=kQQ2AQFeXKdW=Q@mail.gmail.com>
+	<CADZtCSi1vimZ88kqG=HQHa3sHeLtvMjdJrZuqS2=iYr-=EHaLw@mail.gmail.com>
+Message-ID: <CAE-z3OUetqa16Ub792dCXodpzafsgMyvO9QaVNWJ3bKZ59HWVQ@mail.gmail.com>
+
+On Mon, Dec 11, 2017 at 9:56 PM, Jim Posen via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Omitting nBits entirely seems reasonable, I wrote up a possible
+> implementation here
+> <https://github.com/bitcoin/bitcoin/compare/master...jimpo:compact-headers-difficulty>.
+> The downside is that it is more complex because it leaks into the
+> validation code. The extra 4 byte savings is certainly nice though.
+>
+
+A compromise would be to have 1 byte indicating the difference since the
+last header.
+
+Since the exponent doesn't use the full range you could steal bits from
+there to indicate mode.
+
+- no change
+- mantissa offset (for small changes)
+- full difficulty
+
+This would support any nBits rule and you say 3 of the 4 bytes.
+
+
+> Can you elaborate on how parallel header fetching might work? getheaders
+> requests could probably already be pipelined, where the node requests the
+> next 2,000 headers before processing the current batch (though would make
+> sense to check that they are all above min difficulty first).
+>
+
+I suggest adding a message where you can ask for the lowest N hashes
+between 2 heights on the main chain.
+
+The reply is an array of {height, header} pairs for the N headers with the
+lowest hash in the specified range.
+
+All peers should agree on which headers are in the array.  If there is
+disagreement, then you can at least narrow down on which segment there is
+disagreement.
+
+It works kind of like a cut and choose.  You pick one segment of the ones
+he gave you recursively.
+
+You can ask a peer for proof for a segment between 2 headers of the form.
+
+- first header + coinbase with merkle branch
+- all headers in the segment
+
+This proves the segment has the correct height and that all the headers
+link up.
+
+There is a method called "high hash highway" that allows compact proofs of
+total POW.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171211/76d17ddf/attachment-0001.html>
