@@ -1,0 +1,63 @@
+From: sdaftuar@gmail.com (Suhas Daftuar)
+Date: Tue, 12 Dec 2017 16:07:11 -0500
+Subject: [bitcoin-dev] "Compressed" headers stream
+In-Reply-To: <CAAS2fgROykenGH43_FXun+q4u+=94tKqnRW=kQQ2AQFeXKdW=Q@mail.gmail.com>
+References: <CADZtCShywq_s9ZK3oBBTUdCgjrTxbyeb-p7QrhJJ3mwRAECCMA@mail.gmail.com>
+	<CAAS2fgROykenGH43_FXun+q4u+=94tKqnRW=kQQ2AQFeXKdW=Q@mail.gmail.com>
+Message-ID: <CAFp6fsHwdAbcYVdPzuDdD1OV7ibCN-ebMBi113m5-JOoJtccPQ@mail.gmail.com>
+
+Hi,
+
+First, thanks for resurrecting this, I agree this is worth pursuing.
+
+On Mon, Dec 11, 2017 at 4:04 PM, Gregory Maxwell via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+>
+> Nbits _never_ needs to be sent even with other consensus rules because
+> its more or less necessarily a strict function of the prior headers.
+> This still holds in every clone of Bitcoin I'm aware of; sending it
+> with the first header in a group probably makes sense so it can be
+> checked independently.
+>
+
+I think it would be nice, though, to not require the consensus-correct
+calculation of nBits in order to process p2p messages.  For instance, I
+think there's a use for nBits at the p2p layer for calculating the work on
+a chain, which can be used as an anti-DoS measure, even without verifying
+that the difficulty adjustments are following the consensus rules.
+
+Moreover I think it's a bit messy if the p2p layer depends on intricate
+consensus rules in order to reconstruct a message -- either we'd need to
+interact with existing consensus logic in a potentially new way, or we'd
+reimplement the same logic in the p2p layer, neither of which is very
+desirable imo.
+
+But I think we should be able to get nearly all the benefit just by
+including nBits in any messages where the value is ambiguous; ie we include
+it with the first header in a message, and whenever it changes from the
+previous header's nBits.
+
+I would rather not change the serialization of existing messages,
+> nodes are going to have to support speaking both messages for a long
+> time, and I think we already want a different protocol flow for
+> headers fetching in any case.
+>
+
+I agree with this.  Specifically the way I envisioned this working is that
+we could introduce a new 'cmpctheaders'/'getcmpcthdrs' message pair for
+syncing using this new message type, while leaving the existing
+'headers'/'getheaders' messages unchanged.  So when communicating with
+upgraded peers, we'd never use 'getheaders' messages, and we'd only use
+'headers' messages for potentially announcing new blocks.
+
+Of course, we'll have to support the existing protocol for a long time.
+But one downside I've discovered from deploying BIP 130, which introduced
+block announcements via headers messages, is that overloading a 'headers'
+message to be either a block announcement or a response to a 'getheaders'
+message results in p2p-handling logic which is more complicated than it
+needs to be.  So splitting off the headers chain-sync functionality to a
+new message pair seems like a nice side-effect benefit, in the long run.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171212/4baa06b9/attachment.html>
