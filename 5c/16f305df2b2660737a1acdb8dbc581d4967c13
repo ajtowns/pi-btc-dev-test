@@ -1,0 +1,70 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Wed, 13 Dec 2017 00:01:32 +0000
+Subject: [bitcoin-dev] "Compressed" headers stream
+In-Reply-To: <CAFp6fsHwdAbcYVdPzuDdD1OV7ibCN-ebMBi113m5-JOoJtccPQ@mail.gmail.com>
+References: <CADZtCShywq_s9ZK3oBBTUdCgjrTxbyeb-p7QrhJJ3mwRAECCMA@mail.gmail.com>
+	<CAAS2fgROykenGH43_FXun+q4u+=94tKqnRW=kQQ2AQFeXKdW=Q@mail.gmail.com>
+	<CAFp6fsHwdAbcYVdPzuDdD1OV7ibCN-ebMBi113m5-JOoJtccPQ@mail.gmail.com>
+Message-ID: <CAAS2fgRLC7GZ6pr+o59e8SycxfuBniLObFEz5yCz_fpvN8i+_Q@mail.gmail.com>
+
+On Tue, Dec 12, 2017 at 9:07 PM, Suhas Daftuar <sdaftuar at gmail.com> wrote:
+> But I think we should be able to get nearly all the benefit just by
+> including nBits in any messages where the value is ambiguous; ie we include
+> it with the first header in a message, and whenever it changes from the
+> previous header's nBits.
+
+Yes, that is what I was thinking last time we discussed it, just with
+each header include a one byte flag that lets you express:
+
+bit: meaning
+(0) if nbits is the same as last,
+(1) if timestamp is a full field or a small offset, (e.g. two bytes
+defined as unsigned offset between the last time - 7200 and the new
+time).
+(2,3,4) if version is the same as the last distinct value .. 7th last,
+or a new 32bit distinct value;
+(5,6) if prev is entirely there, entirely gone, first 4 bytes
+provided, or first 8 bytes provided. (if provided they override the
+computed values).
+
+That would be 7 bits in total; the 8th could be reserved or use to
+signal "more headers follow" to make the encoding self-delimiting.
+
+The downside with nbits the same as last as the optimization is that
+if we ever change consensus rules to ones where difficulty management
+works differently it may be the case that nbits changes every block.
+
+Alternatively, nbits could get a differential encoding that could be
+opted into for small differences-- though I haven't thought much about
+it to see if a one byte difference would be that useful (e.g. can bch
+differences usually be expressed with one byte?)
+
+I'm kind of dubious of the consensus layer anti-dos separation:  nbits
+minimum is so low compared to the speed of a mining device, virtually
+any attack that you might do with invalid headers could still be done
+with headers at the minimum difficulty. But I'm fully willing to
+accept that simpler is better...
+
+
+
+>> I would rather not change the serialization of existing messages,
+>> nodes are going to have to support speaking both messages for a long
+>> time, and I think we already want a different protocol flow for
+>> headers fetching in any case.
+>
+>
+> I agree with this.  Specifically the way I envisioned this working is that
+> we could introduce a new 'cmpctheaders'/'getcmpcthdrs' message pair for
+> syncing using this new message type, while leaving the existing
+> 'headers'/'getheaders' messages unchanged.  So when communicating with
+> upgraded peers, we'd never use 'getheaders' messages, and we'd only use
+> 'headers' messages for potentially announcing new blocks.
+>
+> Of course, we'll have to support the existing protocol for a long time.  But
+> one downside I've discovered from deploying BIP 130, which introduced block
+> announcements via headers messages, is that overloading a 'headers' message
+> to be either a block announcement or a response to a 'getheaders' message
+> results in p2p-handling logic which is more complicated than it needs to be.
+> So splitting off the headers chain-sync functionality to a new message pair
+> seems like a nice side-effect benefit, in the long run.
+>
