@@ -1,0 +1,58 @@
+From: jim.posen@gmail.com (Jim Posen)
+Date: Fri, 15 Dec 2017 15:55:16 -0800
+Subject: [bitcoin-dev] Parallel header download during sync
+Message-ID: <CADZtCSjR8Cd30Ag__+Rr2FV8rdbYY4_bUgGKeEgpoyTjxzM=dw@mail.gmail.com>
+
+One of the ideas that Greg Maxwell brought up in the "'Compressed' headers
+stream" thread is the possibility of a header sync mechanism that allowed
+parallel download from multiple peers. With the current getheaders/headers
+semantics, headers must be downloaded sequentially from genesis. In my
+testing, I saw that syncing headers directly from a colocated node took <5s
+whereas syncing normally from network peers takes ~5 min for me, which goes
+to show that 5s is an upper bound on the time to process all headers if
+they are locally available. So if we can introduce new p2p messages for
+header sync, what would they look like? Here's one idea.
+
+A new getheadersv2 request would include a start height for the range of
+headers requested and a commitment to the last block in the chain that you
+want to download. Then you find N peers that are all on the same chain,
+partition the range of headers from 0 to the chain height minus some
+reasonable reorg safety buffer (~6 blocks), and send download requests in
+parallel. So how do we know that the peers are on the same chain and that
+their headers served connect into this chain?
+
+When you connect to outbound peers and are in IBD, you will query them for
+a Merkle Mountain Range commitment to all headers up to a height X (which
+is 6ish blocks before their start height from the version message). Then
+you choose the commitment that the majority of the queried peers sent (or
+some other heuristic), and these become your download peers. Every
+getheadersv2 request includes the start height, X, and the chain
+commitment. The headersv2 response messages include all of the headers
+followed by a merkle branch linking the last header into the chain
+commitment. Headers are processed in order as they arrive and if any of the
+headers are invalid, you can ban/disconnect all peers that committed to it,
+drop the buffer of later headers and start over.
+
+That's the basic idea. Here are other details:
+
+- This would require an additional 32-byte MMR commitment for each header
+in memory.
+- When a node receives a headersv2 request and constructs a merkle proof
+for the last header, it checks against the sent commitment. In the case of
+a really deep reorg, that check would fail, and the node can instead
+respond with an updated commitment hash for that height.
+- Another packet is needed, getheaderchain or something, that a syncing
+peer first sends along with a header locator and an end height. The peer
+responds with headerchain, which includes the last common header from the
+locator along with the chain commitment at that height and a merkle branch
+proving inclusion of that header in the chain.
+- Nodes would cache chain commitments for the last ~20 blocks (somewhat
+arbitrary), and refuse to serve chain commitments for heights before that.
+
+Thoughts? This is a pretty recycled idea, so please point me at prior
+proposals that are similar as well.
+
+-jimpo
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20171215/267e7064/attachment-0001.html>
