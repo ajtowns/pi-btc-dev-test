@@ -1,0 +1,43 @@
+From: james.hilliard1@gmail.com (James Hilliard)
+Date: Mon, 1 Jan 2018 12:50:04 -0600
+Subject: [bitcoin-dev] Decoupling BIP70 Payment Protocol from Wallets
+Message-ID: <CADvTj4q04dS0pv2rUD9qw30K6++5OjHPwgjpqJ=+MBqaZdropA@mail.gmail.com>
+
+Recently a large merchant payment processor has decided to drop
+support for BIP21 payment URI's in favor of accepting exclusively
+BIP70 payments which has brought to light a number of problems with
+BIP70:
+
+1. Many wallets do not support BIP70 and have no near term intention
+of doing so.
+2. BIP70 requires large complex PKI dependencies such as X.509 and TLS
+support(usually via openssl) which have a large attack surface and
+poor track record when it comes to vulnerabilities.
+3. Signing transactions with keys resident in the same application as
+that which handles TLS greatly increases the possibility of keys being
+leaked due to vulnerabilities in TLS libraries such as
+openssl(heartbleed etc).
+4. Sending payments first to a BIP70 compatible wallet before sending
+to the merchant increases fees and uses more block space than sending
+directly since it is often not feasible for users to fully migrate
+funds to a BIP70 compatible wallet.
+5. Paying a BIP70 invoice with an incompatible wallet currently
+requires manual non-user-friendly workarounds such as
+https://github.com/achow101/payment-proto-interface
+
+I propose that we move the BIP70 protocol implementation into a
+browser extension that can communicate with wallets over a simple IPC
+mechanism such as
+https://developer.mozilla.org/en-US/Add-ons/WebExtensions/Native_messaging
+in addition to acting as a translation layer that can convert BIP70
+URL's into standard BIP21 URI's for wallets that do not wish to
+support BIP70 or other custom schemes.
+
+This will provide a number of advantages over the current method of
+implementing BIP70 directly within wallets:
+
+1. It removes complex/risky dependencies from wallets and moves them
+into the browser which already has to implement full PKI support.
+2. It re-enables payment support for wallets that only support
+BIP21/normal addresses.
+3. It makes offline/custom signing schemes easier to use with BIP70.
