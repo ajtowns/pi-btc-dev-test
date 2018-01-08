@@ -1,0 +1,177 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Mon, 8 Jan 2018 23:47:02 +0000
+Subject: [bitcoin-dev] Satoshilabs secret shared private key scheme
+In-Reply-To: <ae570ccf-3a2c-a11c-57fa-6dad78cfb1a5@satoshilabs.com>
+References: <CAAS2fgR-or=zksQ929Muvgr=sgzNSugGp669ZWYC6YkvEG=H5w@mail.gmail.com>
+	<ae570ccf-3a2c-a11c-57fa-6dad78cfb1a5@satoshilabs.com>
+Message-ID: <CAAS2fgRQvpa8VXE8YAYSfugDvCu=1+5ANsGk1V_OXtHPGD=Ltw@mail.gmail.com>
+
+On Mon, Jan 8, 2018 at 12:39 PM, Pavol Rusnak <stick at satoshilabs.com> wrote:
+> On 08/01/18 05:22, Gregory Maxwell wrote:
+>>> https://github.com/satoshilabs/slips/blob/master/slip-0039.md
+>
+> Hey Gregory!
+>
+> Thanks for looking into the scheme. I appreciate your time!
+>
+>> This specification forces the key being used through a one way
+>> function, -- so you cannot take a pre-existing key and encode it with
+>> this scheme.
+>
+> Originally, we used a bi-directional function to be able to encode and
+> decode the key in both directions using the passphrase. We stretched the
+> passphrase using KDF and then applied AES or other symmetric cipher
+>
+> We found the following (theoretical) problem:
+>
+> If an attacker has knowledge of few words from the beginning of shares,
+> they are able to reconstruct the beginning of the master secret and if
+> the size of the reconstruced master secret is bigger then the cipher
+> blocksize (for block ciphers; for stream ciphers 1 bit is enough), then
+> they can reconstruct the beginning of the seed.
+>
+> Can you find a scheme which does not have this problem? Or you think
+> this problem is not worth solving?
+
+You can use a large block cipher. E.g. CMC cipher mode.
+
+Though I am doubtful that this is a very relevant concern: What
+consequence is it if someone with partial access to more than a
+threshold of the shares can recover part of the seed?  This doesn't
+seem like a very interesting threat.   A large block mode would be
+more complete, but this isn't something that would keep me up at night
+in the slightest.
+
+Perhaps I'm missing something, -- but the only real attack I see here
+is that a enduser mistakenly shows the first or couple words of all
+their shares on national television or what not... but doing so would
+not really harm their security unless they showed almost all of them,
+and in that case an attacker could simply search the remaining couple
+words.
+
+Also, if we are going to assume that users will leak parts, the
+mnemonic encoding ends up being pretty bad... since just leaking a
+letter or two of each word would quite likely give the whole thing
+away.
+
+In any case, to whatever extent partial leaks are a concern, using a
+large block cipher would be the obvious approach.
+
+> Yes. We want this to be possible to be computed on TREZOR-like devices
+> on boot, similarly how we compute BIP39 on boot right now.
+
+Under this constraint it might be arguably to just eliminate the KDF.
+I think it provides false security and makes the implementation much
+more complicated.
+
+Have you considered using blind host-delegated KDFs, where the KDF
+runs on the user's computer instead of the hardware wallet, but the
+computer doesn't learn anything about they keys?
+
+> Again, this is by design and it is main point why plausible deniability
+> is achieved both in BIP39 and SLIP39. If we used a different
+> construction we'd loose plausible deniability.
+
+I don't believe you can justify this design decision with any kind of
+rigorous threat model.
+
+The probability that a user loses funds because they have at some
+point recovered with the wrong key and don't know it would almost
+certainly dwarf the probability that the user face some kind of
+movie-plot threat where someone is attempting to forcibly extract a
+key and yet somehow has no information about the user's actual
+wallet-- through, for example, leaked data on the users computers, the
+users past payments to online accounts, or through a compromise or
+lawful order to satoshilab's web service which the users send private
+information to-- which would allow them to determine the key they were
+given was not correct.
+
+But even there, given the weak level of false input rejection that you
+have used (16 bits), it would be fairly straight forward to grind out
+an alternative passphrase that also passed the test.  Might that not
+make for a better compromise?
+
+Another thing to consider is that the main advantage of SSS over
+ordinary computational secret sharing is that it's possible to
+generate alternative shares to an sub-threshold set of primary shares
+that decodes to arbitrarily selected alternative data-- but it seems
+the proposal makes no use of this fact.
+
+>> It
+>> is again, unversioned-- so it kinda of seems like it is intentionally
+>> constructed in a way that will prevent interoperable use, since the
+>> lack of versioning was a primary complaint from other perspective
+>> users.  Of course, it fine if you want to make a trezor only thing,
+>> but why bother BIPing something that was not intended for
+>> interoperability?  Even for a single vendor spec the lack of
+>> versioning seems to make things harder to support new key-related
+>> features such as segwit.
+>
+> This is argument I keep having all the time.
+>
+> Suppose we'd introduce a version to encode PBKDF2 rounds or even
+> different KDFs. We'll end up with different SLIP39 mnemonics, but they
+> will not be compatible among implementations (because TREZOR can only up
+> to 100.000 rounds of PBKDF2 and does not support Argon2 at all, while
+> other desktop implementation would rather use memory-hard Argon2).
+>
+> My gut feeling is that this would lead to WORSE interoperability, not
+> better. Look at BIP32 for example. There are lots of wallet that claim
+> they are BIP32 compatible, but in reality they use different paths, so
+> they are not compatible. BIP32 is a good standard, but in reality
+> "BIP32-compatible" does not mean anything, whereas when you say the
+> wallet is "BIP44-compatible" you can be sure the migration path works.
+
+The end result is no better-- I think.  If you compromise
+functionality or security (e.g. pretextual KDF) because your product
+doesn't yet support -- say, aggregate signatures-- or won't ever
+support a strong KDF; then other software will just not be
+interoperable.  In cases were you won't ever support it, that doesn't
+matter-- but presumably you would later support new signature styles
+and the loss of interoperability would potentially be gratitious.
+
+That said, I'm generally skeptical of key interoperability to begin
+with. Wallets can't share keys unless their functionality is
+identical, half-interoperability can lead to funds loss. Identical
+functionality would mean constraining to the least common denominator.
+
+But even if we exclude cross vendor interoperability entirely,
+wouldn't you want your next version of your firmware to be able to
+support new and old key styles (e.g. aggregate signatures vs plain
+segwit) without having to define a whole new encoding?
+
+> Originally, we wanted to use 16-bit of CRC32 for checksum, but after the
+> discussion with Daan Sprenkels we were suggested to change this for
+> cryptographically strong function. The argument was that CRC32 contains
+> less entropy and mixing high-entropy data (secret) with low-entropy data
+> (checksum) is not a good idea.
+
+That sounds like a kind of hand-wave and cargo cult argument-- pleas
+be more specific, because that just sounds like amateur block cipher
+design.
+
+There isn't any difference in "entropy" in either of these cases.
+
+As an aside, using "n bits of a longer CRC" usually results in a low
+quality code for error detection similar to using a cryptographic
+hash.
+
+> Also, there is an argument between a checksum and ECC. We discussed that
+> ECC might not be a good idea, because it helps the attacker to compute
+> missing information, while we only want to check for integrity. Also the
+
+Not meaningfully more than the truncated cryptographic hash.
+
+The best possible code of that length would allow you to list decode
+to around two errors with a lot of computation.
+With the cryptographic hash the attacker need only check the 2^28
+two-error candidates to do exactly the same thing.
+
+So the attacker there is no real difference-- he can brute force
+search to the same radius as correction would allow, but for the
+honest users and software the probability of undetected error is
+greater.  Similarly, while 2^28 operations is nothing to an attacker,
+if user software wants to use the correction for error hinting,
+running a hash 2^28 times would lead to a somewhat unfriendly user
+experience so non-attack tools would be pretty unlikely to implement
+it.
