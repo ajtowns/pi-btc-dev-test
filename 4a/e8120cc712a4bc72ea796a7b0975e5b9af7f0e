@@ -1,0 +1,57 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Mon, 8 Jan 2018 04:22:43 +0000
+Subject: [bitcoin-dev] Satoshilabs secret shared private key scheme
+Message-ID: <CAAS2fgR-or=zksQ929Muvgr=sgzNSugGp669ZWYC6YkvEG=H5w@mail.gmail.com>
+
+On Sun, Jan 7, 2018 at 3:16 PM, Pavol Rusnak via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> On 05/01/18 14:58, nullius via bitcoin-dev wrote:
+> I am currently drafting a new standard[1] which will allow also Shamir
+> Secret Scheme Splitting and there we disallow usage of a custom wordlist
+> in order to eradicate this mess. Will try to push this as BIP too once
+> we get it to the point we are OK with the contents.
+>
+> https://github.com/satoshilabs/slips/blob/master/slip-0039.md
+
+This specification forces the key being used through a one way
+function, -- so you cannot take a pre-existing key and encode it with
+this scheme.  The KDF it specifies is unconfigurable and fairly weak
+(20000xhmac-sha2-- which can be cracked at about 0.7M passwords a
+second on a single motherboard GPU cracker).  The construction also
+will silently result in the user getting a different private key if
+they enter the wrong passphrase-- which could lead to funds loss. It
+is again, unversioned-- so it kinda of seems like it is intentionally
+constructed in a way that will prevent interoperable use, since the
+lack of versioning was a primary complaint from other perspective
+users.  Of course, it fine if you want to make a trezor only thing,
+but why bother BIPing something that was not intended for
+interoperability?  Even for a single vendor spec the lack of
+versioning seems to make things harder to support new key-related
+features such as segwit.
+
+The 16-bit "checksum" based on sha2 seems pretty poor since basing
+small checksums on a cryptographic hash results in a fairly poor
+checksum that is surprisingly likely to accept an errored string. Your
+wordlist is 10 bits and you have much less than 1023*10 bits of input,
+so you could easily have a 20 bit code (two words) which guaranteed
+that up to two errored words would always be detected, and probably
+could choose one which catches three words much more often 1:2^20
+(sipa's crc tools can help find codes like this).
+
+The metadata seems to make fairly little affordance to help users
+avoid accidentally mixing shares from distinct sharings of the same
+key. Is it the idea that this is the only likely cause of a checksum
+error? (1:2^16 chance of silently returning the wrong key seems kinda
+bad). -- I'm not sure much could be done here, though, since
+additional payload is precious.
+
+As an aside, your specification might want to give some better advice
+about the SSS since my experience virtually everyone gets it wrong in
+ways that degrade or destroy its properties e.g. many fail to generate
+the additional coefficients of the polynominal randomly which results
+in insecurity (see armory for an example).   Oh, also, I believe it is
+normally refereed to as "SSS" (three S)-- four S is the name of a
+linux program for secret sharing.
+
+I'm happy to see that there is no obvious way to abuse this one as a
+brainwallet scheme!
