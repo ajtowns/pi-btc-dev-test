@@ -1,0 +1,91 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Wed, 10 Jan 2018 07:57:34 +0900
+Subject: [bitcoin-dev] BIP 117 Feedback
+In-Reply-To: <CAPg+sBgRrqZryiETZYCWiqHNOmN2bCfsvr30znjN-gKiU5Vfjg@mail.gmail.com>
+References: <87608btgyd.fsf@rustcorp.com.au>
+	<DB7E57AC-5588-4BBA-9ABC-B9B4F6BAECE2@friedenbach.org>
+	<CAPg+sBgRrqZryiETZYCWiqHNOmN2bCfsvr30znjN-gKiU5Vfjg@mail.gmail.com>
+Message-ID: <6C568F3A-0CCD-41BE-B785-C58932F47C58@friedenbach.org>
+
+I havent the hubris to suggest that we know exactly what a templated MAST *should* look like. It's not used in production anywhere. Even if we did have the foresight, the tail-call semantics allow for other constructions besides MAST and for the sake of the future we should allow such permission-less innovation. The proper sequence of events should be to enable features in a generic way, and then to create specialized templates to save space for common constructions. Not the other way around.
+
+We've been down the route of templating new features, and have made mistakes. P2SH is a canonical example, which BIP 117 is fixing. P2SH only provides 80 bits of security to a multi-party construction. Had we been designing BIP 16 now we probably would have used double-SHA256 instead of RIPEMD160. I will also assert that had we been using single-use tail-call semantics *instead* of BIP 16, recognition of this limitation would have resulted in us immediately defining a longer '3...' address which used HASH256 instead, and we would have immediately benefited from the fix. Instead we had to wait years until segwit gave us the opportunity to fix it at the same time.
+
+To take another example, in some ideal sense we probably shouldn't even be developing a programmable signature script framework. We should instead template a generic lightning-derived layer-2 protocol and use that for everything, including both payments (supporting cut-through) and payment channels for smart contracts. This may not be the majority technical opinion yet, but as someone working in this space I believe that's where we are headed: a single layer-2 protocol that's generic enough to use for all payment caching and smart contracts, while achieving a full anonymity set for all contracts, as closures look identical on the wire. Even if that's where things are headed, I hope it is clear that we are not yet at such a stage to standardize what that looks like. We still need many years of use of specialized lightning protocols and work to be done to make them more generic and applicable to other protocols.
+
+I believe the situation to be similar with MAST. Even if we have a better idea of what the MAST constructions will look like, *nobody* uses MAST in production yet, and there are bound to be implementation issues in rolling it out, or unique variants we do not have the foresight to see now. As a concrete example, BIP 116 has been modified since the initial proposal to allow multiple branches to be proven at once from a single Merkle tree root. To be honest, I don't know exactly how this will be used. We were able to come up with a couple of examples to justify inclusion of the feature, but I anticipate that someone down the line will come up with an even more creative use. Maybe a payment channel that uses a single tree to simultaneously commit to both the policy script and a sequence number. Or something like that. If we provide a templated, special-cased MAST now before it sees wide use then we will be locking in the protocol that we anticipate people using without having any production experience or ecosystem-wide review. Frankly that strikes me as a poor engineering decision.
+
+Finally, even if we had perfect foresight into how a feature will be used, which we don't, it is still the case that we would want to enable permission-less innovation with the generic construct, even if using it comes with a 40-byte or so witness hit. I make the argument for this in the "intuitive explanation of MAST" email I sent to this list back in September of last year. I will reproduce the argument below:
+
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-September/015028.html
+
+The driving motivation for the tail-call and MBV proposals, and the reason they are presented and considered together is to enable Merklized Abstract Syntax Trees. However neither BIP actually defines a MAST template, except as an example use case of the primitive features. This is very much on purpose: it is the opinion of this author that new bitcoin consensus features should follow the UNIX philosophy as expressed by Peter Salus and Mike Gancarz and paraphrased by yours truly:
+
+  * Write features that do one thing and do it well.
+  * Write features to work together.
+  * Simple is beautiful.
+
+By using modularity and composition of powerful but simple tools like MERKLEBRANCHVERIFY and single tail-call recursion to construct MAST we enable a complex and desirable feature while minimizing changes to the consensus code, review burden, and acquired technical debt.
+
+The reusability of the underlying primitives also means that they can be combined with other modular features to support use cases other than vanilla MAST, or reused in series to work around various limits that might otherwise be imposed on a templated form of MAST. At the moment the chief utility of these proposals is the straightforward MAST script written above, but as primitives they do allow a few other use cases and also combine well with features in the pipeline or on
+the drawing board. For example, in addition to MAST you can:
+
+1. Use MERKLEBRANCHVERIFY alone to support honeypot bounties, as
+   discussed in the BIP.
+
+2. Use a series of MERKLEBRANCHVERIFY opcodes to verify a branch with
+   split proofs to stay under script and witness push limitations.
+
+3. Combine MERKLEBRANCHVERIFY with key aggregation to get
+   Wuille-Maxwell tree signatures which support arbitrary signing
+   policies using a single, aggregatable signature.
+
+4. Combine tail-call execution semantics with CHECKSIGFROMSTACK to get
+   delegation and signature-time commitment to subscript policy.
+
+5. Combine MERKLEBRANCHVERIFY with a Merkle proof prefix check opcode
+   and Lamport signature support to get reusable Lamport keys.
+
+I believe these benefits and possible future expansions to be strong arguments in favor of extending bitcoin in the form of small, modular, incremental, and reusable changes that can be combined and used even in ways unforeseen even by their creators, creating a platform for unrestricted innovation.
+
+The alternative approach of rigid templates achieves the stated goals, perhaps even with slightly better encoding efficiency, but at the cost of requiring workaround for each future innovation. P2SH is just such an example -- we couldn't even upgrade to 128-bit security without designing an entirely different implementation because of the limitations of template pattern matching.
+
+
+> On Jan 9, 2018, at 11:21 PM, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+> 
+> On Jan 9, 2018 13:41, "Mark Friedenbach via bitcoin-dev" <bitcoin-dev at lists.linuxfoundation.org <mailto:bitcoin-dev at lists.linuxfoundation.org>> wrote:
+> The use of the alt stack is a hack for segwit script version 0 which has the clean stack rule. Anticipated future improvements here are to switch to a witness script version, and a new segwit output version which supports native MAST to save an additional 40 or so witness bytes. Either approach would allow getting rid of the alt stack hack. They are not part of the proposal now because it is better to do things incrementally, and because we anticipate usage of MAST to better inform these less generic changes.
+> 
+> If the goal is to introduce a native MAST output type later, what is gained by first having the tailcall semantics?
+> 
+> As far as I can see, this proposal does not have any benefits over Johnson Lau's MAST idea [1]:
+> * It is more compact, already giving us the space savings a native MAST version of the tail call semantics would bring.
+> * It does not need to work around limitations of push size limits or cleanstack rules.
+> * The implementation (of code I've seen) is easier to reason about, as it's just another case in VerifyScript (which you'd need for a native MAST output later too) without introducing jumps or loops inside EvalScript.
+> * It can express the same, as even though the MBV opcode supports proving multiple elements simultaneously, I don't see a way to use that in the tail call. Every scenario that consists of some logic before deciding what the tail call is going to be can be rewritten to have that logic inside each of the branches, I believe.
+> * It does not interfere with static analysis (see further).
+> * Tail call semantics may be easier to extend in the future to enable semantics that are not compactly representable in either proposal right now, by allowing a single top-level script may invoke multiple subscripts, or recursion. However, those sound even riskier and harder to analyse to me, and I don't think there is sufficient evidence they're needed.
+> 
+> Native MAST outputs would need a new witness script version, which your current proposal does indeed not need. However, I believe a new script version will be desirable for other reasons regardless (returning invalid opcodes to the pool of NOPs available for softforks, for example).
+> 
+> I will make a strong assertion: static analyzing the number of opcodes and sigops gets us absolutely nothing. It is cargo cult safety engineering. No need to perpetuate it when it is now in the way.
+> 
+> I'm not sure I agree here. While I'd like to see the separate execution limits go away, removing them entirely and complicating future ability to introduce unified costing towards weight of execution cost seems the wrong way to go.
+> 
+> My reasoning is this: perhaps you can currently make an argument that the current weight limit is sufficient in preventing overly expensive block validation costs, due to a minimal ratio between script sizes and their execution cost. But such an argument needs to rely on assumptions about sighash caching and low per-opcode CPU time, which may change in the future. In my view, tail call semantics gratuitously remove or complicate the ability to reason about the executed code.
+> 
+> One suggestion to reduce the impact of this is limiting the per-script execution to something proportional to the script size. However, I don't think that addresses all potential concerns about static analysis (for example, it doesn't easily let you prove all possible execution paths to a participant in a smart contract).
+> 
+> Another idea that has been suggested on this list is to mark pushes of potentially executable code on the stack/witness explicitly. This would retain all ability to analyse, while still leaving the flexibility of future extensions to tail call execution. If tail call semantics are adopted, I strongly prefer an approach like that to blindly throwing out all limits and analysis.
+> 
+>   [1] https://github.com/jl2012/bips/blob/mast/bip-mast.mediawiki <https://github.com/jl2012/bips/blob/mast/bip-mast.mediawiki>
+> 
+> Cheers,
+> 
+> -- 
+> Pieter
+> 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180110/030d4279/attachment-0001.html>
