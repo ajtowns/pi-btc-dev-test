@@ -1,0 +1,50 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Tue, 9 Jan 2018 21:40:30 +0900
+Subject: [bitcoin-dev] BIP 117 Feedback
+In-Reply-To: <87608btgyd.fsf@rustcorp.com.au>
+References: <87608btgyd.fsf@rustcorp.com.au>
+Message-ID: <DB7E57AC-5588-4BBA-9ABC-B9B4F6BAECE2@friedenbach.org>
+
+The use of the alt stack is a hack for segwit script version 0 which has the clean stack rule. Anticipated future improvements here are to switch to a witness script version, and a new segwit output version which supports native MAST to save an additional 40 or so witness bytes. Either approach would allow getting rid of the alt stack hack. They are not part of the proposal now because it is better to do things incrementally, and because we anticipate usage of MAST to better inform these less generic changes.
+
+Your suggestion of ?single blob on the stack? seems to be exactly this proposal afaict? Note the witness data needs to be passed separately because signatures can?t be included in that single blob if that blob is hashed and compared against something in the scriptPubKey.
+
+The sigop and opcode limit drop can be justified with some back of the envelope calculations. Non-scriptPubKey scripts are fundamentally limited by blocksize/weight and the most damage you can do, as an adversary, is limited by space. The most expensive thing you can do check a signature. Our assumptions about block size safety are basically due to how much computation you can stuff in a block with checksigs ? all the analysis there applies.
+
+My suggestion is to limit the number of checksigs allowed in a script to size(script+witness)/64, but I wanted this to come up in review rather than complicate the code right off the bat.
+
+I will make a strong assertion: static analyzing the number of opcodes and sigops gets us absolutely nothing. It is cargo cult safety engineering. No need to perpetuate it when it is now in the way.
+
+Sent from my iPhone
+
+> On Jan 9, 2018, at 8:22 PM, Rusty Russell <rusty at rustcorp.com.au> wrote:
+> 
+> I've just re-read BIP 117, and I'm concerned about its flexibility.  It
+> seems to be doing too much.
+> 
+> The use of altstack is awkward, and makes me query this entire approach.
+> I understand that CLEANSTACK painted us into a corner here :(
+> 
+> The simplest implementation of tail recursion would be a single blob: if
+> a single element is left on the altstack, pop and execute it.  That
+> seems trivial to specify.  The treatment of concatenation seems like
+> trying to run before we can walk.
+> 
+> Note that if we restrict this for a specific tx version, we can gain
+> experience first and get fancier later.
+> 
+> BIP 117 also drops SIGOP and opcode limits.  This requires more
+> justification, in particular, measurements and bounds on execution
+> times.  If this analysis has been done, I'm not aware of it.
+> 
+> We could restore statically analyzability by rules like so:
+> 1.  Only applied for tx version 3 segwit txs.
+> 2.  For version 3, top element of stack is counted for limits (perhaps
+>    with discount).
+> 3.  The blob popped off for tail recursion must be identical to that top
+>    element of the stack (ie. the one counted above).
+> 
+> Again, future tx versions could drop such restrictions.
+> 
+> Cheers,
+> Rusty.
