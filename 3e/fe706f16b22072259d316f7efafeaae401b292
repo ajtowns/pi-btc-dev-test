@@ -1,0 +1,89 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 9 Jan 2018 06:21:08 -0800
+Subject: [bitcoin-dev] BIP 117 Feedback
+In-Reply-To: <DB7E57AC-5588-4BBA-9ABC-B9B4F6BAECE2@friedenbach.org>
+References: <87608btgyd.fsf@rustcorp.com.au>
+	<DB7E57AC-5588-4BBA-9ABC-B9B4F6BAECE2@friedenbach.org>
+Message-ID: <CAPg+sBgRrqZryiETZYCWiqHNOmN2bCfsvr30znjN-gKiU5Vfjg@mail.gmail.com>
+
+On Jan 9, 2018 13:41, "Mark Friedenbach via bitcoin-dev" <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+The use of the alt stack is a hack for segwit script version 0 which has
+the clean stack rule. Anticipated future improvements here are to switch to
+a witness script version, and a new segwit output version which supports
+native MAST to save an additional 40 or so witness bytes. Either approach
+would allow getting rid of the alt stack hack. They are not part of the
+proposal now because it is better to do things incrementally, and because
+we anticipate usage of MAST to better inform these less generic changes.
+
+
+If the goal is to introduce a native MAST output type later, what is gained
+by first having the tailcall semantics?
+
+As far as I can see, this proposal does not have any benefits over Johnson
+Lau's MAST idea [1]:
+* It is more compact, already giving us the space savings a native MAST
+version of the tail call semantics would bring.
+* It does not need to work around limitations of push size limits or
+cleanstack rules.
+* The implementation (of code I've seen) is easier to reason about, as it's
+just another case in VerifyScript (which you'd need for a native MAST
+output later too) without introducing jumps or loops inside EvalScript.
+* It can express the same, as even though the MBV opcode supports proving
+multiple elements simultaneously, I don't see a way to use that in the tail
+call. Every scenario that consists of some logic before deciding what the
+tail call is going to be can be rewritten to have that logic inside each of
+the branches, I believe.
+* It does not interfere with static analysis (see further).
+* Tail call semantics may be easier to extend in the future to enable
+semantics that are not compactly representable in either proposal right
+now, by allowing a single top-level script may invoke multiple subscripts,
+or recursion. However, those sound even riskier and harder to analyse to
+me, and I don't think there is sufficient evidence they're needed.
+
+Native MAST outputs would need a new witness script version, which your
+current proposal does indeed not need. However, I believe a new script
+version will be desirable for other reasons regardless (returning invalid
+opcodes to the pool of NOPs available for softforks, for example).
+
+I will make a strong assertion: static analyzing the number of opcodes and
+sigops gets us absolutely nothing. It is cargo cult safety engineering. No
+need to perpetuate it when it is now in the way.
+
+
+I'm not sure I agree here. While I'd like to see the separate execution
+limits go away, removing them entirely and complicating future ability to
+introduce unified costing towards weight of execution cost seems the wrong
+way to go.
+
+My reasoning is this: perhaps you can currently make an argument that the
+current weight limit is sufficient in preventing overly expensive block
+validation costs, due to a minimal ratio between script sizes and their
+execution cost. But such an argument needs to rely on assumptions about
+sighash caching and low per-opcode CPU time, which may change in the
+future. In my view, tail call semantics gratuitously remove or complicate
+the ability to reason about the executed code.
+
+One suggestion to reduce the impact of this is limiting the per-script
+execution to something proportional to the script size. However, I don't
+think that addresses all potential concerns about static analysis (for
+example, it doesn't easily let you prove all possible execution paths to a
+participant in a smart contract).
+
+Another idea that has been suggested on this list is to mark pushes of
+potentially executable code on the stack/witness explicitly. This would
+retain all ability to analyse, while still leaving the flexibility of
+future extensions to tail call execution. If tail call semantics are
+adopted, I strongly prefer an approach like that to blindly throwing out
+all limits and analysis.
+
+  [1] https://github.com/jl2012/bips/blob/mast/bip-mast.mediawiki
+
+Cheers,
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180109/6c862414/attachment.html>
