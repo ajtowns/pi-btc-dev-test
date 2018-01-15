@@ -1,0 +1,77 @@
+From: danrobinson010@gmail.com (Daniel Robinson)
+Date: Mon, 15 Jan 2018 22:39:05 +0000
+Subject: [bitcoin-dev] Ivy: a higher-level language targeting Bitcoin
+	Script
+In-Reply-To: <1CCF3C59-64DB-462F-AC62-AEA77FA01571@mattcorallo.com>
+References: <CAD438HvzYAMVTU8A0OiNnj2nvYgMApdS8NNfzE86Ae_OsTfuaA@mail.gmail.com>
+	<1CCF3C59-64DB-462F-AC62-AEA77FA01571@mattcorallo.com>
+Message-ID: <CAD438Ht8x5-v8NsC7O=D7Oo5EZ56q5E3LKuVt033as-8iqtd=Q@mail.gmail.com>
+
+Hi Matt,
+
+Thanks for raising this. Since the compiler only produces SegWit addresses,
+I hadn't worried at all about malleability, but as you pointed out
+out-of-band, malleability in the length of an argument can allow an
+attacker to deflate the feerate of a transaction.
+
+There was in fact a minor witness malleability problem with how the
+compiler was handling clause selection. It's now been fixed in version
+0.0.7 of the compiler.
+
+As far as I can tell (and I haven't looked all that carefully), any
+sensible Ivy contract won't have any witness malleability problem. (A funny
+exception is the RevealCollision contract, since you can length-extend the
+arguments to get another collision. But without a signature check, that one
+has a more serious transaction malleability problem anyway.) But the
+compiler currently doesn't prevent you from doing dumb unconstrained stuff
+like:
+
+```
+clause spend(a: Bytes, b: Bytes, sig: Signature) {
+  verify a == b
+  verify checkSig(publicKey, sig)
+  unlock val
+}
+```
+
+Maybe it should, particularly since there's no reason to include a trivial
+condition like that anyway. But I think it would probably be about as easy
+(and more generally useful) to build a static analyzer that solved this
+problem for low-level Bitcoin Script.
+
+On Sun, Jan 14, 2018 at 5:42 PM Matt Corallo <lf-lists at mattcorallo.com>
+wrote:
+
+> I'm curious if you've considered adding some form of compiler-time
+> enforcement to prevent witness malleability? With that, Ivy could help to
+> resolve for it's users one of the things that can make Bitcoin scripts more
+> complicated to write, instead of simply type-checking and providing a
+> high-level language mapped 1-to-1 with Bitcoin script.
+>
+>
+> On December 18, 2017 8:32:17 PM UTC, Daniel Robinson via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>
+>> Today, we?re releasing Ivy, a prototype higher-level language and
+>> development environment for creating custom Bitcoin Script programs. You
+>> can see the full announcement here
+>> <https://blog.chain.com/ivy-for-bitcoin-a-smart-contract-language-that-compiles-to-bitcoin-script-bec06377141a>,
+>> or check out the docs <https://docs.ivy-lang.org/bitcoin/> and source
+>> code <https://github.com/ivy-lang/ivy-bitcoin>.
+>>
+>> Ivy is a simple smart contract language that can compile to Bitcoin
+>> Script. It aims to improve on the useability of Bitcoin Script by adding
+>> affordances like named variables and clauses, static (and domain-specific)
+>> types, and familiar syntax for function calls.
+>>
+>> To try out Ivy, you can use the Ivy Playground for Bitcoin
+>> <https://ivy-lang.org/bitcoin/>, which allows you to create and test
+>> simulated contracts in a sandboxed environment.
+>>
+>> This is prototype software intended for educational and research purposes
+>> only. Please don't try to use Ivy to control real or testnet Bitcoins.
+>>
+>>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180115/ee189ac5/attachment.html>
