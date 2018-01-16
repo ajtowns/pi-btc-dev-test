@@ -1,0 +1,160 @@
+From: nullius@nym.zone (nullius)
+Date: Tue, 16 Jan 2018 00:10:38 +0000
+Subject: [bitcoin-dev] Proposal to reduce mining power bill
+In-Reply-To: <CAD-msxHyN+psv5p94_pUzNMFfZjMX4Jie2=PCt0CeO1cuuCz2A@mail.gmail.com>
+References: <CAD-msxHyN+psv5p94_pUzNMFfZjMX4Jie2=PCt0CeO1cuuCz2A@mail.gmail.com>
+Message-ID: <5e93f4b0e82ddf4eba5f1f54923e153f@nym.zone>
+
+On 2018-01-15 at 22:47:54 +0000, Enrique Ariz?n Benito 
+<enrique.arizonbenito at gmail.com> wrote:
+>Hi all,
+>
+>just new to the list and curious to know if next proposal (or similar) 
+>for reducing mining-power consumption has already been discussed.
+>
+>The objective is to reduce the power consumption required while keeping 
+>the network safe and the miners "motivated" and cooperative to continue 
+>mining:
+>
+>The global idea is to introduce the concept of "next-coinbase" for 
+>miners. This will work something like as follow:
+>
+>- Any miner submitting a block will submit the "next-coinbase" for any 
+>new block mined by itself. (This address can be the same one or 
+>different from the just mined block). The miner keeps the private key 
+>associated with the "next-coinbase" secret.
+>
+>- The consensus algorithm will add next checks:
+> A hash from, for example, the just mined block and the previous one, 
+>will have to match up to N bits for the next "next-coinbase" from the 
+>next block to be valid.
+>
+> That means that for the next block only 1/2^N bitcoin addresses will 
+>be accepted from the previously submitted "next-coinbase" list.
+>
+>Since the last previous block hash can be considered random, miners 
+>know in advance whether they will be able to participate or not in the 
+>next block depending on the just submited "next-coinbase". And since 
+>the "punishment" is distributed uniformely random to all miners no one 
+>has any advantage over the other. But the global miner netwok will 
+>consume much less power.
+>
+>A detail rest: New miners are not allowed in such scheme so next 
+>addition is needed:
+>
+>- A miner with no previous "next-coinbase" will need to first mine an 
+>special block, "new-miner-block", that instead of normal transactions 
+>will register the new miner and submit a "next-coinbase". This special 
+>block will not be rewarded with new bitcoins. The only reward will be 
+>the permission to mine in following blocks. No reward is applied so 
+>only new miners wanting to "enter" the mining network are expected to 
+>create such block.
+
+Observation:  This totally destroys Bitcoin?s transaction-ordering 
+security.  A ?51% attack? could be executed by any miner who has >50% of 
+the hashpower *proportionate to miners who are allowed to mine a 
+particular block*, rather than >50% of *global* hashpower.  (I infer 
+that this could be done retroactively, and wave my hands over some of 
+the details since you did not talk about reorgs.)  The same applies as 
+for attacks requiring 33% or 25% of total hashpower.
+
+Potential attack, assuming that N *must* be based partly or wholly on 
+the existing set of ?next-coinbase? addresses:  A large miner could 
+gradually push N higher, by progressively committing new ?next-coinbase? 
+addresses which differ in the next bit for all previously seen 
+combinations of bits.  Large miners would have a vast advantage over 
+small miners, insofar as deliberately incrementing N by one more bit 
+could only be done by a miner who creates 2^(N+1) blocks (= 2 * 2^N).  
+By such means, it may be possible for a very large miner to eventually 
+lock out all other miners altogether, and monopolize all Bitcoin mining.
+
+Now, questions:
+
+How is N determined?  By a wave of the hands?
+
+What part of which block hash is matched against N bits?  You were quite 
+unclear about this, and other important details.  (Much of what I say 
+here is based on assumptions and inferences necessary to fill in the 
+blanks.)
+
+How, exactly, are reorgs handled?
+
+How does this interact with the difficulty adjustment algorithm?  
+Indeed, how is difficulty determined at all under your scheme?
+
+What happens to coinbase fees from a ?new-miner-block??  The way I read 
+your scheme, the ?new-miner-block? must necessarily have no payout 
+whatsoever.  But you discuss only ?new bitcoins?, which are a 
+diminishing portion of the block reward, and will eventually reach zero.  
+Coinbase from fees must go somewhere; but under your scheme, a ?new 
+miner? has no payable address.
+
+What if no existing ?next-coinbase? address matches?  Is N constrained 
+to be sufficiently short that a match is guaranteed from the existing 
+set, then that makes it trivial for large mining farms to collect 
+addresses and further dominate (or even monopolize) the network in the 
+attack described above.  If it isn?t, then the network could suddenly 
+halt when nobody is allowed to mine the next block; and that would 
+enable *this* attack:
+
+What stops a malicious miner (including a ?new miner? creating a 
+?new-miner block?) from deliberately working to create a block with a 
+hash which does not have N bits matching any of the existing 
+?next-coinbase? addresses?  Contra what you say, block hashes can?t be 
+?considered random?.  Indeed, partial preimage bruteforcing of block 
+hashes is the entire basis of mining POW.
+
+Asking here more generally than as for the attack described above, what 
+stops mining farms with large hashpower from submitting many different 
+?next-coinbase? addresses in many different blocks?  If N be small, then 
+it should be feasible for a large mining farm to eventually register a 
+set of ?next-coinbase? addresses which match any N.  **This increases 
+mining centralization.**  If N be large, then this creates the 
+possibility (or raises the probability) that no address will match, and 
+nobody will be allowed to mine the next block.
+
+How could miner anonymity be preserved under a scheme whereby each 
+?next-coinbase? address can be linked to a previous ?next-coinbase? 
+address?  The only way to start fresh would be with a prohibitively 
+expensive no-payout block.  Mining can be totally anonymous at present, 
+and must so remain.  Miners are only identified by certain information 
+they choose to put in a block header, which they could choose to change 
+or omit?or by IP address, which is trivially changed and is never a 
+reliable identifier.
+
+How does this even save electricity, when there is much mining equipment 
+(especially on large mining farms) which cannot be easily shut down and 
+restarted?  (Allegedly, this is one reason why some big miners 
+occasionally mine empty blocks.)  Though I suppose that difficulty would 
+drop by unspecified means.
+
+Further observations:
+
+This scheme drastically increases the upfront investment required for a 
+new miner to start mining.  To mine even one new block all by oneself, 
+without a pool, already requires a huge investment.  Add to that the 
+uncompensated energy cost of mining that first block with *no* payout, 
+and I expect that the bar would be prohibitive to almost all new 
+entrants.  Mining costs and incentives are delicately balanced by the 
+design of the network.  Whereas incumbents are much favoured by your 
+scheme, further increasing miner centralization.  Large incumbents could 
+also use this to produce a mining permissions market, by selling the 
+private keys to committed ?next-coinbase? addresses.
+
+I have not even tried to imagine what oddball attacks might be possible 
+for any miner with sufficient hashpower to deliberately cause a small 
+reorg.
+
+-- 
+nullius at nym.zone | PGP ECC: 0xC2E91CD74A4C57A105F6C21B5A00591B2F307E0C
+Bitcoin: bc1qcash96s5jqppzsp8hy8swkggf7f6agex98an7h | (Segwit nested:
+3NULL3ZCUXr7RDLxXeLPDMZDZYxuaYkCnG)  (PGP RSA: 0x36EBB4AB699A10EE)
+??If you?re not doing anything wrong, you have nothing to hide.?
+No!  Because I do nothing wrong, I have nothing to show.? ? nullius
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 228 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180116/7325d4d4/attachment-0001.sig>
