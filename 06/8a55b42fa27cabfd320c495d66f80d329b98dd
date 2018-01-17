@@ -1,0 +1,83 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Wed, 17 Jan 2018 15:31:44 +0000
+Subject: [bitcoin-dev] Satoshilabs secret shared private key scheme
+In-Reply-To: <51280a45-f86b-3191-d55e-f34e880c1da8@satoshilabs.com>
+References: <51280a45-f86b-3191-d55e-f34e880c1da8@satoshilabs.com>
+Message-ID: <CAAS2fgRQk4EUp6FO2f+RkJpDTyZX0N4=uGp7ZF=0aUchZX8hSA@mail.gmail.com>
+
+On Wed, Jan 17, 2018 at 11:39 AM, Ond?ej Vejpustek via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Consider a few notes:
+>   * Nowadays there exists more complicated variants of mentioned attacks
+> which have weaker premisses.
+>   * There is a considerable similarity between RSA and SSS. Both schemes
+> are algebraically-based (rather than boolean function based).
+
+I'm sorry but I must not be following your message. I read the above
+as "these are similar because they are based on math"...
+
+Shamir secret sharing, correctly implemented (which indeed seems to be
+many parties problem...) achieves information theoretic security. In
+this critical sense it is utterly unrelated to RSA.
+
+In fact this applies generally given any fixed threashold-1 set of
+shares there is an value of the final remaining share which decodes to
+every possible message. So without knowing of an extra share you know
+nothing of the message.
+
+The simplest demonstration is the 2 of 2 case, which can most simply
+be constructed over GF(2) as in the traditional "one time pad":
+message = share1 xor share2.  For any given share1 or given share2
+there exist a value of share2 or share1 respectively which yields
+every possible message.
+
+If the generalization isn't obvious, it might be helpful to make a
+little test utility that tries all possible one byte messages with all
+possible share values using the GF(256) sharing scheme proposed in the
+draft-- in this case information theory is why we can know SSS (and
+similar) have (within their limited scope) _perfect_ security, rather
+than it being a reason to speculate that they might not turn out to be
+secure at all. (or, instead of a test utility just work through some
+examples on paper in a small field).
+
+This doesn't change when you add additional conditionals on it-- e.g.
+Say you a 2-of-3 sharing where you have your choice of any of the
+three shares but do not know the others and assume you know every bit
+of the plaintext save one bit or any linear or non-linear relationship
+between plaintext bits (excepting for actually knowing the secret)...
+
+In these case there can still be no attack arising out of this
+charitably bad plaintext structure because-- as pointed out above--
+all possible plaintexts are equal-probable you know nothing of which
+of the two possible solutions is correct without knowing about the
+other shares because for each possible value there exists a value for
+the unknown shares which would cause that decoding-- there is no
+leakage at all, the share doesn't teach you anything you didn't
+already know.
+
+In my view any SSS tool should also include a forgery utility which
+demonstrates this property, both as a critical test-- but also because
+being able to forge an alternative answer to deceive an attacker which
+has compromised some of your shares is one of the (at least
+theoretical) arguments for using SSS over computational secret
+sharing.
+
+> unless it is introduced in a complicated way
+
+Complicated does not mean secure. And from an information theoretic
+perspective the hash does almost nothing (other then some small
+destruction of entropy due to its lack of perfect uniformity which is
+information theoretically equivalent to using a smaller perfect code).
+There are many cases where I too am more comfortable using a hash --
+where it may destroy some structure which I cannot _prove_ would be
+safe to retain, but this is not one of those cases.
+
+>   * CRCs (and error-correcting codes generally) introduce redundancy
+into the message
+
+The discussion of using a proper code was primarily related to the
+outer check value which protects the shares themselves and is sitting
+unprotected in plaintext; not so much the one inside the sharing in
+any case; since its the outer one which could be structured to provide
+perfect detection of errors that align with words (e.g. transposing
+two words).
