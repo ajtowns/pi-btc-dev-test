@@ -1,0 +1,533 @@
+From: willtech@live.com.au (Damian Williamson)
+Date: Fri, 19 Jan 2018 23:25:43 +0000
+Subject: [bitcoin-dev] BIP Proposal: Revised: UTPFOTIB - Use Transaction
+ Priority For Ordering Transactions In Blocks
+In-Reply-To: <PS2P216MB0179F13FF364666D92E6B2F89D1F0@PS2P216MB0179.KORP216.PROD.OUTLOOK.COM>
+References: <PS2P216MB0179D103B5D93555D166E74F9D180@PS2P216MB0179.KORP216.PROD.OUTLOOK.COM>,
+	<PS2P216MB0179F13FF364666D92E6B2F89D1F0@PS2P216MB0179.KORP216.PROD.OUTLOOK.COM>
+Message-ID: <PS2P216MB0179436AF3183A14D79869D39DEF0@PS2P216MB0179.KORP216.PROD.OUTLOOK.COM>
+
+An example curve:
+
+The curve curently described here is ineffective at acheiving the requirements. It seems to be not nearly steep enough resulting in too many inclusions (as it happens, this may not metter - needs further evaluation) and, the lower end values seem problematically small but, results in a number between 100 for the highest fee BTC/KB and a small fraction of 1 for the lowest. This math needs to be improved.
+
+
+pf(tx) = sin2((fx-(fl-0.00000001))/(fh-(fl-0.00000001))*1.570796326795)*100
+
+
+pf is the calculated priority number for the fee for tx the specifc valid transaction.
+fx is the fee in BTC/KB for the specific transaction.
+fl is the lowest valid fee in BTC/KB currently in the nodes mempool.
+fh is the highest valid fee in BTC/KB currently in the nodes mempool.
+
+________________________________
+From: bitcoin-dev-bounces at lists.linuxfoundation.org <bitcoin-dev-bounces at lists.linuxfoundation.org> on behalf of Damian Williamson via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+Sent: Thursday, 4 January 2018 8:01:10 PM
+To: Bitcoin Protocol Discussion
+Subject: [bitcoin-dev] BIP Proposal: Revised: UTPFOTIB - Use Transaction Priority For Ordering Transactions In Blocks
+
+
+This proposal has a new update, mostly minor edits. Additionally, I had a logic flaw in the hard fork / soft fork declaration statement. The specific terms of the CC-BY-SA-4.0 licence the document is published under have now been updated to include additional permissions available under the MIT licence.
+
+
+Recently, on Twitter:
+
+I am looking for a capable analyst/programmer to work on a BIP proposal as co-author. Will need to format several Full BIP's per these BIP process requirements: ( https://github.com/bitcoin/bips/blob/master/bip-0002.mediawiki ) from a BIP Proposal, being two initially for non-consensus full-interoperable pre-rollout on peer service layer & API/RPC layer and, a reference implementation for Bitcoin Core per: ( https://github.com/bitcoin/bitcoin/blob/master/CONTRIBUTING.md ). Interested parties please reply via this list thread: ( https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-December/015485.html ) #Bitcoin #BIP
+
+
+Regards,
+
+Damian Williamson
+
+
+________________________________
+From: bitcoin-dev-bounces at lists.linuxfoundation.org <bitcoin-dev-bounces at lists.linuxfoundation.org> on behalf of Damian Williamson via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+Sent: Monday, 1 January 2018 10:04 PM
+To: bitcoin-dev at lists.linuxfoundation.org
+Subject: [bitcoin-dev] BIP Proposal: Revised: UTPFOTIB - Use Transaction Priority For Ordering Transactions In Blocks
+
+Happy New Year all.
+
+This proposal has been further amended with several minor changes and a
+few additions.
+
+I believe that all known issues raised so far have been sufficiently
+addressed. Either that or, I still have more work to do.
+
+## BIP Proposal: Revised: UTPFOTIB - Use Transaction Priority For
+Ordering Transactions In Blocks
+
+Schema:
+##########
+Document: BIP Proposal
+Title: UTPFOTIB - Use Transaction Priority For Ordering Transactions In
+Blocks
+Published: 26-12-2017
+Revised: 01-01-2018
+Author: Damian Williamson <willtech at live.com.au>
+Licence: Creative Commons Attribution-ShareAlike 4.0 International
+License.
+URL: http://thekingjameshrmh.tumblr.com/post/168948530950/bip-proposal-
+utpfotib-use-transaction-priority-for-order
+##########
+
+### 1. Abstract
+
+This document proposes to address the issue of transactional
+reliability in Bitcoin, where valid transactions may be stuck in the
+transaction pool for extended periods or never confirm.
+
+There are two key issues to be resolved to achieve this:
+
+1.  The current transaction bandwidth limit.
+2.  The current ad-hoc methods of including transactions in blocks
+resulting in variable and confusing confirmation times for valid
+transactions, including transactions with a valid fee that may never
+confirm.
+
+It is important with any change to protect the value of fees as these
+will eventually be the only payment that miners receive. Rather than an
+auction model for limited bandwidth, the proposal results in a fee for
+priority service auction model.
+
+It would not be true to suggest that all feedback received so far has
+been entirely positive although, most of it has been constructive.
+
+The previous threads for this proposal are available here:
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-December/s
+ubject.html
+
+In all parts of this proposal, references to a transaction, a valid
+transaction, a transaction with a valid fee, a valid fee, etc. is
+defined as any transaction that is otherwise valid with a fee of at
+least 0.00001000 BTC/KB as defined as the dust level, interpreting from
+Bitcoin Core GUI. Transactions with a fee lower than this rate are
+considered dust.
+
+In all parts of this proposal, dust and zero-fee transactions are
+always ignored and/or excluded unless specifically mentioned.
+
+It is generally assumed that miners currently prefer to include
+transactions with higher fees.
+
+### 2. The need for this proposal
+
+We all must learn to admit that transaction bandwidth is still lurking
+as a serious issue for the operation, reliability, safety, consumer
+acceptance, uptake and, for the value of Bitcoin.
+
+I recently sent a payment which was not urgent so; I chose three-day
+target confirmation from the fee recommendation. That transaction has
+still not confirmed after now more than six days - even waiting twice
+as long seems quite reasonable to me (note for accuracy: it did
+eventually confirm). That transaction is a valid transaction; it is not
+rubbish, junk or, spam. Under the current model with transaction
+bandwidth limitation, the longer a transaction waits, the less likely
+it is ever to confirm due to rising transaction numbers and being
+pushed back by transactions with rising fees.
+
+I argue that no transactions with fees above the dust level are rubbish
+or junk, only some zero fee transactions might be spam. Having an ever-
+increasing number of valid transactions that do not confirm as more new
+transactions with higher fees are created is the opposite of operating
+a robust, reliable transaction system.
+
+While the miners have discovered a gold mine, it is the service they
+provide that is valuable. If the service is unreliable they are not
+worth the gold that they mine. This is reflected in the value of
+Bitcoin.
+
+Business cannot operate with a model where transactions may or may not
+confirm. Even a business choosing a modest fee has no guarantee that
+their valid transaction will not be shuffled down by new transactions
+to the realm of never confirming after it is created. Consumers also
+will not accept this model as Bitcoin expands. If Bitcoin cannot be a
+reliable payment system for confirmed transactions then consumers, by
+and large, will simply not accept the model once they understand.
+Bitcoin will be a dirty payment system, and this will kill the value of
+Bitcoin.
+
+Under the current system, a minority of transactions will eventually be
+the lucky few who have fees high enough to escape being pushed down the
+list.
+
+Once there are more than x transactions (transaction bandwidth limit)
+every ten minutes, only those choosing twenty-minute confirmation (2
+blocks) from the fee recommendations will have initially at most a
+fifty percent chance of ever having their payment confirm by the time
+2x transactions is reached. Presently, not even using fee
+recommendations can ensure a sufficiently high fee is paid to ensure
+transaction confirmation.
+
+I also argue that the current auction model for limited transaction
+bandwidth is wrong, is not suitable for a reliable transaction system
+and, is wrong for Bitcoin. All transactions with valid fees must
+confirm in due time. Currently, Bitcoin is not a safe way to send
+payments.
+
+I do not believe that consumers and business are against paying fees,
+even high fees. What is required is operational reliability.
+
+This great issue needs to be resolved for the safety and reliability of
+Bitcoin. The time to resolve issues in commerce is before they become
+great big issues. The time to resolve this issue is now. We must have
+the foresight to identify and resolve problems before they trip us
+over.  Simply doubling block sizes every so often is reactionary and is
+not a reliable permanent solution.
+
+I have written this proposal for a technical solution but, need your
+help to write it up to an acceptable standard to be a full BIP.
+
+### 3. The problem
+
+Everybody wants value. Miners want to maximise revenue from fees (and
+we presume, to minimise block size). Consumers need transaction
+reliability and, (we presume) want low fees.
+
+The current transaction bandwidth limit is a limiting factor for both.
+As the operational safety of transactions is limited, so is consumer
+confidence as they realise the issue and, accordingly, uptake is
+limited. Fees are artificially inflated due to bandwidth limitations
+while failing to provide a full confirmation service for all valid
+transactions.
+
+Current fee recommendations provide no satisfaction for transaction
+reliability and, as Bitcoin scales, this will worsen.
+
+Transactions are included in blocks by miners using whatever basis they
+prefer. We expect that this is usually a fee-based priority. However,
+even transactions with a valid fee may be left in the transaction pool
+for some time. As transaction bandwidth becomes an issue, not even
+extreme fees can ensure a transaction is processed in a timely manner
+or at all.
+
+Bitcoin must be a fully scalable and reliable service, providing full
+transaction confirmation for every valid transaction.
+
+The possibility to send a transaction with a fee lower than one that is
+acceptable to allow eventual transaction confirmation should be removed
+from the protocol and also from the user interface.
+
+Bitcoin should be capable of reliably and inexpensively processing
+casual transactions, and also priority processing of fee paying at
+auction for priority transactions in the shortest possible timeframe.
+
+### 4. Solution summary
+
+#### Main solution
+
+Provide each valid transaction in the mempool with an individual
+transaction priority each time before choosing transactions to include
+in the current block. The priority being a function of the fee (on a
+curve), and the time waiting in the transaction pool (also on a curve)
+out to n days (n = 60 days ?), and extending past n days. The value for
+fee on a curve may need an upper limit. The transaction priority to
+serve as the likelihood of a transaction being included in the current
+block, and for determining the order in which transactions are tried to
+see if they will be included.
+
+Nodes will need to keep track of when a transaction is first seen. It
+is satisfactory for each node to do this independently provided the
+full mempool and information survives node restart. If there is a more
+reliable way to determine when a transaction was first seen on the
+network then it should be utilised.
+
+> My current default installation of Bitcoin Core v0.15.1 does not
+currently seem to save and load the mempool on restart, despite the
+notes in the command line options panel that the default for
+persistmempool is 1. In the debug panel, some 90,000 transactions
+before restart, some 200 odd shortly after. Manually setting
+persistmempool=1 in the conf file does not seem to make any difference.
+Perhaps it is operating as expected and I am not sure what to observe,
+but does not seem to be observably saving and loading the mempool on
+restart. This will need to be resolved.
+
+Use a dynamic target block size to make the current block. This marks a
+shift from using block size or weight to a count of transactions.
+Determine the target block size using; pre-rollout(current average
+valid transaction pool size) x ( 1 / (144 x n days ) ) = number of
+transactions to be included in the current block. The block created
+should be a minimum 1MB in size regardless if the target block size is
+lower.
+
+If the created block size consistently contains too few transactions
+and the number of new transactions created is continuously greater than
+the block size will accommodate then I expect eventually ageing
+transactions will be over-represented as a portion of the block
+contents. Once another new node conforming to the proposal makes a
+block, the block size will be proportionately larger as the transaction
+pool has grown.  If block size is too large on average then this will
+shrink the transaction pool.
+
+Miners will likely want to conform to the proposal, since making blocks
+larger than necessary makes more room in each block potentially
+lowering the highest fees paid for priority service. Always making
+blocks smaller than the proposal requires will in time lower the
+utility value of Bitcoin, a different situation but akin to the
+current. Transactions will still always confirm but with longer and
+longer wait periods. The auction at the front of the queue for priority
+will be destroyed as there will be eventually no room in blocks besides
+ageing transations and, there will be little value paying higher than
+the minimum fee. Obviously, neither of these scenarios are in a miner's
+interests.
+
+Without a consensus as to what size dynamic block to create,
+enforcement of dynamic block size is not currently possible. It may be
+possible for a consensus to be formed in the future but here I cannot
+speculate. I can only suggest that it is in the interest of Bitcoin as
+a whole and, in the interest of each node to conform to the proposal.
+Some nodes failing to conform to the proposed requirements of dynamic
+size or transaction priority in this proposal will not be destructive
+to the operation of the proposal.
+
+If necessary, nodes that have not yet adopted the proposal will just
+continue to create standard fixed size unordered blocks, although, if
+the current mechanisms of block validation include the fixed block size
+then it is unlikely that these nodes will be able to validate the
+blockchain going forward. In this case a hard fork and a full transfer
+to the new method should be required. If dynamic blocks with ordered
+transactions will be valid to existing nodes then only a soft fork is
+required. There is no proposed change to the internal construction of
+blocks, only to the block size and using an ordered method of
+transaction selection.
+
+> The default value for mempoolexpiry in Bitcoin Core may in future
+need to be adjusted to match something more than n days or, perhaps
+using less than n = 14 days may be a more sensible approach?
+
+All block created with dynamic size should be verified to ensure
+conformity to a probability distribution curve resulting from the
+priority method. Since the input is a probability, the output should
+conform to a probability distribution.
+
+The curves used for the priority of transactions would have to be
+appropriate. Perhaps a mathematician with experience in probability can
+develop the right formulae. My thinking is a steep curve. I suppose
+that the probability of all transactions should probably account for a
+sufficient number of inclusions that the target block size is met on
+average although, it may not always be. As a suggestion, consider
+including some dust or zero-fee transactions to pad if each valid
+transaction is tried and the target block size is not yet met, highest
+BTC transaction value first?
+
+**Explanation of the operation of priority:**
+
+> If transaction priority is, for example, a number between one (low)
+and one-hundred (high) it can be directly understood as the percentage
+chance in one-hundred of a transaction being included in the block.
+Using probability or likelihood infers that there is some function of
+random. Try the transactions in priority order from highest to lowest,
+if random (100) < transaction priority then the transaction is included
+until the target block size is met.
+
+> To break it down further, if both the fee on a curve value and the
+time waiting on a curve value are each a number between one and one-
+hundred, a rudimentary method may be to simply multiply those two
+numbers, to find the priority number. For example, a middle fee
+transaction waiting thirty days (if n = 60 days) may have a value of
+five for each part  (yes, just five, the values are on a curve). When
+multiplied that will give a priority value of twenty-five, or, a
+twenty-five percent chance at that moment of being included in the
+block; it will likely be included in one of the next four blocks,
+getting more likely each chance. If it is still not included then the
+value of time waiting will be higher, making for more probability. A
+very low fee transaction would have a value for the fee of one. It
+would not be until near sixty-days that the particular low fee
+transaction has a high likelihood of being included in the block.
+
+In practice it may be more useful to use numbers representative of one-
+hundred for the highest fee priority curve down to a small fraction of
+one for the lowest fee and, from one for a newly seen transaction up to
+a proportionately high number above one-hundred for the time waiting
+curve. It is truely beyond my level of math to resolve probability
+curves accurately without much trial and error.
+
+The primary reason for addressing the issue is to ensure transactional
+reliability and scalability while having each valid transaction confirm
+in due time.
+
+#### Pros
+
+*   Maximizes transaction reliability.
+*   Overcomes transaction bandwidth limit.
+*   Fully scalable.
+*   Maximizes possibility for consumer and business uptake.
+*   Maximizes total fees paid per block without reducing reliability;
+because of reliability, in time confidence and overall uptake are
+greater; therefore, more transactions.
+*   Market determines fee paid for transaction priority.
+*   Fee recommendations work all the way out to 30 days or greater.
+*   Provides additional block entropy; greater security since there is
+less probability of predicting the next block. _Although this is not
+necessary it is a product of the operation of this proposal._
+
+#### Cons
+
+*   Could initially lower total transaction fees per block.
+*   Must be first be programmed.
+
+#### Pre-rollout
+
+Nodes need to have at a minimum a loose understanding of the average
+(since there is no consensus) size of the transaction pool as a
+requirement to enable future changes to the way blocks are constructed.
+
+A new network service should be constructed to meet this need. This
+service makes no changes to any existing operation or function of the
+node. Initially, Bitcoin Core is a suitable candidate.
+
+For all operations we count only valid transactions.
+
+**The service must:**
+
+*   Have an individual temporary (runtime permanent only) Serial Node
+ID.
+*   Accept communication of the number of valid transactions in the
+mempool of another valid Bitcoin node along with the Serial Node ID of
+the node whose value is provided.
+*   Disconnect the service from any non-Bitcoin node. Bitcoin Core may
+handle this already?
+*   Expire any value not updated for k minutes (k = 30 minutes?).
+*   Broadcast all mempool information the node has every m minutes (m =
+10 minutes?), including its own.
+*   Nodes own mempool information should not be broadcast or used in
+calculation until the node has been up long enough for the mempool to
+normalise for at least o minutes (o = 300 minutes ?)
+*   Alternatively, if loading nodes own full mempool from disk on node
+restart (o = 30 minutes ?)
+*   Only new or updated mempool values should be transmitted to the
+same node. Updated includes updated with no change.
+*   All known mempool information must survive node restart.
+*   If the nodes own mempool is not normalised and network information
+is not available to calculate an average just display zero.
+*   Internally, the average transaction pool size must return the
+calculated average if an average is available or, if none is available
+just the number of valid transactions in the node's own mempool
+regardless if it is normalised.
+
+Bitcoin Core must use all collated information on mempool size to
+calculate a figure for the average mempool size.
+
+The calculated figure should be displayed in the appropriate place in
+the Debug window alongside the text Network average transactions.
+
+Consideration must be given before development of the network bandwidth
+this would require. All programming must be consistent with the current
+operation and conventions of Bitcoin Core. Methods must work on all
+platforms.
+
+As this new service does not affect any existing service or feature of
+Bitcoin or Bitcoin Core, this can technically be programmed now and
+included in Bitcoin Core at any time.
+
+### 5. Solution operation
+
+This is a simplistic view of the operation. The actual operation will
+need to be determined accurately in a spec for the programmer.
+
+1.  Determine the target block size for the current block.
+2.  Assign a transaction priority to each valid transaction in the
+mempool.
+3.  Select transactions to include in the current block using
+probability in transaction priority order until the target block size
+is met. If target block size is not met, include dust and zero-fee
+transactions to pad.
+4.  Solve block.
+5.  Broadcast the current block when it is solved.
+6.  Block is received.
+7.  Block verification process.
+8.  Accept/reject block based on verification result.
+9.  Repeat.
+
+### 6. Closing comments
+
+It may be possible to verify blocks conform to the proposal by showing
+that the probability for all transactions included in the block
+statistically conforms to a probability distribution curve, *if* the
+individual transaction priority can be recreated. I am not that deep
+into the mathematics; however, it may also be possible to use a similar
+method to do this just based on the fee, that statistically, the block
+conforms to a fee distribution. Any dust and zero-fee transactions
+would have to be ignored. This solution needs a competent mathematician
+with experience in probability and statistical distribution.
+
+It is trivial to this proposal to offer that a node provides the next
+block size with a block when it is solved. I am not sure that this
+creates any actual benefit since the provided next block size is only
+one node's view, as it is the node may seemingly just as well use its
+own view and create the block. Providing a next block size only adds
+additional complexity to the required operation, however, perhaps
+providing the next block size is not trivial in what is accomplished
+and the feature can be included in the operation.
+
+Instead of the pre-rollout network service providing data as to valid
+transactions in mempool, it could directly provide data as to the
+suggested next block size if that is preferred, using a similar
+operation as is suggested now and averaging all received suggested next
+block sizes.
+
+It may be foreseeable in the future for Bitcoin to operate with a
+network of dedicated full blockchain & mempool servers. This would not
+be without challenges to overcome but would offer several benefits,
+including to the operation of this proposal, and especially as the RAM
+and storage requirements of a full node grows. It is easy to foresee
+that in just another seven years of operation a Bitcoin Full Node will
+require at least 300GB of storage and, if the mempool only doubles in
+size, over 1GB of RAM.
+
+There has been some concern expressed over spam and very low fee
+transactions, and an infinite block size resulting. I hope that for
+those concerned using the dust level addresses the issue, especially as
+the value of Bitcoin grows.
+
+Notwithstanding this proposal, all blocks including those with dynamic
+size each have limited transaction space per block. This proposal
+results in a fee for priority service auction, where the probability of
+a transaction to be included in limited space in the next available
+block is auctioned to the highest bidders and all other transactions
+must wait until they reach priority by ageing to gain significant
+probability. Under this proposal the mempool can grow quite large while
+the confirmation service continues in a stable and reliable manner.
+Several incentives for attackers are removed, where there is no longer
+multiple potential incentives for unnecessarily filling blocks or
+flooding the mempool with transactions, whether such transactions are
+fraudulent, valid or, otherwise. Adoption of this proposal and
+adherence results in a reliable, stable fee paying transaction
+confirmation service and a beneficial auction.
+
+This proposal is necessary. I implore, at the very least, that we use
+some method that validates full transaction reliability and enables
+scalability of Bitcoin. If not this proposal, an alternative.
+
+I have done as much with this proposal as I feel that I am able so far
+but continue to take your feedback.
+
+Regards,
+Damian Williamson
+
+[![Creative Commons License](https://i.creativecommons.org/l/by-sa/4.0/
+88x31.png)](http://creativecommons.org/licenses/by-sa/4.0/)
+<span xmlns:dct="http://purl.org/dc/terms/"
+href="http://purl.org/dc/dcmitype/Text" property="dct:title"
+rel="dct:type">BIP Proposal: UTPFOTIB - Use Transaction Priority For
+Ordering Transactions In Blocks</span> by [Damian Williamson
+&lt;willtech at live.com.au&gt;](http://thekingjameshrmh.tumblr.com/post/1
+68948530950/bip-proposal-utpfotib-use-transaction-priority-for-order)
+is licensed under a [Creative Commons Attribution-ShareAlike 4.0
+International License](http://creativecommons.org/licenses/by-sa/4.0/).
+Based on a work at https://lists.linuxfoundation.org/pipermail/bitcoin-
+dev/2017-
+December/015371.html](https://lists.linuxfoundation.org/pipermail/bitco
+in-dev/2017-December/015371.html).
+Permissions beyond the scope of this license may be available at [https
+://opensource.org/licenses/BSD-3-
+Clause](https://opensource.org/licenses/BSD-3-Clause).
+
+
+_______________________________________________
+bitcoin-dev mailing list
+bitcoin-dev at lists.linuxfoundation.org
+https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180119/bfea8a86/attachment-0001.html>
