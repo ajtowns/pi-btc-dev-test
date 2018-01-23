@@ -1,0 +1,97 @@
+From: rhavar@protonmail.com (Rhavar)
+Date: Tue, 23 Jan 2018 17:19:59 -0500
+Subject: [bitcoin-dev] Transaction Merging (bip125 relaxation)
+In-Reply-To: <CACiOHGw=XUe6Fxmh8JkNPZWK1d3hWaaVPsNy1dPNoU1qULckrA@mail.gmail.com>
+References: <M8yPGuNmrXfNNwrYDDLpTVb__BhGysVW060Cq_tMc-AC6F7pKd1Vvb4wWbpmhhEvfoQ7fn-EcgfxRwJSVkFAZ5x57hg9XxpdZlDPi2IBJZg=@protonmail.com>
+	<20180122200023.GA1055@savin.petertodd.org>
+	<7yyS0mCgC8UWMYR_Jf1hB_GkkGj6Iu8tnIO7TeXWWyCrg9j4RZ7ziprCPZcv2xsFZdUzcFuHyeMU2-RBujzlSXdUAWlqdricuL2abaX0PWE=@protonmail.com>
+	<CACiOHGw=XUe6Fxmh8JkNPZWK1d3hWaaVPsNy1dPNoU1qULckrA@mail.gmail.com>
+Message-ID: <oY5fxEk2FEJwHTtN9hKit2Unfu9C6CpSKLOVr0Tu99W_ctym_TNtEPLjgSg77e_RePgWHLBF7sNZoXa11aDgm6ClDxT33Jz2M-q3HZC1n40=@protonmail.com>
+
+Interesting. I didn't think about this before, but it seems like bip125 is rather incentive incompatible right now? If we're assuming a competitive mempool, it really doesn't seem generally rational to accept a replacement transaction of a lower fee rate.
+
+So how about if we change the fee requirement to bet at least:
+
+MIN(
+         $ORIGINAL_FEE_RATE * $REPLACEMENT_TX_SIZE + $RELAY_FEE * ( REPLACEMENT_TX_SIZE + $ORIGINAL_SIZE),
+        $ORIGINAL_ABS_FEE  / 3
+)  in fees
+
+This could make it:
+* More incentive compatible
+* Support more use-cases (my transaction merging example)
+* Be resistant to any attacks (that I can see, there's no doubt cases I haven't thought about)
+
+-Ryan
+
+-------- Original Message --------
+On January 23, 2018 4:56 PM, Moral Agent <ethan.scruples at gmail.com> wrote:
+
+> Another way to limit abuse would be to have the fee *rate* be required to increase, which is kind of the spirit of RBF, applied to this situation.
+>
+> That is to say, if you wished to replace transactions A and B with C which spends the same inputs as A and B, then the following must be true before C will be relayed:
+>
+> (Fee_A + Fee_B) / (Weight_A + Weight_B) < Fee_C / Weight_C
+>
+> On Tue, Jan 23, 2018 at 11:31 AM, Rhavar via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> Getting back on topic:
+>>
+>>> It would definitely introduce DoS vectors by making it much cheaper to use
+>>> relay bandwidth.
+>>
+>> I think I'm missing something, as I don't really understand this DoS vector. Relay bandwidth is already very cheap and easy to use by repeatedly fee bumping. And it's not obvious to me that requiring an absolute higher fee actually makes such an attack more expensive.
+>>
+>> I can see that my "proposed" change would make it cheaper to evict low-fee transactions from other node's mempool. Maybe I'm being naive, but I don't really see why this would be such a big deal.
+>>
+>> But what about a compromise, and require that the absolute fee must be >= half the original fees. I know everyone hates magic values, but I think in practice it will allow legitimate and useful use of "retroactive transaction merging" without much downside.
+>>
+>> And really the great thing about "retroactive transaction merging" is just how easy it is to implement. In fact, right now it's quite possible to do -- but because of the "higher absolute fee" rule the benefits are pretty muted (although if you can compress 2 change into 1, that's still likely worthwhile)
+>>
+>> -Ryan
+>>
+>> -------- Original Message --------
+>> On January 22, 2018 3:00 PM, Peter Todd <pete at petertodd.org> wrote:
+>>
+>>> On Mon, Jan 22, 2018 at 12:40:31PM -0500, Rhavar via bitcoin-dev wrote:
+>>>
+>>>> So my half-baked idea is very simple:
+>>>> Allow users to merge multiple unconfirmed transactions, stripping extraneous inputs and change as they go.
+>>>> This is currently not possible because of the bip125 rule:
+>>>> "The replacement transaction pays an absolute fee of at least the sum paid by the original transactions."
+>>>> Because the size of the merged transaction is smaller than the original transactions, unless there is a considerable feerate bump, this rule isn't possible to observe.
+>>>> I my question is: is it possible or reasonable to relax this rule? If this rule was removed in its entirety, does it introduce any DoS vectors? Or can it be changed to allow my use-case?
+>>>
+>>> It would definitely introduce DoS vectors by making it much cheaper to use
+>>> relay bandwidth. You'd also be able to push others' txs out of the mempool.
+>>>
+>>>> ---------------------------------------------------------------
+>>>> Full backstory: I have been trying to use bip125 (Opt-in Full Replace-by-Fee) to do "transaction merging" on the fly. Let's say that I owe John 1 bitcoin, and have promised to pay him immediately: Instead of creating a whole new transaction if I have an in-flight (unconfirmed) transaction, I can follow the rules of bip125 to create a replacement that accomplishes this goal.
+>>>> From a "coin selection" point of view, this was significantly easier than
+>>>> I had anticipated. I was able to encode the rules in my linear model and
+>>>> feed in all my unspent and in-flight transactions and it can solve it without difficulty.
+>>>> However, the real problem is tracking the mess. Consider this sequence of events:
+>>>>
+>>>> - I have unconfirmed transaction A
+>>>> - I replace it with B, which pays John 1 BTC
+>>>> - Transaction A gets confirmed
+>>>> So now I still owe John 1 BTC, however it's not immediately clear if
+>>>> it's safe to send to him without waiting $n transactions. However even
+>>>> for a small $n, this breaks my promise to pay him immediately.
+>>>> One possible solution is to only consider a transaction "replaceable" if it has change, so if the original transaction confirms -- payments can immediately be made that source the change, and provide safety in a reorg.
+>>>> However, this will only work <50% of the time for me (most transactions
+>>>> don't have change) and opens a pandora's box of complexity.
+>>>
+>>> Most transactions don't have change?! Under what circumstance? For most
+>>> use-cases the reverse is true: almost all all transactions have change, because
+>>> it's rare for the inputs to exactly math the requested payment.
+>>>
+>>> https://petertodd.org 'peter'[:-1]@petertodd.org
+>>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180123/42431dec/attachment.html>
