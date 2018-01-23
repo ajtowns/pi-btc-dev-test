@@ -1,0 +1,152 @@
+From: mark@friedenbach.org (Mark Friedenbach)
+Date: Tue, 23 Jan 2018 06:39:37 -0800
+Subject: [bitcoin-dev] Taproot: Privacy preserving switchable scripting
+In-Reply-To: <61C1114D-A4E3-4628-AB7E-17C09EDDC2DE@mattcorallo.com>
+References: <CAAS2fgTXg5kk6TyUM9dS=tf5N0_Z-GKVmzMLwTW1HxUgrqdo+Q@mail.gmail.com>
+	<61C1114D-A4E3-4628-AB7E-17C09EDDC2DE@mattcorallo.com>
+Message-ID: <285E52DF-04E8-4E03-85A0-764F54B3EED9@friedenbach.org>
+
+I had the opposite response in private, which I will share here. As recently as Jan 9th feedback on BIP 117 was shared on this list by Pieter Wuille and others suggesting we adopt native MAST template instead of the user programmable combination of BIPs 116 and 117. Part of my response then was, I quote:
+
+I havent the hubris to suggest that we know exactly what a templated MAST *should* look like. It's not used in production anywhere. Even if we did have the foresight, the tail-call semantics allow for other constructions besides MAST and for the sake of the future we should allow such permission-less innovation. The proper sequence of events should be to enable features in a generic way, and then to create specialized templates to save space for common constructions. Not the other way around. [1]
+
+I take this advance as further evidence in favor of this view. As recently as 24 hours ago if you had asked what a native-MAST template would have looked like, the answer would have been something like Johnson Lau?s BIP 114, with some quibbling over details. Taproot is a clearly superior approach. But is it optimal? I don?t think we can claim that now. Optimality of these constructs isn?t something easily proven, with the nearest substitute being unchanging consensus over extended periods of time.
+
+Every time we add an output type specialization, we introduce a new codepath in the core of the script consensus that must be maintained forever. Take P2SH: from this point forward there is no reason to use it in new applications, ever. But it must be forever supported. In an alternate universe we could have deployed a native MAST proposal, like BIP 114, only to have Taproot-like schemes discovered after activation. That would have been a sucky outcome. It is still the case that we could go for Taproot right now, and then in six months or a year?s time we find an important tweak or a different approach entirely that is even better, but the activation process had already started. That would be a sucky outcome we haven?t avoided yet.
+
+This is not an argument against template specialization for common code paths, especially those which increase fungibility of coins. I do think we should have a native MAST template eventually, using Taproot or something better. However if I may be allowed I will make an educated guess about the origin of Taproot: I think it?s no coincidence that Greg had this insight and/or wrote it up simultaneous with a push by myself and others for getting MAST features into bitcoin via BIPs 98, 116, and 117, or 114. Cryptographers tend to only think up solutions to problems that are on their minds. And the problems on most people?s minds are primarily those that are deployable today, or otherwise near-term applicable.
+
+BIPS 116 and 117 each provide a reusable component that together happens to enable a generic form of MAST. Even without the workarounds required to avoid CLEANSTACK violations, the resulting MAST template is larger than what is possible with specialization. However let?s not forget that (1) they also enable other applications like honeypots, key trees, and script delegation; and relevant to this conversation (2) they get the MAST feature available for use in production by the wider community. I don?t think I?d personally be willing to bet that we found the optimal MAST structure in Greg?s Taproot until we have people doing interesting production work like multisig wallets, lightning protocol, and the next set of consensus features start putting it into production and exploring edge cases. We may find ways Taproot can be tweaked to enable other applications (like encoding a hash preimage as well) or simplify obscure corner cases.
+
+I feel quite strongly that the correct approach is to add support for generic features to accomplish the underlying goal in a user programmable way, and THEN after activation and some usage consider ways in which common use cases can be made more efficient through output specialization. To take a more obvious example, lightning protocol is still an active area or research and I think it is abundantly clear that we don?t know yet what the globally optimal layer-2 caching protocol will be, even if we have educated guesses as to its broad structure. A proposal right now to standardize a more compact lightning script type would be rightly rejected. It is less obvious but just as true that the same should hold for MAST.
+
+I have argued these points before in favor of permission less innovation first, then application specialization later, in [1] and at the end of the rather long email [2]. I hope you can take the time to read those if you still feel we should take a specialized template approach instead of the user programmable BIPSs 116 and 117.
+
+[1] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-January/015537.html <https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-January/015537.html>
+[2] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-September/015029.html <https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-September/015029.html>
+
+> On Jan 22, 2018, at 6:51 PM, Matt Corallo via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> Thanks Greg!
+> 
+> I'd be hesitant to deploy a MAST proposal without this clever application of pay-to-contract-hash now! Looks like the overhead over a more-naive MAST construction is rather trivial, too!
+> 
+> Matt
+> 
+> On January 23, 2018 12:30:06 AM UTC, Gregory Maxwell via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Interest in merkelized scriptPubKeys (e.g. MAST) is driven by two main
+> areas: efficiency and privacy. Efficiency because unexecuted forks of
+> a script can avoid ever hitting the chain, and privacy because hiding
+> unexecuted code leaves scripts indistinguishable to the extent that
+> their only differences are in the unexecuted parts.
+> 
+> As Mark Friedenbach and others have pointed out before it is almost
+> always the case that interesting scripts have a logical top level
+> branch which allows satisfaction of the contract with nothing other
+> than a signature by all parties.  Other branches would only be used
+> where some participant is failing to cooperate. More strongly stated,
+> I believe that _any_ contract with a fixed finite participant set
+> upfront can be and should be represented as an OR between an N-of-N
+> and whatever more complex contract you might want to represent.
+> 
+> One point that comes up while talking about merkelized scripts is can
+> we go about making fancier contract use cases as indistinguishable as
+> possible from the most common and boring payments. Otherwise, if the
+> anonymity set of fancy usage is only other fancy usage it may not be
+> very large in practice. One suggestion has been that ordinary
+> checksig-only scripts should include a dummy branch for the rest of
+> the tree (e.g. a random value hash), making it look like there are
+> potentially alternative rules when there aren't really.  The negative
+> side of this is an additional 32-byte overhead for the overwhelmingly
+> common case which doesn't need it.  I think the privacy gains are
+> worth doing such a thing, but different people reason differently
+> about these trade-offs.
+> 
+> It turns out, however, that there is no need to make a trade-off.  The
+> special case of a top level "threshold-signature OR
+> arbitrary-conditions" can be made indistinguishable from a normal
+> one-party signature, with no overhead at all, with a special
+> delegating CHECKSIG which I call Taproot.
+> 
+> Let's say we want to create a coin that can be redeemed by either
+> Alice && Bob   or by CSV-timelock && Bob.
+> 
+> Alice has public A, Bob has pubkey B.
+> 
+> We compute the 2-of-2 aggregate key C = A + B.  (Simplified; to
+> protect against rogue key attacks you may want to use the MuSig key
+> aggregation function [1])
+> 
+> We form our timelock script S =  "<timeout> OP_CSV OP_DROP B OP_CHECKSIGVERIFY"
+> 
+> Now we tweak C to produce P which is the key we'll publish: P = C + H(C||S)G.
+> 
+> (This is the attack hardened pay-to-contract construction described in [2])
+> 
+> Then we pay to a scriptPubKey of [Taproot supporting version] [EC point P].
+> 
+> Now Alice and Bob-- assuming they are both online and agree about the
+> resolution of their contract-- can jointly form a 2 of 2 signature for
+> P, and spend as if it were a payment to a single party (one of them
+> just needs to add H(C||S) to their private key).
+> 
+> Alternatively, the Taproot consensus rules would allow this script to
+> be satisfied by someone who provides the network with C (the original
+> combined pubkey), S, and does whatever S requires-- e.g. passes the
+> CSV check and provides Bob's signature. With this information the
+> network can verify that C + H(C||S) == P.
+> 
+> So in the all-sign case there is zero overhead; and no one can tell
+> that the contract alternative exists. In the alternative redemption
+> branch the only overhead is revealing the original combined pubkey
+> and, of course, the existence of the contract is made public.
+> 
+> This composes just fine with whatever other merkelized script system
+> we might care to use, as the S can be whatever kind of data we want,
+> including the root of some tree.
+> 
+> My example shows 2-of-2 but it works the same for any number of
+> participants (and with setup interaction any threshold of
+> participants, so long as you don't mind an inability to tell which
+> members signed off).
+> 
+> The verification computational complexity of signature path is
+> obviously the same as any other plain signature (since its
+> indistinguishable). Verification of the branch redemption requires a
+> hash and a multiplication with a constant point which is strictly more
+> efficient than a signature verification and could be efficiently fused
+> into batch signature validation.
+> 
+> The nearest competitor to this idea that I can come up with would
+> supporting a simple delegation where the output can be spent by the
+> named key, or a spending transaction could provide a script along with
+> a signature of that script by the named key, delegating control to the
+> signed script. Before paying into that escrow Alice/Bob would
+> construct this signature. This idea is equally efficient in the common
+> case, but larger and slower to verify in the alternative spend case.
+> Setting up the signature requires additional interaction between
+> participants and the resulting signature must be durably stored and
+> couldn't just be recomputed using single-party information.
+> 
+> I believe this construction will allow the largest possible anonymity
+> set for fixed party smart contracts by making them look like the
+> simplest possible payments. It accomplishes this without any overhead
+> in the common case, invoking any sketchy or impractical techniques,
+> requiring extra rounds of interaction between contract participants,
+> and without requiring the durable storage of other data.
+> 
+> 
+> [1] https://eprint.iacr.org/2018/068 <https://eprint.iacr.org/2018/068>
+> [2] https://blockstream.com/sidechains.pdf <https://blockstream.com/sidechains.pdf> Appendix A
+> 
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev <https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180123/3b3b7dd0/attachment-0001.html>
