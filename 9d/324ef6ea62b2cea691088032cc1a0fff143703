@@ -1,0 +1,65 @@
+From: rhavar@protonmail.com (Rhavar)
+Date: Tue, 23 Jan 2018 11:31:36 -0500
+Subject: [bitcoin-dev] Transaction Merging (bip125 relaxation)
+In-Reply-To: <20180122200023.GA1055@savin.petertodd.org>
+References: <M8yPGuNmrXfNNwrYDDLpTVb__BhGysVW060Cq_tMc-AC6F7pKd1Vvb4wWbpmhhEvfoQ7fn-EcgfxRwJSVkFAZ5x57hg9XxpdZlDPi2IBJZg=@protonmail.com>
+	<20180122200023.GA1055@savin.petertodd.org>
+Message-ID: <7yyS0mCgC8UWMYR_Jf1hB_GkkGj6Iu8tnIO7TeXWWyCrg9j4RZ7ziprCPZcv2xsFZdUzcFuHyeMU2-RBujzlSXdUAWlqdricuL2abaX0PWE=@protonmail.com>
+
+Getting back on topic:
+
+> It would definitely introduce DoS vectors by making it much cheaper to use
+> relay bandwidth.
+
+I think I'm missing something, as I don't really understand this DoS vector. Relay bandwidth is already very cheap and easy to use by repeatedly fee bumping. And it's not obvious to me that requiring an absolute higher fee actually makes such an attack more expensive.
+
+I can see that my "proposed" change would make it cheaper to evict low-fee transactions from other node's mempool. Maybe I'm being naive, but I don't really see why this would be such a big deal.
+
+But what about a compromise, and require that the absolute fee must be >= half the original fees. I know everyone hates magic values, but I think in practice it will allow legitimate and useful use of "retroactive transaction merging" without much downside.
+
+And really the great thing about "retroactive transaction merging" is just how easy it is to implement. In fact, right now it's quite possible to do -- but because of the "higher absolute fee" rule the benefits are pretty muted (although if you can compress 2 change into 1, that's still likely worthwhile)
+
+-Ryan
+
+-------- Original Message --------
+On January 22, 2018 3:00 PM, Peter Todd <pete at petertodd.org> wrote:
+
+> On Mon, Jan 22, 2018 at 12:40:31PM -0500, Rhavar via bitcoin-dev wrote:
+>
+>> So my half-baked idea is very simple:
+>> Allow users to merge multiple unconfirmed transactions, stripping extraneous inputs and change as they go.
+>> This is currently not possible because of the bip125 rule:
+>> "The replacement transaction pays an absolute fee of at least the sum paid by the original transactions."
+>> Because the size of the merged transaction is smaller than the original transactions, unless there is a considerable feerate bump, this rule isn't possible to observe.
+>> I my question is: is it possible or reasonable to relax this rule? If this rule was removed in its entirety, does it introduce any DoS vectors? Or can it be changed to allow my use-case?
+>
+> It would definitely introduce DoS vectors by making it much cheaper to use
+> relay bandwidth. You'd also be able to push others' txs out of the mempool.
+>
+>> ---------------------------------------------------------------
+>>
+>> Full backstory: I have been trying to use bip125 (Opt-in Full Replace-by-Fee) to do "transaction merging" on the fly. Let's say that I owe John 1 bitcoin, and have promised to pay him immediately: Instead of creating a whole new transaction if I have an in-flight (unconfirmed) transaction, I can follow the rules of bip125 to create a replacement that accomplishes this goal.
+>> From a "coin selection" point of view, this was significantly easier than
+>> I had anticipated. I was able to encode the rules in my linear model and
+>> feed in all my unspent and in-flight transactions and it can solve it without difficulty.
+>> However, the real problem is tracking the mess. Consider this sequence of events:
+>>
+>> - I have unconfirmed transaction A
+>> - I replace it with B, which pays John 1 BTC
+>> - Transaction A gets confirmed
+>>
+>> So now I still owe John 1 BTC, however it's not immediately clear if
+>> it's safe to send to him without waiting $n transactions. However even
+>> for a small $n, this breaks my promise to pay him immediately.
+>> One possible solution is to only consider a transaction "replaceable" if it has change, so if the original transaction confirms -- payments can immediately be made that source the change, and provide safety in a reorg.
+>> However, this will only work <50% of the time for me (most transactions
+>> don't have change) and opens a pandora's box of complexity.
+>
+> Most transactions don't have change?! Under what circumstance? For most
+> use-cases the reverse is true: almost all all transactions have change, because
+> it's rare for the inputs to exactly math the requested payment.
+>
+> https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180123/aada91c2/attachment.html>
