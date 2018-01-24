@@ -1,0 +1,98 @@
+From: natanael.l@gmail.com (Natanael)
+Date: Wed, 24 Jan 2018 19:51:27 +0100
+Subject: [bitcoin-dev] Taproot: Privacy preserving switchable scripting
+In-Reply-To: <1516808291.4277.25.camel@mmci.uni-saarland.de>
+References: <CAAS2fgTXg5kk6TyUM9dS=tf5N0_Z-GKVmzMLwTW1HxUgrqdo+Q@mail.gmail.com>
+	<20180123064419.GA1296@erisian.com.au>
+	<CAAS2fgSy8qg71M6ZOr=xj=W6y2Jbz8hwygZOUYv-Brkt0JwVaQ@mail.gmail.com>
+	<20180123222229.GA3801@erisian.com.au>
+	<CAAS2fgTNcCB2mfvCBhC_AhgxX=g8feYguGHN_VPWW0EoOOxMyA@mail.gmail.com>
+	<CAAt2M1-oh=_Ro6+Srit0XYburK_abQgJiW0Jx=nmNyeToA2rSA@mail.gmail.com>
+	<1516808291.4277.25.camel@mmci.uni-saarland.de>
+Message-ID: <CAAt2M19csW3eTW_rrS+8+OuaG18EhqajWgLFotCrcVfSeVmrrQ@mail.gmail.com>
+
+Den 24 jan. 2018 16:38 skrev "Tim Ruffing via bitcoin-dev" <
+bitcoin-dev at lists.linuxfoundation.org>:
+
+Okay, I think my proposal was wrong...
+
+This looks better (feel free to break again):
+1. Commit (H(classic_pk, tx), tx) to the blockchain, wait until confirmed
+2. Reveal classic_pk in the blockchain
+
+Then the tx in the first valid commitment wins. If the attacker
+intercepts classic_pk, it won't help him. He cannot create the first
+valid commitment, because it is created already. (The reason is that
+the decommitment is canonical now; for all commitments, the
+decommitment is just classic_pk.)
+
+
+That's not the type of attack I'm imagining. Both versions of your scheme
+are essentially equivalent in terms of this attack.
+
+Intended steps:
+1: You publish a hash commitment.
+2: The hash ends up in the blockchain.
+3: You publish the transaction itself, and it matches the hash commitment.
+4: Because it matches, miners includes it. It's now in the blockchain.
+
+Attack:
+1: You publish a hash commitment.
+2: The hash ends up the blockchain.
+3: You publish the transaction itself, it matches the hash commitment.
+4: The attacker mess with the network somehow to prevent your transaction
+from reaching the miners.
+5: The attacker cracks your keypair, and makes his own commitment hash for
+his own theft transaction.
+6: Once that commitment is in the blockchain, he publishes his own theft
+transaction.
+7: The attacker's theft transaction gets into the blockchain.
+8 (optionally): The miners finally see your original transaction with the
+older commitment, but now the theft transaction can't be undone. There's
+nothing to do about it, nor a way to know if it's intentional or not.
+Anybody not verifying commitments only sees a doublespend attempt.
+
+---
+
+More speculation, not really a serious proposal:
+
+I can imagine one way to reduce the probability of success for the attack
+by publishing encrypted transactions as the commitment, to then publish the
+key - the effect of this is that the key is easier to propagate quickly
+across the network than a full transaction, making it harder to succeed
+with a network based attack. This naive version by itself is however a
+major DoS vector against the network.
+
+You could, in some kind of fork, redefine how blocks are processed such
+that you can prune all encrypted transactions that have not had the key
+published within X blocks. The validation rules would work such that to
+publish the key for an encrypted transaction in a new block, that
+transaction must both be recent enough, be valid by itself, and also not
+conflict with any other existing plaintext / decrypted transactions in the
+blockchain.
+
+Blocks wouldn't necessarily even need to include the encrypted transactions
+during propagation. This works because encrypted transactions have zero
+effect until the key is published. In this case you'd effectively be
+required to publish your encrypted transaction twice to ensure the raw data
+isn't lost, once to get into a block and again together with the key to get
+it settled.
+
+Since miners will likely keep at least the most recent encrypted
+transactions cached to speed up validation, this is faster to settle than
+to publish the committed transaction as mentioned in the beginning. This
+increases your chances to get your key into the blockchain to settle your
+transaction before the attacker completes his attack, versus pushing a full
+transaction that miners haven't seen before.
+
+This version would still allow DoS against miners caching all encrypted
+transactions. However, if efficient Zero-knowledge proofs became practical
+then you can use one to prove your encrypted transaction valid, even
+against the UTXO set and in terms of not colliding with existing
+commitments - in this case the DoS attack properties are nearly identical
+to standard transactions.
+If you want to change a committed transaction, you'd need to let the
+commitment expire.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180124/c42ae892/attachment.html>
