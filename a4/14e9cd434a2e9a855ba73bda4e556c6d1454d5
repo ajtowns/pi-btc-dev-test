@@ -1,0 +1,121 @@
+From: natanael.l@gmail.com (Natanael)
+Date: Wed, 24 Jan 2018 13:51:45 +0100
+Subject: [bitcoin-dev] Taproot: Privacy preserving switchable scripting
+In-Reply-To: <CAAS2fgTNcCB2mfvCBhC_AhgxX=g8feYguGHN_VPWW0EoOOxMyA@mail.gmail.com>
+References: <CAAS2fgTXg5kk6TyUM9dS=tf5N0_Z-GKVmzMLwTW1HxUgrqdo+Q@mail.gmail.com>
+	<20180123064419.GA1296@erisian.com.au>
+	<CAAS2fgSy8qg71M6ZOr=xj=W6y2Jbz8hwygZOUYv-Brkt0JwVaQ@mail.gmail.com>
+	<20180123222229.GA3801@erisian.com.au>
+	<CAAS2fgTNcCB2mfvCBhC_AhgxX=g8feYguGHN_VPWW0EoOOxMyA@mail.gmail.com>
+Message-ID: <CAAt2M1-oh=_Ro6+Srit0XYburK_abQgJiW0Jx=nmNyeToA2rSA@mail.gmail.com>
+
+Den 23 jan. 2018 23:45 skrev "Gregory Maxwell via bitcoin-dev" <
+bitcoin-dev at lists.linuxfoundation.org>:
+
+On Tue, Jan 23, 2018 at 10:22 PM, Anthony Towns <aj at erisian.com.au> wrote:
+> Hmm, at least people can choose not to reuse addresses currently --
+> if everyone were using taproot and that didn't involve hashing the key,
+
+Can you show me a model of quantum computation that is conjectured to
+be able to solve the discrete log problem but which would take longer
+than fractions of a second to do so? Quantum computation has to occur
+within the coherence lifetime of the system.
+
+
+Quantum computers works like randomized black boxes, you run them in many
+cycles with a certain probability of getting the right answer.
+
+The trick to them is that they bias the probabilities of their qubits to
+read out the correct answer *more often than at random*, for many classes
+of problems. You (likely) won't get the correct answer immediately.
+
+https://en.wikipedia.org/wiki/Quantum_computing
+
+Quoting Wikipedia:
+
+> An algorithm is composed of a fixed sequence of quantum logic gates and a
+problem is encoded by setting the initial values of the qubits, similar to
+how a classical computer works. The calculation usually ends with a
+measurement, collapsing the system of qubits into one of the 2 n
+{\displaystyle 2^{n}} 2^{n} pure states, where each qubit is zero or one,
+decomposing into a classical state. The outcome can therefore be at most n
+{\displaystyle n} n classical bits of information (or, if the algorithm did
+not end with a measurement, the result is an unobserved quantum state).
+Quantum algorithms are often probabilistic, in that they provide the
+correct solution only with a certain known probability.
+
+A non programmed QC is essentially an RNG driven by quantum effects. You
+just get random bits.
+
+A programmed one will need to run the and program over and over until you
+can derive the correct answer from one of its outputs. How fast this goes
+depends on the problem and the algorithm.
+
+Most people here have heard of Grover's algorithm, it would crack a
+symmetric 256 bit key in approximately 2^128 QC cycles - completely
+impractical. Shor's algorithm is the dangerous one for ECC since it cracks
+current keys at "practical" speeds.
+
+https://eprint.iacr.org/2017/598 - resource estimates, in terms of size of
+the QC. Does not address implementation speed.
+
+I can't seem to find specific details, but I remember having seen estimates
+of around 2^40 cycles in practical implementations for 256 bit ECC (this
+assumes use error correction schemes, QC machines with small some
+imperfections, and more). Unfortunately I can't find a source for this
+estimate. I've seen lower estimates too, but they seem entirely
+theoretical.
+
+Read-out time for QC:s is indeed insignificant, in terms of measuring the
+state of the qubits after a complete cycle.
+
+Programming time, time to prepared for readout, reset, reprogramming, etc,
+that will all take a little longer. In particular with more qubits
+involved, since they all need to be in superposition and be coherent at
+some point. Also, you still have to parse all the different outputs (on a
+classical computer) to find your answer among them.
+Very very optimistic cycle speeds are in the GHz range, and then that's
+still on the order of ~15 minutes for 2^40 cycles. Since we don't even have
+a proper general purpose QC yet, nor one with usable amounts of qubits, we
+don't even know if we can make them run at a cycle per second, or per
+minute...
+
+However if somebody *does* build a fast QC that's nearly ideal, then
+Bitcoin's typical use of ECC would be in immediate danger. The most
+optimistic QC plausible would indeed be able to crack keys in under a
+minute. But my own wild guess is that for the next few decades none will be
+faster than a runtime measured in weeks for cracking keys.
+
+---
+
+Sidenote, I'm strongly in favor of implementing early support for the
+Fawkes scheme mentioned previously.
+
+We could even patch it on top of classical transactions - you can only
+break ECC with a known public key, so just commit to the signed transaction
+into the blockchain before publishing it. Then afterwards you publish the
+transaction itself, with a reference to the commitment. That transaction
+can then be assumed legit simply because there was no room to crack the key
+before the commitment, and the transaction matches the commitment.
+
+Never reuse keys, and you're safe against QC:s.
+
+Sidenote: There's a risk here with interception, insertion of a new
+commitment and getting the new transaction into the blockchain first.
+However, I would suggest a mining policy here were two known conflicting
+transactions with commitments are resolved such that the one with the
+oldest commitment wins. How to address detection of conflicting
+transactions with commitments older than confirmed transactions isn't
+obvious. Some of these may be fully intentional by the original owner, such
+as a regretted transaction.
+
+Another sidenote: HD wallets with hash based hardened derivation should
+also be safe in various circumstances, near completely safe in the case
+where they're defined such that knowing an individual private key, which is
+not the root key,  is not enough to derive any other in your wallet.
+HD schemes that only prevent derivation of parent keypairs in the tree
+would require that you never use a key derived from another already used or
+published public key.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180124/10b6b113/attachment-0001.html>
