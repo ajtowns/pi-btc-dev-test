@@ -1,0 +1,73 @@
+From: rhavar@protonmail.com (Rhavar)
+Date: Wed, 24 Jan 2018 11:05:01 -0500
+Subject: [bitcoin-dev] Transaction Merging (bip125 relaxation)
+In-Reply-To: <CALPhJayjSopa6qPDAo=8-FVCz5+SjXneGMmoYF2Yi2p3FrCb0g@mail.gmail.com>
+References: <M8yPGuNmrXfNNwrYDDLpTVb__BhGysVW060Cq_tMc-AC6F7pKd1Vvb4wWbpmhhEvfoQ7fn-EcgfxRwJSVkFAZ5x57hg9XxpdZlDPi2IBJZg=@protonmail.com>
+	<20180122200023.GA1055@savin.petertodd.org>
+	<7yyS0mCgC8UWMYR_Jf1hB_GkkGj6Iu8tnIO7TeXWWyCrg9j4RZ7ziprCPZcv2xsFZdUzcFuHyeMU2-RBujzlSXdUAWlqdricuL2abaX0PWE=@protonmail.com>
+	<CACiOHGw=XUe6Fxmh8JkNPZWK1d3hWaaVPsNy1dPNoU1qULckrA@mail.gmail.com>
+	<oY5fxEk2FEJwHTtN9hKit2Unfu9C6CpSKLOVr0Tu99W_ctym_TNtEPLjgSg77e_RePgWHLBF7sNZoXa11aDgm6ClDxT33Jz2M-q3HZC1n40=@protonmail.com>
+	<CAAS2fgQBMSOhDBUZ6d9cG7fHg4tRr8o+E0j3ZXhdHkxv4kTwUA@mail.gmail.com>
+	<20180124074453.GC12767@savin.petertodd.org>
+	<CALPhJayjSopa6qPDAo=8-FVCz5+SjXneGMmoYF2Yi2p3FrCb0g@mail.gmail.com>
+Message-ID: <PdUSy7mO1QTH-sAU_gBRjZOhLi1FoZRPUhNZt80kPL8d0lOgsCfMeNzf52Ae7_wrcTBy7d-tROvRLqBuHMMtmduzAskGuzPlwxI2yG4yY64=@protonmail.com>
+
+
+>I'm confused, the mempool?only sees 1 transaction at a time, first A, then later B. "the original transactions", plural, should not exist in the mempool.
+>
+>B's fee and rate needs to be larger than A's, but B will be greater than or equal to A anyway. So, just increasing the fee rate will cause a larger fee anyway.
+>
+>Am I missing something?
+
+Kind of. The first case is that you do the "smarter" type of merging, where you get an original transaction and then say add an additional output(s) to it.
+
+The issue with this, is from a practical perspective is _very_ complex. Because you really need to do a lot of tracking to see which of the two transactions actually confirm. And if you are promising fast payments, you can be stuck in a weird limbo state where you're waiting for the original one to "safely" confirm before it's safe to make a re-payment (even a non-malicious will likely contain the replacement).
+
+bip125 already supports this use-case, but I will suggest that the logic to deploy this is sufficiently complex that no one is going to attempt any time in the near future.
+
+
+But "retroactive transaction merging" is actually pretty approachable problem for a service to implement. You just get N valid transactions you've made, merge them into one. Strip extraneous inputs[1], and combine and alter the change amount.
+
+The reason this is so appealing to implement, is there is very little complexity. If the "retroactive transaction merge" fails, or doesn't get confirmed, it actually has no impact. If it does get confirmed, that's just pure cost-savings.
+
+However, the rules of bip125 currently make it (unnecessarily?) unappealing, because I can never lower the absolute amount of fees I pay. Hence I think it'd be pretty sweet if they could be relaxed to support this if it can be done in a pretty risk free way.
+
+
+
+[1] Need to be very careful with that, if you're ever merging a merged transaction.
+
+
+>
+>
+>On Wed, Jan 24, 2018 at 3:44 AM, Peter Todd via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>On Tue, Jan 23, 2018 at 10:49:34PM +0000, Gregory Maxwell via bitcoin-dev wrote:
+>> > On Tue, Jan 23, 2018 at 10:19 PM, Rhavar via bitcoin-dev
+>> > <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> > > Interesting. I didn't think about this before, but it seems like bip125 is
+>> > > rather incentive incompatible right now? If we're assuming a competitive
+>> > > mempool, it really doesn't seem generally rational to accept a replacement
+>> > > transaction of a lower fee rate.
+>> >
+>> > BIP125 replacement requires that the fee rate increases.? The text of
+>> > the BIP document is written in a confusing way that doesn't make this
+>> > clear.
+>>
+>>In fact I considered only requiring an increase in fee rate, based on the
+>> theory that if absolute fee went down, the transaction must be smaller and thus
+>> miners could overall earn more from the additional transactions they could fit
+>> into their block. But to do that properly requires considering whether or not
+>> that's actually true in the particular state the mempool as a whole happens to
+>> be in, so I ditched that idea early on for the much simpler criteria of both a
+>> feerate and absolute fee increase.
+>>
+>> --
+>>https://petertodd.org 'peter'[:-1]@petertodd.org
+>>
+>>_______________________________________________
+>> bitcoin-dev mailing list
+>>bitcoin-dev at lists.linuxfoundation.org
+>>https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>>
+>
+
