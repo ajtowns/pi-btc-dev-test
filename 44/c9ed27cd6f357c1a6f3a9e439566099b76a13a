@@ -1,0 +1,120 @@
+From: tim.ruffing@mmci.uni-saarland.de (Tim Ruffing)
+Date: Fri, 26 Jan 2018 14:14:14 +0100
+Subject: [bitcoin-dev]  Recovery of old UTXOs in a post-quantum world
+In-Reply-To: <CAAt2M19UObuaaODHXb+iW9bWMj53wGHAdjVzZgWBi-ZCCUi4Mg@mail.gmail.com>
+References: <CAAS2fgTXg5kk6TyUM9dS=tf5N0_Z-GKVmzMLwTW1HxUgrqdo+Q@mail.gmail.com>
+	<20180123064419.GA1296@erisian.com.au>
+	<CAAS2fgSy8qg71M6ZOr=xj=W6y2Jbz8hwygZOUYv-Brkt0JwVaQ@mail.gmail.com>
+	<20180123222229.GA3801@erisian.com.au>
+	<CAAS2fgTNcCB2mfvCBhC_AhgxX=g8feYguGHN_VPWW0EoOOxMyA@mail.gmail.com>
+	<CAAt2M1-oh=_Ro6+Srit0XYburK_abQgJiW0Jx=nmNyeToA2rSA@mail.gmail.com>
+	<1516808291.4277.25.camel@mmci.uni-saarland.de>
+	<CAAt2M19csW3eTW_rrS+8+OuaG18EhqajWgLFotCrcVfSeVmrrQ@mail.gmail.com>
+	<1516836125.5969.11.camel@mmci.uni-saarland.de>
+	<CAAt2M19UObuaaODHXb+iW9bWMj53wGHAdjVzZgWBi-ZCCUi4Mg@mail.gmail.com>
+Message-ID: <1516972454.3107.67.camel@mmci.uni-saarland.de>
+
+(changing the subject... ;))
+
+My proposal does not include any form of expiration, so I don't see how
+it should be vulnerable to the described attack.
+
+To make this a little bit more detailed:
+
+The user has one or more single standard UTXOs all with ECDSA public
+key classic_pk and thus address SHA256(RIPEMD160((classic_pk)). The
+corresponding secret key is classic_sk. Let MAC be a quantum-secure
+message-authentication code, e.g., MAC(k,x)=H(k||x) for a suitable hash
+function, e.g, BLAKE2 or SHA3.
+
+The idea is to (ab)use the public key classic_pk as a key for the MAC. 
+
+To spend an UTXO with a transaction tx, the user does the following:
+   1. Create and publish a "transaction" c that references the address
+      SHA256(RIPEMD160((classic_pk)) and contains the following data: 
+      MAC(classic_pk,tx))||tx
+   2. Wait until c is confirmed. (If it does not confirm, send it again as
+      usual).
+   3. Create and publish a "transaction" d with the following data:
+      classic_pk||Sign(classic_sk, tx)
+
+Consensus rules:
+A transaction d=classic_pk||sig spends all UTXOs with
+address SHA256(RIPEMD160(classic_pk)), applying the effects of tx, if
+there exists a transaction c=mac||tx in the blockchain such that 
+   1. c is the first transaction (among all referencing the address) in
+      the blockchain where mac is a valid MAC for message tx under correct
+      key classic_pk
+   2. sig is valid ECDSA signature over tx under public key classic_pk
+
+c-transactions never expire. 
+
+If the user has not published classic_pk before, this should be secure
+against quantum attackers:
+Before step 2, the MAC key k=classic_pk is only known to the user. So
+the only valid c that the attacker can produce has the real transaction
+tx, because a different transaction tx' requires the attacker to forge
+the MAC. Since the user waits for confirmation, the first c in the
+blockchain fulfilling conditions 1 and 2 has been created by the user.
+
+Even if classic_pk is known, this is no less secure than "classic
+spending", because we require an ECDSA signature on tx.
+
+I'm pretty confident that I'm not overlooking an obvious attack. If I'm
+wrong then please describe exactly the steps of the user and the
+attacker. 
+
+Best,
+Tim 
+
+
+On Thu, 2018-01-25 at 01:09 +0100, Natanael wrote:
+> 
+> Den 25 jan. 2018 00:22 skrev "Tim Ruffing via bitcoin-dev" <bitcoin-d
+> ev at lists.linuxfoundation.org>:
+> > I think you misread my second proposal. The first step is not only
+> > to
+> > publish the hash but to publish a *pair* consisting of the hash and
+> > the
+> > transaction.
+> > 
+> > If the attacker changes the transaction on the wire, the user does
+> > not
+> > care and will try again.
+> 
+> I guess I assumed you meant it otherwise because I didn't assume you
+> intended a commitment to the full transaction just without the
+> asymmetric key material. 
+> 
+> You could treat it the same way as in my suggestion, let it expire
+> and prune it if the key material isn't published in time. 
+> 
+> However... A sufficiently powerful attacker can deploy as soon as he
+> sees your published signature and key, delay its propagation to the
+> miners, force expiration and then *still* repeat the attack with his
+> own forgery. 
+> 
+> Honestly, as long as we need to allow any form of expiry + relying on
+> publication of the vulnerable algorithms result for verification, I
+> think the weakness will remain. 
+> 
+> No expiration hurts in multiple ways like via DoS, or by locking in
+> potentially wrong (or straight up malicious) transactions.
+> 
+> ---
+> 
+> There's one way out, I believe, which is quantum safe Zero-knowledge
+> proofs. Currently STARK:s are one variant presumed quantum safe. It
+> would be used to completely substitute the publication of the public
+> key and signatures, and this way we don't even need two-step
+> commitments. 
+> 
+> It does however likely require a hardfork to apply to old
+> transactions. (I can imagine an extension block type softfork method,
+> in which case old UTXO:s get locked on the mainchain to create
+> equivalent valued extension block funds.)
+> 
+> Without practical ZKP,  and presuming no powerful QC attackers with
+> the ability to control the network (basically NSA level attackers), I
+> do think the Fawkes signature scheme is sufficient. Quantum attacks
+> are likely to be very expensive anyway, for the foreseeable future. 
