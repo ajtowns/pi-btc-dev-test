@@ -1,0 +1,52 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Mon, 29 Jan 2018 21:54:23 +0000
+Subject: [bitcoin-dev] How accurate are the Bitcoin timestamps?
+In-Reply-To: <CAE-z3OXX7Axf23oCDFmQYCth0tOQw9PEzLwvQO9Pk0wy7t1pYw@mail.gmail.com>
+References: <CACRYg-4ho-XGK3xUdQW-ny2BFs2O91BuendrxuVYBni4wHrRqw@mail.gmail.com>
+	<CAE-z3OXX7Axf23oCDFmQYCth0tOQw9PEzLwvQO9Pk0wy7t1pYw@mail.gmail.com>
+Message-ID: <CAAS2fgRLMnpu5JHTxxJJvEQc8rj2Ox=cKCWcsvVdY06G0kKXJw@mail.gmail.com>
+
+On Mon, Jan 29, 2018 at 9:40 PM, Tier Nolan via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> For check locktime, the median of the last 11 blocks is used as an improved
+> indicator of what the actual real time is.  Again, it assumes that a
+> majority of the miners are honest.
+
+It would be more accurate to say that the median is not used for
+improved accuracy but to mitigate a consensus incompatibility:
+
+If the block's own timestamp were used for nlocktime and time based
+nlocks were common on the network each miner would maximize their fee
+income by setting the value as high as they could get away with.  What
+concerned us wasn't so much that this would make the times less
+accurate (though it would) but rather that it would create an
+incentive for a runaway situation that could harm network stability
+(e.g. with all miners cranking times against the 2hr window, then
+creating pressure for miners to accept further and further in the
+future; each responding to his own local incentives).
+
+This incentive incompatibility could have been addressed e.g. by using
+the prior block's time, but since the protocol doesn't require times
+to be monotone (and for good reason!) the simple implementation of
+that wouldn't have been a soft-fork.  The 11 block MTP worked out
+nicely because the protocol already required new times to be larger
+than that.
+
+The timestamps in Bitcoin aren't intended to be particularly accurate.
+They're used only for controlling the difficulty, and the adjustment
+window is large enough that there isn't much distortion that can be
+accomplished there.  It's not clear to me that much better can really
+be done... if there were tighter time requirements in the protocol
+miners would address them by running NTP which as an _astounding_ lack
+of security in terms of how it is commonly deployed.  As far as I
+know, I'm the only person whos ever mined blocks with their own
+stratum 1 time source.
+
+If times need to be accurate Bitcoin would need to use a rather
+different design (e.g. each block would commit to the observation time
+of the prior N blocks, and an iterative algorithm would solve for each
+blocks time and each miners local offset).
+
+IIRC open-timestamp calendar servers provide more precise
+time-stamping under the assumption that the calendar server is
+behaving correctly.
