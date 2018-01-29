@@ -1,0 +1,111 @@
+From: neiman.mail@gmail.com (Neiman)
+Date: Mon, 29 Jan 2018 14:34:20 +0100
+Subject: [bitcoin-dev] How accurate are the Bitcoin timestamps?
+Message-ID: <CACRYg-4ho-XGK3xUdQW-ny2BFs2O91BuendrxuVYBni4wHrRqw@mail.gmail.com>
+
+First time posting here, please be gentle.
+
+I'm doing a research project about blockchain timestamping. There are many
+such projects, including the fantastic OpenTimestamps.
+
+All of the projects essentially save some data in a block, and rely on the
+block timestamp as a proof that this data existed at some specific time.
+
+But how accurate are Bitcoins timestamps?
+
+I didn't find any discussion or research regarding Bitcoin timestamp
+accuracy (also not in the history of this mailing list). I share here a
+simple analysis of timestamp accuracy, and a suggestion how to improve it.
+
+Basic observations and questions:
+-------------------------------------------
+*1.* It seems to me that the timestamp is not the time that the block was
+created. Ideally, it's the time that the miner started to try to mine the
+block. However, as timestamps may also be used as a source of variety for
+hashes, the exact meaning of its value is unclear.
+
+If this is true, then there's a strange phenomena to observe in
+blockchain.info and blockexplorer.com: the timestamps of blocks equals the
+receiving times.
+
+Am I wrong in my understanding, or is there a mistake in those websites?
+
+*2.* Timestamps are not necessary to avoid double-spending. A simple
+ordering of blocks is sufficient, so exchanging timestamps with enumeration
+would work double-spending wise. Permissioned consensus protocols, such as
+hyperledger, indeed have no timestamps (in version 1.0).
+
+As far as I could tell, timestamps are included in Bitcoin's protocol
+*only* to adjust the difficulty of PoW.
+
+Direct control of timestamp accuracy:
+-----------------------------------------------
+The only element in the protocol that I found to control timestamp accuracy
+is based on the network time concept.
+
+The Bitcoin protocol defines ?network time? for each node. The network time
+is the median time of the other clients, but only if
+    1. there are at least 5 connected, and
+    2. the difference between the median time and the nodes own system time
+is less than 70 minutes.
+
+Then new blocks are accepted by the peers if their timestamps is
+    1. less than the network time plus 2 hours, and
+    2. greater than the median timestamp of previous 11 blocks.
+
+The first rule supplies a 2 hour upper bound for timestamp accuracy.
+
+However, the second rule doesn't give a tight lower bound. Actually, no
+lower bound is given at all if no assumption is made about the median. If
+we assume the median to be accurate enough at some timepoint, then we're
+only assured that any future timestamp is no bigger than this specific
+median, which is not much information.
+
+Further analysis can be made under different assumptions. For example,
+what's the accuracy if holders of 51% of the computational power create
+honest timestamps? But unfortunately, I don't see any good reason to work
+under such an assumptions.
+
+The second rule cannot be strengthened to be similar to the first one
+(i.e., nodes don't accept blocks less than network time minus 2 hours). The
+reason is that nodes cannot differentiate if it's a new block with
+dishonest timestamp, an old block with an old timestamps (with many other
+blocks coming) or simply a new block that took a long time to mine.
+
+Indirect control of timestamps accuracy:
+--------------------------------------------------
+If we assume that miners have no motive to increase difficulty
+artificially, then the PoW adjusting algorithm yields a second mechanism of
+accuracy control.
+
+The adjustment rules are given in pow.cpp (bitcoin-core source, version
+0.15.1), in the function 'CalculateNextWorkRequired', by the formula (with
+some additional adjustments which I omit):
+
+    (old_target* (time_of_last_block_in_2016_blocks_interval -
+time_of_first_block_in_2016_blocks_interval) )/time_of_two_weeks
+
+It uses a simple average of block time in the last 2016 blocks. But such
+averages ignore any values besides the first and last one in the interval.
+Hence, if the difficulty is constant, the following sequence is valid from
+both the protocol and the miners incentives point of views:
+
+    1, 2, 3,?., 2015, 1209600 (time of two weeks), 2017, 2018, 2019,?.,
+4031, 1209600*2, 4033, 4044, ?
+
+If we want to be pedantic, the best lower bound for a block timestamp is
+the timestamp of the block that closes the adjustment interval in which it
+resides.
+
+Possible improvement:
+-----------------------------
+We may consider exchanging average with standard deviation in the
+difficulty adjustment formula. It both better mirrors changes in the hash
+power along the interval, and disables the option to manipulate timestamps
+without affecting the difficulty.
+
+I'm aware that this change requires a hardfork, and won't happen any time
+soon. But does it make sense to add it to a potential future hard fork?
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180129/66a8d265/attachment.html>
