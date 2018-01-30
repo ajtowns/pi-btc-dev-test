@@ -1,0 +1,164 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Tue, 30 Jan 2018 14:12:31 -0500
+Subject: [bitcoin-dev] Design approaches for Signature Aggregation
+Message-ID: <CAMZUoK=A0CXVw81TeKhRSwPOp39qwqwyQ0_zoKLq8kONko14Ng@mail.gmail.com>
+
+On Sat, Jan 27, 2018 at 12:23 PM, Matt Corallo <lf-lists at mattcorallo.com>
+wrote:
+
+> Gah, please no. I see no material reason why cross-input signature
+> aggregation shouldn't have the signatures in the first n-1 inputs replaced
+> with something like a single-byte push where a signature is required to
+> indicate aggregation, and the combined signature in the last input at
+> whatever position the signature is required.
+>
+
+That would be the expedient approach.
+
+I want to preface what I'm about to write by first stating that I think the
+cross-input signature aggregation is the most important forthcoming
+development for Bitcoin and I would be very happy to have any solution for
+it deployed in any workable form.  Also, it is difficult to discuss pros
+and cons of various designs without concrete proposals, but perhaps we can
+try to say some things about various design approaches while still saying
+something useful.
+
+I think there are some issues with the expedient proposal for signature
+aggregation.  The problems begin with the arbitrary choice of which input
+witness will be the canonical choice for holding the aggregated signature.
+We want to strictly define which input is the canonical choice for holding
+the aggregated signature because we wish to avoid introducing new witness
+malleability vectors.  However, the definition of the canonical input is
+somewhat complicated.  Because not all inputs are necessarily participating
+the aggregation, the canonical choice of input necessarily depends on the
+run-time behavior of all the other input Scripts in the transaction.  This
+complicates the specification and makes the implementation somewhat
+error-prone.
+
+Furthermore designing the canonical choice of input for the aggregated
+signature to support future extensions of new script versions or new
+opcodes that may want to participate in signature aggregation (for example,
+adding CHECKSIGFROMSTACK later) is going to be extraordinarily difficult, I
+think.  I don't know how it could even be done.
+
+On the other hand, the extended-transaction approach supports a clean model
+of script semantics whereby the signature aggregation is supported via a
+new writer (aka logging) side-effect for Script[1].  In this model, rather
+than the semantics of Script returning only failure or success, Script
+instead results in either failure or conditional success plus a log of
+additional constraints that need to be satisfied for the transaction to be
+valid.  In the case of signature aggregation, these constraints are of the
+form "I require cryptographic evidence that there is a signature on message
+M from public key P".  The aggregated signature in the extension of the
+transaction provides a witness that demonstrates all the constraints
+emitted by all the scripts are satisfied.
+
+Even in the extended-transaction approach, supporting future extensions of
+new script versions or new opcodes that may want to participate in
+signature aggregation is going to be very difficult.  However, I do have
+some half-baked ideas (that you will probably like even less) on how we
+could support new script versions and new opcodes based on this idea of a
+writer side-effect model of Script semantics.  I hope that designing
+support for extendable signature aggregation isn't infeasible.
+
+I think that the cleaner semantic model of the extended-transaction
+approach is by itself enough reason to prefer it over the expedient
+approach, but reasonable people can disagree about this.  However, there
+are even larger issues lurking which appear when we start looking for
+unintended semantic consequences of the expedient design.  This is a common
+problem with expedient approaches.  It is hard enough to come up with a
+design that enables a new feature, but it is even harder to come up with a
+design that enables a new feature without enabling other, unintended
+"features".  I worry that people do not pay enough attention to the later,
+after achieving the former. This sort of thing happened with OP_EVAL in bip
+12.  In that situation, the goal was to create a design that enabled pay to
+script hash, and OP_EVAL does achieve that in a very straightforward way.
+However, the unintended semantic consequences was that bip 12 also enable
+unbounded recursion[2] and extended the class of functions definable by
+script all the way to the entire class of all computable functions.
+
+We can find unintended semantic consequences of the expedient approach to
+signature aggregation by looking at the ways it fails to fit into the
+writer side-effect model for signature aggregation.
+
+A. Firstly, we notice that scripts can determine whether or not they are in
+canonical position or not by checking the length of their signature data.
+This is an effect that goes beyond the abilities of just allowing signature
+aggregation.  We can build scripts that can only be redeemed when they are,
+or aren't the ones holding the aggregated signature.
+
+B. In the presence of sufficient computation power[3], I expect that
+scripts can recover the public keys and signed message data of the
+aggregated data, using the same methods used in Enchancing Bitcoin
+Transactions with Covenants
+<http://fc17.ifca.ai/bitcoin/papers/bitcoin17-final28.pdf>. With this
+ability, the script in canonical position can determine what messages are
+being signed by other inputs, and which public keys they have chosen to
+use.  Perhaps a script could enforce a whitelist or blacklist of
+approved/disapproved public keys that it is willing or unwilling to be
+aggregated with, etc.
+
+C. Scripts can subvert the use the public keys being aggregated themselves
+for the purpose of communicate arbitrary data to other script inputs.  With
+aggregated CHECKSIGFROMSTACK, scripts can directly use signed messages for
+this communication.
+
+I'm not trying to say that the above are good or bad things, after all
+signature aggregation is an interactive process so it is expected that
+users could decide which keys they are willing to aggregate with.  What I'm
+trying to say is that the expedient proposal has a host of unintended
+semantic consequences and the above list is only the ones that I can think
+of off the top of my head.  I do not even know the full extent of what we
+will be enabling with this design but it seems to include adding a
+subversive unidirectional cross-input communication channel for Script. Is
+that really a feature we want to be bundling with a signature aggregation
+proposal?
+
+I believe that the extended-transaction design is the conservative design.
+I conjecture that one can build a reduction from scripts supporting
+signature aggregation in the extended-transaction design to scripts that
+don't support signature aggregation, while preserving the same security
+properties. (The proposed reduction would "simply" replace every aggregated
+signature call with a non-aggregated signature call.)  If this conjecture
+holds, that means we can prove that the extended-transaction design is only
+an optimization and doesn't have any further unintended semantic
+consequences.  In particular, we see that the expedient approach doesn't
+have such a reduction proof because scripts that are using the expedient
+design for cross-input communication cannot be modeled by scripts that
+don't have the signature aggregation ability.
+
+I would be disappointed if we end up taking the expedient approach to
+signature aggregation (but still very happy that we get signature
+aggregation), and there are probably other designs for signature
+aggregation beyond the two designs I'm discussing here.
+
+-- 
+Russell
+
+[1]For those familiar with using monads to model side-effects, we can model
+the output of Script as a (M Bool) value where M is a writer monad over the
+monoid of a set of formal constraints, or some other small variant of this
+model.  I know that the word monad makes some people's eyes glaze over, but
+I'm not trying to use jargon here to exclude people; I'm trying to use
+jargon here to be precise about what it means to formally model
+computational side-effects for those who are familiar how to do that sort
+of thing.
+
+[2]Due to an attempt at a gas limit, OP_EVAL wasn't not intended to enable
+unbounded computation in practice.  However when talking about the formal
+expressiveness of a programming language we usually discard these sorts of
+limits, such as stack size limits, gas limits etc.  Those limits are there
+to prevent denial of service attacks against Bitcoin consensus.  The limits
+are not designed to enforce language and security properties through the
+restriction of computational expressiveness.
+
+[3]Here sufficient computation power means that we have access to functions
+like CHECKSIGFROMSTACK and/or basic operations on elliptic curves and hash
+functions.  These are all pure functions that can be defined by logical
+gates. Since bitcoin script has boolean logic operations, they technically
+fall into scope of what is ostensibly definable by script.  Nevertheless,
+these sorts of functions could reasonably appear in a Bitcoin Script 2.0 as
+they would make a host of new protocols practical.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180130/0d07d20c/attachment-0001.html>
