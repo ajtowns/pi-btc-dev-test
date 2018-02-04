@@ -1,0 +1,73 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Sun, 04 Feb 2018 17:24:36 -0500
+Subject: [bitcoin-dev] RBF Wallet Algorithms (Was: Transaction Merging
+	(bip125 relaxation))
+Message-ID: <XQ9rlH3i022zBtFIRYB6ICuvp3zfh37mIGq8guGN8wcAZOkkwBjjmKlhAbNv834qFAIdCN9p3CnNSnZGPiOQ6tJoezmxLp9gsvDb8hItn3U=@protonmail.com>
+
+Good Morning Rhavar,
+
+I have been trying to conceptualize an algorithm precisely for RBF, and I agree that "tracking the mess" is a significant issue...
+
+> Full backstory: I have been trying to use bip125 (Opt-in Full Replace-by-Fee) to do "transaction merging" on the fly. Let's say that I owe John 1 bitcoin, and have promised to pay him immediately: Instead of creating a whole new transaction if I have an in-flight (unconfirmed) transaction, I can follow the rules of bip125 to create a replacement that accomplishes this goal.
+>
+> From a "coin selection" point of view, this was significantly easier than
+> I had anticipated. I was able to encode the rules in my linear model and
+> feed in all my unspent and in-flight transactions and it can solve it without difficulty.
+>
+> However, the real problem is tracking the mess. Consider this sequence of events:
+> 1) I have unconfirmed transaction A
+> 2) I replace it with B, which pays John 1 BTC
+> 3) Transaction A gets confirmed
+>
+> So now I still owe John 1 BTC, however it's not immediately clear if
+> it's safe to send to him without waiting $n transactions. However even
+> for a small $n, this breaks my promise to pay him immediately.
+>
+> One possible solution is to only consider a transaction "replaceable" if it has change, so if the original transaction confirms -- payments can immediately be made that source the change, and provide safety in a reorg.
+>
+> However, this will only work <50% of the time for me (most transactions
+> don't have change) and opens a pandora's box of complexity.
+
+For this example, I believe it is possible to assure correct operation without changes to the current RBF policy.
+
+Presumably, the problematic sequence of events is this:
+
+1.  You need to pay Paul.
+2.  You make transaction A that pays to Paul.  It has no change output.
+3.  You need to pay John.
+4.  You see transaction A is unconfirmed.  Using A as basis, you make transaction B that pays to Paul, John.  It replaces A.
+5.  Transaction A confirms once (because the B transaction did not propagate to the lucky miner quickly enough)
+6.  You still have a pending commitment to pay John, so you make a transaction C that pays to John.
+7.  A reorg occurs, transaction A is removed from history.
+8.  Transaction B and transaction C confirm, double-paying John.
+
+This can be fixed by ensuring that transaction C is incompatible with B, but compatible with A.
+
+By "compatibility", we mean, "A transaction T is incompatible with U if T cannot confirm if U confirms, and U cannot confirm if T confirms."
+
+If transaction A has no change output, then in order for A to be incompatible with B, with B paying both Paul and John, means that B has more spent inputs than A.  Else where would the extra funds to pay John come from? (assuming you are not taking from Paul to pay John)
+
+If so, it means that there is some input that B spends, which A does not spend.
+
+So we can make a transaction C that spends this input (the one which B spends that A does not spend).  This makes C compatible with A, but incompatible with B.
+
+So you can still work, even without a change output on A, to ensure that your transaction C cannot be confirmed if B confirms.
+
+Thus:
+
+1.  If A has some change output, ensure C spends that output.  Presumably if B is incompatible with A (after all, you tried to replace A with B), then C is incompatible with B as C is dependent on A confirming.
+2.  If A has no change output, then if you increased your spending to make transaction B, then logically B has some input that is not in A (otherwise where would the extra funds have come from...).  Then ensure C spends that input of B that is not in A, making it directly incompatible with B.
+
+This ensures that either A+C confirm, or B confirms.
+
+(Again, the complications are considerable! We can only show that it is possible in theory, but whether it is feasible in practice to implement in some program that can be debugged and maintained  is another issue)
+
+A vague idea I have formed is to use some sort of vector of candidate TXOs you control.  Items are appended to this vector lazily as per your coin policy.  Transactions mark how far in this vector they spend (i.e. a high-water mark for that transaction).  If a previous confirmed transaction you wrote has a change output, you always use that change output and try to get more coins from this vector (starting after the previous confirmed transaction high-water mark) if the change output is not enough.  If a previous confirmed transaction you wrote has no change output, then you get more coins from this vector (again starting from the previous confirmed transaction high-water mark).  The vector is extended lazily from your set of controlled coins.  Older entries in this vector may be dropped once transactions confirm deeply enough that it is unlikely to be reorged (say 144 blocks); the exact policy is that if a transaction confirms deeply enough, then everything from its high-waiter mark to below can be pruned from this vector.
+
+The above vague idea precludes you from reoptimizing transactions, however; your replacements either have the same set of inputs, or a strict superset of inputs, as the previous transaction.
+
+Regards,
+ZmnSCPxj
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180204/fbc371ac/attachment-0001.html>
