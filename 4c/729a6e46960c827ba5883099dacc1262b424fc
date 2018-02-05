@@ -1,0 +1,118 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Mon, 5 Feb 2018 05:58:43 +0000
+Subject: [bitcoin-dev] Graftroot: Private and efficient surrogate scripts
+	under the taproot assumption
+Message-ID: <CAAS2fgSnfd++94+40vnSRxQfi9fk8N6+2-DbjVpssHxFvYveFQ@mail.gmail.com>
+
+In my post on taproot I showed a simple commitment scheme for scripts
+that is very efficient that there exists some collection of pubkeys
+(like an M-of-N or even N-of-N) whos authorization is an acceptable
+alternative to whatever other conditions we might want to impose on a
+coin.  If this holds then when spends happen via the plain signature
+path the existence of the alternative is never revealed, providing
+privacy with improved efficiency compared to not being private at all.
+
+Taproot suffers from a limitation that it only natively provides for
+one alternative.  Trees or cascades of taproots can be done, but they
+have less privacy and efficiency than just a single level. E.g. a tree
+commitment has overhead that grows with the log of the number of
+alternatives.
+
+However, under the taproot assumption-- that there exists some
+monotone function on plain public keys and nothing else that is
+sufficient to authorize a transaction-- we can do even better.
+
+With graftroot, the participants establish a threshold key, optionally
+with a taproot alternative, just as they do with taproot.  At any
+time, they can delegate their ability to sign to a surrogate script by
+signing that script (and just the script) with their taproot key, and
+sharing that delegation with whomever they choose.   Later, when it
+comes time to spend the coin, if the signers aren't available and the
+script must be used,  the redeeming party does whatever is required to
+satisfy the script (e.g. provides their own signature and a timelock,
+or whatnot)  and presents that information along with the signer's
+signature of the script.
+
+The result is that instead of allowing only one alternative an
+unlimited number of alternatives can be provided. All are executed
+with equal efficiency to a single alternative, and the number of them
+is hidden without overhead.  Alternatives can be provided for existing
+coins too, without requiring they get moved-- movement is only
+required to destroy the ability to use alternatives by changing keys.
+
+Allowing this kind of delegation makes sense because the same signers
+could have just signed the transaction outright. The new script simply
+stands in for them, if they're not available or cooperating. No
+special conditions are needed outside of the surrogate script on when
+the surrogate is allowed, because they can be written inside the
+surrogate.
+
+We've discussed delegation in script back to at least 2012-- with
+speculation that enabling it may have been an original motivation
+behind codeseperator. ... but these design discussions have gotten
+mired in how to express and connect the levels of delegation.  But the
+case where delegation is accomplished with a simple unconditional
+signature is an especially simple case, and under the taproot
+assumption the only case that is ever needed.
+
+A naive implementation of this idea requires a complete signature
+every time a surrogate is used, which means 64 bytes of data (assuming
+128 bit ECC). This is higher overhead than taproot.
+
+However,  the non-interactive schnorr aggregation trick[1] can be
+applied to merge the S values of all graftroots and signatures in a
+transaction into a single aggregate.  With this approach only a single
+R value for each graftroot need be published, lowering the overhead to
+~32 bytes-- the same as taproot. This has a side benefit of binding
+the published grafts to a particular transaction, which might help
+avoid some screwups.
+
+In cases where the taproot assumption doesn't hold, taproot can still
+be used by setting the public key to a NUMS point, which preserves
+privacy (e.g. you can't distinguish txn where the key could never have
+been used.)  A similar thing can be done for graftroot if the
+signature is not a proof of knowledge (commits to the public key): you
+select the signature in a NUMS manner, and then recover the applicable
+public key.  Though this can't be done if the signature is a PoK, and
+it's probably a pretty good idea to make it a PoK.
+
+The primary limitation of this approach compared to taproot
+alternatives and trees is that it requires that anyone who wants to
+make use of a particular surrogate to interact with the participants
+and store the resulting signature because a single party couldn't
+compute it again on their own from public data. For trees and taproot
+alternatives, the alternatives can be setup without any interaction
+with the participants. The primary advantage is that it scales to any
+number of alternatives with small constant overhead, can be delegated
+after the fact, and can still be spent by the participants without
+overhead.
+
+Summarizing:   A coin's authorizing contract is decomposed into a top
+level OR between a monotone function of pubkeys (such as N of N) and
+any number of arbitrary surrogate scripts which are acceptable
+authorizations.  A key aggregate (see [2]) is formed, and is used to
+sign each of the the surrogates.  Participants save these signatures.
+Later, when it comes time to spend the coin, if the pubkey holders are
+unwilling or unavailable, the spender presents and satisfies the
+relevant surrogate along with it's signature R-value and
+non-interactively aggregates the S-value into the transaction's
+overall aggregate signature.  The result is 0-overhead if the signers
+cooperate, or ~32-byte overhead (plus the script) if they don't.  This
+avoids the log() overhead of tree based schemes, and allows delegation
+to take place before or after the fact but requires storage.  The
+potential for unexpected surrogate replay if keys are reused in
+foolish ways also needs to be kept in mind, though it may be somewhat
+mitigated by aggregation. The existence of unused surrogates is
+completely hidden.
+
+I believe this general design is simple and powerful enough that it
+avoids the rathole that earlier delegation discussions have suffered.
+
+
+
+
+[1] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-May/014272.html
+And the secure construction at:
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-May/014308.html
+
+[2] https://eprint.iacr.org/2018/068
