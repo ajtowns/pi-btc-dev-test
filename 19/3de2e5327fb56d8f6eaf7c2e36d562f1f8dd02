@@ -1,0 +1,122 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Fri, 9 Feb 2018 07:22:38 +1100
+Subject: [bitcoin-dev] Electrum Personal Server alpha release
+In-Reply-To: <8b7bd786-9bc3-efb2-a8ed-0b703e246728@riseup.net>
+References: <8b7bd786-9bc3-efb2-a8ed-0b703e246728@riseup.net>
+Message-ID: <D28753D0-97C5-468F-B6B0-049A23FFA5AE@jonasschnelli.ch>
+
+Thanks Chris for sharing!
+
+I?m following a similar approach where I?d like to share a more detailed specification soon.
+Since Chris brought this up here, I?d like to shed some lights on that, very similar approach.
+
+The idea is to have a Bitcoin Core instance running either with internal (Core) support for the proposed interface or via an external script (python bridge) while the later is probably preferable (hardened HTTPd, less impact on Core).
+
+The idea is, that the interface can create new wallets (needs dynamic loading/unloading of wallets in Core), add addresses to a wallet (== add watch-only addresses).
+
+Addresses on the client are only visible once they could be added via the interface to the Core wallet as watch only (avoid missing transactions, addresses can be pre-added by the client and used later)
+
+New transactions can be created through the interface (which will use fundrawtransaction with watch-only-addresses in the background).
+Coin selection, fee calculation, etc. would happened on the Core node.
+
+Signing of transactions happens on the client (maybe BIP174).
+Optionally, a 2of2 (or 2of3 with a backup key) could be achieved where the node would also hold a key to have some sort of ?2FA? if the node and the client environment are owned by the same person.
+
+This would work with pruned nodes and can serve ? depending on the used hardware ? up to a couple of hundred wallets.
+
+Backup restores (xpriv sweeps) are also possible via the UTXO set and take less then a minute and don?t require the full transaction history (or any kind of index).
+
+Additional, the interface could also act as central, personal multisig bridge where n clients could use the same endpoint to participate in multisig wallets.
+
+Overall, this wold allow a slick and secure (personal or group) (multi-)wallet service that works perfectly fine on pruned nodes by simply adding a bridge-script.
+
+
+Thanks
+?
+Jonas
+
+
+> Am 09.02.2018 um 03:51 schrieb Chris Belcher via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>:
+> 
+> Electrum is a popular bitcoin wallet, but it is not a full node wallet
+> as it synchronizes itself using third-party Electrum servers. The
+> servers must be trusted to verify the rules of bitcoin, they can trick
+> Electrum wallets into accepting fake bitcoin transactions which, for
+> example, print infinite money. Bitcoin's security model requires that
+> most economic activity is backed by full nodes. The Electrum servers
+> must also be trusted with the user's privacy, as wallets send all their
+> bitcoin addresses to the server. Spying on wallets is not much more
+> complicated than simply grepping the server logs. Electrum wallets by
+> default also connect to servers using their own IP address, linking it
+> further to their revealed bitcoin addresses.
+> 
+> A way to avoid these problems is for users to run their own Electrum
+> server and connect their wallets only to it. But this requires
+> significant resource usage: the full unpruned blockchain, transaction
+> index and an extra address index, as well as more RAM and CPU usage
+> compared to just a full node. Servers are not well suited to being shut
+> down and started up again, they are typically always online.
+> 
+> Electrum servers store a database of every bitcoin address ever used,
+> which is inherently not scalable. This is resource-intensive and
+> therefore pushes users towards centralized solutions. An alternative way
+> would be to store only your own addresses and transactions.
+> 
+> Introducing Electrum Personal Server; an implementation of the Electrum
+> server protocol which fulfills the specific need of using the Electrum
+> UI with full node verification and privacy, but without the heavyweight
+> server backend, for a single user. It allows the user to benefit from
+> all of Bitcoin Core's resource-saving features like pruning, blocksonly
+> and disabled txindex. All of Electrum's feature-richness like hardware
+> wallet integration, multisignature wallets, offline signing, mnemonic
+> recovery phrases and so on can still be used, but backed by the user's
+> own full node.
+> 
+> An alpha version of Electrum Personal Server can be found on the
+> repository: https://github.com/chris-belcher/electrum-personal-server
+> 
+> Before using, the wallet user must configure Electrum Personal Server
+> with their master public key and those addresses are imported into
+> Bitcoin Core as watch-only. If the wallet contains historical
+> transactions then it must be rescanned. One of Electrum's motivating
+> features is "instant on", which is therefore traded away when using
+> Electrum Personal Server in return for full node verification and
+> privacy. Although if a brand new empty wallet is created there is no
+> need to rescan. A script like Electrum Personal Server is also well
+> suited to use private transaction broadcasting tech like dandelion or
+> broadcasting through tor.
+> 
+> Using Electrum with Electrum Personal Server is probably the most
+> resource-efficient way right now to use a hardware wallet connected to
+> your own full node. People who make use of Blockstream Satellite could
+> use it to have an off-the-grid node connected to Electrum if that is
+> their preferred wallet. In the situation of a traveller staying a cheap
+> hostels, they could sync their node every couple of days to download
+> recent blocks and use Electrum. Hopefully this software can be part of
+> the plan to get full node wallets into the hands of as many people as
+> possible.
+> 
+> The same kind of ideas could be applied to other lightweight wallets.
+> For example a full nodes can run on smartphones with pruning and
+> blocksonly, then a similar script would allow the user to connect their
+> Samourai Wallet, Breadwallet or GreenAddress app to their own full node.
+> 
+> 
+> Further Reading:
+> 
+> * https://bitcointalk.org/index.php?topic=2664747.msg27179198
+> *
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-September/015030.html
+> * https://bitcointalk.org/index.php?topic=1634967.0;all
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 833 bytes
+Desc: Message signed with OpenPGP
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180209/c4c58f3c/attachment.sig>
