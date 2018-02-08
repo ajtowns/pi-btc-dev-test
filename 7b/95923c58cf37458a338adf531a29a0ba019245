@@ -1,0 +1,398 @@
+From: kanzure@gmail.com (Bryan Bishop)
+Date: Thu, 8 Feb 2018 11:49:23 -0600
+Subject: [bitcoin-dev] Fwd: [Lightning-dev] AMP: Atomic Multi-Path Payments
+	over Lightning
+In-Reply-To: <CAO3Pvs-rH25U_Gd5HZ=Zh8-yLvEW09c0RSnNzEB4kW15C8GSVg@mail.gmail.com>
+References: <CAO3Pvs-rH25U_Gd5HZ=Zh8-yLvEW09c0RSnNzEB4kW15C8GSVg@mail.gmail.com>
+Message-ID: <CABaSBawRVmzSCMAjtV785pvZT2A7M-Picw2AuugiTefrC-UqdQ@mail.gmail.com>
+
+---------- Forwarded message ----------
+From: Olaoluwa Osuntokun <laolu32 at gmail.com>
+Date: Mon, Feb 5, 2018 at 11:26 PM
+Subject: [Lightning-dev] AMP: Atomic Multi-Path Payments over Lightning
+To: lightning-dev <lightning-dev at lists.linuxfoundation.org>
+
+
+Hi Y'all,
+
+A common question I've seen concerning Lightning is: "I have five $2
+channels, is it possible for me to *atomically* send $6 to fulfill a
+payment?". The answer to this question is "yes", provided that the receiver
+waits to pull all HTLC's until the sum matches their invoice. Typically, one
+assumes that the receiver will supply a payment hash, and the sender will
+re-use the payment hash for all streams. This has the downside of payment
+hash re-use across *multiple* payments (which can already easily be
+correlated), and also has a failure mode where if the sender fails to
+actually satisfy all the payment flows, then the receiver can still just
+pull the monies (and possibly not disperse a service, or w/e).
+
+Conner Fromknecht and I have come up with a way to achieve this over
+Lightning while (1) not re-using any payment hashes across all payment
+flows, and (2) adding a *strong* guarantee that the receiver won't be paid
+until *all* partial payment flows are extended. We call this scheme AMP
+(Atomic Multi-path Payments). It can be experimented with on Lightning
+*today* with the addition of a new feature bit to gate this new
+feature. The beauty of the scheme is that it requires no fundamental changes
+to the protocol as is now, as the negotiation is strictly *end-to-end*
+between sender and receiver.
+
+TL;DR: we repurpose some unused space in the onion per-hop payload of the
+onion blob to signal our protocol (and deliver some protocol-specific data),
+then use additive secret sharing to ensure that the receiver can't pull the
+payment until they have enough shares to reconstruct the original pre-image.
+
+
+Protocol Goals
+==============
+1. Atomicity: The logical transaction should either succeed or fail in
+entirety. Naturally, this implies that the receiver should not be unable to
+settle *any* of the partial payments, until all of them have arrived.
+
+2. Avoid Payment Hash Reuse: The payment preimages validated by the
+consensus layer should be distinct for each partial payment.  Primarily,
+this helps avoid correlation of the partial payments, and ensures that
+malicious intermediaries straddling partial payments cannot steal funds.
+
+3. Order Invariance: The protocol should be forgiving to the order in which
+partial payments arrive at the destination, adding robustness in the face of
+delays or routing failures.
+
+4. Non-interactive Setup: It should be possible for the sender to perform an
+AMP without directly coordinating with the receiving node. Predominantly,
+this means that the *sender* is able to determine the number of partial
+payments to use for a particular AMP, which makes sense since they will be
+the one fronting the fees for the cost of this parameter. Plus, we can
+always turn a non-interactive protocol into an interactive one for the
+purposes of invoicing.
+
+
+Protocol Benefits
+=================
+
+Sending pay payments predominantly over an AMP-like protocol has several
+clear benefits:
+
+  - Eliminates the constraint that a single path from sender to receiver
+    with sufficient directional capacity. This reduces the pressure to have
+    larger channels in order to support larger payment flows. As a result,
+    the payment graph be very diffused, without sacrificing payment
+    utility
+
+  - Reduces strain from larger payments on individual paths, and allows the
+    liquidity imbalances to be more diffuse. We expect this to have a
+    non-negligible impact on channel longevity. This is due to the fact that
+    with usage of AMP, payment flows are typically *smaller* meaning that
+    each payment will unbalance a channel to a lesser degree that
+    with one giant flow.
+
+  - Potential fee savings for larger payments, contingent on there being a
+    super-linear component to routed fees. It's possible that with
+    modifications to the fee schedule, it's actually *cheaper* to send
+    payments over multiple flows rather than one giant flow.
+
+  - Allows for logical payments larger than the current maximum value of an
+    individual payment. Atm we have a (temporarily) limit on the max payment
+    size. With AMP, this can be side stepped as each flow can be up the max
+    size, with the sum of all flows exceeding the max.
+
+  - Given sufficient path diversity, AMPs may improve the privacy of LN
+    Intermediaries are now unaware to how much of the total payment they are
+    forwarding, or even if they are forwarding a partial payment at all.
+
+  - Using smaller payments increases the set of possible paths a partial
+    payment could have taken, which reduces the effectiveness of static
+    analysis techniques involving channel capacities and the plaintext
+    values being forwarded.
+
+
+Protocol Overview
+==================
+This design can be seen as a generalization of the single, non-interactive
+payment scheme, that uses decoding of extra onion blobs (EOBs?) to encode
+extra data for the receiver. In that design, the extra data includes a
+payment preimage that the receiver can use to settle back the payment. EOBs
+and some method of parsing them are really the only requirement for this
+protocol to work. Thus, only the sender and receiver need to implement this
+feature in order for it to function, which can be announced using a feature
+bit.
+
+First, let's review the current format of the per-hop payload for each node
+described in BOLT-0004.
+
+????????????????????????????????????????????????????????????
+??????????????????????????????????????????????????????
+?Realm (1 byte) ?Next Addr (8 bytes)?Amount (8 bytes)?Outgoing CLTV (4
+bytes)?Unused (12 bytes)? HMAC (32 bytes) ?
+????????????????????????????????????????????????????????????
+??????????????????????????????????????????????????????
+????????????????????????????????????????????????????????????
+??????????????????????????????????????????????????????
+                                              ???????????????????
+                                              ?65 Bytes Per Hop ?
+                                              ???????????????????
+
+Currently, *each* node gets a 65-byte payload. We use this payload to give
+each node instructions on *how* to forward a payment. We tell each node: the
+realm (or chain to forward on), then next node to forward to, the amount to
+forward (this is where fees are extracted by forwarding out less than in),
+the outgoing CLTV (allows verification that the prior node didn't modify any
+values), and finally an HMAC over the entire thing.
+
+Two important points:
+  1. We have 12 bytes for each hop that are currently unpurposed and can be
+  used by application protocols to signal new interpretation of bytes and
+  also deliver additional encrypted+authenticated data to *each* hop.
+
+  2. The protocol currently has a hard limit of 20-hops. With this feature
+  we ensure that the packet stays fixed sized during processing in order to
+  avoid leaking positional information. Typically most payments won't use
+  all 20 hops, as a result, we can use the remaining hops to stuff in *even
+  more* data.
+
+
+Protocol Description
+====================
+The solution we propose is Atomic Multi-path Payments (AMPs). At a high
+level, this leverages EOBs to deliver additive shares of a base preimage,
+from which the payment preimages of partial payments can be derived. The
+receiver can only construct this value after having received all of the
+partial payments, satisfying the atomicity constraint.
+
+The basic protocol:
+
+Primitives
+==========
+Let H be a CRH function.
+Let || denote concatenation.
+Let ^ denote xor.
+
+
+Sender Requirements
+===================
+The parameters to the sending procedure are a random identifier ID, the
+number of partial payments n, and the total payment value V. Assume the
+sender has some way of dividing V such that V = v_1 + ? + v_n.
+
+To begin, the sender builds the base preimage BP, from which n partial
+preimages will be derived. Next, the sender samples n additive shares s_1,
+?, s_n, and takes the sum to compute BP = s_1 ^ ? ^ s_n.
+
+With the base preimage created, the sender now moves on to constructing the
+n partial payments. For each i in [1,n], the sender deterministically
+computes the partial preimage r_i = H(BP ||  i), by concatenating the
+sequence number i to the base preimage and hashing the result. Afterwards,
+it applies H to determine the payment hash to use in the i?th partial
+payment as h_i = H(r_i). Note that that with this preimage derivation
+scheme, once the payments are pulled each pre-image is distinct and
+indistinguishable from any other.
+
+With all of the pieces in place, the sender initiates the i?th payment by
+constructing a route to the destination with value v_i and payment hash h_i.
+The tuple (ID, n, s_i) is included in the EOB to be opened by the receiver.
+
+In order to include the three tuple within the per-hop payload for the final
+destination, we repurpose the _first_ byte of the un-used padding bytes in
+the payload to signal version 0x01 of the AMP protocol (note this is a PoC
+outline, we would need to standardize signalling of these 12 bytes to
+support other protocols). Typically this byte isn't set, so the existence of
+this means that we're (1) using AMP, and (2) the receiver should consume the
+_next_ hop as well. So if the payment length is actually 5, the sender tacks
+on an additional dummy 6th hop, encrypted with the _same_ shared secret for
+that hop to deliver the e2e encrypted data.
+
+Note, the sender can retry partial payments just as they would normal
+payments, since they are order invariant, and would be indistinguishable
+from regular payments to intermediaries in the network.
+
+
+Receiver Requirements
+=====================
+
+Upon the arrival of each partial payment, the receiver will iteratively
+reconstruct BP, and do some bookkeeping to figure out when to settle the
+partial payments. During this reconstruction process, the receiver does not
+need to be aware of the order in which the payments were sent, and in fact
+nothing about the incoming partial payments reveals this information to the
+receiver, though this can be learned after reconstructing BP.
+
+Each EOB is decoded to retrieve (ID, n, s_i), where i is the unique but
+unknown index of the incoming partial payment. The receiver has access to
+persistent key-value store DB that maps ID to (n, c*, BP*), where c*
+represents the number of partial payments received, BP* is the sum of the
+received additive shares, and the superscript * denotes that the value is
+being updated iteratively. c* and BP* both have initial values of 0.
+
+In the basic protocol, the receiver cache?s the first n it sees, and
+verifies that all incoming partial payments have the same n. The receiver
+should reject all partial payments if any EOB deviates.  Next, the we update
+our persistent store with DB[ID] = (n, c* + 1, BP* ^ s_i), advancing the
+reconstruction by one step.
+
+If c* + 1 < n, there are still more packets in flight, so we sit tight.
+Otherwise, the receiver assumes all partial payments have arrived, and can
+being settling them back. Using the base preimage BP = BP* ^ s_i from our
+final iteration, the receiver can re-derive all n partial preimages and
+payment hashes, using r_i = H(BP || i) and h_i = H(r_i) simply through
+knowledge of n and BP.
+
+Finally, the receiver settles back any outstanding payments that include
+payment hash h_i using the partial preimage r_i. Each r_i will appear random
+due to the nature of H, as will it?s corresponding h_i. Thus, each partial
+payment should appear uncorrelated, and does not reveal that it is part of
+an AMP nor the number of partial payments used.
+
+Non-interactive to Interactive AMPs
+===================================
+
+Sender simply receives an ID and amount from the receiver in an invoice
+before initiating the protocol. The receiver should only consider the
+invoice settled if the total amount received in partial payments containing
+ID matches or exceeds the amount specified in the invoice. With this
+variant, the receiver is able to map all partial payments to a pre-generated
+invoice statement.
+
+
+Additive Shares vs Threshold-Shares
+===================================
+
+The biggest reason to use additive shares seems to be atomicity. Threshold
+shares open the door to some partial payments being settled, even if others
+are left in flight. Haven?t yet come up with a good reason for using
+threshold schemes, but there seem to be plenty against it.
+
+Reconstruction of additive shares can be done iteratively, and is win for
+the storage and computation requirements on the receiving end. If the sender
+decides to use fewer than n partial payments, the remaining shares could be
+included in the EOB of the final partial payment to allow the sender to
+reconstruct sooner. Sender could also optimistically do partial
+reconstruction on this last aggregate value.
+
+
+Adaptive AMPs
+=============
+
+The sender may not always be aware of how many partial payments they wish to
+send at the time of the first partial payment, at which point the simplified
+protocol would require n to be chosen. To accommodate, the above scheme can
+be adapted to handle a dynamically chosen n by iteratively constructing the
+shared secrets as follows.
+
+Starting with a base preimage BP, the key trick is that the sender remember
+the difference between the base preimage and the sum of all partial
+preimages used so far. The relation is described using the following
+equations:
+
+    X_0 = 0
+    X_i = X_{i-1} ^ s_i
+    X_n = BP ^ X_{n-1}
+
+where if n=1, X_1 = BP, implying that this is in fact a generalization of
+the single, non-interactive payment scheme mentioned above. For i=1, ...,
+n-1, the sender sends s_i in the EOB, and  X_n for the n-th share.
+
+Iteratively reconstructing s_1 ^ ?. ^ s_{n-1} ^ X_n = BP, allows the
+receiver to compute all relevant r_i = H(BP || i) and h_i = H(r_i). Lastly,
+the final number of partial payments n could be signaled in the final EOB,
+which would also serve as a sentinel value for signaling completion. In
+response to DOS vectors stemming from unknown values of n, implementations
+could consider advertising a maximum value for n, or adopting some sort of
+framing pattern for conveying that more partial payments are on the way.
+
+We can further modify our usage of the per-hop payloads to send (H(BP),
+s_i) to
+consume most of the EOB sent from sender to receiver. In this scenario, we'd
+repurpose the 11-bytes *after* our signalling byte in the unused byte
+section
+to store the payment ID (which should be unique for each payment). In the
+case
+of a non-interactive payment, this will be unused. While for interactive
+payments, this will be the ID within the invoice. To deliver this slimmer
+2-tuple, we'll use 32-bytes for the hash of the BP, and 32-bytes for the
+partial pre-image share, leaving an un-used byte in the payload.
+
+
+Cross-Chain AMPs
+================
+
+AMPs can be used to pay a receiver in multiple currencies atomically...which
+is pretty cool :D
+
+
+Open Research Questions
+=======================
+
+The above is a protocol sketch to achieve atomic multi-path payments over
+Lightning. The details concerning onion blob usage serves as a template that
+future protocols can draw upon in order to deliver additional data to *any*
+hop in the route. However, there are still a few open questions before
+something like this can be feasibly deployed.
+
+1. How does the sender decide how many chunked payments to send, and the
+size of each payment?
+
+  - Upon a closer examination, this seems to overlap with the task of
+    congestion control within TCP. The sender may be able to utilize
+    inspired heuristics to gauge: (1) how large the initial payment should
+be
+    and (2) how many subsequent payments may be required. Note that if the
+    first payment succeeds, then the exchange is over in a signal round.
+
+2. How can AMP and HORNET be composed?
+
+  - If we eventually integrate HORNET, then a distinct communications
+    sessions can be established to allow the sender+receiver to exchange
+    up-to-date partial payment information. This may allow the sender to
+more
+    accurately size each partial payment.
+
+3. Can the sender's initial strategy be governed by an instance of the
+Push-relabel max flow algo?
+
+4. How does this mesh with the current max HTLC limit on a commitment?
+
+   - ATM, we have a max limit on the number of active HTLC's on a particular
+     commitment transaction. We do this, as otherwise it's possible that the
+     transaction is too large, and exceeds standardness w.r.t transaction
+     size. In a world where most payments use an AMP-like protocol, then
+     overall ant any given instance there will be several pending HTLC's on
+     commitments network wise.
+
+     This may incentivize nodes to open more channels in order to support
+     the increased commitment space utilization.
+
+
+Conclusion
+==========
+
+We've presented a design outline of how to integrate atomic multi-path
+payments (AMP) into Lightning. The existence of such a construct allows a
+sender to atomically split a payment flow amongst several individual payment
+flows. As a result, larger channels aren't as important as it's possible to
+utilize one total outbound payment bandwidth to send several channels.
+Additionally, in order to support the increased load, internal routing nodes
+are incensed have more active channels. The existence of AMP-like payments
+may also increase the longevity of channels as there'll be smaller, more
+numerous payment flows, making it unlikely that a single payment comes
+across unbalances a channel entirely. We've also showed how one can utilize
+the current onion packet format to deliver additional data from a sender to
+receiver, that's still e2e authenticated.
+
+
+-- Conner && Laolu
+
+
+_______________________________________________
+Lightning-dev mailing list
+Lightning-dev at lists.linuxfoundation.org
+https://lists.linuxfoundation.org/mailman/listinfo/lightning-dev
+
+
+
+
+-- 
+- Bryan
+http://heybryan.org/
+1 512 203 0507
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180208/be98f021/attachment-0001.html>
