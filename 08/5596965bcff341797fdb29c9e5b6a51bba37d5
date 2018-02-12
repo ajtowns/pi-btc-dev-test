@@ -1,0 +1,50 @@
+From: rhavar@protonmail.com (rhavar at protonmail.com)
+Date: Mon, 12 Feb 2018 18:23:12 -0500
+Subject: [bitcoin-dev] Revisiting BIP 125 RBF policy.
+In-Reply-To: <20180212225828.GB8551@fedora-23-dvm>
+References: <CAMZUoKnGx3p7=Kg96E3EEyJ8aFC7ezsvec_pAnN7oJz7-VbyLA@mail.gmail.com>
+	<20180212225828.GB8551@fedora-23-dvm>
+Message-ID: <0uRiPitofHOu2G_7h4lk1q-BKJOZ_x9UecbP8aqyy7FLlrme06od_H79G7rfIs1uk3Vs470_PSlCHjRqsC9ObqhQRyhZ_9JdEzYJzNd-QRM=@protonmail.com>
+
+
+ On February 12, 2018 5:58 PM, Peter Todd via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> I don't actually see where the problem is here. First of all, suppose we have a
+> transaction T_a that already pays Alice with a feerate sufficiently high that
+> we expect it to get mined in the near future. If we want to pay Bob, we can do
+> that by simply creating a double-spend of T_a that pays both Bob and Alice,
+> T_{ab}. BIP125 only requires that double-spend to have an absolute fee higher
+> than the minimum relay feerate * size of the transaction.
+
+It's a bit of a made up term, but when Russel said "pinned" it refers to a child transaction that was made  (i.e. in this case by Alice) and for us to replace our transaction we need to "unpin" it.
+
+However to unpin it, the current bip125 rules require you pay not only the relay of the transactions you're throwing away, but the absolute fee. This is general is cost prohibitive, as even a normalish transaction can be spending $20 in fees. 
+
+Also FWIW this whole idea of T_a and T_ab  is good, but it's also pretty impractical at the moment due to the sheer amount complexity it introduces (i.e. monitoring, seeing which confirms, trying to rebroadcast the missing one in a way that is safe against reorgs, blah blah).
+
+
+
+>
+> I just checked one of my nodes, and the absolute minimum relay fee is about
+> 1/5th that of what estimatefee returns for the longest possible estimate, 48
+> blocks.
+
+If you use estimatesmartfee you should be able to get estimates all the way to 1008 or something btw
+
+> [...]
+> I think this is very important. For example, without this condition I could do
+> a DoS attack by repeatedly broadcasting a transaction, then spending the
+> outputs of that transaction with a very large number of child transactions, all
+> of minimum fee. 
+
+I agree.
+
+>
+> A better way to solve this class of problems may be diffed tx replacement
+> propagation: basically broadcast a diff between the original tx and the
+> proposed replacement, allowing you to do the minimum bandwidth accounting based
+> on the size of the diff instead.
+
+This would definitely work for some specific use-case. For instance currently if you do n replacements of a transaction, each time adding an additional output .. you need to pay something like O(n^2) relay fee. If you used a diff instead, you could probably get it to O(n)ish. 
+
+But relay fee (and n) at the moment, mean it's not a big deal at all. The big flaw (imo) in bip125 is that you need to pay the absolute fee from the transactions you are evicting. And that can be from transactions you didn't even generate yourself.  We can already compactly represent the diff  (the new transaction invalidates it)  the debate is more "Should you have to pay the absolute fee or just relay fee for the stuff you invalidate" 
