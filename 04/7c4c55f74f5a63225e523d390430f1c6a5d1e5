@@ -1,0 +1,142 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Mon, 12 Feb 2018 17:58:28 -0500
+Subject: [bitcoin-dev] Revisiting BIP 125 RBF policy.
+In-Reply-To: <CAMZUoKnGx3p7=Kg96E3EEyJ8aFC7ezsvec_pAnN7oJz7-VbyLA@mail.gmail.com>
+References: <CAMZUoKnGx3p7=Kg96E3EEyJ8aFC7ezsvec_pAnN7oJz7-VbyLA@mail.gmail.com>
+Message-ID: <20180212225828.GB8551@fedora-23-dvm>
+
+On Mon, Feb 12, 2018 at 10:52:30AM -0500, Russell O'Connor via bitcoin-dev wrote:
+> I think it is worth revisiting BIP 125's replace-by-fee policy for when to
+> replace transactions.
+> 
+> The current policy can be problematic. As noted earlier by Rhavar,
+> sometimes one's transaction becomes pinned making it infeasible to fee bump
+> with RBF.  This happens when one makes a normal payment to a large
+> commercial service, and, while the transaction remains unconfirmed, the
+> commercial service creates a low-fee-rate sweep of one's payment, among a
+> collection of others.  If one wants to RBF this original payment, for
+> example to get confirmation of the change output for use in further
+> transactions, the current BIP 125 rules require that you make a fee bump
+> that exceeds the combined total fees of the original transaction and the
+> low-fee-rate sweep of the commercial service.
+> 
+> The problem is that, while the fee rate of the sweep is low, the absolute
+> size of the fee can still be large, making it infeasible to RBF the
+> original transaction.  BIP 125 was defined back in 2015, when perhaps
+> rational miners did care about absolute fee amounts. However, today we are
+> in an era where rational miners care about fee-rates more than absolute
+> fees.  The fee-rate of the large sweep transaction is low enough that we do
+> not expect that miners will be mining it in the same block as the original
+> transaction.  Today, a rational miner will prefer a fee-bumped version of
+> original transaction without consideration of the low-fee sweep transaction
+> (or at least discounting the low-fee sweep in proportion to the miner's
+> hash-rate fraction).
+
+I don't actually see where the problem is here. First of all, suppose we have a
+transaction T_a that already pays Alice with a feerate sufficiently high that
+we expect it to get mined in the near future. If we want to pay Bob, we can do
+that by simply creating a double-spend of T_a that pays both Bob and Alice,
+T_{ab}. BIP125 only requires that double-spend to have an absolute fee higher
+than the minimum relay feerate * size of the transaction.
+
+I just checked one of my nodes, and the absolute minimum relay fee is about
+1/5th that of what estimatefee returns for the longest possible estimate, 48
+blocks. Depends on the exact circumstances, but it'll likely be worth it to pay
+Bob with a replacement of T_a rather than create a second transaction due to
+that difference.
+
+Secondly, if for some reason you need to broadcast a separate transaction
+paying Bob before you do the replacement, again I don't see an issue: just make
+a minimum fee T_b that pays Bob, and replace both with T_{ab}. Again, the big
+difference between minimum fee and what you might actually pay in fees means
+that you'll still save money in most cases, so long as your wallet is
+intelligent enough to pick a low feerate for T_b.
+
+> Let me quote the five rules that define the current BIP 125 policy:
+> 
+> One or more transactions currently in the mempool (original transactions)
+> > will be replaced by a new transaction (replacement transaction) that spends
+> > one or more of the same inputs if,
+> >
+> >    1. The original transactions signal replaceability explicitly or
+> >    through inheritance as described in the above Summary section.
+> >    2. The replacement transaction does not contain any new unconfirmed
+> >    inputs that did not previously appear in the mempool. (Unconfirmed inputs
+> >    are inputs spending outputs from currently unconfirmed transactions.)
+> >    3. The replacement transaction pays an absolute fee of at least the
+> >    sum paid by the original transactions.
+> >    4. The replacement transaction must also pay for its own bandwidth at
+> >    or above the rate set by the node's minimum relay fee setting. For example,
+> >    if the minimum relay fee is 1 satoshi/byte and the replacement transaction
+> >    is 500 bytes total, then the replacement must pay a fee at least 500
+> >    satoshis higher than the sum of the originals.
+> >    5. The number of original transactions to be replaced and their
+> >    descendant transactions which will be evicted from the mempool must not
+> >    exceed a total of 100 transactions.
+> >
+> > To address the new reality of rational miners' consideration, I propose
+> changing rules 3 and 4 to something like the following.
+> 
+> 3'. The replacement transaction pays a fee rate of at least the effective
+> fee rate of any chain of transactions from the set of original transactions
+> that begins with the root of the original transaction set.
+
+I think what you mean here should be the effective fee rate of the maximum
+feerate package that can be built from the set of transactions that begins with
+the candidate replacement. But actually calculating this is I believe
+non-trivial, which is why I didn't implement it this way when RBF was first
+implemented.
+
+> 4'. The replacement transaction must also pay for replacing the original
+> transactions at or above the rate set by the node's minimum relay fee
+> setting. For example, if the minimum relay fee is 1 satoshi/byte and the
+> replacement transaction and the original transactions are 1000 bytes total,
+> then the replacement must pay a fee at least 1000 satoshis higher than the
+> fee of the root transaction of the original transactions.
+
+So the previous version of condition #4 does this implicitly because the
+absolute fee isn't allowed to go down; you're effectively re-adding this
+condition. But as I've shown above, you can get the same *behavior* by simply
+ensuring that the transactions you broadcast that you'll want to double-spend
+have a minimum feerate in the first place.
+
+> Rule 3' is a fancy way of saying that the replacement transaction must have
+> a fee rate that is larger than the package fee rate of the root of the set
+> of transactions it replaces, where the package fee rate is the fee rate
+> implied by considering CPFP.
+> 
+> Rule 4' is an amended anti-spam rule that is intended to avoid DOS attacks
+> from churning the mempool. I don't know if it is really necessary to pay
+> for the size of the original transactions being evicted, but some people I
+> chatted with thought it could be important.
+
+I think this is very important. For example, without this condition I could do
+a DoS attack by repeatedly broadcasting a transaction, then spending the
+outputs of that transaction with a very large number of child transactions, all
+of minimum fee. With up to 100 transactions allowed for consideration, and a
+100KB max transaction size, that could be up to ~10MB of transactions.
+
+Next I double spend the root, increasing it's feerate but *not* paying for the
+child transactions. Those ~10MB are now evicted from the mempool, and I can
+repeat the cycle again. The cost is whatever the root tx replacement cost,
+which will be much less than the cost of broadcasting 10MB should have been.
+
+> Other people on the mailing list have been thinking about RBF policy for
+> far longer than I have, so I wouldn't be surprised if my proposal above is
+> naive.  However, I think it can start a conversation about addressing the
+> problems with the current RBF policy.
+
+A better way to solve this class of problems may be diffed tx replacement
+propagation: basically broadcast a diff between the original tx and the
+proposed replacement, allowing you to do the minimum bandwidth accounting based
+on the size of the diff instead.
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 488 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180212/7c69245e/attachment.sig>
