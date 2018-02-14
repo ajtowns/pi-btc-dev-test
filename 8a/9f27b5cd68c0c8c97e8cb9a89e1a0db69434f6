@@ -1,0 +1,57 @@
+From: rhavar@protonmail.com (rhavar at protonmail.com)
+Date: Tue, 13 Feb 2018 21:07:25 -0500
+Subject: [bitcoin-dev] Revisiting BIP 125 RBF policy.
+In-Reply-To: <20180213184034.GA10642@fedora-23-dvm>
+References: <CAMZUoKnGx3p7=Kg96E3EEyJ8aFC7ezsvec_pAnN7oJz7-VbyLA@mail.gmail.com>
+	<20180212225828.GB8551@fedora-23-dvm>
+	<0uRiPitofHOu2G_7h4lk1q-BKJOZ_x9UecbP8aqyy7FLlrme06od_H79G7rfIs1uk3Vs470_PSlCHjRqsC9ObqhQRyhZ_9JdEzYJzNd-QRM=@protonmail.com>
+	<20180213184034.GA10642@fedora-23-dvm>
+Message-ID: <IoXsS2vxicFBvVPa_4p0ERi684PMJySPwFt82NRUTzcFJ1xzTEBsuDYkDN3GIc6GDKqLTfcWtw_bn8JvCxQKPsh9nZII65536x2XL9nzC_8=@protonmail.com>
+
+
+ On February 13, 2018 1:40 PM, Peter Todd <pete at petertodd.org> wrote:
+
+> Yeah, sorry, I just misread what scenario you guys were talking about. IIRC the
+> term "pinned" may have even been invented by myself, as IIRC I noticed the
+> issue when the RBF patch was being developed years ago. I don't think I had a
+> solution at the time so I just punted on it.
+
+Yeah. I posted that before it was clarified, it's just my message got held up in the moderation queue so it came out of order at an inconvenient time ><
+
+
+
+> I'm not sure that's actually true, as you're only creating transactions sets
+> that are reorg safe. Though I don't have a detailed design in mind so I may be
+> missing something.
+
+It is. T_a and T_ab are "reorg" safe, but if T_a confirms you will still need to pay Bob in way. But you need to pay him such that in a reorg occurs and suddenly T_ab is mined, you haven't doubled paid him. 
+
+I've been working on it's implementation, but it's honestly really complex and hard to test. I outlined the procedure here: https://gist.github.com/RHavar/cff76a026ece8446c898470db4f35682  which I call "Super Withdrawals".
+
+
+My point though isn't that it's impossible, it's that it's sufficiently complex that it's unreasonable to expect anyone to be doing it any time soon. By relaxing any unnecessary restrictions on bip125, just makes it _drastically_ easier to do certain things.
+
+> So here's a question: how many wallets have actually implemented CPFP fee bumps
+> for incoming transactions?
+
+Never tried it, but I recall seeing it in the electrum gui. I originally tried supporting this myself, but it's kind of annoying. It's  generally a bit cost-prohibitive to create a transaction specifically for the purpose of a CPFP fee bump, but since I made transactions pretty frequently (averaged say every 8 minutes) it doesn't add an additional input for the purpose of bumping selected incoming transactions.
+
+The work flow is reasonably smooth: Alice has sent me 1 BTC with low fees, I owe Bob some money. I source Alice's output in the payment to Bob, giving her transaction a fee bump. Both transactions confirm, everyone is happy.
+
+However during the whole time I need to watch Alice's transaction because if it ever is replaced/conflicted, I need to immediately pay Bob (in a reorg safe way, so I don't double-pay). It's not terribly hard to do, by making sure when I pay Bob I use an additional input that I also use for any "repayment" but it's enough complexity and hard enough to test that I gave up.
+
+The really nice thing of most current send systems (and now especially so with segwit) is everything is pretty much fire and forget.  (although I just schedule in 0.5, 1, 2, 4, .... 32 hours fee bump attempts. But that's just background that can fail/succeed blindly)
+
+
+
+
+
+
+>
+>1. https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-July/014688.html
+>
+> --
+>https://petertodd.org 'peter'[:-1]@petertodd.org
+>
+>
+
