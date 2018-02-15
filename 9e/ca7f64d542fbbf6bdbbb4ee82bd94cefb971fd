@@ -1,0 +1,168 @@
+From: tim.ruffing@mmci.uni-saarland.de (Tim Ruffing)
+Date: Thu, 15 Feb 2018 16:59:27 +0100
+Subject: [bitcoin-dev] Transition to post-quantum
+In-Reply-To: <882306fa-3ea0-99bd-61c6-f646d27c2ab6@gmail.com>
+References: <CAFEpHQHP7XXBYUP6CF1OeYoBpj0UwK+qpYG-14_zQZDX4Md7UA@mail.gmail.com>
+	<1518450650.7829.87.camel@mmci.uni-saarland.de>
+	<CAFEpHQHYdE3m2GUtN=ijvtYUudwtcG52rRxzH66VFbgO1KEihw@mail.gmail.com>
+	<1518504374.9878.24.camel@mmci.uni-saarland.de>
+	<882306fa-3ea0-99bd-61c6-f646d27c2ab6@gmail.com>
+Message-ID: <1518710367.3550.111.camel@mmci.uni-saarland.de>
+
+First of all, there is indeed an issue in my proposal:
+
+The idea was to include a classic signature to make sure that, if (for
+whatever reason) you have revealed classic_pk already.
+
+However, the problem is that if you have revealed classic_pk, then
+everybody can effectively prevent you from spending the funds as you
+wish by just including the first commit entry with an arbitrary tx in
+the blockchain. That's bad obviously.
+
+Here is a fixed variant, which does not only work with normal P2PKH but
+1) supports basically with any (hash-based) addresses, for which the
+preimage has not been revealed and 2) does not change the conditions
+under which a UTXO can be spent.
+
+Setup
+=====
+We will need multiple hash functions KDF, H, and authenticated
+symmetric encryption Enc/Dec.
+
+Let's assume we have an UTXO with address addr = H_addr(chal), where
+chal is a challenge, i.e., typically a scriptPubKey (what I called
+classic_pk initially) and H_addr is the hash function used to form
+addresses. (If there are multiple UTXO sharing the same address, they
+can be spent simultaneously with this approach.) To spend this UTXO
+with a transaction tx, the user performs the following two steps.
+
+Note that -- in contrast to my earlier emails -- tx is assumed to
+include a solution to the challenge in its input, i.e., a string which
+proves that you are allowed to spend the UTXO (typically a scriptSig). 
+
+Commit step
+===========
+Derive a symmetric key k = KDF(chal).
+
+Create and publish a commitment in the blockchain that references the
+UTXO as inputs and contains the following data: 
+      c = Enc(k, tx)
+
+Wait until c is confirmed. (If it does not confirm, send it again as
+usual.)
+
+Decommit step
+=============
+Create and publish a decommitment with the following data:
+      d = chal
+
+Consensus rules
+===============
+A decommitment d = chal spends a UTXO with address H_addr(chal), if
+there exists a commitment c in the blockchain which references the UTXO
+and which is the first commitment (among all referencing the UTXO) in
+the blockchain such that
+1. k = KDF(chal) correctly decrypts Dec(k, c)
+    and
+2. tx = Dec(k, c) is a valid transaction to spend UTXO 
+
+The UTXO is spent as described by tx.
+Commitments never expire.
+
+The second condition covers that tx contains a classic signature under
+the public key specified in chal in normal P2PKH addresses.
+
+The trick here is that the encryption ensures that the user commits to
+tx (including the classic signature) already in the commit step, while
+still keeping the decommitment unique. If I'm not mistaken, this scheme
+is a variant of Adam Back's proposal for committed transactions from
+2013, which he invented for an entirely different goal, namely
+censorship resistance:
+https://bitcointalk.org/index.php?topic=206303.msg2162962#msg2162962
+
+(Adam noted the similarity of the problems on Twitter recently:
+https://twitter.com/adam3us/status/948219461345075201)
+
+The above variant is pretty simple. If it really works and is secure,
+it has the advantage over Adam's proposal that it does not rely on
+ECDSA specifically and can be used for any address type. 
+
+The aforementioned thread in the Bitcoin forum discusses the main
+problem of an approach like that: Everybody can flood the blockchain
+with commitments. Of course, one can require fees to create
+commitments, but that's pretty ugly: If this UTXO is the only money you
+have, then you need to borrow some to pay the transaction fees upfront.
+But this may be the price you need to pay for recovery. This can be
+acceptable, because recovery should be the exception (see below).
+
+On Tue, 2018-02-13 at 21:06 +1100, Tristan Hoy via bitcoin-dev wrote:
+> The worst-case outcome is that ECDSA is broken before PQ addresses
+> are 
+> rolled out. There is no reactive response to this - all the existing 
+> ECDSA addresses will be compromised. A proactive measure is
+> required, 
+> and it should be deployed sooner rather than later.
+
+The proposal above does not require any changes to existing ECDSA
+addresses, so there is no need to change something now already. 
+
+At some point in the future, PQ addresses will be deployed. And at some
+(potentially different) point in the future, we should deploy a
+solution to recover UTXOs. But there's no need to do this today. A
+recovery solution can be deployed even when DLOG has been broken
+already -- not optimal but possible.
+
+> 
+> Any two-step approach adopted now as a proactive measure will not
+> only 
+> bloat the blockchain, it will also double the effective confirmation 
+> time - for all transactions between now and when PQ addresses are
+> rolled 
+> out, which seems unlikely to happen in the next 5 years. The bloat
+> will 
+> be permanent.
+> 
+
+I don't think that's true due to the situation I describe above. We
+don't need to act now.
+
+And even if we act now, i.e., even if we enable the above proposal (or
+any other protocol that enables recovery of UTXOs with addresses)
+today, people are not forced to use it. As long as ECDSA and the other
+schemes we use today remain secure, people can and will continue to
+perform conventional transactions. Ideally, people will need a recovery
+protocol only for those UTXOs which they haven't touched for years and
+have forgotten to convert to PQ in time.
+
+You mentioned confirmation time. A nice thing is that the above
+protocol does not double confirmation times. The sender needs to wait
+for confirmation of the commitment. But as soon as the commitment is
+confirmed, double-spending is excluded already, because the sender is
+committed to the transaction. So the recipient does not need to wait
+for confirmation of the decommitment. As soon as the recipient sees the
+decommitment, everything is good. (If the decommitment is not
+confirmed, the recipient can just re-broadcast it.)
+
+In practice, we could even go further and call the transaction done
+after the commitment is confirmed and the sender sends the data for the
+second step to the recipient off-chain. Only when the recipient wants
+to spend the funds again, the recipient will reveal this data.
+
+The fact that double-spending is excluded after the first step is
+confirmed, is exactly what makes the protocol secure against quantum
+attackers who want to steal the money. As soon as the user reveals the
+ECDSA public key, a quantum attacker has access to all secrets: The
+attacker knows the preimage of the hash can compute the secret key.
+So from this point on, there is no hope that we can distinguish the
+honest user from the attacker. But since the correct transaction has
+been committed to the blockchain, and cannot be changed anymore, we
+don't need to distinguish the honest user from the attacker.
+
+> Either way, would you mind if I included your approach in the
+> article, 
+> with credit? I will seek your review before publishing.
+
+Sure, feel free to include. You don't need to seek my review but I can
+certainly have a look if desired.
+
+Tim
