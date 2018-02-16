@@ -1,0 +1,44 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 16 Feb 2018 17:49:17 -0500
+Subject: [bitcoin-dev] Alternative way to count sigops
+Message-ID: <0213B102-7595-4177-A76C-FE4E8D7F0EDF@xbt.hk>
+
+Short history
+----------------
+
+Satoshi introduced sigops counting as a softfork to limit the number of signature operation in a block. He statically counted all OP_CHECK(MULTI)SIG(VERIFY) in both scriptSig and scriptPubKey, assumed a OP_CHECKMULTISIG is equivalent to 20 OP_CHECKSIG, and enforced a block limit of 20000 sigop. The counting is not contextual, i.e. one doesn?t need the UTXO set to determine the number of sigop. The counting was also static so one doesn?t need to execute a script in order to count sigop. However, this is completely wrong for few reasons: a) opcodes in scriptPubKey are not executed; b) scriptPubKey of spent UTXO, which are actually executed, are not counted at all; c) it greatly overestimate the cost of multi-sig; d) it counts sigop in unexecuted branch.
+
+As P2SH was introduced, sigop counting also covered the sigop redeemScript. This is good because redeemScript is what being executed. It also improved the counting of OP_CHECKMULTISIG. If it is in certain canonical form, it would count the number of public keys instead of assuming it as 20. On the other hand, counting sigop becomes not possible without the UTXO set, since one needs UTXO to identify P2SH inputs. Also, the canonical OP_CHECKMULTISIG counting is not quite elegant and created more special cases in the code.
+
+Segwit (BIP141) scaled the legacy sigop limit by 4x. So every legacy sigop becomes 4 new sigop, with a block limit of 80000 new sigop. P2WPKH is counted as 1 new sigop, and P2WSH is counted in the same way as P2SH.
+
+
+
+Problem
+------------
+
+We now have multiple 2nd generation script proposals, such as BIP114, BIP117, taproot, etc. BIP114 and taproot allows static sigop counting, but not BIP117 as it requires execution to determine what would be run as script (like OP_EVAL). As we want to allow more complicated script functions, static sigop counting might not be easy. However, we still want to have a limit to avoid unexpected DoS attack.
+
+
+
+
+Proposal
+------------
+
+Since we have a block weight limit of 4,000,000 and sigop limit of 80,000, each sigop could not use more than 50 weight unit on average. For new script proposals we could count the actual number of sigop at execution (i.e. skip unexecuted sigop, skip 0-size signature, count the actual checksig operations in multi-sig), and make sure the number of executed sigop * 50 is not greater than the size of the input.
+
+The minimal size of each input is 32 (prevout.hash) + 4 (prevout.n) + 4 (nSequence) + 1 (empty scriptSig) = 41 bytes or 164 weight unit. So the new rule would require that (164 + input witness size) >= (actual_sigop * 50). This is a per-input limit, as script validation is parallel.
+
+Since a compressed key is 33 bytes and a normal compact signature is 64 bytes, the 1:50 ratio should be more than enough to allow any normal use of CHECKSIG, unless people are doing weird things like 2DUP 2DUP 2DUP??..CHECKSIG CHECKSIG CHECKSIG CHECKSIG , which would have many sigop with a relatively small witness. Interactive per-tx signature aggregation allows 64bytes/tx signature, and per-block non-interatcitve signature aggregation allows 32bytes/signature (https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-May/014272.html <https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-May/014272.html>). In such cases, the 1:50 ratio might not be enough if many signatures are aggregated. Depends on the number of sigop we could tolerate, the 1:50 ratio might be reduced to 1:32 or lower to make sure legitimate use would never hit the limit. I think 32 is reasonable as it is about the size of a public key, which would guarantee each pubkey must get a sigop slot.
+
+So a relay node could be certain that a tx won?t spend excessive CPU power by just looking at its size. If it spends too much, it is invalid and script execution could be terminated early.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180216/296ee3ec/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 659 bytes
+Desc: Message signed with OpenPGP
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180216/296ee3ec/attachment.sig>
