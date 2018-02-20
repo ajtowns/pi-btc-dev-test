@@ -1,0 +1,391 @@
+From: kanzure@gmail.com (Bryan Bishop)
+Date: Tue, 20 Feb 2018 16:42:19 -0600
+Subject: [bitcoin-dev] Fwd: [Lightning-dev] Post-Schnorr lightning txes
+In-Reply-To: <20180219225907.GA16444@erisian.com.au>
+References: <20180219225907.GA16444@erisian.com.au>
+Message-ID: <CABaSBawHbwZ2cxSLTMhD7qMQ8ingGmznc0K30PKecXFNWj_2AQ@mail.gmail.com>
+
+---------- Forwarded message ----------
+From: Anthony Towns <aj at erisian.com.au>
+Date: Mon, Feb 19, 2018 at 4:59 PM
+Subject: [Lightning-dev] Post-Schnorr lightning txes
+To: lightning-dev at lists.linuxfoundation.org
+
+
+Hi *,
+
+My understanding of lightning may be out of date, so please forgive
+(or at least correct :) any errors on my behalf.
+
+I was thinking about whether Greg Maxwell's graftroot might solve the
+channel monitoring problem (spoiler: not really) and ended up with maybe
+an interesting take on Schnorr. I don't think I've seen any specific
+writeup of what that might look like, so hopefully at least some of this
+is novel!
+
+I'm assuming familiarity with current thinking on Schnorr sigs -- but all
+you should need to know is the quick summary at footnote [0].
+
+So I think there's four main scenarios for closing a lightning channel:
+
+ - both parties are happy to close, do so cooperatively, and can
+   sign a new unconditional transaction that they agree on. already fine.
+   (should happen almost all of the time, call it 80%)
+
+ - communications failure: one side has to close, but the other side
+   is happy to cooperate as far as they're able but can only do so via
+   the blockchain and maybe with some delay (maybe 15% of the time)
+
+ - disappearance, uncooperative: one side effectively completely
+   disappears so the other side has to fully close the channel on their
+   own (5% of the time)
+
+ - misbehaviour: one side tries publishing an old channel state due to
+   error or maliciousness, and the other collects the entire balance as
+   penalty (0% of the time)
+
+With "graftroot" in mind, I was thinking that optimising for the last
+case might be interesting -- despite expecting it to be vanishingly
+rare. That would have to look something like:
+
+   (0) funding tx
+   (1) ...which is spent by a misbehaving commitment tx
+   (2) ...which is spent by a penalty tx
+
+You do need 3 txes for that case, but you really only need 1 output
+for each: so (0) is 2-in-1-out, (1) is 1-in-1-out, (2) is 1-in-1-out;
+which could all be relatively cheap. (And (2) could be batched with other
+txes making it 1 input in a potentially large tx)
+
+For concreteness, I'm going to treat A as the one doing the penalising,
+and B (Bad?) as the one that's misbehaving.
+
+If you treat each of those txes as a muSig Schnorr pay-to-pubkey, the
+output addresses would be:
+
+   (0) funding tx pays to [A,B]
+   (1) commitment tx pays to [A(i),Revocation(B,i)]
+   (2) pays to A
+
+(where i is a commitment id / counter for the channel state)
+
+If B misbehaves by posting the commitment tx after revealing the
+revocation secret, A can calculate A(i) and Revocation(B,i) and claim
+all the funds immediately.
+
+As far as the other cases go:
+
+  - In a cooperative close, you don't publish any commitment txes, you
+    just spend the funding to each party's preferred destinations
+    directly; so this is already great.
+
+  - Otherwise, you need to be able to actually commit to how the funds
+    get distributed.
+
+But committing to distributing funds is easy: just jointly sign
+a transaction with [A(i),Revocation(B,i)]. Since B is the one we're
+worrying about misbehaving, it needs to hold a transaction with the
+appropriate outputs that is:
+
+  - timelocked to `to_self_delay` blocks/seconds in advance via nSequence
+  - signed by A(i)
+
+That ensures A has `to_self_delay` blocks/seconds to penalise misehaviour,
+and that when closing properly, B can complete the signature using the
+current revocation secret.
+
+This means the "appropriate outputs" no longer need the OP_CSV step, which
+should simplify the scripts a bit.
+
+Having B have a distribution transaction isn't enough -- B could vanish
+between publishing the commitment transaction and the distribution
+transaction, leaving A without access to any funds. So A needs a
+corresponding distribution transaction. But because that transaction can
+only be published if B signs and publishes the corresponding commitment
+transaction, the fact that it's published indicates both A and B are
+happy with the channel close -- so this is a semi-cooperative close and
+no delay is needed. So A should hold a partially signed transaction with
+the same outputs:
+
+  - without any timelock
+  - signed by Revocation(B,i), waiting for signature by A(i)
+
+Thus, if B does a non-cooperative close, either:
+
+  - A proves misbehaviour and claims all the funds immediately
+  - A agrees that the channel state is correct, signs and publishes
+    the un-timelocked distribution transaction, then claims A's outputs;
+    B can then immediately claim its outputs
+  - A does nothing, and B waits for the `to_self_delay` period, signs
+    and publishes its transaction, then claims B's outputs; A can eventually
+    claim its own outputs
+
+In that case all of the transactions except the in-flight HTLCs just look
+like simple pay-to-pubkey transactions.
+
+Further, other than the historical secrets no old information needs
+to be retained: misbehaviour can be dealt with (and can only be dealt
+with) by creating a new transaction signed by your own secrets and the
+revocation information.
+
+None of that actually relies on Schnorr-multisig, I think -- it could
+be done today with normal 2-of-2 multisig as far as I can see.
+
+
+
+I'm not 100% sure how this approach works compared to the current one
+for the CSV/CLTV overlap problem. I think any case you could solve by
+obtaining a HTLC-Timeout or HTLC-Success transaction currently, you could
+solve in the above scenario by just updating the channel state to remove
+the HTLC.
+
+
+So I believe the above lets you completely forget info about old HTLCs,
+while still enforcing correct behavior, and also makes enforcing correct
+behaviour cheaper because it's just two extremely simple transactions
+to post. If I haven't missed any corner cases, it also seems to simplify
+the scripts a fair bit.
+
+Does this make sense? It seems to to me...
+
+
+So for completeness, it would make sense to do HTLCs via Schnorr --
+at least to make them reveal elliptic curve private keys, and ideally
+to make them mostly indistinguishable from regular transactions as a
+"scriptless script" [1] or "discreet log contract" [2]. (I think, at
+least for HTLCs, these end up being the same?)
+
+The idea then is to have the HTLC payment hash be R=r*G, where r is the
+secret/payment receipt.
+
+Supposing your current commitment has n HTLCs in-flight, some paying A
+if the HTLC succeeds and "r" is revealed, others paying B. We'll focus
+on one paying A.
+
+So you succeed by A completing a signature that reveals r to B,
+and which simultaneously allows collection of the funds on chain. A
+needs to be able to do this knowing nothing other than r (and their own
+private keys). So agree to sign to muSig 2-of-2 multisig [A,B]. A and B
+generate random values i and j respectively and reveal I=i*G and J=j*G,
+and each calculates Q=I+J+R, and they generate partial signatures of a
+transaction paying A:
+
+    I, i + H(X,Q,m)*H(L,A)*a
+    J, j + H(X,Q,m)*H(L,B)*b
+
+where L = H(A,B) and X = H(L,A)*A + H(L,B)*B as usual. Once A knows r,
+A can construct a full signature by adding R, r to the above values,
+and B can then determine r by subtracting the above values from signature
+A generated.
+
+To ensure B gets paid if the HTLC timesout, they should also sign a
+timelocked transaction paying B directly, that B can hold onto until
+the channel state gets updated.
+
+And once you're doing payment hashes via ECC, you can of course change
+them at each hop to make it harder to correlate steps in a payment route.
+
+I think that when combined with the above method of handling CSV delays
+and revocation, this covers all the needed cases with a straightforward
+pay-to-pubkey(hash) output, no script info needed at all. It does mean
+each HTLC needs a signature every time the channel state updates (B needs
+to sign a tx allowing A to claim the output once A knows the secret,
+A needs to sign a tx allowing B to claim the output on timeout).
+
+
+For channel monitoring this is pretty good, I think. You need to
+keep track of the revocation info and your secret keys -- but that's
+essentially a constant amount of data.
+
+If you're happy to have the data grow by 64 bytes every time the channel
+state updates, you can outsource channel monitoring: arrange a formula
+for constructing a penalty tx based on the channel commitment tx --
+eg, 95% of the balance goes to me, 4% goes to the monitor's address, 1%
+goes to fees, there's a relative locktime of to_self_delay/3 to allow me
+to directly claim 100% of the funds if I happen to be paying attention;
+then do a partial signature with A(i), and then allow the monitoring
+service to catch fraudulent transactions, work out the appropriate
+revocation secret, and finish the signature.
+
+If your channel updates 100 times a second for an entire year, that's
+200GB of data, which seems pretty feasible. (You can't just regenerate
+that data though, unless you keep each commitment tx) And it's pretty
+easy to work out which bit of data you need to access: the funding
+tx that's being spent tells you which channel, and the channel state
+index is encoded in the locktime and sequence, so you should only need
+small/logarithmic overhead even for frequently updated channels rather
+than any serious indexes.
+
+I don't think you can do better than that without serious changes to
+bitcoin: if you let the monitoring agency sign on its own, you'd need some
+sort of covenant opcode to ensure it sends any money to you; and with
+segwit outputs, there's no way to provide a signature for a transaction
+without committing to exactly which transaction you're signing.
+
+I was hoping covenants and graftroot would be enough, but I don't
+think they are. The idea would be that since the transaction spends to
+A(i)+Rev(B,i), you'd sign an output script with A that uses covenant
+opcodes to ensure the transaction only pays the appropriate monitoring
+reward, and the monitor could then work out A(i)-A and Rev(B,i) and finish
+the signature. But the signature by "A" would need to know A(i)+Rev(B,i)
+when calculating the hash, and that's different for every commitment
+transaction, so as far as I can see, it just doesn't work. You can't
+drop the muSig-style construction because you need to be protect yourself
+against potential malicious choice of the revocation secret [3].
+
+
+Summary:
+
+ - Funding txes as 2-of-2 multisig is still great. Convert to
+   Schnorr/muSig when available of course.
+
+ - Generate 6+8*n transactions everytime the channel state is updated,
+   (n = number of HTLCs in-flight)
+
+   1. Channel state commitment tx, held by A, spends funding tx,
+      payable to Schnorr muSig address [A(i),Rev(B,i)], signed by B
+   2. Channel fund distribution tx, held by A (CSV), spends (1),
+      signed by Rev(B,i)
+   3. Channel fund distribution tx, held by B (no CSV), spends (1),
+      signed by A(i)
+   4. Channel state commitment tx, held by B, spends funding tx
+      payable to Schnorr muSig address [B(i),Rev(A,i)], signed by A
+   5. Channel fund distribution tx, held by B (CSV), spends (4),
+      signed by Rev(A,i)
+   6. Channel fund distribution tx, held by A (no CSV), spends (4),
+      signed by B(i)
+
+   The fund distribution txs all pay the same collection of addresses:
+     - channel balance for A directly to A's preferred address
+     - channel balance for B directly to B's preferred address
+     - HTLC balance to muSig address for [A,B] for each in-flight HTLC
+       paying A on success
+     - HTLC balance to muSig address for [B,A] for each in-flight HTLC
+       paying B on success
+     - (probably makes sense to bump the HTLC addresses by some random
+       value to make it harder for third parties to tell which addresses
+       were balances versus HTLCs)
+
+   Both (1) and (4) include obscured channel state ids as per current
+   standard.
+
+   For each HTLC that pays X on timeout and Y on success:
+     a. Timeout tx, held by X, signed by Y, spends from (2)
+     b. Timeout tx, held by X, signed by Y, spends from (3)
+     c. Timeout tx, held by X, signed by Y, spends from (5)
+     d. Timeout tx, held by X, signed by Y, spends from (6)
+
+     e. Success tx, held by Y, signed by X, spends from (2)
+     f. Success tx, held by Y, signed by X, spends from (3)
+     g. Success tx, held by Y, signed by X, spends from (5)
+     h. Success tx, held by Y, signed by X, spends from (6)
+
+     (these should all be able to be SIGHASH_SINGLE, ANYONECANPAY
+      to allow some level of aggregation)
+
+ - Fund distribution tx outputs can all be pay2pubkey(hash): HTLCs work
+   by pre-signed timelocked transactions and scriptless
+   scripts/discreet-log contracts to reveal the secret; balances work
+   directly; CSV and revocations are already handled by that point
+
+ - You can discard all old transaction info and HTLC parameters once
+   they're not relevant to the current channel state
+
+ - Channel monitoring can be outsourced pretty efficiently -- as little as
+   a signature per state could be made to works as far as I can see,
+   which doesn't add up too fast.
+
+ - There's still no plausible way of doing constant space outsourced
+   channel monitoring without some sort of SIGHASH_NOINPUT, at least
+   that I can see
+
+Thoughts?
+
+[4]
+
+Cheers,
+aj, very sad that this didn't turn out to be a potential use case for
+    graftroot :(
+
+[0] In particular, I'm assuming that:
+
+    - Schnorr sigs in bitcoin will look something like:
+        R, r + H(X,R,m)*x
+
+      (where m is the message being signed by private key x, r is a
+      random per-sig nonce, R and X are public keys corresponding to r,x;
+      H is the secure hash function)
+
+    - muSig is a secure way for untrusting parties to construct an n-of-n
+      combined signature; for public keys A and B, it produces a combined
+      public key:
+        X = H(L,A)*A + H(L,B)*B
+      with L = H(A,B)
+
+   See https://blockstream.com/2018/01/23/musig-key-aggregation-
+schnorr-signatures.html
+
+[1] https://scalingbitcoin.org/stanford2017/Day2/Using-the-
+Chain-for-what-Chains-are-Good-For.pdf
+    http://diyhpl.us/wiki/transcripts/scalingbitcoin/
+stanford-2017/using-the-chain-for-what-chains-are-good-for/
+
+[2] https://adiabat.github.io/dlc.pdf
+    https://diyhpl.us/wiki/transcripts/discreet-log-contracts/
+
+[3] Well, maybe you could request a zero-knowledge proof to ensure a new
+    revocation hash conforms to the standard for generating revocation
+    secrets without revealing the secret, and have the public key be
+    a(i)*G + r(B,i)*G without using the muSig construct, but that would
+    probably be obnoxious to have to generate every time you update
+    the channel state.
+
+[4] As an aside -- this could make it feasible and interesting to penalise
+    disappearance as well as misbehaviour. If you add a transaction
+    the B pre-signs, spending the commitment tx A holds, giving all the
+    channel funds to A but only after a very large CSV timeout, perhaps
+    `to_self_delay`*50, then the scenarios are:
+
+    If A is present:
+
+      - B publishes an old commitment: A immediately steals all the
+        funds if active or outsourced misbehaviour monitoring. Whoops!
+
+      - B publishes the current commitment: A publishes its distribution
+        transaction and collects its funds immediately, allowing B to
+        do likewise
+
+    If A has disappeared:
+
+      - B publises the current commitment and waits a modest amount
+        of time, publishes its distribution transaction claiming its
+        rightful funds, and allowing A to collect its funds if it ever
+        does reappear and still knows its secrets
+
+      - B publishes the current commitment, waits a fair while,
+        A reappears and publishes its distribution transactions, both
+        parties get their rightful funds
+
+      - B publishes the current commitment, waits an extended period
+        of time, and claims the entire channel's funds. If B is
+        particularly reputable, and A can prove its identity (but not
+        recover all its secrets) maybe B even refunds A some/all of its
+        rightful balance
+
+    Perhaps that provides too much of an incentive to try blocking
+    someone from having access to the blockchain though.
+
+_______________________________________________
+Lightning-dev mailing list
+Lightning-dev at lists.linuxfoundation.org
+https://lists.linuxfoundation.org/mailman/listinfo/lightning-dev
+
+
+
+-- 
+- Bryan
+http://heybryan.org/
+1 512 203 0507
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180220/1540dab1/attachment-0001.html>
