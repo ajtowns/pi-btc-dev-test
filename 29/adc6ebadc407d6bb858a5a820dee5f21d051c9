@@ -1,0 +1,94 @@
+From: praveen.baratam@gmail.com (Praveen Baratam)
+Date: Wed, 21 Feb 2018 08:06:31 +0530
+Subject: [bitcoin-dev] Multi CSV Transaction
+In-Reply-To: <CAD438Hvb2k4iCwJ91x5j+tgx-d_eLdBKvLWZfea87HPdKeYgAA@mail.gmail.com>
+References: <CAAQs3wucifHfjZ6VJJ2tWL-vzERzL=341aCL666MY+6_vKC-yQ@mail.gmail.com>
+	<CAD438Hvb2k4iCwJ91x5j+tgx-d_eLdBKvLWZfea87HPdKeYgAA@mail.gmail.com>
+Message-ID: <CAAQs3wvitCFZ41CD52N7r+AQA6G7MSPUtHhCCWN-3ZzQ8kxo0w@mail.gmail.com>
+
+Thank you Daniel!
+
+Your detailed explanation did clear things up :-)
+?
+
+On Wed, Feb 21, 2018 at 6:29 AM, Daniel Robinson <danrobinson010 at gmail.com>
+wrote:
+
+> Yes, although it's a functionality of Bitcoin Script generally, not OP_CSV
+> in particular. Bitcoin Script allows you to use nested IF statements, and
+> enforce whatever different conditions you want in each branch.
+>
+> Here's your contract in Ivy <https://ivy-lang.org/bitcoin/>:
+>
+> contract MultiCSV(
+>   bob: PublicKey,
+>   carol: PublicKey,
+>   bobDelay: Duration,
+>   carolDelay: Duration,
+>   val: Value
+> ) {
+>   clause bobSpend(sig: Signature) {
+>     verify checkSig(bob, sig)
+>     verify older(bobDelay)
+>     unlock val
+>   }
+>   clause carolSpend(sig: Signature) {
+>     verify checkSig(carol, sig)
+>     verify older(carolDelay)
+>     unlock val
+>   }
+>   clause bothSpend(bobSig: Signature, carolSig: Signature) {
+>     verify checkMultiSig([bob, carol], [bobSig, carolSig])
+>     unlock val
+>   }
+> }
+>
+> It compiles to the following Bitcoin Script:
+>
+> PUSH(carolKey) PUSH(bobKey) 2 PICK 2 EQUAL IF ROT DROP 0 4 ROLL 4 ROLL 2
+> 2ROT 2 CHECKMULTISIG ELSE ROT IF DROP CHECKSIGVERIFY PUSH(carolDelay)
+> CHECKSEQUENCEVERIFY DROP 1 ELSE NIP CHECKSIGVERIFY PUSH(bobDelay)
+> CHECKSEQUENCEVERIFY DROP 1 ENDIF ENDIF
+>
+> On Tue, Feb 20, 2018 at 5:32 PM Praveen Baratam via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> Hello Everybody,
+>>
+>> I need a little clarity about how OP_CHECKSEQUENCEVERIFY (CSV) works in
+>> transactions.
+>>
+>> Can I use multiple CSV end points as depicted in the figure below? I
+>> basically want to allow different conditions at different delays.
+>>
+>> [image: Multi CSV.png]
+>>
+>> I just want to know if OP_CHECKSEQUENCEVERIFY can be used to achieve the
+>> above.
+>>
+>> Thank you.
+>>
+>> Praveen
+>> ?
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>
+
+
+-- 
+Dr. Praveen Baratam
+
+about.me <http://about.me/praveen.baratam>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180221/6c93a074/attachment-0001.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Multi CSV.png
+Type: image/png
+Size: 119739 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180221/6c93a074/attachment-0001.png>
