@@ -1,0 +1,73 @@
+From: karl@dglab.com (=?UTF-8?B?44Ki44Or44Og44CA44Kr44O844Or44Oo44OP44Oz?=)
+Date: Wed, 28 Feb 2018 04:34:18 +0000
+Subject: [bitcoin-dev] Simple lock/unlock mechanism
+In-Reply-To: <CALJw2w4hKCAJY5U7Li82FbHHnXZKjcZ0Cw67V+=WxvknkY=Zxg@mail.gmail.com>
+References: <CALJw2w4hKCAJY5U7Li82FbHHnXZKjcZ0Cw67V+=WxvknkY=Zxg@mail.gmail.com>
+Message-ID: <CALJw2w7BQcMEHDa=mx6Gf_JQP603D_hpPq1YN5Em1cfsr4BDAw@mail.gmail.com>
+
+A few p.s.'es:
+
+1. Graftroot probably breaks this (someone could just sign the
+time-locked output with a script that has no time-lock).
+
+2. Address reuse of discarded privkeys would be a problem. A way to
+alleviate might be that freezing includes a send to a new address and
+the privkeys for that new one are discarded instead. One extra
+transaction, but reduces the risk of accidentally throwing away
+`donations4mybook` vanity keys.
+
+-Kalle.
+
+On Wed, Feb 28, 2018 at 3:47 AM, ?????????? <karl at dglab.com> wrote:
+> With the recent trend of physically robbing people for bitcoin (or
+> other cryptocurrencies), I thought it would be beneficial to introduce
+> a standard for locking up a portion of your bitcoin in a simple
+> 'gotta-wait-awhile' system.
+>
+> The idea is to simply create a transaction spending a set of UTXOs to
+> a P2SH address with an OP_CSV attached to it, and then throw away the
+> private keys.
+>
+> To spend the bitcoin, you would have to broadcast the transaction and
+> wait the given amount of time, then use the new txout.
+>
+> There are several ways to shoot yourself in the foot trying to do this
+> manually, but e.g. Bitcoin Core could handle this in a fairly
+> straightforward manner by introducing two new commands, which I call
+> freeze and unfreeze:
+>
+> bitcoin-cli freeze [amount OR array of txid+vout objects] [days, default 1]
+>
+> E.g. bitcoin-cli freeze 10 5
+> E.g. bitcoin-cli freeze ["abc123:1", "def346:0"] 3
+>
+> The unfreeze command would by default list all freezes:
+>
+> bitcoin-cli unfreeze
+> txid         days     status
+> bcd123   5           frozen
+> dca999   3           frozen
+>
+> including the txid would broadcast the unfreeze and status would
+> become 'thawing' until the amount becomes available:
+>
+> bitcoin-cli unfreeze bcd123
+>
+> bitcoin-cli unfreeze
+> txid         days     status
+> bcd123   5           thawing
+> dca999   3           frozen
+>
+> The benefit of this is that it becomes physically impossible for you
+> to spend the coins until you thaw them, and if this becomes standard
+> enough, it should disincentivize potential robbers as it would be
+> expected that you keep most of your assets locked up. They could of
+> course hold you hostage until the period is over, which may be worse,
+> but I think that kind of operation would be substantially more
+> difficult than a simply rob-and-run.
+>
+> The drawback is that you have to broadcast a transaction in order to
+> spend the content, and you cannot bump the fee so the transaction
+> could get stuck in a high-fee situation.
+>
+> -Kalle.
