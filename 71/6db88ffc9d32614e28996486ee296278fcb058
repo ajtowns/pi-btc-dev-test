@@ -1,0 +1,64 @@
+From: karl@dglab.com (=?UTF-8?B?44Ki44Or44Og44CA44Kr44O844Or44Oo44OP44Oz?=)
+Date: Thu, 1 Mar 2018 05:11:54 +0000
+Subject: [bitcoin-dev] Simple lock/unlock mechanism
+In-Reply-To: <20180228223044.GA31415@erisian.com.au>
+References: <CALJw2w4hKCAJY5U7Li82FbHHnXZKjcZ0Cw67V+=WxvknkY=Zxg@mail.gmail.com>
+	<CALJw2w7BQcMEHDa=mx6Gf_JQP603D_hpPq1YN5Em1cfsr4BDAw@mail.gmail.com>
+	<20180228223044.GA31415@erisian.com.au>
+Message-ID: <CALJw2w5TqjYVAEUVMa9BVaqscoqXAs3xD65vP3kMfxmPTqD9Eg@mail.gmail.com>
+
+On Wed, Feb 28, 2018 at 10:30 PM, Anthony Towns <aj at erisian.com.au> wrote:
+> On Wed, Feb 28, 2018 at 04:34:18AM +0000, ??? ?????? via bitcoin-dev wrote:
+>> 1. Graftroot probably breaks this (someone could just sign the
+>> time-locked output with a script that has no time-lock).
+>
+> Making the graftroot key be a 2-of-2 muSig with an independent third party
+> that commits to only signing CLTV scripts could avoid this. Making it
+> 3-of-3 or 5-of-5 could be even better if you can find multiple independent
+> services that will do it.
+
+That kind of defeats the purpose. If you go through the trouble of
+doing that, you can just do multisig and skip the freezing part
+entirely. A robber would have to get you and the cosigner to sign in
+both cases, and the CLTV could be overridden with graftroot.
+
+On Wed, Feb 28, 2018 at 11:36 PM, Adam Back <adam.back at gmail.com> wrote:
+> Coincidentally I had thought of something similar to what Kalle posted
+> about a kind of software only time-lock vault, and described the idea
+> to a few people off-list.  Re. Root incompatibility, if the key is
+> deleted (as it must be) then a delegated signature can not be made
+> that bypasses the CSV timeout restriction, so Root should not be
+> incompatible with this.  I think it would be disadvantageous to mark
+> keys as Rootable vs not in a sighash sense, because then that is
+> another privacy/fungibility loss eroding  the uniformity advantage of
+> Root when the delegate is not used.
+
+1. Create TX1=(tx, sig) from UTXO A to p2sh B which has a CSV
+timelock. Discard privkey A.
+2. After broadcasting TX1, you need privkey B to spend it.
+3. Use graftroot and privkey B with a script without timelock to spend B.
+
+The robber can simply force you to execute step 3, since you have the
+privkey to B.
+
+> One drawback is deleting keys may itself be a bit difficult to assure
+> with HD wallet seeds setup-time backup model.
+
+That's a good point. Even more of a reason to include as part of
+'freezing' a send to a new ephemeral key as 'initialization'. Sucks to
+pay triple fees though (freeze ephemeral + unfreeze + actual use).
+
+> As Anthony described I think, a simpler though less robust model would
+> be to have a third party refuse to co-sign until a pre-arranged time,
+> and this would have the advantage of not requiring two on-chain
+> transactions.
+
+I was hoping there was a way for a person to simply lock-up the major
+portion of their coins easily.
+
+As a sidenote: a security firm (e.g. one that comes to your house when
+the alarm goes off) could have a service where seeing an unfreeze
+transaction which you have told them about without you giving a heads
+up beforehand is equal to alarm going off.
+
+-Kalle.
