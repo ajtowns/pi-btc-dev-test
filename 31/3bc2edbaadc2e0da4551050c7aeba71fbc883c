@@ -1,0 +1,54 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Mon, 5 Mar 2018 10:28:20 -0500
+Subject: [bitcoin-dev] BIP 117 Feedback
+In-Reply-To: <87608btgyd.fsf@rustcorp.com.au>
+References: <87608btgyd.fsf@rustcorp.com.au>
+Message-ID: <9A9BCC75-F116-4382-B4DE-2E69E79C1DDB@xbt.hk>
+
+Altstack in v0 P2WSH should be left untouched. If anyone is already using altstack, BIP117 would very likely confiscate those UTXOs because the altstack would unlikely be executable.
+
+Even in v1 witness, I think altstack should remain be a temporary data storage.
+
+The ?(many scripts) concatinated together in reverse order to form a serialized script? in BIP117 is exactly the same security hole of Satoshi?s scriptSig + OP_CODESAPARATOR + scriptPubKey . That means it is possible to skip execution of scriptPubKey by using a scriptSig with an invalid push operation, so the whole concatenated script becomes a simple push.
+
+For SigOp limit, I think it?d become more and more difficult to maintain the current statical analyzability model as we try to introduce more functions. I think we should just migrate to a model of limiting sigop per weight, and count the actual number of sigop during execution.  ( https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-February/015764.html ) Actually, this approach is cheaper to analyse, as you only need to look at the witness size, and don?t need to look at the script at all.
+
+
+
+> On 9 Jan 2018, at 6:22 AM, Rusty Russell via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> I've just re-read BIP 117, and I'm concerned about its flexibility.  It
+> seems to be doing too much.
+> 
+> The use of altstack is awkward, and makes me query this entire approach.
+> I understand that CLEANSTACK painted us into a corner here :(
+> 
+> The simplest implementation of tail recursion would be a single blob: if
+> a single element is left on the altstack, pop and execute it.  That
+> seems trivial to specify.  The treatment of concatenation seems like
+> trying to run before we can walk.
+> 
+> Note that if we restrict this for a specific tx version, we can gain
+> experience first and get fancier later.
+> 
+> BIP 117 also drops SIGOP and opcode limits.  This requires more
+> justification, in particular, measurements and bounds on execution
+> times.  If this analysis has been done, I'm not aware of it.
+> 
+> We could restore statically analyzability by rules like so:
+> 1.  Only applied for tx version 3 segwit txs.
+> 2.  For version 3, top element of stack is counted for limits (perhaps
+>    with discount).
+> 3.  The blob popped off for tail recursion must be identical to that top
+>    element of the stack (ie. the one counted above).
+> 
+> Again, future tx versions could drop such restrictions.
+> 
+> Cheers,
+> Rusty.
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+
