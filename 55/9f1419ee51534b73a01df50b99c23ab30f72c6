@@ -1,0 +1,133 @@
+From: btcdrak@gmail.com (Btc Drak)
+Date: Wed, 7 Mar 2018 08:19:57 +0000
+Subject: [bitcoin-dev] BIP proposal: Reserved nversion bits in blockheader
+Message-ID: <CADJgMzv85-So7F1+nyDP_xA2GH5erodA21PM-uAJw8P6_ix6hA@mail.gmail.com>
+
+Hi,
+
+The following proposal reduces the number of version-bits that can be used
+for parallel soft-fork signalling, reserving 16 bits for non-specific use.
+This would reduce the number of parallel soft-fork activations using
+versionbits to from 29 to 13 and prevent node software from emitting false
+warnings about unknown signalling bits under the versionbits signalling
+system (BIP8/9). I chose the upper bits of the nVersion, because looking at
+the versionbits implementation in the most widely deployed node software,
+it is easier to implement than say annexing the lower 2 bytes of the field.
+
+The scope of the BIP is deliberately limited to reserving bits for general
+use without specifying specific uses for each bit, although there have
+previously been various discussions of some use-cases of nVersion bits
+including version-rolling AsicBoost[1], and nonce rolling to reduce CPU
+load on mining controllers because ntime-rolling can only be done for short
+periods otherwise it could have negative side effects distorting time.
+However, specific use cases are not important for this BIP.
+
+I am reviving discussion on this topic now, specifically, because the new
+DragonMint miner uses version-rolling AsicBoost on mainnet[2]. It is
+important to bring up so node software can adapt the versionbits warning
+system to prevent false positives. This BIP has the added advantage that
+when a new use for bits is found, mining manufacturers can play in the
+designated area without causing disruption or inconvenience (as
+unfortuntely, the use of version-rolling will cause until BIP8/9 warning
+systems are adapted). I appologise for the inconvenience in advance, but
+this is the unfortunate result of restraints while negotiating to get the
+patent opened[3] and licensed defensively[4] in the first place.
+
+I believe there was a similar proposal[5] made some years ago, before the
+advent of BIP9. This proposal differs in that it's primary purpose is to
+remove bits from the versionbits soft-fork activation system and earmark 16
+bits for general use without allocating fixed uses for each bit. The BIP
+cites a couple of usecases for good measure, but they are just
+informational examples, not part of a specification laid down. For this
+reason, there no is mention of the version-rolling Stratum extension[6]
+specifics within the BIP text other than a reference to the specification
+itself.
+
+Refs:
+
+[1] https://arxiv.org/pdf/1604.00575.pdf
+[2]
+https://halongmining.com/blog/2018/03/07/dragonmint-btc-miner-uses-version-rolling-asicboost/
+[3]
+https://www.asicboost.com/single-post/2018/03/01/opening-asicboost-for-defensive-use/
+[4] https://blockchaindpl.org/
+[5] https://github.com/BlockheaderNonce2/bitcoin/wiki
+[6] http://stratumprotocol.org/stratum-extensions
+
+<pre>
+  BIP: ?
+  Title: Reserved nversion bits in blockheader
+  Author: BtcDrak <btcdrak at gmail.com>
+  Comments-Summary: No comments yet.
+  Comments-URI: https://github.com/bitcoin/bips/wiki/Comments:BIP-????
+  Status: Draft
+  Type: Informational
+  Created: 2018-03-01
+  License: BSD-3-Clause
+           CC0-1.0
+</pre>
+
+==Abstract==
+
+This BIP reserves 16 bits of the block header nVersion field for
+general purpose use and removes their meaning for the purpose of
+version bits soft-fork signalling.
+
+==Motivation==
+
+There are a variety of things that miners may desire to use some of
+the nVersion field bits for. However, due to their use to coordinate
+miner activated soft-forks, full node software will generate false
+warnings about unknown soft forks if those bits are used for non soft
+fork signalling purposes. By reserving bits from the nVersion field
+for general use, node software can be updated to ignore those bits and
+therefore will not emit false warnings. Reserving 16 bits for general
+use leaves enough for 13 parallel soft-forks using version bits.
+
+==Example Uses==
+
+The following are example cases that would benefit from using some of
+the bits from the nVersion field. This list is not exhaustive.
+
+Bitcoin mining hardware currently can exhaust the 32 bit nonce field
+in less than 200ms requiring the controller to distribute new jobs
+very frequently to each mining chip consuming a lot of bandwidth and
+CPU time. This can be greatly reduced by rolling more bits. Rolling
+too many bits from nTime is not ideal because it may distort the
+timestamps over a longer period.
+
+Version-rolling AsicBoost requires two bits from the nVersion field to
+calculate 4-way collisions. Any two bits can be used and mining
+equipment can negotiate which bits are to be used with mining pools
+via the Stratum "version-rolling" extension.
+
+==Specification==
+
+Sixteen bits from the block header nVersion field, starting from 13
+and ending at 28 inclusive (0x1fffe000), are reserved for general use
+and removed from BIP8 and BIP9 specifications. A mask of 0xe0001fff
+should be applied to nVersion bits so bits 13-28 inclusive will be
+ignored for soft-fork signalling and unknown soft-fork warnings.
+
+This specification does not reserve specific bits for specific purposes.
+
+==Backwards Compatibility==
+
+This proposal is backwards compatible, and does not require a soft
+fork to implement.
+
+==References==
+
+[[bip-0008.mediawiki|BIP8]]
+[[bip-0009.mediawiki|BIP9]]
+[https://arxiv.org/pdf/1604.00575.pdf AsicBoost white paper]
+[https://github.com/BlockheaderNonce2/bitcoin/wiki nNonce2 proposal]
+[http://stratumprotocol.org/ Stratum protocol extension for version-rolling]
+
+==Copyright==
+
+This document is dual licensed as BSD 3-clause, and Creative Commons
+CC0 1.0 Universal.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180307/363336e6/attachment-0001.html>
