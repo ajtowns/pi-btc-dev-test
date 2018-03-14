@@ -1,0 +1,169 @@
+From: pete@petertodd.org (Peter Todd)
+Date: Tue, 13 Mar 2018 20:37:52 -0400
+Subject: [bitcoin-dev] Data structure for efficient proofs of
+	non-inclusion
+In-Reply-To: <CAD438Ht8ewJDyGbcqjkZdRWn6Yy2sRH9H_3jg2gWSgoJkrAHVA@mail.gmail.com>
+References: <CAD438Ht8ewJDyGbcqjkZdRWn6Yy2sRH9H_3jg2gWSgoJkrAHVA@mail.gmail.com>
+Message-ID: <20180314003752.GA3853@fedora-23-dvm>
+
+On Wed, Feb 14, 2018 at 09:09:18PM +0000, Daniel Robinson wrote:
+> Hi Peter,
+> 
+> Thanks for the mind-expanding presentation on client-side validation at
+> Chaincode last week.
+> 
+
+CCing bitcoin-dev because this is of general interest...
+
+For background, Daniel is asking about my client-side verified single-use-seals
+via proof-of-publication model, previously published here?, which creates an
+anti-double-spend primitive via a proof-of-publication, and many
+proofs-of-non-publication.
+
+tl;dr: A seal is closed by publishing a valid signature for the seal to a
+ledger. The first signature is the valid one, so if Alice want to convince Bob
+you she closed a seal correctly (e.g. to pay Bob), she has to supply Bob with a
+proof that the signature _was_ published - a proof-of-publication - as well as
+proof that prior to being published, no valid signature was previously
+published - a proof-of-non-publication.
+
+It's the proofs-of-non-publication that take up the most space.
+
+> I'm trying to sketch out a system that would use some of those ideas, and
+> am looking at what Merkle-tree-like structure for the "transaction root"
+> would best allow efficient proofs of non-inclusion in a block. The simplest
+> solution seems to just be a Merkle tree with the transactions sorted by
+> public key, but it seems like having intermediate information about ranges
+> higher up in the branches might help make non-inclusion proofs more
+> compact. Other solutions I've seen like Patricia trees and sparse Merkle
+> trees seem to be optimizing for easy recomputation on update, which doesn't
+> seem to be necessary for at least this version of the idea.
+>
+> Are there any verifiable data structures you've found that improve on
+> sorted Merkle trees with respect to proofs of non-inclusion?
+
+So remember that the system I proposed? used sorted merkle trees only within a
+block; for blocks themselves you mostly can't do any better than a linear list.
+Though I think there may be some exceptions which deserves another email. :)
+
+As you know, asymptotically merkle trees have excellent log2(n) proof size
+growth. But as you correctly suggest, their high overhead in the small-n case
+suggests that we can do better. In fact, Bram Cohen previously proposed? a "TXO
+Bitfield" for the somewhat similar use-case of committing to the spentness of
+outputs efficiently.
+
+
+# Naive Analysis
+
+So suppose at an intermediate node you commit to a simple bitfield where each
+possible value under that node is represented by a single bit. Thus for m
+values under that point in the tree, the marginal size of the non-inclusion
+proof is m bits. By comparison a naive merkle tree built from a hash function
+with k bits takes approximately k*log2(m) bits to prove non-inclusion. For an
+rough, unsophisticated, analysis just solve:
+
+    m = k * log2(m)
+
+Apparently you can do this analytically, but as this analysis is only
+approximate a much better idea is to just plot it on a graph: for k=256bits the
+crossover point is roughly m=3000.
+
+
+# Merkle Tree Structure
+
+But what is the bitfield competing against exactly? Just saying "merkle tree"
+isn't very precise. Most designs along these lines use something like a
+merkelized patricia tree, where each bit of the key is compared individually
+and each node is a two-way (left vs right) branch. Better yet is the radix
+tree, where each inner node that has only one child is merged with its parent.
+
+Regardless, the logic of these kinds of trees can be thought of a recursive
+query, where each type of node has a `get(key)` operation that returns either a
+value or None.
+
+So let's define a new type of inner node that commits to a
+merkle-mountain-range (MMR) tip and a 2^j element bitfield. `get(key)` is then
+this pseudo-rust:
+
+    fn get(self, prefix) -> Option<Value> {
+        let idx = Int::from(prefix[0 .. j]);
+        if self.bitfield[idx] {
+            let mmr_idx = node.bitfield[0 .. idx].count_ones() - 1;
+            Some(node.mmr[mmr_idx].get(prefix)
+        } else {
+            None
+        }
+    }
+
+The hard part with this is choosing when to use a bitfield-based inner node
+instead of a standard one. Assuming keys are randomly distributed, it makes
+sense to do so when the bitfield table is partially empty, but how empty? It's
+a trade-off between multiple parameters, including the size of
+proofs-of-publication - although the latter may be OK to ignore as the number
+of proof-of-non-publication needed should usually greatly outnumber
+proofs-of-publication.
+
+Question: is it OK for this choice to not be part of the deterministic
+consensus? Is that even possible to enforce?
+
+
+# Security
+
+For a proof-of-publication to be secure, it must ensure that any attempt to
+construct a false proof-of-non-publication will fail. In the pruning model,
+that means that a proof-of-publication is simply the data necessary for the
+proof-of-non-publication verifier to return false. Concretely:
+
+    fn verify_pop(tree, key) -> bool {
+        !verify_non_pop(tree, key)
+    }
+
+However note the subtle difference in trust model with respect to censorship
+between the following two possible non-pop verifiers:
+
+    fn verify_non_pop(tree, key) -> bool {
+        !tree.exists(key)
+    }
+
+    fn verify_non_pop(tree, key) -> bool {
+        match tree.get(key) {
+            Some(value) => !verify_signature(value),
+            None => true,
+        }
+    }
+
+
+## False Positives
+
+Note how if we use the second `verify_non_pop()` function shown above we can
+also use probabilistic data structures such as bloom filters in place of a
+bitfield. This works because a false-positive is acceptable, as it will still
+fail signature verification (or sooner if the key is committed in the leaf
+node).
+
+For example, it's plausible that a compressed bloom filter would be more space
+efficient than a bitfield, as the multiple hashing steps might use the bits in
+the filter more efficiently. Investigating this further would be a good
+research topic.
+
+
+# References
+
+1) "[bitcoin-dev] Scalable Semi-Trustless Asset Transfer via Single-Use-Seals and Proof-of-Publication",
+   Peter Todd, Dec 5th 2017, https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-December/015350.html
+
+2) "[bitcoin-dev] The TXO bitfield",
+   Bram Cohen, Mar 31st 2017, https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-March/013928.html
+
+3) "Bloom filters",
+    Wikipedia, Jan 27th 2018, https://en.wikipedia.org/w/index.php?title=Bloom_filter&oldid=822632093
+
+-- 
+https://petertodd.org 'peter'[:-1]@petertodd.org
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 614 bytes
+Desc: Digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180313/7f08d01f/attachment-0001.sig>
