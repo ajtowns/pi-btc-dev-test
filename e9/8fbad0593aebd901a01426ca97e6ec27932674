@@ -1,0 +1,110 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Wed, 21 Mar 2018 21:21:19 +1000
+Subject: [bitcoin-dev] Soft-forks and schnorr signature aggregation
+In-Reply-To: <d_OOMciZ--WI6X8V1PWVCcPGyEFo7AWcNcXls8uUK8itK8pkoUJLRsekBYUdXTRYg_pOinoBQliMFKfzWW48kd3isE6DbkIVoI5frIxOBFo=@protonmail.com>
+References: <20180321040618.GA4494@erisian.com.au>
+	<d_OOMciZ--WI6X8V1PWVCcPGyEFo7AWcNcXls8uUK8itK8pkoUJLRsekBYUdXTRYg_pOinoBQliMFKfzWW48kd3isE6DbkIVoI5frIxOBFo=@protonmail.com>
+Message-ID: <20180321112119.GA6588@erisian.com.au>
+
+On Wed, Mar 21, 2018 at 03:53:59AM -0400, ZmnSCPxj wrote:
+> Good morning aj,
+
+Good evening Zeeman!
+
+[pulled from the bottom of your mail]
+> This way, rather than gathering signatures, we gather public keys for aggregate signature checking.  
+
+Sorry, I probably didn't explain it well (or at all): during the script,
+you're collecting public keys and messages (ie, BIP 143 style digests)
+which then go into the signing/verification algorithm to produce/check
+the signature.
+
+You do need to gather signatures from each private key holder when
+producing the aggregate signature, but that happens at the wallet/p2p
+level, rather than the consensus level.
+
+> I am probably wrong, but could solution 2 be simplified by using the below opcodes for aggregated signatures?
+> 
+> OP_ADD_AGG_PUBKEY - Adds a public key for verification of an aggregated signature.
+> OP_CHECK_AGG_SIG[VERIFY] - Check that the gathered public keys matches the aggregated signature.
+
+Checking the gathered public keys match the aggregated signature is
+something that only happens for the entire transaction as a whole, so
+you don't need an opcode for it in the scripts, since they're per-input.
+
+Otherwise, I think that's pretty similar to what I was already saying;
+having:
+
+   SIGHASH_ALL|BUCKET_1 pubkey OP_CHECKSIG
+
+would be adding "pubkey" and a message hash calculated via the SIGHASH_ALL
+hashing rules to the list of things that the signature for bucket 1 verifies.
+
+FWIW, the Bellare-Neven verification algorithm looks something like:
+
+   s*G = R + K   (s,R is the signature)
+   K = sum( H(R, L, i, m) * X_i )   for i corresponding to each pubkey X_i
+   L = the concatenation of all the pubkeys, X_0..X_n
+   m = the concatenation of all the message hashes, m_0..m_n
+
+So the way I look at it is each input puts a public key and a message hash
+(X_i, m_i) into the bucket via a CHECKSIG operation (or similar), and once
+you're done, you look into the bucket and there's just a single signature
+(s,R) left to verify. You can't start verifying any of it until you've
+looked through all the scripts because you need to know L and m before
+you can do anything, and both of those require info from every part of
+the aggregation.
+
+[0] [1]
+
+> The effect is that in the OP_CHECKCOVENANT case, pre-softfork nodes will not actually do any checking.
+
+Pre-softfork nodes not doing any checking doesn't work with cross-input
+signature aggregation as far as I can see. If it did, all you would have
+to do to steal people's funds is mine a non-standard transaction:
+
+  inputs:
+   my-millions:
+     pay-to-pubkey pubkey1
+     witness=SIGHASH_ALL|BUCKET_1
+   your-two-cents:
+     pay-to-script-hash script=[1 OP_RETURN_TRUE pubkey2 CHECKSIG]
+     witness=SIGHASH_ALL|BUCKET_1
+
+   bucket1: 64-random-bytes
+  output:
+   all-the-money: you
+
+Because there's no actual soft-fork at this point every node is an "old"
+node, so they all see the OP_RETURN_TRUE and stop validating signatures,
+accepting the transaction as valid, and giving you all my money, despite
+you being unable to actually produce my signature.
+
+Make sense?
+
+Cheers,
+aj
+
+[0] For completeness: constructing the signature for Bellare-Neven
+    requires two communication phases amongst the signers, and looks
+    roughly like:
+
+     1. each party generates a random variable r_i, and sharing the
+        corresponding curve point R_i=r_i*G and their sighash choice
+        (ie, m_i) with the other signers.
+
+     2. this allows each party to calculate R=sum(R_i) and m,
+        and hence H(R,L,i,m), at which point each party calculates a
+        partial signature using their respective private key, x_i:
+
+          s_i = r_i + H(R,L,i,m)*x_i
+
+        all these s_i values are then communicated to each signer.
+
+     3. these combine to give the final signature (s,R),
+        with s=sum(s_i), allowing each signer to verify that the signing
+        protocol completed successfully, and any signer can broadcast
+        the transaction to the blockchain
+
+[1] muSig differs in the details, but is basically the same.
+
