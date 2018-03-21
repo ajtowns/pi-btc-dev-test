@@ -1,0 +1,737 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Wed, 21 Mar 2018 03:53:59 -0400
+Subject: [bitcoin-dev] Soft-forks and schnorr signature aggregation
+In-Reply-To: <20180321040618.GA4494@erisian.com.au>
+References: <20180321040618.GA4494@erisian.com.au>
+Message-ID: <d_OOMciZ--WI6X8V1PWVCcPGyEFo7AWcNcXls8uUK8itK8pkoUJLRsekBYUdXTRYg_pOinoBQliMFKfzWW48kd3isE6DbkIVoI5frIxOBFo=@protonmail.com>
+
+Good morning aj,
+
+I am probably wrong, but could solution 2 be simplified by using the below opcodes for aggregated signatures?
+
+OP_ADD_AGG_PUBKEY - Adds a public key for verification of an aggregated signature.
+
+OP_CHECK_AGG_SIG[VERIFY] - Check that the gathered public keys matches the aggregated signature.
+
+Then:
+
+ pubkey1 OP_ADD_AGG_PUBKEY
+ OP_IF
+   pubkey2 OP_ADD_AGG_PUBKEY
+ OP_ELSE
+   cond OP_CHECKCOVENANT
+ OP_ENDIF
+ OP_CHECK_AGG_SIG
+
+(omitting the existence of buckets)
+
+I imagine that aggregated signatures, being linear, would allow pubkey to be aggregated also by adding the pubkey points (but note that I am not a mathematician, I only parrot what better mathematicians say) so OP_ADD_AGG_PUBKEY would not require storing all public keys, just adding them linearly.
+
+The effect is that in the OP_CHECKCOVENANT case, pre-softfork nodes will not actually do any checking.
+
+OP_CHECK_AGG_SIG might accept the signature on the stack (combined signature of pubkey1 and pubkey2 and from other inputs), or the bucket the signature is stored in.
+
+We might even consider using the altstack: no more OP_ADD_AGG_PUBKEY (one less opcode to reserve!), just push pubkeys on the altstack, and OP_CHECK_AGG_SIG would take the entire altstack as all the public keys to be used in aggregated signature checking.
+
+This way, rather than gathering signatures, we gather public keys for aggregate signature checking.  OP_RETURN_TRUE interacts with that by not performing aggregate signature checking at all if we encounter OP_RETURN_TRUE first (which makes sense: old nodes have no idea what OP_RETURN_TRUE is really doing, and would fail to understand all its details).
+
+
+I am very probably wrong but am willing to learn how to break the above, though.  I am probably making a mistake somewhere.
+
+Regards,
+ZmnSCPxj
+
+?Sent with ProtonMail Secure Email.?
+
+??????? Original Message ???????
+
+On March 21, 2018 12:06 PM, Anthony Towns via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Hello world,
+> 
+> There was a lot of discussion on Schnorr sigs and key and signature
+> 
+> aggregation at the recent core-dev-tech meeting (one relevant conversation
+> 
+> is transcribed at \[0\]).
+> 
+> Quick summary, with more background detail in the corresponding footnotes:
+> 
+> signature aggregation is awesome \[1\], and the possibility of soft-forking
+> 
+> in new opcodes via OP\_RETURN\_VALID opcodes (instead of OP_NOP) is also
+> 
+> awesome \[2\].
+> 
+> Unfortunately doing both of these together may turn out to be awful.
+> 
+> RETURN_VALID and Signature Aggregation
+> 
+> 
+> -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+> 
+> Bumping segwit script versions and redefining OP_NOP opcodes are
+> 
+> fairly straightforward to deal with even with signature aggregation,
+> 
+> the straightforward implementation of both combined is still a soft-fork.
+> 
+> RETURN_VALID, unfortunately, has a serious potential pitfall: any
+> 
+> aggregatable signature operations that occur after it have to go into
+> 
+> separate buckets.
+> 
+> As an example of why this is the case, imagine introducing a covenant
+> 
+> opcode that pulls a potentially complicated condition from the stack
+> 
+> (perhaps, "an output pays at least 50000 satoshi to address xyzzy"),
+> 
+> checks the condition against the transaction, and then pushes 1 (or 0)
+> 
+> back onto the stack indicating compliance with the covenant (or not).
+> 
+> You might then write a script allowing a single person to spend the coins
+> 
+> if they comply with the covenant, and allow breaking the covenant with
+> 
+> someone else's sign-off in addition. You could write this as:
+> 
+> pubkey1 CHECKSIGVERIFY
+> 
+> cond CHECKCOVENANT IFDUP NOTIF pubkey2 CHECKSIG ENDIF
+> 
+> If you pass the covenant, you supply "SIGHASHALL|BUCKET_1" and aggregate
+> 
+> the signature for pubkey1 into bucket1 and you're set; otherwise you supply
+> 
+> "SIGHASHALL|BUCKET\_1 SIGHASHALL|BUCKET\_1" and aggregate signatures for both
+> 
+> pubkey1 and pubkey2 into bucket1 and you're set. Great!
+> 
+> But this isn't a soft-fork: old nodes would see this script as:
+> 
+> pubkey1 CHECKSIGVERIFY
+> 
+> cond RETURN_VALID IFDUP NOTIF pubkey2 CHECKSIG ENDIF
+> 
+> which it would just interpret as:
+> 
+> pubkey1 CHECKSIGVERIFY cond RETURN_VALID
+> 
+> which is fine if the covenant was passing; but no good if the covenant
+> 
+> didn't pass -- they'd be expecting the aggregted sig to just be for
+> 
+> pubkey1 when it's actually pubkey1+pubkey2, so old nodes would fail the
+> 
+> tx and new nodes would accept it, making it a hard fork.
+> 
+> Solution 0a / 0b
+> 
+> 
+> ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+> 
+> There are two obvious solutions here:
+> 
+> 0a) Just be very careful to ensure any aggregated signatures that
+> 
+> are conditional on an redefined RETURN_VALID opcode go into later
+> 
+> buckets, but be careful about having separate sets of buckets every
+> 
+> time a soft-fork introduces a new redefined opcode. Probably very
+> 
+> complicated to implement correctly, and essentially doubles the
+> 
+> number of buckets you have to potentially deal with every time you
+> 
+> soft fork in a new opcode.
+> 
+> 0b) Alternatively, forget about the hope that RETURN_VALID
+> 
+> opcodes could be converted to anything, and just reserve OP_NOP
+> 
+> opcodes and convert them to CHECK\_foo\_VERIFY opcodes just as we
+> 
+> have been doing, and when we can't do that bump the segwit witness
+> 
+> version for a whole new version of script. Or in twitter speak:
+> 
+> "non-verify upgrades should be done with new script versions" \[3\]
+> 
+> I think with a little care we can actually salvage RETURN_VALID though!
+> 
+> Solution 1
+> 
+> 
+> ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+> 
+> You don't actually have to write your scripts in ways that can cause
+> 
+> this problem, as long as you're careful. In particular, the problem only
+> 
+> occurs if you do aggregatable CHECKSIG operations after "RETURN_VALID"
+> 
+> \-\- if you do all the CHECKSIGs first, then all nodes will be checking
+> 
+> for the same signatures, and there's no problem. So you could rewrite
+> 
+> the script above as:
+> 
+> pubkey1 CHECKSIGVERIFY
+> 
+> IF pubkey2 CHECKSIG ENDIF
+> 
+> cond CHECKCOVENANT OR
+> 
+> which is redeemable either by:
+> 
+> sig1 0 \[and covenant is met\]
+> 
+> sig1 1 sig2 \[covenant is not checked\]
+> 
+> The witness in this case is essentially committing to the execution path
+> 
+> that would have been taken in the first script by a fully validating node,
+> 
+> then the new script checks all the signatures, and then validates that the
+> 
+> committed execution path was in fact the one that was meant to be taken.
+> 
+> If people are clever enough to write scripts this way, I believe you
+> 
+> can make RETURN_VALID soft-fork safe simply by having every soft-forked
+> 
+> RETURN_VALID operation set a state flag that makes every subsequent
+> 
+> CHECKSIG operation require a non-aggregated sig.
+> 
+> The drawback of this approach is that if the script is complicated
+> 
+> (eg it has multiple IF conditions, some of which are nested), it may be
+> 
+> difficult to write the script to ensure the signatures are checked in the
+> 
+> same combination as the later logic actually requires -- you might have
+> 
+> to store the flag indicating whether you checked particular signatures
+> 
+> on the altstack, or use DUP and PICK/ROLL to organise it on the stack.
+> 
+> Solution 2
+> 
+> 
+> ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+> 
+> We could make that simpler for script authors by making dedicated opcodes
+> 
+> to help with "do all the signatures first" and "check the committed
+> 
+> execution path against reality" steps. I think a reasonable approach
+> 
+> would be something like:
+> 
+> 0b01 pubkey2 pubkey1 2 CHECK\_AGGSIG\_VERIFY
+> 
+> cond CHECKCOVENANT 0b10 CHECK\_AGG\_SIGNERS OR
+> 
+> which is redeemed either by:
+> 
+> sighash1 0 \[and passing the covenant cond\]
+> 
+> sighash2 sighash1 0b10
+> 
+> (I'm using the notation 0b10110 to express numbers as binary bitfields;
+> 
+> 0b10110 = 22 eg)
+> 
+> That is, two new opcodes, namely:
+> 
+> CHECK\_AGGSIG\_VERIFY which takes from the stack:
+> 
+> \- N: a count of pubkeys
+> 
+> \- pubkey1..pubkeyN: N pubkeys
+> 
+> \- REQ: a bitmask of which pubkeys are required to sign
+> 
+> \- OPT: a bitmask of which optional pubkeys have signed
+> 
+> \- sighashes: M sighashes for the pubkeys corresponding to the set
+> 
+> bits of (REQ|OPT)
+> 
+> CHECK\_AGGSIG\_VERIFY fails if:
+> 
+> \- the stack doesn't have enough elements
+> 
+> \- the aggregated signature doesn't pass
+> 
+> \- a redefined RETURN_VALID opcode has already been seen
+> 
+> \- a previous CHECK\_AGGSIG\_VERIFY has already been seen in this script
+> 
+> REQ|OPT is stored as state
+> 
+> CHECK\_AGG\_SIGNERS takes from the stack:
+> 
+> \- B: a bitmask of which pubkeys are being queried
+> 
+> and it pushes to the stack 1 or 0 based on:
+> 
+> \- (REQ|OPT) & B == B ? 1 : 0
+> 
+> A possible way to make sure the "no agg sigs after an upgraded
+> 
+> RETURN\_VALID" behaviour works right might be to have "RETURN\_VALID"
+> 
+> fail if CHECK\_AGGSIG\_VERIFY hasn't already been seen. That way once you
+> 
+> redefine RETURN\_VALID in a soft-fork, if you have a CHECK\_AGGSIG_VERIFY
+> 
+> after a RETURN_VALID you've either already failed (because the
+> 
+> RETURN\_VALID wasn't after a CHECK\_AGGSIG_VERIFY), or you automatically
+> 
+> fail (because you've already seen a CHECK\_AGGSIG\_VERIFY).
+> 
+> There would be no need to make CHECKSIG, CHECKSIGVERIFY, CHECKMULTISIG
+> 
+> and CHECKMULTISIGVERIFY do signature aggregation in this case. They could
+> 
+> be left around to allow script authors to force non-aggregate signatures
+> 
+> or could be dropped entirely, I think.
+> 
+> This construct would let you do M-of-N aggregated multisig in a fairly
+> 
+> straightforward manner without needing an explicit opcode, eg:
+> 
+> 0 pubkey5 pubkey4 pubkey3 pubkey2 pubkey1 5 CHECK\_AGGSIG\_VERIFY
+> 
+> 0b10000 CHECK\_AGG\_SIGNERS
+> 
+> 0b01000 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00100 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00010 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00001 CHECK\_AGG\_SIGNERS ADD
+> 
+> 3 NUMEQUAL
+> 
+> redeemable by, eg:
+> 
+> 0b10110 sighash5 sighash3 sighash2
+> 
+> and a single aggregate signature by the private keys corresponding to
+> 
+> pubkey{2,3,5}.
+> 
+> Of course, another way of getting M-of-N aggregated multisig is via MAST,
+> 
+> which brings us to another approach...
+> 
+> Solution 3
+> 
+> 
+> ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+> 
+> All we're doing above is committing to an execution path and validating
+> 
+> signatures for that path before checking the path was the right one. But
+> 
+> MAST is a great way of committing to an execution path, so another
+> 
+> approach would just be "don't have alternative execution paths, just have
+> 
+> MAST and CHECK/VERIFY codes". Taking the example I've been running with,
+> 
+> that would be:
+> 
+> branch1: 2 pubkey2 pubkey1 2 CHECKMULTISIG
+> 
+> branch2: pubkey1 CHECKSIGVERIFY cond CHECKCOVENANT
+> 
+> So long as MAST is already supported when signature aggregation becomes
+> 
+> possible, that works fine. The drawback is MAST can end up with lots of
+> 
+> branches, eg the 3-of-5 multisig check has 10 branches:
+> 
+> branch1: 3 pubkey3 pubkey2 pubkey1 3 CHECKMULTISIG
+> 
+> branch2: 3 pubkey4 pubkey2 pubkey1 3 CHECKMULTISIG
+> 
+> branch3: 3 pubkey5 pubkey2 pubkey1 3 CHECKMULTISIG
+> 
+> branch4: 3 pubkey4 pubkey3 pubkey1 3 CHECKMULTISIG
+> 
+> branch5: 3 pubkey5 pubkey3 pubkey1 3 CHECKMULTISIG
+> 
+> branch6: 3 pubkey5 pubkey4 pubkey1 3 CHECKMULTISIG
+> 
+> branch7: 3 pubkey4 pubkey3 pubkey2 3 CHECKMULTISIG
+> 
+> branch8: 3 pubkey5 pubkey3 pubkey2 3 CHECKMULTISIG
+> 
+> branch9: 3 pubkey5 pubkey4 pubkey2 3 CHECKMULTISIG
+> 
+> branch10: 3 pubkey5 pubkey4 pubkey3 3 CHECKMULTISIG
+> 
+> while if you want, say, 6-of-11 multisig you get 462 branches, versus
+> 
+> just:
+> 
+> 0 pubkey11 pubkey10 pubkey9 pubkey8 pubkey7 pubkey6
+> 
+> pubkey5 pubkey4 pubkey3 pubkey2 pubkey1 11 CHECK\_AGGSIG\_VERIFY
+> 
+> 0b10000000000 CHECK\_AGG\_SIGNERS
+> 
+> 0b01000000000 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00100000000 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00010000000 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00001000000 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00000100000 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00000010000 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00000001000 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00000000100 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00000000010 CHECK\_AGG\_SIGNERS ADD
+> 
+> 0b00000000001 CHECK\_AGG\_SIGNERS ADD
+> 
+> 6 NUMEQUAL
+> 
+> Provided doing lots of hashes to calculate merkle paths is cheaper than
+> 
+> publishing to the blockchain, MAST will likely still be better though:
+> 
+> you'd be doing 6 pubkeys and 9 steps in the merkle path for about 1532bytes in MAST, versus showing off all 11 pubkeys above for 11(32+4)
+> 
+> bytes, and the above is roughly the worst case for m-of-11 multisig
+> 
+> via MAST.
+> 
+> If everyone's happy to use MAST, then it could be the only solution:
+> 
+> drop OP_IF and friends, and require all the CHECKSIG ops to occur before
+> 
+> any RETURN_VALID ops: since there's no branching, that's just a matter of
+> 
+> reordering your script a bit and should be pretty easy for script authors.
+> 
+> I think there's a couple of drawbacks to this approach that it shouldn't
+> 
+> be the only solution:
+> 
+> a) we don't have a lot of experience with using MAST
+> 
+> b) MAST is a bit more complicated than just dealing with branches in
+> 
+> a script (probably solvable once (a) is no longer the case)
+> 
+> c) some useful scripts might be a bit cheaper expressed with
+> 
+> of branches and be better expressed without MAST
+> 
+> If other approaches than MAST are still desirable, then MAST works fine
+> 
+> in combination with either of the earlier solutions as far as I can see.
+> 
+> Summary
+> 
+> 
+> ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+> 
+> I think something along the lines of solution 2 makes the most sense,
+> 
+> so I think a good approach for aggregate signatures is:
+> 
+> -   introduce a new segwit witness version, which I'll call v2 (but which
+>     
+>     might actually be v1 or v3 etc, of course)
+>     
+> -   v2 must support Schnorr signature verification.
+> -   v2 should have a "pay to public key (hash?)" witness format. direct
+>     
+>     signatures of the transaction via the corresponding private key should
+>     
+>     be aggregatable.
+>     
+> -   v2 should have a "pay to script hash" witness format: probably via
+>     
+>     taproot+MAST, possibly via graftroot as well
+>     
+> -   v2 should support MAST scripts: again, probably via taproot+MAST
+> -   v2 taproot shouldn't have a separate script version (ie,
+>     
+>     the pubkey shouldn't be P+H(P,version,scriptroot)), as signatures
+>     
+>     for later-versioned scripts couldn't be aggregated, so there's no
+>     
+>     advantage over bumping the segwit witness version
+>     
+> -   v2 scripts should have a CHECK\_AGG\_SIG_VERIFY opcode roughly as
+>     
+>     described above for aggregating signatures, along with CHECK\_AGG\_SIGNERS
+>     
+> -   CHECK{MULTI,}SIG{VERIFY,} in v2 scripts shouldn't support aggregated
+>     
+>     signatures, and possibly shouldn't be present at all?
+>     
+> -   v2 signers should be able to specify an aggregation bucket for each
+>     
+>     signature, perhaps in the range 0-7 or so?
+>     
+> -   v2 scripts should have a bunch of RETURN_VALID opcodes for future
+>     
+>     soft-forks, constrained so that CHECK\_AGG\_SIG_VERIFY doesn't appear
+>     
+>     after them. the currently disabled opcodes should be redefined as
+>     
+>     RETURN_VALID eg.
+>     
+>     For soft-fork upgrades from that point:
+>     
+> -   introducing new opcodes just means redefining an RETURN_VALID opcode
+> -   introducing new sighash versions requires bumping the segwit witness
+>     
+>     version (to v3, etc)
+>     
+> -   if non-interactive half-signature aggregation isn't ready to go, it
+>     
+>     would likewise need a bump in the segwit witness version when
+>     
+>     introduced
+>     
+>     I think it's worth considering bundling a hard-fork upgrade something
+>     
+>     like:
+>     
+> -   ~5 years after v2 scripts are activated, existing p2pk/p2pkh UTXOs
+>     
+>     (either matching the pre-segwit templates or v0 segwit p2wpkh) can
+>     
+>     be spent via a v2-aggregated-signature (but not via taproot)
+>     
+>     \[4\]
+>     
+> -   core will maintain a config setting that allows users to prevent
+>     
+>     that hard fork from activating via UASF up until the next release
+>     
+>     after activation (probably with UASF-enforced miner-signalling that
+>     
+>     the hard-fork will not go ahead)
+>     
+>     This is already very complicated of course, but note that there's still
+>     
+>     more things that need to be considered for signature aggregation:
+>     
+> -   whether to use Bellare-Neven or muSig in the consensus-critical
+>     
+>     aggregation algorithm
+>     
+> -   whether to assign the aggregate sigs to inputs and plunk them in the
+>     
+>     witness data somewhere, or to add a new structure and commitment and
+>     
+>     worry about p2p impact
+>     
+> -   whether there are new sighash options that should go in at the same time
+> -   whether non-interactive half-sig aggregation can go in at the same time
+>     
+>     That leads me to think that interactive signature aggregation is going to
+>     
+>     take a lot of time and work, and it would make sense to do a v1-upgrade
+>     
+>     that's "just" Schnorr (and taproot and MAST and re-enabling opcodes and
+>     
+>     ...) in the meantime. YMMV.
+>     
+>     Cheers,
+>     
+>     aj
+>     
+>     \[0\] http://diyhpl.us/wiki/transcripts/bitcoin-core-dev-tech/2018-03-06-taproot-graftroot-etc/
+>     
+>     \[1\] Signature aggregation:
+>     
+>     Signature aggregation is cool because it lets you post a transaction
+>     
+>     spending many inputs, but only providing a single 64 byte signature
+>     
+>     that proves authorisation by the holders of all the private keys
+>     
+>     for all the inputs. So the witnesses for your inputs might be:
+>     
+>     p2wpkh: pubkey1 SIGHASH_ALL
+>     
+>     p2wpkh: pubkey2 SIGHASH_ALL
+>     
+>     p2wsh: "3 pubkey1 pubkey3 pubkey4 3 CHECKMULTISIG" SIGHASH\_ALL SIGHASH\_ALL SIGHASH_ALL
+>     
+>     where instead of including full 65-byte signature for each CHECKSIG
+>     
+>     operation in each input witness, you just include the ~1-byte sighash,
+>     
+>     and provide a single 64-byte signature elsewhere, calculated either
+>     
+>     according to the Bellare-Neven algorithm, or the muSig algorithm.
+>     
+>     In the above case, that means going from about 500 witness bytes
+>     
+>     for 5 public keys and 5 signatures, to about 240 witness bytes for
+>     
+>     5 public keys and just 1 signature.
+>     
+>     A complication here is that because the signatures are aggregated,
+>     
+>     in order to validate any signature you have to be able to validate
+>     
+>     every signature.
+>     
+>     It's possible to limit that a bit, and have aggregation
+>     
+>     "buckets". This might be something you just choose when signing, eg:
+>     
+>     p2wpkh: pubkey1 SIGHASH\_ALL|BUCKET\_1
+>     
+>     p2wpkh: pubkey2 SIGHASH\_ALL|BUCKET\_2
+>     
+>     p2wsh: "3 pubkey1 pubkey3 pubkey4 3 CHECKMULTISIG" SIGHASH\_ALL|BUCKET\_1 SIGHASH\_ALL|BUCKET\_2 SIGHASH\_ALL|BUCKET\_2
+>     
+>     bucket1: 64 byte sig for (pubkey1, pubkey1)
+>     
+>     bucket2: 64 byte sig for (pubkey2, pubkey3, pubkey4)
+>     
+>     That way you get the choice to verify both of the pubkey1 signatures
+>     
+>     or all of the pubkey{2,3,4} signatures or all the signatures (or
+>     
+>     none of the signatures).
+>     
+>     This might be useful if the private key for pubkey1 is essentially
+>     
+>     offline, and can't easily participate in an interactive protocol
+>     
+>     \-\- with separate buckets the separate signatures can be generated
+>     
+>     independently at different times, while with only one bucket,
+>     
+>     everyone has to coordinate to produce the signature)
+>     
+>     (For clarity: each bucket corresponds to many CHECKSIG operations,
+>     
+>     but only contains a single 64-byte signature)
+>     
+>     Different buckets will also be necessary when dealing with new
+>     
+>     segwit script versions: if there are any aggregated signatures for
+>     
+>     v1 addresses that go into bucket X, then aggregate signatures for
+>     
+>     v2 addresses cannot go into bucket X, as that would prevent nodes
+>     
+>     that support v1 addresses but not v2 addresses from validating
+>     
+>     bucket X, which would prevent them from validating the v1 addresses
+>     
+>     corresponding to that bucket, which would make the v2 upgrade a hard
+>     
+>     fork rather than a soft fork. So each segwit version will need to
+>     
+>     introduce a new set of aggregation buckets, which in turn reduces
+>     
+>     the benefit you get from signature aggregation.
+>     
+>     Note that it's obviously fine to use an aggregated signature in
+>     
+>     response to CHECKSIGVERIFY or n-of-n CHECKMULTISIGVERIFY -- when
+>     
+>     processing the script you just assume it succeeds, relying on the
+>     
+>     fact that the aggregated signature will fail the entire transaction
+>     
+>     if there was a problem. However it's also fine to use an aggregated
+>     
+>     signature in response to CHECKSIG for most plausible scripts, since:
+>     
+>     sig key CHECKSIG
+>     
+>     can be treated as equivalent to
+>     
+>     sig DUP IF key CHECKSIGVERIFY OP_1 FI
+>     
+>     provided invalid signatures are supplied as a "false" value. So
+>     
+>     for the purpose of this email, I'll mostly be treating CHECKSIG and
+>     
+>     n-of-n CHECKMULTISIG as if they support aggregation.
+>     
+>     \[2\] Soft-forks and RETURN_VALID:
+>     
+>     There are two approaches for soft-forking in new opcodes that are
+>     
+>     reasonably well understood:
+>     
+>     1.  We can bump the segwit script version, introducing a new class of
+>         
+>         bc1 bech32 addresses, which behave however we like, but can't be
+>         
+>         validated at all by existing nodes. This has the downside that it
+>         
+>         effectively serialises upgrades.
+>         
+>     2.  We can redefine OP\_NOP opcodes as OP\_CHECK\_foo\_VERIFY
+>         
+>         opcodes, along the same lines as OP_CHECKLOCKTIMEVERIFY or
+>         
+>         OP_CHECKSEQUENCEVERIFY. This has the downside that it's pretty
+>         
+>         restrictive in what new opcodes you can introduce.
+>         
+>         A third approach seems possible as well though, which would combine
+>         
+>         the benefits of both approaches: allowing any new opcode to be
+>         
+>         introduced, and allowing different opcodes to be introduced in
+>         
+>         concurrent soft-forks. Namely:
+>         
+>     3.  If we introduce some RETURN_VALID opcodes (in script for a new
+>         
+>         segwit witness version), we can then redefine those as having any
+>         
+>         behaviour we might want, including ones that manipulate the stack,
+>         
+>         and have the change simply be a soft-fork. RETURN_VALID would
+>         
+>         force the script to immediately succeed, in contrast to OP_RETURN
+>         
+>         which forces the script to immediately fail.
+>         
+>         \[3\] https://twitter.com/bramcohen/status/972205820275388416
+>         
+>         \[4\] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-January/015580.html
+>         
+> 
+> bitcoin-dev mailing list
+> 
+> bitcoin-dev at lists.linuxfoundation.org
+> 
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+
