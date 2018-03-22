@@ -1,0 +1,58 @@
+From: bram@chia.net (Bram Cohen)
+Date: Wed, 21 Mar 2018 17:47:01 -0700
+Subject: [bitcoin-dev] Soft-forks and schnorr signature aggregation
+Message-ID: <CAHUJnBAQwLfmvLyApcw8dKz1u8xX1KmdjiUmzSHXyw7npWUXHQ@mail.gmail.com>
+
+Regarding the proposed segwit v2 with reclaiming most things as
+RETURN_VALID, the net result for what's being proposed in the near future
+for supporting aggregated signatures in the not-so-near future is to punt.
+A number of strategies are possible for how to deal with new opcodes being
+added later on, and the general strategy of making unused opcodes be
+RETURN_VALID for now and figuring out how to handle it later works for all
+of them. I think this is the right approach, but wanted to clarify that it
+is in fact the approach being proposed.
+
+That said, there are some subtleties to getting it right which the last
+message doesn't really cover. Most unused opcodes should be reclaimed as
+RETURN_VALID, but there should still be one OP_NOP and there should be a
+'real' RETURN_VALID, which (a) is guaranteed to not be soft forked into
+something else in the future, and (b) doesn't have any parsing weirdness.
+The parsing weirdness of all the unclaimed opcodes is interesting. Because
+everything in an IF clause needs to be parsed in order to find where the
+ELSE is, you have a few options for dealing with an unknown opcode getting
+parsed in an unexecuted section of code. They are (a) avoid the problem
+completely by exterminating IF and MASTing (b) avoid the problem completely
+by getting rid of IF and adding IFJUMP, IFNJUMP, and JUMP which specify a
+number of bytes (this also allows for script merkleization) (c) require all
+new opcodes have fixed length 1, even after they're soft forked, (d) do
+almost like (c) but require that on new soft forks people hack their old
+scripts to still parse properly by avoiding the OP_ELSE in inopportune
+places (yuck!) (e) make it so that the unknown opcodes case a RETURN_VALID
+even when they're parsed, regardless of whether they're being executed.
+
+By far the most expedient option is (e) cause a RETURN_VALID at parse time.
+There's even precedent for this sort of behavior in the other direction
+with disabled opcodes causing failure at parse time even if they aren't
+being executed.
+
+A lot can be said about all the options, but one thing I feel like snarking
+about is that if you get rid of IFs using MAST, then it's highly unclear
+whether OP_DEPTH should be nuked as well. My feeling is that it should and
+that strict parsing should require that the bottom thing in the witness
+gets referenced at some point.
+
+Hacking in a multisig opcode isn't a horrible idea, but it is very stuck
+specifically on m-of-n and doesn't support more complex formulas for how
+signatures can be combined, which makes it feel hacky and weird.
+
+Also it may make sense to seriously consider BLS signatures, which have a
+lot of practical benefits starting with them being noninteractively
+aggregatable so you can always assume that they're aggregated instead of
+requiring complex semantics to specify what's aggregated with what. My team
+is working on an implementation which has several advantages over what's
+currently in the published literature but it isn't quite ready for public
+consumption yet. This should probably go on the pile of reasons why it's
+premature to finalize a plan for aggregation at this point.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180321/c0b652a2/attachment.html>
