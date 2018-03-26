@@ -1,0 +1,99 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Mon, 26 Mar 2018 01:53:23 -0700
+Subject: [bitcoin-dev] {sign|verify}message replacement
+In-Reply-To: <CALJw2w5=g-FL+MZ08DEoLxVzOKbSXeKu50drE1b4P0JZJpdTyA@mail.gmail.com>
+References: <CALJw2w5=g-FL+MZ08DEoLxVzOKbSXeKu50drE1b4P0JZJpdTyA@mail.gmail.com>
+Message-ID: <CAPg+sBhAaw7uqdz6ZoMCkut2GM=3=F22FiHw6J_aLwTMEcqt1g@mail.gmail.com>
+
+Hello,
+
+Thanks for starting a discussion about this idea.
+
+A few comments inline:
+
+On Wed, Mar 14, 2018 at 1:09 AM, Karl Johan Alm via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Hello,
+>
+> I am considering writing a replacement for the message signing tools
+> that are currently broken for all but the legacy 1xx addresses. The
+> approach (suggested by Pieter Wuille) is to do a script based
+> approach. This does not seem to require a lot of effort for
+> implementing in Bitcoin Core*. Below is my proposal for this system:
+>
+> A new structure SignatureProof is added, which is a simple scriptSig &
+> witnessProgram container that can be serialized. This is passed out
+> from/into the signer/verifier.
+>
+
+You need a bit more logic to deal with softforks and compatibility. The
+question is which script validation flags you verify with:
+* If you make them fixed, it means signatures can't evolve with new address
+types being introduced that rely on new features.
+* If you make it just consensus flags (following mainnet), it means that
+people with old software will see future invalid signatures as always
+valid; this is probably not acceptable.
+* If you make it standardness flags, you will get future valid signatures
+that fail to verify.
+
+One solution is to include a version number in the signature, which
+explicitly corresponds to a set of validation flags. When the version
+number is something a verifier doesn't know, it can be reported as
+inconclusive (it's relying on features you don't know about).
+
+An solution is to verify twice; once with all consensus rules you know
+about, and once with standardness rules. If they're both valid, the
+signature is valid. If they're both invalid, the signature is invalid. If
+they're different (consensus valid but standardness invalid), you report
+the signature validation as inconclusive (it's relying on features you
+don't know about). This approach works as long as new features only use
+previous standardness-invalid scripts, but perhaps a version number is
+still needed to indicate the standardness flags.
+
+RPC commands:
+>
+> sign <address> <message> [<prehashed>=false]
+>
+
+Why not extend the existing signmessage/verifymessage RPC? For legacy
+addresses it can fall back to the existing signature algorithm, while using
+the script-based approach for all others.
+
+
+>
+> Generates a signature proof for <message> using the same method that
+> would be used to spend coins sent to <address>.**
+>
+> verify <address> <message> <proof> [<prehashed>=false]
+>
+> Deserializes and executes the proof using a custom signature checker
+> whose sighash is derived from <message>. Returns true if the check
+> succeeds, and false otherwise. The scriptPubKey is derived directly
+> from <address>.**
+>
+> Feedback welcome.
+>
+> -Kalle.
+>
+>
+(**) If <prehashed> is true, <message> is the sighash, otherwise
+> sighash=sha256d(message).
+>
+
+That's very dangerous I'm afraid. It could be used to trick someone into
+signing off on an actual transaction, if you get them to sign a "random
+looking" prehashed message. Even if you have a prehashed message, there is
+no problem with treating it as hex input to a second hashing step, so I
+think the prehashed option isn't needed. It's why the existing message
+signing functionality always forcibly prefixes "Bitcoin signed message:",
+to avoid signing something that unintentionally corresponds to a message
+intended for another goal.
+
+Cheers,
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180326/8324b4f3/attachment.html>
