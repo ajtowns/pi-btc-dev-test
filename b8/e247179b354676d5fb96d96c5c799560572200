@@ -1,0 +1,60 @@
+From: karljohan-alm@garage.co.jp (Karl Johan Alm)
+Date: Tue, 27 Mar 2018 17:09:41 +0900
+Subject: [bitcoin-dev] {sign|verify}message replacement
+In-Reply-To: <CAPg+sBhAaw7uqdz6ZoMCkut2GM=3=F22FiHw6J_aLwTMEcqt1g@mail.gmail.com>
+References: <CALJw2w5=g-FL+MZ08DEoLxVzOKbSXeKu50drE1b4P0JZJpdTyA@mail.gmail.com>
+	<CAPg+sBhAaw7uqdz6ZoMCkut2GM=3=F22FiHw6J_aLwTMEcqt1g@mail.gmail.com>
+Message-ID: <CALJw2w7UJ6JT9jpuV9c9OtOMrqNNGR0OJauwnMo7DJfWG=L_SQ@mail.gmail.com>
+
+Pieter,
+
+Thanks for the feedback. Comments below:
+
+On Mon, Mar 26, 2018 at 5:53 PM, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+> One solution is to include a version number in the signature, which
+> explicitly corresponds to a set of validation flags. When the version number
+> is something a verifier doesn't know, it can be reported as inconclusive
+> (it's relying on features you don't know about).
+>
+> An solution is to verify twice; once with all consensus rules you know
+> about, and once with standardness rules. If they're both valid, the
+> signature is valid. If they're both invalid, the signature is invalid. If
+> they're different (consensus valid but standardness invalid), you report the
+> signature validation as inconclusive (it's relying on features you don't
+> know about). This approach works as long as new features only use previous
+> standardness-invalid scripts, but perhaps a version number is still needed
+> to indicate the standardness flags.
+
+I think the double verify approach seems promising. I assume old nodes
+consider new consensus rule enforcing transactions as non-standard but
+valid. If this is always the case, it may be an idea to simply fail
+verification with a message indicating the node is unable to verify
+due to unknown consensus rules.
+
+>> RPC commands:
+>>
+>> sign <address> <message> [<prehashed>=false]
+>
+> Why not extend the existing signmessage/verifymessage RPC? For legacy
+> addresses it can fall back to the existing signature algorithm, while using
+> the script-based approach for all others.
+
+Yes, I initially thought it would be better to not use it as the
+legacy behavior could be depended on god knows where, but I think
+adding a legacy mode or simply doing the old way for 1xx is
+sufficient.
+
+>> (**) If <prehashed> is true, <message> is the sighash, otherwise
+>> sighash=sha256d(message).
+>
+>
+> That's very dangerous I'm afraid. It could be used to trick someone into
+> signing off on an actual transaction, if you get them to sign a "random
+> looking" prehashed message. Even if you have a prehashed message, there is
+> no problem with treating it as hex input to a second hashing step, so I
+> think the prehashed option isn't needed. It's why the existing message
+> signing functionality always forcibly prefixes "Bitcoin signed message:", to
+> avoid signing something that unintentionally corresponds to a message
+> intended for another goal.
+
+Eek.. good point...
