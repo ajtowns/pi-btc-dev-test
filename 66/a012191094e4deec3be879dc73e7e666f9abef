@@ -1,0 +1,551 @@
+From: jim.posen@gmail.com (Jim Posen)
+Date: Tue, 27 Mar 2018 16:31:58 -0700
+Subject: [bitcoin-dev] Optimized Header Sync
+Message-ID: <CADZtCSg7+x-sg-ysgacXobRexOVwT+k9fr6a9S-6xU2w8f8m3A@mail.gmail.com>
+
+Based on some ideas that were thrown around in this thread (
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-December/015385.html),
+I have been working on a P2P extension that will allow faster header sync
+mechanisms. The one-sentence summary is that by encoding headers more
+efficiently (eg. omitting prev_hash) and downloading evenly spaced
+checkpoints throughout history (say every 1,000th) from all peers first, we
+could speed up header sync, which would be a huge improvement for light
+clients. Here is a draft of the BIP:
+https://github.com/jimpo/bips/blob/headers-sync/headersv2.mediawiki. The
+full text is below as well.
+
+I'd love to hear any feedback people have.
+
+----------------------------------------------------------
+
+== Abstract ==
+
+This BIP describes a P2P network extension enabling faster, more
+reliable methods for syncing the block header chain. New P2P messages
+are proposed as more efficient replacements for
+<code>getheaders</code> and <code>headers</code> during initial block
+download. The proposed header download protocol reduces bandwidth
+usage by ~40%-50% and supports downloading headers ranges from
+multiple peers in parallel, which is not possible with the current
+mechanism. This also enables sync strategies with better resistance to
+denial-of-service attacks.
+
+== Motivation ==
+
+Since 2015, optimized Bitcoin clients fetch all block headers before
+blocks themselves in order to avoid downloading ones that are not part
+of the most work chain. The protocol currently in use for fetching
+headers leaves room for further optimization, specifically by
+compressing header data and downloading more headers
+simulaneously<ref>https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-December/015385.html</ref>.
+Any savings here should have a large impact given that both full nodes
+and light clients must sync the header chain as a first step, and that
+the time to validate and index the headers is negligible compared to
+the time spent downloading them from the network. Furthermore, some
+current implementations of headers syncing rely on preconfigured
+checkpoints to discourage attackers attempting to fill up a victim's
+disk space with low-work headers. The proposed messages enable sync
+strategies that are resilient against these types of attacks. The P2P
+messages are designed to be flexible, supporting multiple header sync
+strategies and leaving room for future innovations, while also
+compact.
+
+== Definitions ==
+
+''double-SHA256'' is a hash algorithm defined by two invocations of
+SHA-256: <code>double-SHA256(x) = SHA256(SHA256(x))</code>.
+
+== Specification ==
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+"SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+document are to be interpreted as described in RFC 2119.
+
+=== New Structures ===
+
+==== Compressed Headers ====
+
+Bitcoin headers are serialized by default in 80 bytes as follows:
+
+{| class="wikitable"
+! Field Name
+! Data Type
+! Byte Size
+! Description
+|-
+| version
+| int32_t
+| 4
+| Block version information
+|-
+| prev_block
+| uint256
+| 32
+| The hash of the previous block
+|-
+| merkle_root
+| uint256
+| 32
+| The root hash of the transaction Merkle tree
+|-
+| timestamp
+| uint32_t
+| 4
+| A Unix timestamp of the block creation time, as reported by the miner
+|-
+| bits
+| uint32_t
+| 4
+| The calculated difficulty target for this block
+|-
+| nonce
+| uint32_t
+| 4
+| A nonce that is set such that the header's hash matches the difficulty target
+|}
+
+When deserializing a correctly-formed sequence of block headers
+encoded in this way, it can be noted that:
+
+* The prev_block field should always match the double-SHA256 hash of
+the previous header, making it redundant
+* According to Bitcoin consensus rules, the bits field only changes
+every 2016 blocks
+* The version often matches that of a recent ancestor block
+* The timestamp is often a small delta from the preceding header's timestamp
+
+To take advantage of these possible savings, this document defines a
+variable-sized ''compressed encoding'' of block headers that occur in
+a range. Note that no savings are possible when serializing a single
+header; it should only be used for vectors of sequential headers. The
+full headers are reconstructed using data from previous headers in the
+range. The serialization begins with an ''encoding indicator'', which
+is a bitfield specifying how each field is serialized. The bits of the
+indicator have the following semantics:
+
+{| class="wikitable"
+! Bit Index
+! Reconstruction
+! Description
+|-
+| 0
+| <code>prev_block[i] = DSHA256(header[i-1])</code>
+| The prev_block field is ommitted and assigned to the double-SHA256
+hash of the previous uncompressed header.
+|-
+| 1
+| <code>nbits[i] = nbits[i-1]</code>
+| The nbits field is omitted and matches that of the previous header.
+|-
+| 2
+| <code>timestamp[i] = timestamp[i-1] + value</code>
+| The timestamp is replaced by a 2-byte signed short int, representing
+an offset from the previous block's timestamp
+|-
+| 3
+|
+| Interpreted along with bits 4 & 5.
+|-
+| 4
+|
+| Interpreted along with bits 3 & 5.
+|-
+| 5
+| <code>version[i] = version[i - ((bit[3] << 2) + (bit[4] << 1) +
+bit[5])]</code>
+| Bits 3, 4, and 5 are first interpreted as a 3-bit offset, with bit
+index 3 as the most significant and bit index 5 as the least
+significant. If the offset is non-zero, the version field is omitted
+and assigned to the version of the block at the offset number of
+blocks prior.
+|-
+| 6
+|
+| Reserved.
+|-
+| 7
+|
+| Reserved. May be used in a future encoding version to signal another
+indicator byte.
+|}
+
+The compressed header format is versioned by a 256-bit unsigned
+integer. This document defines version 0.
+
+==== VarInt ====
+
+''VarInt'' is a variable-length unsigned integer encoding that
+supports a greater range of numbers than the standard ''CompactSize''.
+This encoding was introduced at the database layer in Bitcoin
+Core<ref>https://github.com/bitcoin/bitcoin/commit/4d6144f97faf9d2a6c89f41d7d2360f21f0b71e2</ref>
+in 2012, but is new to the Bitcoin P2P layer.
+
+This definition is per the code comments in Bitcoin Core written by
+Pieter Wuille:
+
+<pre>
+Variable-length integers: bytes are a MSB base-128 encoding of the number.
+The high bit in each byte signifies whether another digit follows. To make
+the encoding is one-to-one, one is subtracted from all but the last digit.
+Thus, the byte sequence a[] with length len, where all but the last byte
+has bit 128 set, encodes the number:
+
+  (a[len-1] & 0x7F) + sum(i=1..len-1, 128^i*((a[len-i-1] & 0x7F)+1))
+
+Properties:
+* Very small (0-127: 1 byte, 128-16511: 2 bytes, 16512-2113663: 3 bytes)
+* Every integer has exactly one encoding
+* Encoding does not depend on size of original integer type
+* No redundancy: every (infinite) byte sequence corresponds to a list
+  of encoded integers.
+
+0:         [0x00]  256:        [0x81 0x00]
+1:         [0x01]  16383:      [0xFE 0x7F]
+127:       [0x7F]  16384:      [0xFF 0x00]
+128:  [0x80 0x00]  16511: [0x80 0xFF 0x7F]
+255:  [0x80 0x7F]  65535: [0x82 0xFD 0x7F]
+2^32:           [0x8E 0xFE 0xFE 0xFF 0x00]
+</pre>
+
+==== Checkpoints ====
+
+A ''checkpoint'' is defined for a block as a tuple of its hash and the
+chain work:
+
+{| class="wikitable"
+! Field Name
+! Data Type
+! Byte Size
+! Description
+|-
+| block_hash
+| uint256
+| 32
+| The hash of the block
+|-
+| chain_work
+| VarInt
+| Variable(1-20)
+| A delta between the total work in the chain at the checkpoint block
+and a previous checkpoint, determined by context
+|}
+
+=== Service Bit ===
+
+This BIP allocates a new service bit:
+
+{| class="wikitable"
+|-
+| NODE_HEADERS_V2
+| <code>1 << ?</code>
+| If enabled, the node MUST respond to <code>getcheckpts</code> and
+<code>getheaders2</code> queries
+|}
+
+=== New Messages ===
+
+==== getcheckpts ====
+<code>getcheckpts</code> is used to request block headers at a
+specified distance from each other which serve as checkpoints during
+parallel header download. The message contains the following fields:
+
+{| class="wikitable"
+! Field Name
+! Data Type
+! Byte Size
+! Description
+|-
+| block_locator
+| uint256[]
+| Variable
+| A vector of block hashes in descending order by height used to
+identify the header chain of the requesting node
+|-
+| interval
+| uint32_t
+| 4
+| The distance in block height between requested block hashes
+|}
+
+# Nodes SHOULD NOT send <code>getcheckpts</code> unless the peer has
+set the <code>NODE_HEADERS_V2</code> service bit
+# The hashes in <code>block_locator</code> MUST be in descending order
+by block height
+# The block locator SHOULD be generated as it is in
+<code>getheaders</code> requests
+# The receiving node MUST respond to valid requests with a
+<code>checkpts</code> response where the interval is the same as in
+the request and the first checkpoint hash matches the first common
+block hash in the block locator
+
+==== checkpts ====
+<code>checkpts</code> is sent in response to <code>getcheckpts</code>,
+listing block hashes at the specified interval. The message contains
+the following fields:
+
+{| class="wikitable"
+! Field Name
+! Data Type
+! Byte Size
+! Description
+|-
+| start_height
+| uint32_t
+| 4
+| The height of the first block in the active chain matching the
+request's block locator
+|-
+| end_height
+| uint32_t
+| 4
+| The height of the last block in the active chain
+|-
+| start_checkpoint
+| Checkpoint
+| 48
+| The checkpoint structure for the block in the active chain at height
+start_height
+|-
+| end_checkpoint
+| Checkpoint
+| 48
+| The checkpoint structure for the block in the active chain at height
+end_height
+|-
+| interval
+| uint32_t
+| 4
+| The distance in block height between checkpoints
+|-
+| checkpoints_length
+| CompactSize
+| Variable(1-5)
+| The number of checkpoints to follow
+|-
+| checkpoints
+| Checkpoint[]
+| checkoints_length * Variable(33-52)
+| The checkpoints as specified below
+|}
+
+# The interval SHOULD match the field in the <code>getcheckpts</code> request
+# The start_checkpoint SHOULD correspond to the first block hash in
+the locator from the <code>getcheckpts</code> request that is part of
+the active chain
+# The end_checkpoint SHOULD correspond to the tip of the node's active chain
+# The start_height MOST be set to the block height of the start_checkpoint
+# The end_height MOST be set to the block height of the end_checkpoint
+# If the interval is zero, the checkpoints vector MUST be empty
+# If the interval is non-zero, checkpoints MUST correspond to blocks
+on the active chain between the start_checkpoint and the
+end_checkpoint (exclusive), where the difference in block height
+between each entry and the previous one is equal to the interval
+# The checkpoints_length MUST be less than or equal to 2,000
+# The node SHOULD include as many checkpoints on its active chain as
+are available, up to the limit of 2,000
+# The chain_work field in the first checkpoint MUST be the total work
+in the chain ending at that block
+# The chain_work field in each subsequent checkpoint MUST be the
+difference in chain work between that block and the previous
+checkpoint
+# The chain_work field in each checkpoint MUST be a properly-encoded
+VarInt, not exceeding 20 bytes
+
+==== getheaders2 ====
+<code>getheaders2</code> is used to request compressed headers for a
+range of blocks. The message contains the following fields:
+
+{| class="wikitable"
+! Field Name
+! Data Type
+! Byte Size
+! Description
+|-
+| max_version
+| uint8_t
+| 1
+| The maximum supported encoding version of the headers
+|-
+| flags
+| uint8_t
+| 1
+| A bitfield of message encoding flags
+|-
+| start_height
+| uint32_t
+| 4
+| The height of the first block header in the requested range
+|-
+| end_hash
+| uint256
+| 32
+| The hash of the last block header in the requested range
+|}
+
+# Nodes SHOULD NOT send <code>getheaders2</code> unless the peer has
+set the <code>NODE_HEADERS_V2</code> service bit
+# The height of the block with hash end_hash MUST be greater than or
+equal to start_height, and the difference MUST be strictly less than
+3,000
+# The end_hash SHOULD match one in a previously received
+<code>checkpts</code> message, otherwise the receiving node MAY
+disconnect
+# The 0th bit (least significant order) of the flags field MAY be set
+to request the coinbase transaction and merkle branch for the block at
+height start_height
+
+==== headers2 ====
+<code>headers2</code> is sent in response to <code>getheaders2</code>,
+listing the compressed headers in the requested range. The message
+contains the following fields:
+
+{| class="wikitable"
+! Field Name
+! Data Type
+! Byte Size
+! Description
+|-
+| version
+| uint8_t
+| 1
+| The encoding version of the headers
+|-
+| flags
+| uint8_t
+| 1
+| A bitfield of message encoding flags
+|-
+| start_height
+| uint32_t
+| 4
+| The height of the first block header returned
+|-
+| headers_length
+| CompactSize
+| 1-3
+| The number of block headers to follow
+|-
+| headers
+| CompressedHeader[]
+| Variable
+| The compressed block headers
+|-
+| start_block_coinbase_tx
+| CTransaction
+| Variable
+| The coinbase transaction in the block at start_height
+|-
+| start_block_coinbase_branch
+| uint256[]
+| Variable
+| A merkle branch linking the coinbase transaction in the block at
+start_height to its header
+|}
+
+# The version MUST be less than or equal to the max_version field of
+the <code>getheaders2</code> request
+# Any bits set in the flags field of the <code>getheaders2</code>
+request MAY be set in the response field
+# Any bits not set in the flags field of the <code>getheaders2</code>
+request MUST NOT be set in the response field
+# The first header MUST be encoded with a 0-byte indicator (ie. the
+header is uncompressed)
+# start_height MUST be set to the block height of the first header
+# The hash of the last block SHOULD equal the end_hash of the
+<code>getheaders2</code> request, ''even if the block is no longer
+part of the active chain''
+# The length of the headers vector MUST be less than or equal to 3,000
+# The headers MUST be sequential in order of height, with each header
+a successor of the previous one
+# Each header SHOULD be optimally compressed
+# The start_block_coinbase_tx should be the serialized coinbase
+transaction in the block corresponding to the first header
+# The start_block_coinbase_branch should be a vector of
+right-hand-side hashes in the merkle branch linking the coinbase
+transaction to the first header, in order from bottom of the tree to
+top
+# If the 0th bit (least significant order) of the flags field is
+unset, the start_block_coinbase_tx and start_block_coinbase_branch
+fields MUST be omitted
+
+=== Sync Strategies ===
+
+The general header sync protocol for clients now is to first request
+checkpoints from all peers with <code>getcheckpts</code>, then decide
+which peers to fetch ranges of headers from and download them with
+<code>getheaders2</code>.
+
+==== Forward Sequential Syncing ====
+
+Similar to the current sync protocol, a client may choose one peer to
+download headers from, then fetch them in forward sequential order.
+Once this peer is out of headers, the client performs the same routine
+with any peers offering more headers.
+
+With this strategy, the client is able to fully validate the block
+headers in order and abort if the peer serves an invalid one. On the
+other hand, the peer may be able to serve a longer, lower-work chain
+than the global active chain, wasting the client's time, memory, and
+storage space.
+
+==== Parallel Header Download ====
+
+In order to increase the throughput of header downloads, a node may
+download multiple header ranges in parallel from all peers serving the
+same checkpoints, then validate them in sequential order.
+
+==== Random Sampling Proof-of-Work  ====
+
+Similar the FlyClient<ref>https://www.youtube.com/watch?time_continue=8400&v=BPNs9EVxWrA</ref>
+header download protocol, clients can select the peer claiming the
+greatest total work chain and use random sampling to efficiently
+determine if the peer is likely to be reporting its chain work
+honestly.
+
+The client treats the checkpoint message as a commitment to chain work
+of intermediate ranges of headers, the client then randomly samples
+ranges of headers weighted by total work to determine whether the
+total chain work is valid before downloading all headers. To defend
+against malicious peers attempting to reuse earlier headers later in
+the chain to fake greater total work, the client should check the
+block height in the coinbase transaction for all headers after the BIP
+34 activation height. If the peer is found to be dishonest, they can
+be banned before the client downloads too many headers, otherwise the
+client chooses this as the primary sync peer for forward sequential
+sync or parallel download.
+
+== Rationale ==
+
+* '''Why include the coinbase transaction in the headers messages?'''
+The primary reason is that after BIP
+34<ref>https://github.com/bitcoin/bips/blob/master/bip-0034.mediawiki</ref>
+activation at block height 227,835, coinbase transactions constitute
+cryptographic commitments to a block's height in the chain, which
+mitigates certain attacks during header sync. Furthermore, the
+<code>getheaders2</code> message can be used as a simple way of
+requesting a coinbase transaction for a single header, which may be
+independently useful.
+
+* '''Why not omit nBits entirely?''' The compression is designed to
+permit full decompression of all headers in a <code>headers2</code>
+message ''without'' requiring any other chain context. This is
+desirable so that proofs of work may be validated for arbitrary header
+ranges. While nBits can be computed knowing previous headers, this
+requires block headers that may not be sent in the same message.
+
+== Compatibility ==
+
+This is backwards compatible, as it defines new P2P messages which are
+available if a service bit is signaled. There are no changes to
+consensus rules.
+
+== Acknowledgements ==
+
+Thanks to Gregory Maxwell for suggestions on the compressed header
+encoding and the DOS-resistant sync strategies. Thanks to Suhas
+Daftuar for helpful discussions.
+
+Credit for the VarInt encoding goes to Pieter Wuille.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180327/65c9ed79/attachment-0001.html>
