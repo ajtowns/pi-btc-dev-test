@@ -1,0 +1,98 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Tue, 27 Mar 2018 16:34:33 +1000
+Subject: [bitcoin-dev] Soft-forks and schnorr signature aggregation
+In-Reply-To: <CAHUJnBAQwLfmvLyApcw8dKz1u8xX1KmdjiUmzSHXyw7npWUXHQ@mail.gmail.com>
+References: <CAHUJnBAQwLfmvLyApcw8dKz1u8xX1KmdjiUmzSHXyw7npWUXHQ@mail.gmail.com>
+Message-ID: <20180327063433.GA24123@erisian.com.au>
+
+On Wed, Mar 21, 2018 at 05:47:01PM -0700, Bram Cohen via bitcoin-dev wrote:
+> [...] Most unused opcodes should be reclaimed as RETURN_VALID,
+> but there should still be one OP_NOP and there should be a 'real' RETURN_VALID,
+> which (a) is guaranteed to not be soft forked into something else in the
+> future, and (b) doesn't have any parsing weirdness.
+
+What's the reason for those? I could see an argument for RETURN_VALID, I guess:
+
+  confA IF condB IF condC IF [pathA] RETURN_VALID ENDIF ENDIF ENDIF [pathB]
+
+is probably simpler and saves 3 bytes compared to:
+
+  1 condA IF condB IF condC IF [pathA] NOT ENDIF ENDIF ENDIF IF [pathB] ENDIF
+
+but that doesn't seem crazy compelling? I don't see a reason to just keep
+one OP_NOP though.
+
+> The parsing weirdness of
+> all the unclaimed opcodes is interesting. Because everything in an IF clause
+> needs to be parsed in order to find where the ELSE is, you have a few options
+> for dealing with an unknown opcode getting parsed in an unexecuted section of
+> code. They are (a) avoid the problem completely by exterminating IF and MASTing
+> (b) avoid the problem completely by getting rid of IF and adding IFJUMP,
+> IFNJUMP, and JUMP which specify a number of bytes (this also allows for script
+> merkleization) (c) require all new opcodes have fixed length 1, even after
+> they're soft forked, (d) do almost like (c) but require that on new soft forks
+> people hack their old scripts to still parse properly by avoiding the OP_ELSE
+> in inopportune places (yuck!) (e) make it so that the unknown opcodes case a
+> RETURN_VALID even when they're parsed, regardless of whether they're being
+> executed.
+
+I was figuring (c), fwiw, and assuming that opcodes will just be about
+manipulating stack values and marking the script as invalid, rather than,
+say, introducing new flow control ops.
+
+> By far the most expedient option is (e) cause a RETURN_VALID at parse time.
+> There's even precedent for this sort of behavior in the other direction with
+> disabled opcodes causing failure at parse time even if they aren't being
+> executed.
+
+You're probably right. That still doesn't let you implement intercal's
+COMEFROM statement as a new opcode, of course. :)
+
+> A lot can be said about all the options, but one thing I feel like snarking
+> about is that if you get rid of IFs using MAST, then it's highly unclear
+> whether OP_DEPTH should be nuked as well. My feeling is that it should and that
+> strict parsing should require that the bottom thing in the witness gets
+> referenced at some point.
+
+I guess when passing the script you could perhaps check if each witness
+item could have been replaced with OP_FALSE or OP_1 and still get the
+same result, and consider the transaction non-standard if so?
+
+> Hacking in a multisig opcode isn't a horrible idea, but it is very stuck
+> specifically on m-of-n and doesn't support more complex formulas for how
+> signatures can be combined, which makes it feel hacky and weird.
+
+Hmm? The opcode I suggested works just as easily with arbitrary formulas,
+eg, "There must be at least 1 signer from pka{1,2,3}, and 3 signers all
+up, except each of pkb{1,2,3,4,5,6} only counts for half":
+
+  0 pkb6 pkb5 pkb4 pkb3 pkb2 pkb1 pka3 pka2 pka1 9 CHECK_AGGSIG_VERIFY
+    (declare pubkeys)
+  0b111 CHECK_AGG_SIGNERS VERIFY
+    (one of pka{1,2,3} must sign)
+  0b001 CHECK_AGG_SIGNERS
+  0b010 CHECK_AGG_SIGNERS ADD
+  0b100 CHECK_AGG_SIGNERS ADD
+  DUP ADD
+    (pka{1,2,3} count double)
+  0b000001000 CHECK_AGG_SIGNERS ADD
+  0b000010000 CHECK_AGG_SIGNERS ADD
+  0b000100000 CHECK_AGG_SIGNERS ADD
+  0b001000000 CHECK_AGG_SIGNERS ADD
+  0b010000000 CHECK_AGG_SIGNERS ADD
+  0b100000000 CHECK_AGG_SIGNERS ADD
+    (pkb{1..6} count single)
+  6 EQUAL
+    (summing to a total of 3 doubled)
+
+Not sure that saves it from being "hacky and weird" though...
+
+(There are different ways you could do "CHECK_AGG_SIGNERS": for
+instance, take a bitmask of keys and return the bitwise-and with the
+keys that signed, or take a bitmask and just return the number of keys
+matching that bitmask that signed, or take a pubkey index and return a
+boolean whether that key signed)
+
+Cheers,
+aj
+
