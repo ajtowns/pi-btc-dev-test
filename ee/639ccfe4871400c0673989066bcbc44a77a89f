@@ -1,0 +1,126 @@
+From: bram@chia.net (Bram Cohen)
+Date: Tue, 27 Mar 2018 20:19:48 -0700
+Subject: [bitcoin-dev] Soft-forks and schnorr signature aggregation
+In-Reply-To: <20180327063433.GA24123@erisian.com.au>
+References: <CAHUJnBAQwLfmvLyApcw8dKz1u8xX1KmdjiUmzSHXyw7npWUXHQ@mail.gmail.com>
+	<20180327063433.GA24123@erisian.com.au>
+Message-ID: <CAHUJnBBkXvFwgJH7OYkR1FWCCgerMH4SaUGv2kN3c54vqZFomg@mail.gmail.com>
+
+On Mon, Mar 26, 2018 at 11:34 PM, Anthony Towns <aj at erisian.com.au> wrote:
+
+> On Wed, Mar 21, 2018 at 05:47:01PM -0700, Bram Cohen via bitcoin-dev wrote:
+> > [...] Most unused opcodes should be reclaimed as RETURN_VALID,
+> > but there should still be one OP_NOP and there should be a 'real'
+> RETURN_VALID,
+> > which (a) is guaranteed to not be soft forked into something else in the
+> > future, and (b) doesn't have any parsing weirdness.
+>
+> What's the reason for those? I could see an argument for RETURN_VALID, I
+> guess:
+>
+>   confA IF condB IF condC IF [pathA] RETURN_VALID ENDIF ENDIF ENDIF [pathB]
+>
+> is probably simpler and saves 3 bytes compared to:
+>
+>   1 condA IF condB IF condC IF [pathA] NOT ENDIF ENDIF ENDIF IF [pathB]
+> ENDIF
+>
+> but that doesn't seem crazy compelling?
+
+
+Mostly yes it's for that case and also for:
+
+   condA IF RETURN_VALID ENDIF condb IF RETURN_VALID ENDIF condc
+
+Technically that can be done with fewer opcodes using OP_BOOLOR but maybe
+in the future there will be some incentive for short circuit evaluation
+
+But there's also the general principle that it's only one opcode and if
+there are a lot of things which look like RETURN_VALID there should be one
+thing which actually is RETURN_VALID
+
+
+> I don't see a reason to just keep one OP_NOP though.
+>
+
+Mostly based on momentum because there are several of them there right now.
+If noone else wants to defend it I won't either.
+
+
+> > By far the most expedient option is (e) cause a RETURN_VALID at parse
+> time.
+> > There's even precedent for this sort of behavior in the other direction
+> with
+> > disabled opcodes causing failure at parse time even if they aren't being
+> > executed.
+>
+> You're probably right. That still doesn't let you implement intercal's
+> COMEFROM statement as a new opcode, of course. :)
+>
+
+That can be in the hardfork wishlist :-)
+
+
+> > A lot can be said about all the options, but one thing I feel like
+> snarking
+> > about is that if you get rid of IFs using MAST, then it's highly unclear
+> > whether OP_DEPTH should be nuked as well. My feeling is that it should
+> and that
+> > strict parsing should require that the bottom thing in the witness gets
+> > referenced at some point.
+>
+> I guess when passing the script you could perhaps check if each witness
+> item could have been replaced with OP_FALSE or OP_1 and still get the
+> same result, and consider the transaction non-standard if so?
+>
+
+Essentially all opcodes including OP_PICK make clear at runtime how deep
+they go and anything below the max depth can be safely eliminated (or used
+as grounds for rejecting in strict mode). The big exception is OP_DEPTH
+which totally mangles the assumptions. It's trivial to make scripts which
+use OP_DEPTH which become invalid with things added below the stack then go
+back to being valid again with more things added even though the individual
+items are never even accessed.
+
+
+>
+> > Hacking in a multisig opcode isn't a horrible idea, but it is very stuck
+> > specifically on m-of-n and doesn't support more complex formulas for how
+> > signatures can be combined, which makes it feel hacky and weird.
+>
+> Hmm? The opcode I suggested works just as easily with arbitrary formulas,
+> eg, "There must be at least 1 signer from pka{1,2,3}, and 3 signers all
+> up, except each of pkb{1,2,3,4,5,6} only counts for half":
+>
+>   0 pkb6 pkb5 pkb4 pkb3 pkb2 pkb1 pka3 pka2 pka1 9 CHECK_AGGSIG_VERIFY
+>     (declare pubkeys)
+>   0b111 CHECK_AGG_SIGNERS VERIFY
+>     (one of pka{1,2,3} must sign)
+>   0b001 CHECK_AGG_SIGNERS
+>   0b010 CHECK_AGG_SIGNERS ADD
+>   0b100 CHECK_AGG_SIGNERS ADD
+>   DUP ADD
+>     (pka{1,2,3} count double)
+>   0b000001000 CHECK_AGG_SIGNERS ADD
+>   0b000010000 CHECK_AGG_SIGNERS ADD
+>   0b000100000 CHECK_AGG_SIGNERS ADD
+>   0b001000000 CHECK_AGG_SIGNERS ADD
+>   0b010000000 CHECK_AGG_SIGNERS ADD
+>   0b100000000 CHECK_AGG_SIGNERS ADD
+>     (pkb{1..6} count single)
+>   6 EQUAL
+>     (summing to a total of 3 doubled)
+>
+> Not sure that saves it from being "hacky and weird" though...
+>
+
+That is very hacky and weird. Doing MAST on lots of possibilities is always
+reasonably elegant, and it only gets problematic when the number of
+possibilities is truly massive.
+
+It's also the case that BLS can support complex key agreement schemes
+without even giving away that it isn't a simple single signature. Just
+saying.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180327/51bdea13/attachment.html>
