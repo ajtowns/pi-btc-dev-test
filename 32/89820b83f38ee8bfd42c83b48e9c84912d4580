@@ -1,0 +1,67 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Tue, 03 Apr 2018 09:16:45 +0930
+Subject: [bitcoin-dev] Signature bundles
+Message-ID: <874lktdvdm.fsf@rustcorp.com.au>
+
+Hi all!
+
+        Since there's activity on new signature types, I think it's
+worth considering a more flexible alternative to
+SIGHASH_SINGLE|SIGHASH_ANYONECANPAY.  See Usefulness for why.
+
+Proposal: Two bits: SIGHASH_BUNDLESTART/SIGHASH_INBUNDLE
+--------
+
+A signature needs to indicate that signs only part of a transaction's
+inputs and outputs (a.k.a. a "bundle").  Bundles can be combined
+together into larger transactions, and non-bundled signature inputs /
+outputs appended.
+
+Two per-tx counters are kept: bundle_inputs_used and
+bundle_outputs_used, both starting at 0.
+
+SIGHASH_BUNDLESTART indicates two var_int sit between the sighash flags
+and the signature itself: the first is the number of inputs in this
+bundle starting at bundle_inputs_used, the second is the number of
+outputs starting at bundle_outputs_used.  bundle_inputs_used and
+bundle_outputs_used have these values added, for next time.
+
+SIGHASH_INBUNDLE indicates that this signature applies to the current
+bundle.  The txCopy is reduced to cover only the inputs and
+outputs in the current bundle, and the signature commits to the two
+var_ints from SIGHASH_BUNDLESTART along with the sighash flags.
+
+(A proper BIP would detail how any weird stuff makes the tx invalid:
+take that as read).
+
+Usage
+-----
+You can use this to sign a transaction just like now, with only two
+extra bytes and these SIGHASH flags.  But this transaction can now be
+aggregated by pasting on another bundle, or attaching other normal
+inputs and/or outputs.  You can aggregate as many transactions as you
+want this way.
+
+Usefulness
+----------
+
+One of the issues we've struck with lightning is trying to guess future
+fees for commitment transactions: we can't rely on getting another
+signature from our counterparty to increase fees.  Nor can we use
+parent-pays-for-child since the outputs we can spend are timelocked.
+
+This "holding a valid tx but I want to add fees later without
+re-signing" seems like a general problem.  The only current method would
+be to engineer transactions as a single-input-single-output tx and use
+SIGHASH_SINGLE|SIGHASH_ANYONECANPAY; this is very limiting.
+
+The other obvious application would be to run public aggregators, which
+would provide throughput promises ("if you send me a tx with feerate X,
+I will make sure it goes onchain within a week").  This service would
+sometimes profit, if it can do so cheaper than it quoted, and sometimes
+have to add additional fees.  The existence of such services should
+smooth the current fee cliff by allowing users and services to offer
+"slow mode" payment options without requiring interaction.
+
+Feedback welcome!
+Rusty.
