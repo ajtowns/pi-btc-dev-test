@@ -1,0 +1,121 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Tue, 3 Apr 2018 13:57:23 +1000
+Subject: [bitcoin-dev] Signature bundles
+In-Reply-To: <874lktdvdm.fsf@rustcorp.com.au>
+References: <874lktdvdm.fsf@rustcorp.com.au>
+Message-ID: <20180403035723.GA21120@erisian.com.au>
+
+On Tue, Apr 03, 2018 at 09:16:45AM +0930, Rusty Russell via bitcoin-dev wrote:
+> Proposal: Two bits: SIGHASH_BUNDLESTART/SIGHASH_INBUNDLE
+> --------
+> 
+> A signature needs to indicate that signs only part of a transaction's
+> inputs and outputs (a.k.a. a "bundle").  Bundles can be combined
+> together into larger transactions, and non-bundled signature inputs /
+> outputs appended.
+
+> Two per-tx counters are kept: bundle_inputs_used and
+> bundle_outputs_used, both starting at 0.
+> 
+> SIGHASH_BUNDLESTART indicates two var_int sit between the sighash flags
+> and the signature itself: the first is the number of inputs in this
+> bundle starting at bundle_inputs_used, the second is the number of
+> outputs starting at bundle_outputs_used.  bundle_inputs_used and
+> bundle_outputs_used have these values added, for next time.
+> 
+> SIGHASH_INBUNDLE indicates that this signature applies to the current
+> bundle.  The txCopy is reduced to cover only the inputs and
+> outputs in the current bundle, and the signature commits to the two
+> var_ints from SIGHASH_BUNDLESTART along with the sighash flags.
+
+So suppose you have two bundles you want to combine together, and they
+didn't pay enough fees, so you have an extra input so you can bump up the
+fees. Your tx looks like:
+
+bundle 1:
+  input 1:   500 bits, signed by key A [pre]
+  input 2:   500 bits, signed by key B [pre]
+  input 3:   500 bits, signed by key C
+  output 1: 1450 bits
+bundle 2:
+  input 3:   600 bits, signed by key D [pre]
+  output 2:  200 bits
+  output 3:  380 bits
+extra:
+  input 4:  2000 bits, signed by key E
+  output 4:  864 bits
+
+Keys A, B and D have pre-signed their respective bundle, but you have
+control over keys C and E at the time you're constructing the transaction.
+
+So the things you'd have to do when signing would be:
+
+  A,B,C decide on an order for the inputs and outputs (ideally just sort them)
+  Because A turns out to be first, A signs with BUNDLESTART[3,1] INBUNDLE
+  Because B is second, B just signs with INBUNDLE
+
+  D just signs with BUNDLESTART[3,1] INBUNDLE
+
+  And finally they get collected and C and E signs the entire transaction
+  with SIGHASH_ALL
+
+All bundles have to appear together, before any extra inputs; though they
+can be reordered arbitrarily prior to adding the SIGHASH_ALL sigs.
+
+If you've got one bundle that overpays fees and another that underpays,
+you can safely combine the two only if you can put a SIGHASH_ALL sig in
+the one that overpays (otherwise miners could just make their own tx of
+just the overpaying bundle).
+
+This could replace SINGLE|ANYONECANPAY at a cost of an extra couple of
+witness bytes.
+
+I think BUNDLESTART is arguably redundant -- you could just infer
+BUNDLESTART if you see an INBUNDLE flag when you're not already in
+a bundle. Probably better to have the flag to make parsing easier,
+so just have the rule be BUNDLESTART is set for precisely the first
+INBUNDLE signature since the last bundle finished.
+
+Should be straightforward to establish BIP-69-style ordering rules too:
+within a bundle, order inputs lexically, then order outputs lexically;
+order bundles lexically by the first input; order remaining inputs
+lexically, then order remaining outputs lexically.
+
+I think the only reason to do bundling like this (rather than just post
+separate transactions) is to deal with fees? It doesn't seem like you gain
+any privacy -- the inputs/outputs in each bundle are tightly related, and
+you're only saving about 10 bytes due to sharing a transaction structure.
+
+Anyway, seems like it makes sense. 
+
+> One of the issues we've struck with lightning is trying to guess future
+> fees for commitment transactions: we can't rely on getting another
+> signature from our counterparty to increase fees.  Nor can we use
+> parent-pays-for-child since the outputs we can spend are timelocked.
+
+That doesn't quite work with the HTLC-Success/HTLC-Timeout transactions
+though, does it? They spend outputs from the commitment transaction
+and need to be pre-signed by your channel partner in order to ensure
+the output address is correct -- but if the commitment transaction gets
+bundled, its txid will change, so it can't be pre-signed.
+
+FWIW, a dumb idea I had for this problem was to add a zero-value
+anyone-can-spend output to commitment transactions, that can then be
+used with CPFP to bump the fees. Not very nice for UTXO bloat if fee
+bumping isn't needed though, and I presume it would fail to pass the
+dust threshold...
+
+I wonder if it would be plausible to have after-the-fact fee-bumping
+via special sighash flags at the block level anyway though. Concretely:
+say you have two transactions, X and Y, that don't pay enough in fees,
+you then provide a third transaction whose witness is [txid-for-X,
+txid-for-Y, signature committing to (txid-for-X, txid-for-Y)], and can
+only be included in a block if X and Y are also in the same block. You
+could make that fairly concise if you allowed miners to replace txid-for-X
+with X's offset within the block (or the delta between X's txnum and the
+third transaction's txnum), though coding that probably isn't terribly
+straightforward.
+
+Cheers,
+aj
+
