@@ -1,0 +1,73 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Tue, 03 Apr 2018 15:01:24 +0930
+Subject: [bitcoin-dev] Signature bundles
+In-Reply-To: <20180403035723.GA21120@erisian.com.au>
+References: <874lktdvdm.fsf@rustcorp.com.au>
+	<20180403035723.GA21120@erisian.com.au>
+Message-ID: <87sh8cc0ur.fsf@rustcorp.com.au>
+
+Anthony Towns via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> writes:
+> If you've got one bundle that overpays fees and another that underpays,
+> you can safely combine the two only if you can put a SIGHASH_ALL sig in
+> the one that overpays (otherwise miners could just make their own tx of
+> just the overpaying bundle).
+
+This is a potential problem, yes :( And I'm not sure how to solve it,
+unless you do some crazy thing like commit to a set of keys which are
+allowed to bundle, which kind of defeats the generality of outsourcing.
+
+> This could replace SINGLE|ANYONECANPAY at a cost of an extra couple of
+> witness bytes.
+>
+> I think BUNDLESTART is arguably redundant -- you could just infer
+> BUNDLESTART if you see an INBUNDLE flag when you're not already in
+> a bundle. Probably better to have the flag to make parsing easier,
+> so just have the rule be BUNDLESTART is set for precisely the first
+> INBUNDLE signature since the last bundle finished.
+
+Indeed.
+
+>> One of the issues we've struck with lightning is trying to guess future
+>> fees for commitment transactions: we can't rely on getting another
+>> signature from our counterparty to increase fees.  Nor can we use
+>> parent-pays-for-child since the outputs we can spend are timelocked.
+>
+> That doesn't quite work with the HTLC-Success/HTLC-Timeout transactions
+> though, does it? They spend outputs from the commitment transaction
+> and need to be pre-signed by your channel partner in order to ensure
+> the output address is correct -- but if the commitment transaction gets
+> bundled, its txid will change, so it can't be pre-signed.
+
+Not without SIGHASH_NOINPUT, no.
+
+> FWIW, a dumb idea I had for this problem was to add a zero-value
+> anyone-can-spend output to commitment transactions, that can then be
+> used with CPFP to bump the fees. Not very nice for UTXO bloat if fee
+> bumping isn't needed though, and I presume it would fail to pass the
+> dust threshold...
+
+Yeah, let's not do that.
+
+> I wonder if it would be plausible to have after-the-fact fee-bumping
+> via special sighash flags at the block level anyway though. Concretely:
+> say you have two transactions, X and Y, that don't pay enough in fees,
+> you then provide a third transaction whose witness is [txid-for-X,
+> txid-for-Y, signature committing to (txid-for-X, txid-for-Y)], and can
+> only be included in a block if X and Y are also in the same block. You
+> could make that fairly concise if you allowed miners to replace txid-for-X
+> with X's offset within the block (or the delta between X's txnum and the
+> third transaction's txnum), though coding that probably isn't terribly
+> straightforward.
+
+What would it spend though?  Can't use an existing output, so this
+really needs to be stashed in an *output script*, say a zero-amount
+output which is literally a push of txids, and is itself unspendable.
+
+        <txid1>... <txidN>
+
+That's pretty large though, and it's non-witness data (though
+discardable).  How about 'OP_NOP4 <N> <ripemd160-of-last-N-txids>'?
+Then the miner just bundles those tx all together?
+
+Cheers,
+Rusty.
