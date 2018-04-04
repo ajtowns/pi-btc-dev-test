@@ -1,0 +1,67 @@
+From: naumenko.gs@gmail.com (Gleb Naumenko)
+Date: Tue, 3 Apr 2018 19:10:56 -0700
+Subject: [bitcoin-dev] Low-bandwidth transaction relay
+In-Reply-To: <CADZtCSjU78fO4bKcyc-sTT_H_wuugAd5PF3Ncom-4F2uFk_AnQ@mail.gmail.com>
+References: <9ab6e32e-db51-4ce4-8f3c-3a77f7b1f9bd@Spark>
+	<CADZtCSjU78fO4bKcyc-sTT_H_wuugAd5PF3Ncom-4F2uFk_AnQ@mail.gmail.com>
+Message-ID: <a1de9445-731f-4f94-b5b9-6a94588ba12e@Spark>
+
+Yeah, sure.
+
+> How much bandwidth is consumed by redundant tx INVs currently?
+Currently, for an average public-IP node all INVs consume 0.05 Mbps or 540 megabytes per day. This number is based on current ratio public-IP nodes:private-IP nodes and transaction rate. This number is a sum of both incoming and outgoing aspects. Thus redundant INV?s on average consume 0.044 Mbps or 475 megabytes per day.
+
+> What is this as a % of overall bandwidth usage?
+This is hard to estimate because overall bandwidth includes helping other nodes to bootstrap from scratch. If we don?t consider this aspect, my very rough estimate, and a short experiment shows that INV?s are around 50% of overall bandwidth (it also depends on different factors like your hardware comparing to other public-IP nodes). I?m going to double-check this number soon.
+
+> How would filtering txs through N=2 links affect network propagation?
+Yes, network propagation for a new protocol definitely worth measuring. I?m going to look at it in the near future.
+
+> Do you propose setting filters on inbound peers as well?
+This is a good question.
+I think some filter may be applied to inbound connections. Theoretically, a symmetrical filter does not make much sense ? it might be eventually the same filter for all of the connections except first 8 outgoing ones, so it?s better to use independent filters.
+However, I?m not entirely sure it is needed. Filters on inbound peers will reduce a download aspect. It might be much less critical than upload (if we assume that private-IP nodes hear about transactions later because those have much fewer connections). I think this question needs another experiment.
+
+On Apr 3, 2018, 10:45 AM -0700, Jim Posen <jim.posen at gmail.com>, wrote:
+> Hey. This idea sounds quite interesting. It'd be helpful to see some more numbers to evaluate it.
+>
+> - How much bandwidth is consumed by redundant tx INVs currently? What is this as a % of overall bandwidth usage?
+> - How would filtering txs through N=2 links affect network propagation? This probably requires simulation to determine.
+> - Do you propose setting filters on inbound peers as well?
+>
+> > On Mon, Apr 2, 2018 at 3:18 PM, Gleb Naumenko via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > > Hi all,
+> > > I have a couple of ideas regarding transaction relay protocol and wanted to share it with and probably get some feedback.
+> > >
+> > > I did some emulation and simulation and found out that around 90% of INV messages sent by public-IP nodes are idle (duplicate), obviously because each node creates 8 connections.? I also realized that sending INV messages is a significant part of the overall bandwidth consumed by a public-IP node. At a larger scale, this will result in people not able to run a public-IP node.
+> > >
+> > > My idea is in some sense similar to BIP37 but applied to public-IP nodes. Here I want to emphasize that all the nodes will still receive *all* of the transactions. A new protocol should also keep the same zero-trust, robustness, decentralization guarantees and latency.
+> > >
+> > > Idea: while joining the network, a new node agrees on some filter with each of 8 nodes it connects to. So that NewNode <-> Node_A will be used to relay only a subset of transactions, NewNode <-> Node_B for another subset. This will significantly decrease the redundancy.
+> > >
+> > > To keep the guarantees, I would keep some redundancy (for example, each transaction INV is sent over 2 links).
+> > >
+> > > To make it robust to attacks, I have 2 extensions in my mind:
+> > > 1. Set reconciliation (for a subset of transactions) with *other* nodes. Getting a bloom filter of a subset of the mempool transactions from Node_B may help to figure out whether Node_A is malicious, very slow, etc.
+> > > 2. Rotating the filters every N minutes (N < 10)
+> > >
+> > > I can see some issues with latency here, but I believe this problem has a solution.
+> > >
+> > > Feedback is appreciated!
+> > >
+> > > If you want to look at a draft of the proposal ? please let me know.
+> > > If there were any similar ideas ? please let me know.
+> > >
+> > > Best,
+> > > Gleb
+> > >
+> > >
+> > > _______________________________________________
+> > > bitcoin-dev mailing list
+> > > bitcoin-dev at lists.linuxfoundation.org
+> > > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> > >
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180403/91b04bda/attachment.html>
