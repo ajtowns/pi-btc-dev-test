@@ -1,0 +1,52 @@
+From: jason@jasondavies.com (Jason Davies)
+Date: Tue, 10 Apr 2018 09:51:51 +0100
+Subject: [bitcoin-dev] KETAMINE: Multiple vulnerabilities in
+ SecureRandom(), numerous cryptocurrency products affected.
+In-Reply-To: <69fb5cc4-7b3d-e23d-2b7e-cddcd7b2877b@musalbas.com>
+References: <84976adb75bef1dfdb12b98c19811278@national.shitposting.agency>
+	<CA+vKqYc3X6ZjVNXs0xgsLGekxPCTcLZj7t2vkyBOV_o=2C2qPA@mail.gmail.com>
+	<921edfdb-e0e5-8ce4-55d8-ba4e84ef633f@musalbas.com>
+	<010e34a3-f9cf-fba1-5482-de06bc350d64@musalbas.com>
+	<69fb5cc4-7b3d-e23d-2b7e-cddcd7b2877b@musalbas.com>
+Message-ID: <333F9973-6092-45B7-A87F-32730D752501@jasondavies.com>
+
+On 10 Apr 2018, at 00:39, mus at musalbas.com wrote:
+
+> The original disclosure didn't contain any information about the library
+> in question, so I did some digging.
+>
+> I think that the vulnerability disclosure is referring to a pre-2013
+> version of jsbn, a JavaScript crypto library. Before it used the CSRNG
+> in the Web Crypto API, it tried to use nsIDOMCrypto, but incorrectly did
+> a string comparison when checking the browser version.
+>
+> In practice though, this doesn't really matter, because
+> navigator.appVersion < "5" returns true anyway for old browsers. The
+> real issue is that modern browsers don't have window.crypto.random
+> defined, so Bitcoin wallets using a pre-2013 version of jsbn may not be
+> using a CSPRNG, when run on a modern browser.
+
+Yes, it looks like high-quality entropy via crypto.getRandomValues was only
+added in Tom Wu's latest version (v1.4) in July 2013.
+
+Note that even with v1.4, it still does not use high-quality entropy for
+Internet Explorer, because getRandomValues is provided under window.msCrypto
+for that browser.
+
+  http://www-cs-students.stanford.edu/~tjw/jsbn/rng.js
+
+> As is noted though, even if a CSPRNG is used, the library passes the
+> output of the CSPRNG through RC4, which generates some biased bits,
+> leading to possible private key recovery.
+
+I think this is the real issue: even if high-quality entropy is utilised, the
+RNG is RC4-based, which is known to generate biased output.
+
+Finally, note that even Chrome used RC4 for crypto.getRandomValues at one
+point (as recently as 2015)!
+
+  https://bugs.chromium.org/p/chromium/issues/detail?id=552749
+
+--
+Jason Davies, https://www.jasondavies.com/
+
