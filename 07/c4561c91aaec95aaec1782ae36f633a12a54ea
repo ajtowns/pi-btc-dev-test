@@ -1,0 +1,101 @@
+From: dariosn@gmail.com (Dario Sneidermanis)
+Date: Mon, 30 Apr 2018 15:25:42 -0300
+Subject: [bitcoin-dev] BIP sighash_noinput
+In-Reply-To: <871sewirni.fsf@gmail.com>
+References: <871sewirni.fsf@gmail.com>
+Message-ID: <CAHBM8UgvJvwHcM0jEtFzDDUGArZ=k4jUVY6ZVNEh4+2v6u5x0Q@mail.gmail.com>
+
+Something like this might also be useful for several use cases related to
+RBF. For example:
+
+Alice sends Bob an RBF-activated transaction T1 with the intention of
+bumping its fee if necessary. Bob wants to send these funds to Carol, but
+cannot wait until T1 confirms, so he crafts a transaction T2 that spends T1
+using SIGHASH_NOINPUT, and pays Carol. Carol can now make sure she receives
+the money even if Alice fee-bumps T1, as long as the outputs of the
+replaced transactions are compatible.
+
+Extra care should be taken to avoid rebinding, maybe by including an extra
+input in T2 that doesn't use SIGHASH_NOINPUT.
+
+On Mon, Apr 30, 2018 at 1:29 PM, Christian Decker via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Hi all,
+>
+> I'd like to pick up the discussion from a few months ago, and propose a new
+> sighash flag, `SIGHASH_NOINPUT`, that removes the commitment to the
+> previous
+> output. This was previously mentioned on the list by Joseph Poon [1], but
+> was
+> never formally proposed, so I wrote a proposal [2].
+>
+> We have long known that `SIGHASH_NOINPUT` would be a great fit for
+> Lightning.
+> They enable simple watch-towers, i.e., outsource the need to watch the
+> blockchain for channel closures, and react appropriately if our
+> counterparty
+> misbehaves. In addition to this we just released the eltoo [3,4] paper
+> which
+> describes a simplified update mechanism that can be used in Lightning, and
+> other
+> off-chain contracts, with any number of participants.
+>
+> By not committing to the previous output being spent by the transaction,
+> we can
+> rebind an input to point to any outpoint with a matching output script and
+> value. The binding therefore is no longer explicit through a reference, but
+> through script compatibility, and the transaction ID reference in the
+> input is a
+> hint to validators. The sighash flag is meant to enable some off-chain
+> use-cases
+> and should not be used unless the tradeoffs are well-known. In particular
+> we
+> suggest using contract specific key-pairs, in order to avoid having any
+> unwanted
+> rebinding opportunities.
+>
+> The proposal is very minimalistic, and simple. However, there are a few
+> things
+> where we'd like to hear the input of the wider community with regards to
+> the
+> implementation details though. We had some discussions internally on
+> whether to
+> use a separate opcode or a sighash flag, some feeling that the sighash flag
+> could lead to some confusion with existing wallets, but given that we have
+> `SIGHASH_NONE`, and that existing wallets will not sign things with unknown
+> flags, we decided to go the sighash way. Another thing is that we still
+> commit
+> to the amount of the outpoint being spent. The rationale behind this is
+> that,
+> while rebinding to outpoints with the same value maintains the value
+> relationship between input and output, we will probably not want to bind to
+> something with a different value and suddenly pay a gigantic fee.
+>
+> The deployment part of the proposal is left vague on purpose in order not
+> to
+> collide with any other proposals. It should be possible to introduce it by
+> bumping the segwit script version and adding the new behavior.
+>
+> I hope the proposal is well received, and I'm looking forward to discussing
+> variants and tradeoffs here. I think the applications we proposed so far
+> are
+> quite interesting, and I'm sure there are many more we can enable with this
+> change.
+>
+> Cheers,
+> Christian
+>
+> [1] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> 2016-February/012460.html
+> [2] https://github.com/cdecker/bips/blob/noinput/bip-xyz.mediawiki
+> [3] https://blockstream.com/2018/04/30/eltoo-next-lightning.html
+> [4] https://blockstream.com/eltoo.pdf
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180430/4b977159/attachment.html>
