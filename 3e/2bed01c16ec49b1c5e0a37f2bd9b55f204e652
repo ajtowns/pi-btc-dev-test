@@ -1,0 +1,58 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Tue, 01 May 2018 19:31:28 +0200
+Subject: [bitcoin-dev] eltoo: A Simplified update Mechanism for
+	Lightning and Off-Chain Contracts
+In-Reply-To: <CADZtCShvsaUpHKqRkkDm1XEmiSgj4Aa_VPdFFhaMQd9fcvxyZA@mail.gmail.com>
+References: <874ljsitvx.fsf@gmail.com>
+	<CADZtCSgSJsU+j1teT4A9+nc+cuzBz+dhL+sC3dyGniQAsxPUxw@mail.gmail.com>
+	<87vac7hakf.fsf@gmail.com>
+	<CADZtCShihv1PR4yD_xATD2mv5CSMqH385HWVLdZQSG_9ZyJ7Jw@mail.gmail.com>
+	<87in87gx0q.fsf@gmail.com>
+	<CADZtCShvsaUpHKqRkkDm1XEmiSgj4Aa_VPdFFhaMQd9fcvxyZA@mail.gmail.com>
+Message-ID: <87bmdzgu4v.fsf@gmail.com>
+
+Jim Posen <jim.posen at gmail.com> writes:
+> I'm still not following why this doesn't accumulate.
+>
+> In the example route, let's look at it from the point of view of C. C sees
+> the following regardless of whether D or E or someone behind E is the last
+> hop in the route:
+>
+> B -> HTLC(expire = X + delta) -> C -> HTLC(expire = X) -> D
+>
+> So D is not required to reveal the preimage before time X, and in the case
+> of an on-chain settle, C needs to be able to redeem the HTLC output through
+> the timeout clause before time X + delta. C can't redeem the HTLC (with
+> sufficient confirmations) at least until the settlement transaction is
+> confirmed. So it seems to me that regardless of the overall route and the
+> maximum CSV on it, the delta for the C hop has to be greater than the CSV
+> delay on the update transaction. And that this must be true at every hop
+> for the same reason.
+
+That'd be a purely reactionary behavior, i.e., chosing the delta in such
+a way that I can both settle the channel and have enough time to react
+to turn around and reveal the preimage. So with the assumptions we had
+before (CSV = 144 and CLTV delta = 144) you'd have an effective delta of
+288 on each hop, yes. That's basically the case in which each channel
+reacts serially.
+
+You can trivially parallelize these closures by looking ahead and
+noticing that each hop really just cares about its own closure deadline,
+i.e., each node just cares to close 288 blocks before the CLTV expires,
+not that its delta w.r.t. to the downstream channel is that far in the
+future. So all we care about is that once we are due to give the
+upstream hop the preimage we've already closed the downstream channel
+and can now read the HTLC preimage from that channel.
+
+The CSV timeout isn't part of the delta on each hop, but we need to
+implement the deadline computation as:
+
+```
+CLTV - CLTV delta - CSV
+```
+
+instead of LN-penaltiy's
+
+```
+CLTV - CLTV delta
+```
