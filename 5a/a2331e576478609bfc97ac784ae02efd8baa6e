@@ -1,0 +1,77 @@
+From: jim.posen@gmail.com (Jim Posen)
+Date: Tue, 1 May 2018 10:07:22 -0700
+Subject: [bitcoin-dev] eltoo: A Simplified update Mechanism for
+ Lightning and Off-Chain Contracts
+In-Reply-To: <87in87gx0q.fsf@gmail.com>
+References: <874ljsitvx.fsf@gmail.com>
+	<CADZtCSgSJsU+j1teT4A9+nc+cuzBz+dhL+sC3dyGniQAsxPUxw@mail.gmail.com>
+	<87vac7hakf.fsf@gmail.com>
+	<CADZtCShihv1PR4yD_xATD2mv5CSMqH385HWVLdZQSG_9ZyJ7Jw@mail.gmail.com>
+	<87in87gx0q.fsf@gmail.com>
+Message-ID: <CADZtCShvsaUpHKqRkkDm1XEmiSgj4Aa_VPdFFhaMQd9fcvxyZA@mail.gmail.com>
+
+I'm still not following why this doesn't accumulate.
+
+In the example route, let's look at it from the point of view of C. C sees
+the following regardless of whether D or E or someone behind E is the last
+hop in the route:
+
+B -> HTLC(expire = X + delta) -> C -> HTLC(expire = X) -> D
+
+So D is not required to reveal the preimage before time X, and in the case
+of an on-chain settle, C needs to be able to redeem the HTLC output through
+the timeout clause before time X + delta. C can't redeem the HTLC (with
+sufficient confirmations) at least until the settlement transaction is
+confirmed. So it seems to me that regardless of the overall route and the
+maximum CSV on it, the delta for the C hop has to be greater than the CSV
+delay on the update transaction. And that this must be true at every hop
+for the same reason.
+
+On Tue, May 1, 2018 at 9:29 AM, Christian Decker <decker.christian at gmail.com
+> wrote:
+
+> Jim Posen <jim.posen at gmail.com> writes:
+> > Can you explain why a fixed offset along the whole circuit is enough to
+> > ensure safely as opposed to an increased delta at each hop?
+>
+> Sure. Let's assume we have chosen a path `A->B->C->D->E`. For simplicity
+> let's assume they all have a CLTV delta of 144 blocks (lnd's default
+> setting). Furthermore let's assume that the CSV timeout for the channels
+> is also 144.
+>
+> This means that with the current LN-penalty mechanism you'd have the
+> following CLTV deltas in the HTLC:
+>
+> ```
+> A -(576)-> B -(432)-> C -(288)-> D -(144)-> E
+> ```
+>
+> Meaning that if the current time is approaching the absolute CLTV we
+> need initiate a channel closure to safely fetch the preimage on-chain,
+> and be able to turn around and send it on the upstream channel.
+>
+> This is minimal, but can be arbitrarily higher, if you follow the best
+> practice of obfuscating the final destination by building a shadow route
+> behind the real recipient, and add it's CLTV deltas and fees to your
+> route.
+>
+> With eltoo you'd need to make sure that you have the settlement
+> transaction confirmed before your desired CLTV timeout delta begins to
+> count down. So if the CLTV of the HTLC is `now + CSV timeout + CLTV
+> delta` you need to initiate a close, whereas Lightning allows you to
+> wait for time `now + CLTV delta`. Effectively this results in the
+> following time deltas:
+>
+> ```
+> A -(576+144)-> B -(432+144)-> C -(288+144)-> D -(144+144)-> E
+> ```
+>
+> Taking the last hop for example, if we had a CLTV of 1000 with eltoo
+> we'd need to start closing at height 712, instead of 856 with
+> LN-penalty. However, this increased delta does not accumulate along the
+> path, it's just a fixed offset. The longer the route, the smaller the
+> actual impact of this offset.
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180501/ecea5831/attachment.html>
