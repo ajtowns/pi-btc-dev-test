@@ -1,0 +1,43 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Tue, 01 May 2018 13:36:32 +0200
+Subject: [bitcoin-dev] eltoo: A Simplified update Mechanism for
+	Lightning and Off-Chain Contracts
+In-Reply-To: <CADZtCSgSJsU+j1teT4A9+nc+cuzBz+dhL+sC3dyGniQAsxPUxw@mail.gmail.com>
+References: <874ljsitvx.fsf@gmail.com>
+	<CADZtCSgSJsU+j1teT4A9+nc+cuzBz+dhL+sC3dyGniQAsxPUxw@mail.gmail.com>
+Message-ID: <87vac7hakf.fsf@gmail.com>
+
+Jim Posen <jim.posen at gmail.com> writes:
+> If my understanding is correct though, this construction would
+> significantly increase the safe CLTV delta requirements because HTLCs
+> cannot be timed out immediately on the settlement transaction. Consider a
+> case where node B receives an HTLC from A and forwards to C. If the HTLC
+> offered to C times out and C does not fail the HTLC off-chain, Lightning
+> currently guarantees that the CLTV delta is sufficient that I may close the
+> channel to C on-chain and claim the timed-out HTLC before my upstream HTLC
+> to A times out. If the CLTV delta is too small, I may fail the upstream
+> HTLC as soon as it times out, and then C may still claim the downstream
+> HTLC with the preimage on-chain. With eltoo, when B closes the downstream
+> channel on-chain, it must wait the CSV timeout on the update transaction
+> before locking in the timed-out HTLC. This effectively means the CLTV delta
+> has to be greater than the CSV timeout, plus some extra (whereas it is
+> currently safe to make it significantly shorter). Is that true or am I
+> missing something?
+
+That's a good point Jim. We need to make sure that the CLTVs are far
+enough in the future for the CSV timeout to expire and to grab any
+preimage downstream and insert it upstream. Overall this results in an
+offset of all the CLTVs to (less than) the maximum CSV timeout along the
+path. This would be a fixed offset for each channel and can be announced
+using the gossip protocol, so senders can take it into consideration
+when computing the routes. Notice that this is not really the CLTV
+delta, which would accumulate along the path, but an offset on which the
+CLTV deltas build on.
+
+In today's network we have many nodes that have a CLTV delta of 144
+blocks, which quickly results in HTLC funds unavailable for several days
+depending on the route length, so I don't think that adding a fixed
+offset is much worse. Once we have watch-towers we can reduce both the
+offset as well as the CLTV deltas. Since eltoo makes watch-towers less
+expensive, given the reduced storage costs, I'd argue that it's a net
+positive for the Lightning network (but then again I'm biased) :-)
