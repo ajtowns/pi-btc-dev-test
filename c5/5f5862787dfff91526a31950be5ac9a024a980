@@ -1,0 +1,52 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Tue, 01 May 2018 18:29:09 +0200
+Subject: [bitcoin-dev] eltoo: A Simplified update Mechanism for
+	Lightning and Off-Chain Contracts
+In-Reply-To: <CADZtCShihv1PR4yD_xATD2mv5CSMqH385HWVLdZQSG_9ZyJ7Jw@mail.gmail.com>
+References: <874ljsitvx.fsf@gmail.com>
+	<CADZtCSgSJsU+j1teT4A9+nc+cuzBz+dhL+sC3dyGniQAsxPUxw@mail.gmail.com>
+	<87vac7hakf.fsf@gmail.com>
+	<CADZtCShihv1PR4yD_xATD2mv5CSMqH385HWVLdZQSG_9ZyJ7Jw@mail.gmail.com>
+Message-ID: <87in87gx0q.fsf@gmail.com>
+
+Jim Posen <jim.posen at gmail.com> writes:
+> Can you explain why a fixed offset along the whole circuit is enough to
+> ensure safely as opposed to an increased delta at each hop?
+
+Sure. Let's assume we have chosen a path `A->B->C->D->E`. For simplicity
+let's assume they all have a CLTV delta of 144 blocks (lnd's default
+setting). Furthermore let's assume that the CSV timeout for the channels
+is also 144.
+
+This means that with the current LN-penalty mechanism you'd have the
+following CLTV deltas in the HTLC:
+
+```
+A -(576)-> B -(432)-> C -(288)-> D -(144)-> E
+```
+
+Meaning that if the current time is approaching the absolute CLTV we
+need initiate a channel closure to safely fetch the preimage on-chain,
+and be able to turn around and send it on the upstream channel.
+
+This is minimal, but can be arbitrarily higher, if you follow the best
+practice of obfuscating the final destination by building a shadow route
+behind the real recipient, and add it's CLTV deltas and fees to your
+route.
+
+With eltoo you'd need to make sure that you have the settlement
+transaction confirmed before your desired CLTV timeout delta begins to
+count down. So if the CLTV of the HTLC is `now + CSV timeout + CLTV
+delta` you need to initiate a close, whereas Lightning allows you to
+wait for time `now + CLTV delta`. Effectively this results in the
+following time deltas:
+
+```
+A -(576+144)-> B -(432+144)-> C -(288+144)-> D -(144+144)-> E
+```
+
+Taking the last hop for example, if we had a CLTV of 1000 with eltoo
+we'd need to start closing at height 712, instead of 856 with
+LN-penalty. However, this increased delta does not accumulate along the
+path, it's just a fixed offset. The longer the route, the smaller the
+actual impact of this offset.
