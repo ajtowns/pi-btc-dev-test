@@ -1,0 +1,115 @@
+From: jim.posen@gmail.com (Jim Posen)
+Date: Tue, 1 May 2018 18:15:10 -0700
+Subject: [bitcoin-dev] eltoo: A Simplified update Mechanism for
+ Lightning and Off-Chain Contracts
+In-Reply-To: <87bmdzgu4v.fsf@gmail.com>
+References: <874ljsitvx.fsf@gmail.com>
+	<CADZtCSgSJsU+j1teT4A9+nc+cuzBz+dhL+sC3dyGniQAsxPUxw@mail.gmail.com>
+	<87vac7hakf.fsf@gmail.com>
+	<CADZtCShihv1PR4yD_xATD2mv5CSMqH385HWVLdZQSG_9ZyJ7Jw@mail.gmail.com>
+	<87in87gx0q.fsf@gmail.com>
+	<CADZtCShvsaUpHKqRkkDm1XEmiSgj4Aa_VPdFFhaMQd9fcvxyZA@mail.gmail.com>
+	<87bmdzgu4v.fsf@gmail.com>
+Message-ID: <CADZtCSgHmyYbumDw6bwfYpoqc9b-0JmHM5-22=Y1FXNDiTghrA@mail.gmail.com>
+
+OK, I see what you are saying. You are effectively suggesting pipelining
+the broadcasts of the update transactions. I think this introduces a
+problem that a node in the circuit that withholds the preimage for too long
+can force all upstream channels to be closed, at only the expense of their
+one upstream channel being closed. I believe such an attack could
+significantly disrupt the network.
+
+Let me elaborate on the way I'm thinking about this:
+
+So say I'm a routing node with an upstream HTLC with CLTV = X. I need to
+ensure that if I learn the preimage, that I have time to broadcast and
+confirm an HTLC-success transaction before height X. We'll call this number
+of blocks D_success. So if I know the preimage, let's say X - D_success is
+the latest height that I can safely broadcast the HTLC-success transaction,
+assuming the settlement transaction is already final (ie. the update
+transaction is confirmed and the CSV delay has passed). So now I also need
+to know when to close the channel with the update transaction. I'll assume
+it will take at most D_update blocks from the time I broadcast the update
+transaction for it to be mined. So unless the downstream HTLC is already
+failed, I should always close the upstream channel at height X - D_success
+- CSV_update - D_update.
+
+Now we'll look at the downstream HTLC with CLTV = Y. In order to minimize
+the safe delta between the upstream and downstream CLTVs, I will want to
+broadcast and confirm an HTLC-timeout transaction as soon after height Y as
+possible. So assuming that the downstream settlement transaction is final
+at height Y and it takes at most D_timeout blocks for the HTLC timeout
+transaction to confirm once it is final assuming no double spends, then Y +
+D_timeout is very latest I might learn the payment preimage from the
+downstream channel on-chain. So I should be safe as long as X - D_success >
+Y + D_timeout. This assumes that the update transaction for the downstream
+channel is already mined and the CSV has passed. However, we know from
+above that I had to close the upstream channel at time X - D_success -
+CSV_update - D_update, which may very well be before Y. So if the
+downstream hop waits until just before Y to publish the preimage, they can
+force me to close my upstream channel. This applies transitively for
+further upstream hops, assuming a large enough CSV value.
+
+Granted, upstream hops can watch the blockchain for preimage reveals in
+other closings transaction and perhaps fulfill off-chain if there is
+sufficient time. This would not be possible with payment decorrelation
+through scriptless scripts or the like.
+
+Does that logic sound right to you?
+
+On Tue, May 1, 2018 at 10:31 AM, Christian Decker <
+decker.christian at gmail.com> wrote:
+
+> Jim Posen <jim.posen at gmail.com> writes:
+> > I'm still not following why this doesn't accumulate.
+> >
+> > In the example route, let's look at it from the point of view of C. C
+> sees
+> > the following regardless of whether D or E or someone behind E is the
+> last
+> > hop in the route:
+> >
+> > B -> HTLC(expire = X + delta) -> C -> HTLC(expire = X) -> D
+> >
+> > So D is not required to reveal the preimage before time X, and in the
+> case
+> > of an on-chain settle, C needs to be able to redeem the HTLC output
+> through
+> > the timeout clause before time X + delta. C can't redeem the HTLC (with
+> > sufficient confirmations) at least until the settlement transaction is
+> > confirmed. So it seems to me that regardless of the overall route and the
+> > maximum CSV on it, the delta for the C hop has to be greater than the CSV
+> > delay on the update transaction. And that this must be true at every hop
+> > for the same reason.
+>
+> That'd be a purely reactionary behavior, i.e., chosing the delta in such
+> a way that I can both settle the channel and have enough time to react
+> to turn around and reveal the preimage. So with the assumptions we had
+> before (CSV = 144 and CLTV delta = 144) you'd have an effective delta of
+> 288 on each hop, yes. That's basically the case in which each channel
+> reacts serially.
+>
+> You can trivially parallelize these closures by looking ahead and
+> noticing that each hop really just cares about its own closure deadline,
+> i.e., each node just cares to close 288 blocks before the CLTV expires,
+> not that its delta w.r.t. to the downstream channel is that far in the
+> future. So all we care about is that once we are due to give the
+> upstream hop the preimage we've already closed the downstream channel
+> and can now read the HTLC preimage from that channel.
+>
+> The CSV timeout isn't part of the delta on each hop, but we need to
+> implement the deadline computation as:
+>
+> ```
+> CLTV - CLTV delta - CSV
+> ```
+>
+> instead of LN-penaltiy's
+>
+> ```
+> CLTV - CLTV delta
+> ```
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180501/91de4f67/attachment-0001.html>
