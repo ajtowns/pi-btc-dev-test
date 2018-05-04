@@ -1,0 +1,67 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Fri, 04 May 2018 10:25:46 -0400
+Subject: [bitcoin-dev] BIP sighash_noinput
+In-Reply-To: <87vac3fzje.fsf@gmail.com>
+References: <871sewirni.fsf@gmail.com>
+	<CAMZUoK=V9Dii7ja6n6mpW_tWt00PuT=-9Z8XoyKOY3y0_AwK5w@mail.gmail.com>
+	<877eongu33.fsf@gmail.com>
+	<qFwv4IxuQlev23nK6hMyrDz231PXkGTBGZvaa3VAQs-32VcpjR18bsKQEioxOuauD9tDCUap2DlBGbr9QD0OC9-w_55tbo25P1BjK75Xj30=@protonmail.com>
+	<87vac3fzje.fsf@gmail.com>
+Message-ID: <m5Ua4d2y8oTgZSOxMUZiWJHunZpA1_mShgxNAGaEL5IGr4toYhuj-7ls7FQDKhidiYwbCaZf171_74eVXaNvlOyIQIW30maAQB3kdp8vNGk=@protonmail.com>
+
+Good morning Christian,
+
+
+> ZmnSCPxj ZmnSCPxj at protonmail.com writes:
+> 
+> > It seems to me, that `SIGHASH_NOINPUT` may help make some protocol
+> > 
+> > integrate better with existing wallets.
+> 
+> Depends on which end of a transaction the existing wallet is: existing
+> 
+> wallets will refuse to sign a transaction with an unknown sighash flag,
+> 
+> but if the wallet is creating the output that'll later be spent using a
+> 
+> `SIGHASH_NOINPUT` transaction it won't (and shouldn't) care.
+>
+
+Yes, the intent is that specialized utilities (like the CoinSwap I gave as an example) would be the ones signing with `SIGHASH_NOINPUT`, with the existing wallet generating the output that will be spent with a `SIGHASH_NOINPUT`.
+
+The issue is that some trustless protocols have an offchain component, where some kind of backoff transaction is created, and the creation involves the 3 steps (1) make but do not sign&broadcast a funding tx (2) make and sign a backoff transaction that spends the funding tx (3) sign and broadcast the original funding tx. This holds for Poon-Dryja, your new eltoo Decker-Russell-Osuntokun, and CoinSwap.  Commodity user wallets and exchange wallets only support the most basic "make tx, sign, broadcast", and integrating with the generalized funding transaction pattern is not possible.  `SIGHASH_NOINPUT` allows us to make the backoff transaction first, then make the funding transaction via the usual "make tx, sign, broadcast" procedure that commodity wallets implement.
+
+> > A drawback of course, is that `SIGHASH_NOINPUT` is an unusual flag to
+> > 
+> > use; it immediately paints the user as using some special protocol.
+> > 
+> > So much for `SIGHASH_NOINPUT` CoinSwap.
+> 
+> By providing a new use-case you are contributing to the obfuscation of
+> 
+> this technique. The more normal the use of `SIGHASH_NOINPUT` becomes the
+> 
+> less an observer can learn from it being used. In combination with MAST,
+> 
+> Taproot or Graftroot we can further hide the details of the executed
+> 
+> protocol :-)
+
+Thinking about it further, it turns out that in the cooperative completion of the protocol, we do not need to sign anything using `SIGHASH_NOINPUT`, but can use the typical `SIGHASH_ALL`. Indeed all generalized funding transaction patterns can be updated to use this: only the initial backout transaction needs to be signed with `SIGHASH_NOINPUT`, all others can be signed with `SIGHASH_ALL`, including the protocol conclusion transaction.
+
+1.  In CoinSwapCS, TX-0 and TX-1 are funding transactions.  The backoff transaction is the TX-2 and TX-3 transactions.  Only TX-2 and TX-3 need be signed with `SIGHASH_NOINPUT`.  TX-4 and TX-5, which complete the protocol and hide the swap, can be signed with `SIGHASH_ALL`.
+
+2.  In Poon-Dryja, the backoff transaction is the very first commitment transaction.  Again only that transaction needs to be signed with `SIGHASH_NOINPUT`: future commitment transactions as well as the mutual close transaction can be signed with `SIGHASH_ALL`.
+
+3.  In Decker-Russell-Osuntokun, the backoff transaction is the trigger transaction and the first settlement transaction.  The trigger transaction can sign with `SIGHASH_NOINPUT`.  Then only the final settlement (i.e. mutual close) can be signed with `SIGHASH_ALL`.
+
+Thus if the protocol completes cooperatively, the only onchain evidence is that a 2-of-2 multisig is spent, and signed using `SIGHASH_ALL`, and the money goes to some ordinary P2WPKH addresses.
+
+The advantage, as I mentioned, is that these protocols can be implemented using "walletless" software: the special protocol software runs the protocol up to the point that they get the backoff transaction, then asks the user to pay an exact amount to an exact address.  This has a number of advantages:
+
+1.  RBF can be supported if the wallet software supports RBF.  In particular without `SIGHASH_NOINPUT` the protocol would require renegotiation of a new backoff transaction in order to support RBF (and in particular the protocol spec would need to be designed in the first place to consider that possibility!), and would become more complicated since while a new backoff transaction is being negotiated, the previous version of the funding transaction may get confirmed.  With `SIGHASH_NOINPUT` all the specialized protocol software needs to do, is to watch for a transaction paying to the given address to be confirmed deeply enough to be unlikely to be reorganized: there is no need to renegotiate a backoff transaction, because whatever transaction gets confirmed, as long as it pays to the address with a given amount, the signature for the backoff transaction remains valid for it.
+2.  Wallet software of any kind can be used in conjunction with special protocol software of any kind.  Hardware wallets do not need to implement LN: the LN software starts a channel and gives a P2WSH address that hardware wallets know how to pay to.  Ditto for exchange wallets.  Etc.  And if a future protocol arises that uses the funding transaction pattern again, then again existing wallets can integrate with those protocols via P2WSH address.
+3.  Special protocol software need not implement even basic wallet functionality: they can just focus on the specific protocol they implement.  Consider how until late last year c-lightning needed a separate RPC command to inform it that it received funds, and a few months ago we had many issues with UTXOs in our database getting out of sync with the blockchain (why we implemented `dev-rescan-outputs`).
+
+Regards.
+ZmnSCPxj
