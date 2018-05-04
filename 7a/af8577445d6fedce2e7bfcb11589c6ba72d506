@@ -1,0 +1,100 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Fri, 04 May 2018 13:09:09 +0200
+Subject: [bitcoin-dev] BIP sighash_noinput
+In-Reply-To: <qFwv4IxuQlev23nK6hMyrDz231PXkGTBGZvaa3VAQs-32VcpjR18bsKQEioxOuauD9tDCUap2DlBGbr9QD0OC9-w_55tbo25P1BjK75Xj30=@protonmail.com>
+References: <871sewirni.fsf@gmail.com>
+	<CAMZUoK=V9Dii7ja6n6mpW_tWt00PuT=-9Z8XoyKOY3y0_AwK5w@mail.gmail.com>
+	<877eongu33.fsf@gmail.com>
+	<qFwv4IxuQlev23nK6hMyrDz231PXkGTBGZvaa3VAQs-32VcpjR18bsKQEioxOuauD9tDCUap2DlBGbr9QD0OC9-w_55tbo25P1BjK75Xj30=@protonmail.com>
+Message-ID: <87vac3fzje.fsf@gmail.com>
+
+ZmnSCPxj <ZmnSCPxj at protonmail.com> writes:
+> It seems to me, that `SIGHASH_NOINPUT` may help make some protocol
+> integrate better with existing wallets.
+
+Depends on which end of a transaction the existing wallet is: existing
+wallets will refuse to sign a transaction with an unknown sighash flag,
+but if the wallet is creating the output that'll later be spent using a
+`SIGHASH_NOINPUT` transaction it won't (and shouldn't) care.
+
+> I remember vaguely that `SIGHASH_NOINPUT` was also mentioned before in
+> LN discussions, when the issue of transaction malleation was
+> considered (before SegWit, being totally uncontroversial, was
+> massively adopted).  The sketch below, I believe, is somewhat
+> consistent with how it could have been used in funding a channel.
+
+I consider `SIGHASH_NOINPUT` to be a poor-man's malleability fix, since
+it comes with some baggage. Without trying to undermine my own proposal,
+but address reuse in combination with binding through script, can lead
+to very unexpected results. You need to be very careful about where you
+allow rebinding, hence the warnings in the proposal.
+
+> Consider a CoinSwap protocol.  Each side writes a transaction that
+> pays out to an ordinary 2-of-2 multisig address.  But before each side
+> writes and signs that transaction, it first demands a timelocked
+> backout transaction to let them recover their own funds in case it
+> falls through (more generally, every offchain protocol has a similar
+> setup stage where some way to back out is signed before all parties
+> enter into the contract).
+>
+> ...
+>
+> With `SIGHASH_NOINPUT`, we can indeed implement such a walletless
+> CoinSwap (or other protocol) software.  We only need to provide the
+> public keys that will be used in the initial 2-of-2, and the other
+> side can create a signature with `SIGHASH_NOINPUT` flag.
+
+I was wondering whether we could actually skip one communication round
+w.r.t. the previously described CoinSwap protocol, but it turns out we
+need to at least exchange public keys before actually moving any
+funds. Would have been nice to do spontaneous CoinSwaps.
+
+> The setup of the CoinSwap then goes this way.  The swapping nodes
+> exchange public keys (two for each side in this case), they agree on
+> who gets to move first in the swap and who generates the preimage, and
+> then they agree on what the backout transactions look like (in
+> particular, they agree on the address the backout transactions spend)
+> and create signatures, with `SIGHASH_NOINPUT`.  In particular, the
+> signatures do not commit to the txid of the transaction that they
+> authorize spending.  The CoinSwap sofwares then turn around to their
+> users and say "okay, send to this address", the users initiate the
+> swap using their normal wallet software, the CoinSwap software
+> monitors only the address it asked the user to use, then when it
+> appears onchain (the CoinSwap software does not even need to track the
+> mempool) it continues with the HTLC offers and preimage exchanges
+> until the protocol completes.
+>
+> In a world where walletless CoinSwap exists, consider this:
+>
+> 1.  A user buys Bitcoin from an exchange.  The exchange operates a
+> wallet which they credit when the user buys Bitcoin.
+> 2.  The user starts a CoinSwap, giving the destination address from
+> their cold-storage wallet.
+> 3.  The CoinSwap tells the user an address to send to.  The user
+> withdraws money from the exchange using that address as destination (1
+> transaction)
+> 4.  The user waits for the CoinSwap to finish, which causes the funds
+> to appear in their cold-storage wallet (1 transaction).
+>
+> If CoinSwap implementations all needed their own wallets, then instead:
+>
+> 1.  A user buys Bitcoin from an exchange.
+> 2.  The user withdraws the funds from the exchange to a CoinSwap
+> implementation wallet (1 transaction).
+> 3.  The user performs a CoinSwap which goes back to the CoinSwap
+> implementation wallet (2 transactions).
+> 4.  The user sends from the CoinSwap wallet to their cold storage (1
+> transaction). (granted, the CoinSwap implementation could offer a
+> feature that immediately transfers the swapped funds to some other
+> wallet, but we still cannot get around the transfer from the exchange
+> to the CoinSwap wallet)
+>
+> A drawback of course, is that `SIGHASH_NOINPUT` is an unusual flag to
+> use; it immediately paints the user as using some special protocol.
+> So much for `SIGHASH_NOINPUT` CoinSwap.
+
+By providing a new use-case you are contributing to the obfuscation of
+this technique. The more normal the use of `SIGHASH_NOINPUT` becomes the
+less an observer can learn from it being used. In combination with MAST,
+Taproot or Graftroot we can further hide the details of the executed
+protocol :-)
