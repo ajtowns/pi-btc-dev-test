@@ -1,0 +1,131 @@
+From: laolu32@gmail.com (Olaoluwa Osuntokun)
+Date: Mon, 07 May 2018 23:47:23 +0000
+Subject: [bitcoin-dev] BIP sighash_noinput
+In-Reply-To: <871sewirni.fsf@gmail.com>
+References: <871sewirni.fsf@gmail.com>
+Message-ID: <CAO3Pvs-8cX2Gdgu0cb0LdkY6ErguKkzs8pLZapFTD5JdpGms2A@mail.gmail.com>
+
+Super stoked to see that no_input has been resurrected!!! I actually
+implemented a variant back in 2015 when Tadge first described the approach
+to
+me for both btcd [1], and bitcoind [2]. The version being proposed is
+_slightly_ differ though, as the initial version I implemented still
+committed
+to the script being sent, while this new version just relies on
+witness validity instead. This approach is even more flexible as the script
+attached to the output being spent can change, without rendering the
+spending
+transaction invalid as long as the witness still ratifies a branch in the
+output's predicate.
+
+Given that this would introduce a _new_ sighash flag, perhaps we should also
+attempt to bundle additional more flexible sighash flags concurrently as
+well?
+This would require a larger overhaul w.r.t to how sighash flags are
+interpreted, so in this case, we may need to introduce a new CHECKSIG
+operator
+(lets call it CHECKSIG_X for now), which would consume an available noop
+opcode. As a template for more fine grained sighashing control, I'll refer
+to
+jl2012's BIP-0YYY [3] (particularly the "New nHashType definitions"
+section).
+This was originally proposed in the context of his merklized script work as
+it
+more or less opened up a new opportunity to further modify script within the
+context of merklized script executions.  The approach reads in the
+sighash flags as a bit vector, and allows developers to express things like:
+"don't sign the input value, nor the sequence, but sign the output of this
+input, and ONLY the script of this output". This approach is _extremely_
+powerful, and one would be able to express the equivalent of no_input by
+setting the appropriate bits in the sighash.
+
+Looking forward in hearing y'alls thoughts on this approach, thanks.
+
+[1]: https://github.com/Roasbeef/btcd/commits/SIGHASH_NOINPUT
+[2]: https://github.com/Roasbeef/bitcoin/commits/SIGHASH_NOINPUT
+[3]:
+https://github.com/jl2012/bips/blob/vault/bip-0YYY.mediawiki#new-nhashtype-definitions
+
+-- Laolu
+
+On Mon, Apr 30, 2018 at 10:30 AM Christian Decker via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Hi all,
+>
+> I'd like to pick up the discussion from a few months ago, and propose a new
+> sighash flag, `SIGHASH_NOINPUT`, that removes the commitment to the
+> previous
+> output. This was previously mentioned on the list by Joseph Poon [1], but
+> was
+> never formally proposed, so I wrote a proposal [2].
+>
+> We have long known that `SIGHASH_NOINPUT` would be a great fit for
+> Lightning.
+> They enable simple watch-towers, i.e., outsource the need to watch the
+> blockchain for channel closures, and react appropriately if our
+> counterparty
+> misbehaves. In addition to this we just released the eltoo [3,4] paper
+> which
+> describes a simplified update mechanism that can be used in Lightning, and
+> other
+> off-chain contracts, with any number of participants.
+>
+> By not committing to the previous output being spent by the transaction,
+> we can
+> rebind an input to point to any outpoint with a matching output script and
+> value. The binding therefore is no longer explicit through a reference, but
+> through script compatibility, and the transaction ID reference in the
+> input is a
+> hint to validators. The sighash flag is meant to enable some off-chain
+> use-cases
+> and should not be used unless the tradeoffs are well-known. In particular
+> we
+> suggest using contract specific key-pairs, in order to avoid having any
+> unwanted
+> rebinding opportunities.
+>
+> The proposal is very minimalistic, and simple. However, there are a few
+> things
+> where we'd like to hear the input of the wider community with regards to
+> the
+> implementation details though. We had some discussions internally on
+> whether to
+> use a separate opcode or a sighash flag, some feeling that the sighash flag
+> could lead to some confusion with existing wallets, but given that we have
+> `SIGHASH_NONE`, and that existing wallets will not sign things with unknown
+> flags, we decided to go the sighash way. Another thing is that we still
+> commit
+> to the amount of the outpoint being spent. The rationale behind this is
+> that,
+> while rebinding to outpoints with the same value maintains the value
+> relationship between input and output, we will probably not want to bind to
+> something with a different value and suddenly pay a gigantic fee.
+>
+> The deployment part of the proposal is left vague on purpose in order not
+> to
+> collide with any other proposals. It should be possible to introduce it by
+> bumping the segwit script version and adding the new behavior.
+>
+> I hope the proposal is well received, and I'm looking forward to discussing
+> variants and tradeoffs here. I think the applications we proposed so far
+> are
+> quite interesting, and I'm sure there are many more we can enable with this
+> change.
+>
+> Cheers,
+> Christian
+>
+> [1]
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-February/012460.html
+> [2] https://github.com/cdecker/bips/blob/noinput/bip-xyz.mediawiki
+> [3] https://blockstream.com/2018/04/30/eltoo-next-lightning.html
+> [4] https://blockstream.com/eltoo.pdf
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180507/76a7fcac/attachment-0001.html>
