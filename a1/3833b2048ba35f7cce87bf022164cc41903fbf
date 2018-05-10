@@ -1,0 +1,286 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Thu, 10 May 2018 10:23:09 -0400
+Subject: [bitcoin-dev] MAST/Schnorr related soft-forks
+In-Reply-To: <20180510121027.GA17607@erisian.com.au>
+References: <20180510121027.GA17607@erisian.com.au>
+Message-ID: <CAMZUoKnPVz+XOq-cQRQuLbCuqn4H28WSMXCK3Rnt8VVivedYCw@mail.gmail.com>
+
+Thanks for writing this up Anthony.
+
+Do you think that a CHECKSIGFROMSTACK proposal should be included within
+this discussion of signature soft-forks, or do you see it as an unrelated
+issue?
+
+CHECKSIGFROMSTACK enables some forms of (more) efficent MPC (See
+http://people.csail.mit.edu/ranjit/papers/scd.pdf), enables poor-man's
+covenants, and I believe the lightning folks are interested in it as well
+for some constant space storage scheme.
+
+On Thu, May 10, 2018 at 8:10 AM, Anthony Towns via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Hello world,
+>
+> After the core dev meetup in March I wrote up some notes of where I
+> think things stand for signing stuff post-Schnorr. It was mostly for my
+> own benefit but maybe it's helpful for others too, so...
+>
+> They're just notes, so may assume a fair bit of background to be able to
+> understand the meaning of the bullet points. In particular, note that I'm
+> using "schnorr" just to describe the signature algorithm, and the terms
+> "key aggregation" to describe turning an n-of-n key multisig setup into
+> a single key setup, and "signature aggregation" to describe combining
+> signatures from many inputs/transactions together: those are often all
+> just called "schnorr signatures" in various places.
+>
+>
+> Anyway! I think it's fair to split the ideas around up as follows:
+>
+> 1) Schnorr CHECKSIG
+>
+>   Benefits:
+>     - opportunity to change signature encoding from DER to save a few
+>       bytes per signature, and have fixed size signatures making tx size
+>       calculations easier
+>
+>     - enables n-of-n multisig key aggregation (a single pubkey and
+>       signature gives n-of-n security; setup non-interactively via muSig,
+>       or semi-interactively via proof of possession of private key;
+>       interactive signature protocol)
+>
+>     - enables m-of-n multisig key aggregation with interactive setup and
+>       interactive signature protocol, and possibly substantial storage
+>       requirements for participating signers
+>
+>     - enables scriptless scripts and discreet log contracts via
+>       key aggregation and interactive
+>
+>     - enables payment decorrelation for lightning
+>
+>     - enables batch validation of signatures, which substantially reduces
+>       computational cost of signature verification, provided a single
+>       "all sigs valid" or "some sig(s) invalid" output (rather than
+>       "sig number 5 is invalid") is sufficient
+>
+>     - better than ecdsa due to reducing signature malleability
+>       (and possibly due to having a security proof that has had more
+>       review?)
+>
+>    Approaches:
+>      - bump segwit version to replace P2WPKH
+>      - replace an existing OP_NOP with OP_CHECKSCHNORRVERIFY
+>      - hardfork to allowing existing addresses to be solved via Schnorr sig
+>        as alternative to ECDSA
+>
+> 2) Merkelized Abstract Syntax Trees
+>
+>    Two main benefits for enabling MAST:
+>     - logarithmic scaling for scripts with many alternative paths
+>     - only reveals (approximate) number of alternative execution branches,
+>       not what they may have been
+>
+>    Approaches:
+>     - replace an existing OP_NOP with OP_MERKLE_TREE_VERIFY, and treat an
+>       item remaining on the alt stack at the end of script exeution as a
+>       script and do tail-recursion into it (BIP 116, 117)
+>     - bump the segwit version and introduce a "pay-to-merkelized-script"
+>       address form (BIP 114)
+>
+> 3) Taproot
+>
+>    Requirements:
+>     - only feasible if Schnorr is available (required in order to make the
+>       pubkey spend actually be a multisig spend)
+>     - andytoshi has written up a security proof at
+>       https://github.com/apoelstra/taproot
+>
+>    Benefits:
+>     - combines pay-to-pubkey and pay-to-script in a single address,
+>       improving privacy
+>     - allows choice of whether to use pubkey or script at spend time,
+>       allowing for more efficient spends (via pubkey) without reducing
+>       flexibility (via script)
+>
+>    Approaches:
+>     - bump segwit version and introduce a "pay-to-taproot" address form
+>
+> 4) Graftroot
+>
+>    Requirements:
+>     - only really feasible if Schnorr is implemented first, so that
+>       multiple signers can be required via a single pubkey/signature
+>     - people seem to want a security proof for this; not sure if that's
+>       hard or straightforward
+>
+>    Benefits:
+>     - allows delegation of authorisation to spend an output already
+>       on the blockchain
+>     - constant scaling for scripts with many alternative paths
+>       (better than MAST's logarithmic scaling)
+>     - only reveals the possibility of alternative execution branches,
+>       not what they may have been or if any actually existed
+>
+>    Drawbacks:
+>     - requires signing keys to be online when constructing scripts (cannot
+>       do complicated pay to cold wallet without warming it up)
+>     - requires storing signatures for scripts (if you were able to
+>       reconstruct the sigs, you could just sign the tx directly and
+> wouldn't
+>       use a script)
+>     - cannot prove that alternative methods of spending are not
+>       possible to anyone who doesn't exclusively hold (part of) the
+>       output address private key
+>     - adds an extra signature check on script spends
+>
+>    Approaches:
+>     - bump segwit version and introduce a "pay-to-graftroot" address form
+>
+> 5) Interactive Signature Aggregation
+>
+>    Requirements:
+>     - needs Schnorr
+>
+>    Description:
+>     - allows signers to interactively collaborate when constructing a
+>       transaction to produce a single signature that covers multiple
+>       inputs and/or OP_CHECKSIG invocations that are resolved by Schnorr
+>       signatures
+>
+>    Benefits:
+>     - reduces computational cost of additional signatures (i think?)
+>     - reduces witness storage needed for additional signatures to just the
+>       sighash flag byte (or bytes, if it's expanded)
+>     - transaction batching and coinjoins potentially become cheaper than
+>       independent transactions, indirectly improving on-chain privacy
+>
+>    Drawbacks:
+>     - each soft-fork introduces a checkpoint, such that signatures that
+>       are not validated by versions prior to the soft-fork cannot be
+>       aggregated with signatures that are validated by versions prior to
+>       the soft-fork (see [0] for discussion about avoiding that drawback)
+>
+>    Approaches:
+>     - crypto logic can be implemented either by Bellare-Neven or MuSig
+>     - needs a new p2wpkh output format, so likely warrants a segwit
+>       version bump
+>     - may warrant allowing multiple aggregation buckets
+>     - may warrant peer-to-peer changes and a new per-tx witness
+>
+> 6) Non-interactive half-signature aggregation within transaction
+>
+>    Requirements:
+>      - needs Schnorr
+>      - needs a security proof before deployment
+>
+>    Benefits:
+>      - can halve the size of non-aggregatable signatures in a transaction
+>      - in particular implies the size overhead of a graftroot script
+>        is just 32B, the same as a taproot script
+>
+>    Drawbacks:
+>      - cannot be used with scriptless-script signatures
+>
+>    Approaches:
+>      - ideally best combined with interactive aggregate signatures, as it
+>        has similar implementation requirements
+>
+> 7) New SIGHASH modes
+>
+>    These will also need a new segwit version (for p2pk/p2pkh) and probably
+>    need to be considered at the same time.
+>
+> 8) p2pk versus p2pkh
+>
+>    Whether to stick with a pubkeyhash for the address or just have a pubkey
+>    needs to be decided for any new segwit version.
+>
+> 9) Other new opcodes
+>
+>    Should additional opcodes in new segwit versions be reserved as OP_NOP
+> or
+>    as OP_RETURN_VALID, or something else?
+>
+>    Should any meaningful new opcodes be supported or re-enabled?
+>
+> 10) Hard-fork automatic upgrade of p2pkh to be spendable via segwit
+>
+>    Making existing p2pk or p2pkh outputs spendable via Schnorr with
+>    interactive signature aggregation would likely be a big win for people
+>    with old UTXOs, without any decrease in security, especially if done
+>    a significant time after those features were supported for new outputs.
+>
+> 11) Should addresses be hashes or scripts?
+>
+>    maaku's arguments for general opcodes for MAST make me wonder a bit
+>    if the "p2pkh" approach isn't better than the "p2wpkh" approach; ie
+>    should we have script opcodes as the top level way to write addresses,
+>    rather than picking the "best" form of address everyone should use,
+>    and having people have to opt-out of that. probably already too late
+>    to actually have that debate though.
+>
+> Anyway, I think what that adds up to is:
+>
+>  - Everything other than MAST and maybe some misc new CHECKVERIFY opcodes
+>    really needs to be done via new segwit versions
+>
+>  - We can evaluate MAST in segwit v0 independently -- use the existing
+>    BIPs to deploy MAST for v0; and re-evaluate entirely for v1 and later
+>    segwit versions.
+>
+>  - There is no point deploying any of this for non-segwit scripts
+>
+>  - Having the taproot script be a MAST root probably makes sense. If so,
+>    a separate OP_MERKLE_MEMBERSHIP_CHECK opcode still probably makes
+>    sense at some point.
+>
+> So I think that adds up to:
+>
+>  a) soft-fork for MAST in segwit v0 anytime if there's community/economic
+>     support for it?
+>
+>  b) soft-fork for OP_CHECK_SCHNORR_SIG_VERIFY in segwit v0 anytime
+>
+>  c) soft-fork for segwit v1 providing Schnorr p2pk(h) addresses and
+>     taproot+mast addresses in not too much time
+>
+>  d) soft-fork for segwit v2 introducing further upgrades, particularly
+>     graftroot
+>
+>  e) soft-fork for segwit v2 to support interactive signature aggregation
+>
+>  f) soft-fork for segwit v3 including non-interactive sig aggregation
+>
+> The rationale there is:
+>
+>   (a) and (b) are self-contained and we could do them now. My feeling is
+>   better to skip them and go straight to (c)
+>
+>   (c) is the collection of stuff that would be a huge win, and seems
+>   "easily" technically feasible. signature aggregation seems too
+>   complicated to fit in here, and getting the other stuff done while we
+>   finish thinking about sigagg seems completely worthwhile.
+>
+>   (d) is a followon for (c), in case signature aggregation takes a
+>   *really* long while. It could conceivably be done as a different
+>   variation of segwit v1, really. It might turn out that there's no
+>   urgency for graftroot and it should be delayed until non-interactive
+>   sig aggregation is implementable.
+>
+>   (e) and (f) are separated just because I worry that non-interactive
+>   sig aggregation might not turn out to be possible; doing them as a
+>   single upgrade would be preferrable.
+>
+> Cheers,
+> aj
+>
+> [0] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> 2018-March/015838.html
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180510/dacd13e6/attachment-0001.html>
