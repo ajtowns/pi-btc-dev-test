@@ -1,0 +1,88 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Thu, 10 May 2018 15:57:30 +0200
+Subject: [bitcoin-dev] eltoo: A Simplified update Mechanism for
+	Lightning and Off-Chain Contracts
+In-Reply-To: <CAO3Pvs8mf-X4T7fJOgZ9L8uSS3vKhZyvJ1SxL=gbk6b96QuMow@mail.gmail.com>
+References: <874ljsitvx.fsf@gmail.com>
+	<CADZtCSgSJsU+j1teT4A9+nc+cuzBz+dhL+sC3dyGniQAsxPUxw@mail.gmail.com>
+	<87vac7hakf.fsf@gmail.com>
+	<CADZtCShihv1PR4yD_xATD2mv5CSMqH385HWVLdZQSG_9ZyJ7Jw@mail.gmail.com>
+	<87in87gx0q.fsf@gmail.com>
+	<CADZtCShvsaUpHKqRkkDm1XEmiSgj4Aa_VPdFFhaMQd9fcvxyZA@mail.gmail.com>
+	<87bmdzgu4v.fsf@gmail.com>
+	<CADZtCSgHmyYbumDw6bwfYpoqc9b-0JmHM5-22=Y1FXNDiTghrA@mail.gmail.com>
+	<CAO3Pvs8mf-X4T7fJOgZ9L8uSS3vKhZyvJ1SxL=gbk6b96QuMow@mail.gmail.com>
+Message-ID: <87603v4nqt.fsf@gmail.com>
+
+Olaoluwa Osuntokun via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> writes:
+
+> Hi Jimpo,
+>
+> You're correct that the introduction of symmetric state now
+> re-introduces the dependency between the CSV value of the commitment,
+> and the HTLC timeouts.  It's worth nothing that this issue existed in
+> an earlier version of the BOLT spec, this was pointed out by Mats in
+> the past: [1][2]. The dependency meant that if we wanted to allow very
+> long CSV time outs (like 1 month +), then this would have the adverse
+> effect of increasing the total CLTV timeout along the entire route. As
+> a result, we moved to the 2-stage HTLC scheme which is now implemented
+> and deployed as a part of BOLT 1.0. It may be the case that in the mid
+> to near future, most implementations aren't concerned about long time
+>  locks due to the existence of robust and reliable private
+> outsourcers.
+
+It's worth mentioning that the requirement for extremely large CLTV deltas
+would already create incredibly long CLTV deltas between the endpoints,
+since the endpoint delta accumulates along the path. This is true for
+LN-Penalty as well as eltoo. eltoo's requirement to settle before the
+HTLCs touch the blockchain adds a stage in which need to start on-chain
+settlement to ensure the HTLC hits the chain before its CLTV
+expires. We can imagine this as a separate timewindow, that does not
+accumulate across multiple hops (settlement ordering is not an issue,
+CLTV resolution is).
+
+My hope is that indeed with the simpler watch-towers we can reduce both
+the CLTV deltas as well as the settlement timeouts for eltoo, so that
+they become negligible.
+
+> As a side effect of the way the symmetric state changes the strategy
+> around breach attempts, we may see more breach attempts (and therefore
+> update transactions) on the chain since attempting to cheat w/ vanilla
+> symmetric state is now "costless" (worst case we just use the latest
+> state, best case I can commit the state better for me. This is in
+> stark contrast to punishment/slashing based approaches where a failed
+> breach attempt results in the cheating party losing all their funds.
+
+Not exactly costless, since the breaching party will have to pay the
+on-chain fees, and we may be able to reintroduce the reserve in order to
+add an additional punishment on top of the simple update mechanism
+(selectively introducing asymmetry).
+
+> However, with a commitment protocol that uses symmetric state. The
+> 2-stage HTLC scheme doesn't actually apply. Observe that with
+> Lighting's current asymmetric state commitment protocol, the "clock"
+> starts ticking as soon as the commitment hits the chain, and we follow
+> the "if an output pays to me, it must be delayed as I may be
+> attempting a breach". With symmetric state this no longer applies, the
+> clock instead starts "officially" ticking after the latest update
+> transaction has hit the chain, and there are no further challenges. As
+> a result of this, the commitment transaction itself doesn't need to
+> have any CSV delays within the Script branches of the outputs it
+> creates. Instead, each of those outputs can be immediately be spent as
+> the challenge period has already elapsed, and from the PoV of the
+> chain, this is now the "correct" commitment. Due to this, the HTLC
+> outputs would now be symmetric themselves, and look very much like an
+> HTLC output that one would use in a vanilla on-chain cross-chain
+> atomic swap.
+
+In addition to this it is worth pointing out that the old/replaced HTLCs
+have no way of ever touching the blockchain, so we can throw away a
+whole heap of data about these HTLCs, that we would have to carry around
+indefinitely if this were not the case. The same reason the HTLCs start
+ticking when a settlement touches the chain in LN-penalty is also the
+reason we need to carry all that data around. eltoo can be said to
+contain the two stage HTLC commit we added on top of LN-penalty.
+
+Cheers,
+Christian
