@@ -1,0 +1,62 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Thu, 10 May 2018 16:12:21 +0200
+Subject: [bitcoin-dev] BIP sighash_noinput
+In-Reply-To: <CAO3Pvs-8cX2Gdgu0cb0LdkY6ErguKkzs8pLZapFTD5JdpGms2A@mail.gmail.com>
+References: <871sewirni.fsf@gmail.com>
+	<CAO3Pvs-8cX2Gdgu0cb0LdkY6ErguKkzs8pLZapFTD5JdpGms2A@mail.gmail.com>
+Message-ID: <87y3gr38hm.fsf@gmail.com>
+
+Olaoluwa Osuntokun <laolu32 at gmail.com> writes:
+> Super stoked to see that no_input has been resurrected!!! I actually
+> implemented a variant back in 2015 when Tadge first described the
+> approach to me for both btcd [1], and bitcoind [2]. The version being
+> proposed is _slightly_ differ though, as the initial version I
+> implemented still committed to the script being sent, while this new
+> version just relies on witness validity instead. This approach is even
+> more flexible as the script attached to the output being spent can
+> change, without rendering the spending transaction invalid as long as
+> the witness still ratifies a branch in the output's predicate.
+
+Yeah, we removed the script commitment out of necessity for eltoo, but
+it seems to add a lot of flexibility that might be useful. One
+additional use-case that came to mind is having a recovery transaction
+for vault-like scenarios, i.e., a transaction that can short-circuit a
+thawing process of frozen funds. You'd keep that transaction in a vault,
+pre-signed and bind it to whatever action you'd like to interrupt.
+
+> Given that this would introduce a _new_ sighash flag, perhaps we
+> should also attempt to bundle additional more flexible sighash flags
+> concurrently as well?  This would require a larger overhaul w.r.t to
+> how sighash flags are interpreted, so in this case, we may need to
+> introduce a new CHECKSIG operator (lets call it CHECKSIG_X for now),
+> which would consume an available noop opcode. As a template for more
+> fine grained sighashing control, I'll refer to jl2012's BIP-0YYY [3]
+> (particularly the "New nHashType definitions" section).  This was
+> originally proposed in the context of his merklized script work as it
+> more or less opened up a new opportunity to further modify script
+> within the context of merklized script executions.  The approach reads
+> in the sighash flags as a bit vector, and allows developers to express
+> things like: "don't sign the input value, nor the sequence, but sign
+> the output of this input, and ONLY the script of this output". This
+> approach is _extremely_ powerful, and one would be able to express the
+> equivalent of no_input by setting the appropriate bits in the sighash.
+
+I purposefully made the proposal as small and as well defined as
+possible, with a number of possible applications to back it, since I
+think this might be the best way to introduce a new feature and make it
+as uncontroversial as possible. I'm not opposed to additional flags
+being deployed in parallel, but they'll need their own justification and
+analysis, and shouldn't be rushed just "because we're doing noinput".
+
+Going for a separate op-code is definitely an option we considered, but
+just for noinput it'd be duplicating quite a lot of existing
+functionality. With additional sighash flags it might become necessary,
+but I don't think it is necessary just for noinput.
+
+> Looking forward in hearing y'alls thoughts on this approach, thanks.
+>
+> [1]: https://github.com/Roasbeef/btcd/commits/SIGHASH_NOINPUT
+> [2]: https://github.com/Roasbeef/bitcoin/commits/SIGHASH_NOINPUT
+> [3]: https://github.com/jl2012/bips/blob/vault/bip-0YYY.mediawiki#new-nhashtype-definitions
+>
+> -- Laolu
