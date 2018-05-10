@@ -1,0 +1,39 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Wed, 09 May 2018 23:07:49 -0400
+Subject: [bitcoin-dev] Making OP_TRUE standard?
+In-Reply-To: <201805100227.42217.luke@dashjr.org>
+References: <87po25lmzs.fsf@rustcorp.com.au>
+	<201805100227.42217.luke@dashjr.org>
+Message-ID: <YOfgzjDA6blassXxfjPMCeNNE77y-Cuyp8rtc2eOdjj6NVPSOrZfa4a6clTE96-Val-IBHKlQteiVrI9vObgFh9SphENQwLRbf2-AKqUXeM=@protonmail.com>
+
+Good morning Luke and list,
+
+
+> An OP_TRUE-only script with a low value seems like a good example of where the
+> 
+> weight doesn't reflect the true cost: it uses a UTXO forever, while only
+> 
+> costing a weight of 4.
+> 
+> I like Johnson's idea to have some template (perhaps OP_2-only, to preserve
+> 
+> expected behaviour of OP_TRUE-only) that when combined with a 0-value is
+> 
+> always valid only if spent in the same block.
+
+I understand the issue.  On Lightning side, if this rule is used, we would have the two options below:
+
+1.  Commitment transactions always use the minimum feerate, but always have the above OP_TRUE output.  Then to confirm the commitment transaction we would have to always spend the OP_TRUE output in CPFP transaction that pays for actual fee at unilateral close.  This consumes more blockchain space for unilateral closes, as the second transaction is always mandatory.
+2.  We store two commitment transactions and associated paraphernalia (further transactions to claim the HTLCs).  One version has a negotiated feerate without the OP_TRUE output.  The other version has a slightly increased feerate and an OP_TRUE output as above.  At unilateral close, we see if the negotiated feerate is enough and use that version if possible, but if not we RBF it with other version and in addition also CPFP on top.  As mentioned before, we do not have transaction packages, so we need to RBF with higher feerate the commitment transaction, then submit the CPFP transaction which makes the first transaction valid to include in a block as per the rule.  This requires that the fallback always have both an RBF bump and a CPFP bump.
+
+> 
+>(Maybe it should be the first output
+> 
+> instead of the last... Is there any legitimate reason one would have multiple
+> 
+> such dummy outputs?)
+
+It seems there are indeed none.
+
+Regards,
+ZmnSCPxj
