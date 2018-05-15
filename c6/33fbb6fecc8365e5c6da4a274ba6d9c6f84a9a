@@ -1,0 +1,179 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Tue, 15 May 2018 10:28:22 -0400
+Subject: [bitcoin-dev] [Lightning-dev]  BIP sighash_noinput
+In-Reply-To: <20180514092329.GA17286@erisian.com.au>
+References: <871sewirni.fsf@gmail.com> <87sh73fe4h.fsf@gmail.com>
+	<20180508144021.GA15921@erisian.com.au>
+	<87in7we8h1.fsf@rustcorp.com.au>
+	<20180514092329.GA17286@erisian.com.au>
+Message-ID: <87sh6t2dtl.fsf@gmail.com>
+
+Anthony Towns <aj at erisian.com.au> writes:
+
+> On Thu, May 10, 2018 at 08:34:58AM +0930, Rusty Russell wrote:
+>> > The big concern I have with _NOINPUT is that it has a huge failure
+>> > case: if you use the same key for multiple inputs and sign one of them
+>> > with _NOINPUT, you've spent all of them. The current proposal kind-of
+>> > limits the potential damage by still committing to the prevout amount,
+>> > but it still seems a big risk for all the people that reuse addresses,
+>> > which seems to be just about everyone.
+>> If I can convince you to sign with SIGHASH_NONE, it's already a problem
+>> today.
+>
+> So, I don't find that very compelling: "there's already a way to lose
+> your money, so it's fine to add other ways to lose your money". And
+> again, I think NOINPUT is worse here, because a SIGHASH_NONE signature
+> only lets others take the coin you're trying to spend, messing up when
+> using NOINPUT can cause you to lose other coins as well (with caveats).
+
+`SIGHASH_NOINPUT` is a rather powerful tool, but has to be used
+responsibly, which is why we always mention that it shouldn't be used
+lightly. Then again all sighash flags can be dangerous if not well
+understood. Think for example `SIGHASH_SINGLE` with it's pitfall when
+the input has no matching output, or the already mentioned SIGHASH_NONE.
+
+>From a technical, and risk, point of view I don't think there is much
+difference between a new opcode or a new sighash flag, with the
+activation being the one exception. I personally believe that a segwit
+script bump has cleaner semantics than soft-forking in a new opcode
+(which has 90% overlap with the existing checksig and checkmultisig
+opcodes).
+
+>> [...]
+>> In a world where SIGHASH_NONE didn't exist, this might be an argument :)
+>
+> I could see either dropping support for SIGHASH_NONE for segwit
+> v1 addresses, or possibly limiting SIGHASH_NONE in a similar way to
+> limiting SIGHASH_NOINPUT. Has anyone dug through the blockchain to see
+> if SIGHASH_NONE is actually used/useful?
+
+That's a good point, I'll try looking for it once I get back to my full
+node :-) And yes, `SIGHASH_NONE` should also come with all the warning
+signs about not using it without a very good reason.
+
+>> That was also suggested by Mark Friedenbach, but I think we'll end up
+>> with more "magic key" a-la Schnorr/taproot/graftroot and less script in
+>> future.
+>
+> Taproot and graftroot aren't "less script" at all -- if anything they're
+> the opposite in that suddenly every address can have a script path.
+> I think NOINPUT has pretty much the same tradeoffs as taproot/graftroot
+> scripts: in the normal case for both you just use a SIGHASH_ALL
+> signature to spend your funds; in the abnormal case for NOINPUT, you use
+> a SIGHASH_NOINPUT (multi)sig for unilateral eltoo closes or watchtower
+> penalties, in the abnormal case for taproot/graftroot you use a script.
+
+That's true for today's uses of `SIGHASH_NOINPUT` and others, but there
+might be other uses that we don't know about in which noinput isn't just
+used for the contingency, handwavy I know. That's probably not the case
+for graftroot/taproot, but I'm happy to be corrected on that one.
+
+Still, these opcodes and hash flags being mainly used for contingencies,
+doesn't remove the need for these contingency options to be enforced
+on-chain.
+
+>> That means we'd actually want a different Segwit version for
+>> "NOINPUT-can-be-used", which seems super ugly.
+>
+> That's backwards. If you introduce a new opcode, you can use the existing
+> segwit version, rather than needing segwit v1. You certainly don't need
+> v1 segwit for regular coins and v2 segwit for NOINPUT coins, if that's
+> where you were going?
+>
+> For segwit v0, that would mean your addresses for a key "X", might be:
+>
+>    [pubkey]  X    
+>     - not usable with NOINPUT
+>    [script]  2 X Y 2 CHECKMULTISIG
+>     - not usable with NOINPUT
+>    [script]  2 X Y 2 CHECKMULTISIG_1USE_VERIFY
+>     - usable with NOINPUT (or SIGHASH_ALL)
+>
+> CHECKMULTISIG_1USE_VERIFY being soft-forked in by replacing an OP_NOP,
+> of course. Any output spendable via a NOINPUT signature would then have
+> had to have been deliberately created as being spendable by NOINPUT.
+
+The main reason I went for the sighash flag instead of an opcode is that
+it has clean semantics, allows for it to be bundled with a number of
+other upgrades, and doesn't use up NOP-codes, which I was lectured
+for my normalized tx BIP (BIP140) is a rare resource that should be used
+sparingly. The `SIGHASH_NOINPUT` proposal is minimal, since it enhances
+4 existing opcodes. If we were to do that with new opcodes we'd either
+want a multisig and a singlesig variant, potentially with a verify
+variant each. That's a lot of opcodes.
+
+The proposal being minimal should also help against everybody trying to
+get their favorite feature added, and hopefully streamline the
+discussion.
+
+> For a new segwit version with taproot that likewise includes an opcode,
+> that might be:
+>
+>    [taproot]  X
+>     - not usable with NOINPUT
+>    [taproot]  X or: X CHECKSIG_1USE
+>     - usable with NOINPUT
+>
+> If you had two UTXOs (with the same value), then if you construct
+> a taproot witness script for the latter address it will look like:
+>
+>     X [X CHECKSIG_1USE] [sig_X_NOINPUT]
+>
+> and that signature can't be used for addresses that were just intending
+> to pay to X, because the NOINPUT sig/sighash simply isn't supported
+> without a taproot path that includes the CHECKSIG_1USE opcode.
+>
+> In essence, with the above construction there's two sorts of addresses
+> you generate from a public key X: addresses where you spend each coin
+> individually, and different addresses where you spend the wallet of
+> coins with that public key (and value) at once; and that remains the
+> same even if you use a single key for both.
+>
+> I think it's slightly more reasonable to worry about signing with NOINPUT
+> compared to signing with SIGHASH_NONE: you could pretty reasonably setup
+> your (light) bitcoin wallet to not be able to sign (or verify) with
+> SIGHASH_NONE ever; but if you want to use lightning v2, it seems pretty
+> likely your wallet will be signing things with SIGHASH_NOINPUT. From
+> there, it's a matter of having a bug or a mistake cause you to
+> cross-contaminate keys into your lightning subsystem, and not be
+> sufficiently protected by other measures (eg, muSig versus checkmultisig).
+
+I think the same can be addressed by simply having the wallet use a
+different derivation path for keys that it is willing to sign with
+NOINPUT. I sort of dislike having a direct dependency on taproot, i.e.,
+allowing noinput only in taproot scripts, since that isn't a done deal
+either. Without that direct dependency, having the noinput path and the
+sighash_all path be differentiated in the script leaks the details
+on-chain, bloating the UTXO set, and leaking details about our contract.
+
+Also isn't the same issue true for a separate opcode?
+
+> (For me the Debian ssh key generation bug from a decade ago is sufficient
+> evidence that people you'd think are smart and competent do make really
+> stupid mistakes in real life; so defense in depth here makes sense even
+> though you'd have to do really stupid things to get a benefit from it)
+
+Totally agree, however one could argue that increased code complexity
+is a major contributor to security issues, and I'm still convinced that
+the hashflag is the simplest and cleanest approach to getting this
+feature implemented.
+
+That being said, I think the soft-forked opcode is also a good option,
+if we can get agreement on the details in a reasonable amount of time.
+
+> The other benefit of a separate opcode is support can be soft-forked in
+> independently of a new segwit version (either earlier or later).
+
+That can both be a positive as well as a negative, since a bundle of
+complementing features likely is easier to get reviewed and activated.
+
+> I don't think the code has to be much more complicated with a separate
+> opcode; passing an extra flag to TransactionSignatureChecker::CheckSig()
+> is probably close to enough. Some sort of flag remains needed anyway
+> since v0 and pre-segwit signatures won't support NOINPUT.
+
+That's moving the fanout for sighash_all vs sighash_none from the opcode
+up to the interpreter, right.
+
+Cheers,
+Christian
