@@ -1,0 +1,93 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Thu, 17 May 2018 20:45:33 +0000
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <CADZtCShLmH_k-UssNWahUNHgHvWQQ1y638LwaOfnJEipwjbiYg@mail.gmail.com>
+References: <d43c6082-1b2c-c95b-5144-99ad0021ea6c@mattcorallo.com>
+	<CAAS2fgRF-MhOvpFY6c_qAPzNMo3GQ28RExdSbOV6Q6Oy2iWn1A@mail.gmail.com>
+	<22d375c7-a032-8691-98dc-0e6ee87a4b08@mattcorallo.com>
+	<CAAS2fgR3QRHeHEjjOS1ckEkL-h7=Na56G12hYW9Bmy9WEMduvg@mail.gmail.com>
+	<CADZtCShLmH_k-UssNWahUNHgHvWQQ1y638LwaOfnJEipwjbiYg@mail.gmail.com>
+Message-ID: <CAAS2fgQLCN_cuZ-3QPjCLfYOtHfEk=SenTn5=y9LfGzJxLPR3Q@mail.gmail.com>
+
+On Thu, May 17, 2018 at 8:19 PM, Jim Posen <jim.posen at gmail.com> wrote:
+> In my opinion, it's overly pessimistic to design the protocol in an insecure
+> way because some light clients historically have taken shortcuts.
+
+Any non-commited form is inherently insecure.  A nearby network
+attacker (or eclipse attacker) or whatnot can moot whatever kind of
+comparisons you make, and non-comparison based validation doesn't seem
+like it would be useful without mooting all the bandwidth improvements
+unless I'm missing something.
+
+It isn't a question of 'some lite clients' -- I am aware of no
+implementation of these kinds of measures in any cryptocurrency ever.
+
+The same kind of comparison to the block could have been done with
+BIP37 filtering, but no one has implemented that. (similarly, the
+whitepaper suggests doing that for all network rules when a
+disagreement has been seen, though that isn't practical for all
+network rules it could be done for many of them-- but again no
+implementation or AFAIK any interest in implementing that)
+
+> If the
+> protocol can provide clients the option of getting additional security, it
+> should.
+
+Sure, but at what cost?   And "additional" while nice doesn't
+necessarily translate into a meaningful increase in delivered security
+for any particular application.
+
+I think we might be speaking too generally here.
+
+What I'm suggesting would still allow a lite client to verify that
+multiple parties are offering the same map for a given block (by
+asking them for the map hash). It would still allow a future
+commitment so that lite client could verify that the hashpower they're
+hearing from agrees that the map they got is the correct corresponding
+map for the block. It would still allow downloading a block and
+verifying that all the outpoints in the block were included.  So still
+a lot better than BIP37.
+
+What it would not permit is for a lite client to download a whole
+block and completely verify the filter (they could only tell if the
+filter at least told them about all the outputs in the block, but if
+extra bits were set or inputs were omitted, they couldn't tell).
+
+But in exchange the filters for a given FP rate would be probably
+about half the current size (actual measurements would be needed
+because the figure depends on much scriptpubkey reuse there is, it
+probably could be anywhere between 1/3 and 2/3rd).  In some
+applications it would likely have better anonymity properties as well,
+because a client that always filters for both an output and and input
+as distinct items (and then leaks matches by fetching blocks) is more
+distinguishable.
+
+I think this trade-off is at leat worth considering because if you
+always verify by downloading you wash out the bandwidth gains, strong
+verification will eventually need a commitment in any case.  A client
+can still partially verify, and can still multi-party comparison
+verify.  ... and a big reduction in filter bandwidth
+
+Monitoring inputs by scriptPubkey vs input-txid also has a massive
+advantage for parallel filtering:  You can usually known your pubkeys
+well in advance, but if you have to change what you're watching block
+ N+1 for based on the txids that paid you in N you can't filter them
+in parallel.
+
+> On the general topic, Peter makes a good point that in many cases filtering
+> by txid of spending transaction may be preferable to filtering by outpoint
+> spend, which has the nice benefit that there are obviously fewer txs in a
+> block than txins. This wouldn't work for malleable transactions though.
+
+I think Peter missed Matt's point that you can monitor for a specific
+transaction's confirmation by monitoring for any of the outpoints that
+transaction contains. Because the txid commits to the outpoints there
+shouldn't be any case where the txid is knowable but (an) outpoint is
+not.  Removal of the txid and monitoring for any one of the outputs
+should be a strict reduction in the false positive rate for a given
+filter size (the filter will contain strictly fewer elements and the
+client will match for the same (or usually, fewer) number).
+
+I _think_ dropping txids as matt suggests is an obvious win that costs
+nothing.  Replacing inputs with scripts as I suggested has some
+trade-offs.
