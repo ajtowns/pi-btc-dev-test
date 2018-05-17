@@ -1,0 +1,119 @@
+From: jim.posen@gmail.com (Jim Posen)
+Date: Thu, 17 May 2018 14:27:15 -0700
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <CAAS2fgQLCN_cuZ-3QPjCLfYOtHfEk=SenTn5=y9LfGzJxLPR3Q@mail.gmail.com>
+References: <d43c6082-1b2c-c95b-5144-99ad0021ea6c@mattcorallo.com>
+	<CAAS2fgRF-MhOvpFY6c_qAPzNMo3GQ28RExdSbOV6Q6Oy2iWn1A@mail.gmail.com>
+	<22d375c7-a032-8691-98dc-0e6ee87a4b08@mattcorallo.com>
+	<CAAS2fgR3QRHeHEjjOS1ckEkL-h7=Na56G12hYW9Bmy9WEMduvg@mail.gmail.com>
+	<CADZtCShLmH_k-UssNWahUNHgHvWQQ1y638LwaOfnJEipwjbiYg@mail.gmail.com>
+	<CAAS2fgQLCN_cuZ-3QPjCLfYOtHfEk=SenTn5=y9LfGzJxLPR3Q@mail.gmail.com>
+Message-ID: <CADZtCSjYr6VMBVQ=rx44SgRWcFSXhVXUZJB=rHMh4X78Z2eY1A@mail.gmail.com>
+
+>
+> It isn't a question of 'some lite clients' -- I am aware of no
+> implementation of these kinds of measures in any cryptocurrency ever.
+>
+
+Doesn't mean there can't or shouldn't be a first. :-)
+
+
+> The same kind of comparison to the block could have been done with
+> BIP37 filtering, but no one has implemented that. (similarly, the
+> whitepaper suggests doing that for all network rules when a
+> disagreement has been seen, though that isn't practical for all
+> network rules it could be done for many of them-- but again no
+> implementation or AFAIK any interest in implementing that)
+
+
+Correct me if I'm wrong, but I don't think it's true that the same could be
+done for BIP 37. With BIP 37, one would have to download every partial
+block from every peer to determine if there is a difference between them.
+With BIP 157, you only download a 32 byte filter header from every peer
+(because filters are deterministic), and using that commitment can
+determine whether there's a conflict requiring further interrogation. The
+difference in overhead makes checking for conflicts with BIP 157 practical,
+whereas it's not as practical with BIP 37.
+
+
+> Sure, but at what cost?   And "additional" while nice doesn't
+> necessarily translate into a meaningful increase in delivered security
+> for any particular application.
+>
+> I think we might be speaking too generally here.
+>
+
+Sure. The security model that BIP 157 now allows is that a light client with*
+at least one honest peer serving filters* can get the correct information
+about the chain. No, this does not prevent against total eclipse attacks,
+but I think it's a much stronger security guarantee than requiring all
+peers or even a majority of peers to be honest. In a decentralized network
+that stores money, I think there's a big difference between those security
+models.
+
+
+> But in exchange the filters for a given FP rate would be probably
+> about half the current size (actual measurements would be needed
+> because the figure depends on much scriptpubkey reuse there is, it
+> probably could be anywhere between 1/3 and 2/3rd).
+>
+
+This does not seem right. Let's assume txids are removed because they are
+not relevant to this particular point. The difference as I understand it is
+whether to include in the filter serialized outpoints for inputs or
+serialized prev scriptPubkeys for inputs. When hashed these are the same
+size, and there's an equal number of them (one per input in a block). So
+the only savings comes from deduping the prev scriptPubkeys with each other
+and with the scriptPubkeys in the block's outputs. So it comes down
+entirely to how much address reuse there is on the chain.
+
+
+> Monitoring inputs by scriptPubkey vs input-txid also has a massive
+> advantage for parallel filtering:  You can usually known your pubkeys
+> well in advance, but if you have to change what you're watching block
+>  N+1 for based on the txids that paid you in N you can't filter them
+> in parallel.
+>
+
+Yes, I'll grant that this is a benefit of your suggestion.
+
+
+> I think Peter missed Matt's point that you can monitor for a specific
+> transaction's confirmation by monitoring for any of the outpoints that
+> transaction contains. Because the txid commits to the outpoints there
+> shouldn't be any case where the txid is knowable but (an) outpoint is
+> not.  Removal of the txid and monitoring for any one of the outputs
+> should be a strict reduction in the false positive rate for a given
+> filter size (the filter will contain strictly fewer elements and the
+> client will match for the same (or usually, fewer) number).
+>
+> I _think_ dropping txids as matt suggests is an obvious win that costs
+> nothing.  Replacing inputs with scripts as I suggested has some
+> trade-offs.
+>
+
+I may have interpreted this differently. So wallets need a way to know when
+the transactions they send get confirmed (for obvious usability reasons and
+so for automatic fee-bumping). One way is to match the spent outpoints
+against the filter, which I think of as the standard. Another would be to
+match the txid of the spending transaction against the first, which only
+works if the transaction is not malleable. Another would be to match the
+change output script against the first, assuming the wallet does not reuse
+change addresses and that the spending transaction does in fact have a
+change output.
+
+Now lets say these pieces of data, txids, output scripts, and spent
+outpoints are in three separate filters that a wallet can download
+separately or choose not to download. The spent outpoint method is the most
+reliable and has no caviats. It also allows for theft detection as Peter
+notes, which is a very nice property indeed. If the wallet uses the txid
+matching though, the txid filter would be smaller because there are fewer
+txids per block than inputs. So there could be some bandwidth savings to
+that approach. The change output watching is probably the nicest in some
+ways because the client needs the output filter anyway. If the transaction
+has no change output with a unique script, the client could watch for any
+of the other outputs on the spending tx, but may get more false positives
+depending on the degree of address reuse.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180517/01b8298f/attachment-0001.html>
