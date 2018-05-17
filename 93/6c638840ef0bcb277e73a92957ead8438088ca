@@ -1,0 +1,52 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Thu, 17 May 2018 12:14:53 +0930
+Subject: [bitcoin-dev] Making OP_TRUE standard?
+In-Reply-To: <201805100227.42217.luke@dashjr.org>
+References: <87po25lmzs.fsf@rustcorp.com.au>
+	<201805100227.42217.luke@dashjr.org>
+Message-ID: <87vabnq9ui.fsf@rustcorp.com.au>
+
+Luke Dashjr <luke at dashjr.org> writes:
+> An OP_TRUE-only script with a low value seems like a good example of where the 
+> weight doesn't reflect the true cost: it uses a UTXO forever, while only 
+> costing a weight of 4.
+>
+> I like Johnson's idea to have some template (perhaps OP_2-only, to preserve 
+> expected behaviour of OP_TRUE-only) that when combined with a 0-value is 
+> always valid only if spent in the same block.
+>
+> I wonder if it would make sense to actually tie it to a transaction version 
+> bit, such that when the bit is set, the transaction is serialised with +1 on 
+> the output count and 00000000000000000181 is simply injected into the 
+> transaction hashing... But for now, simply having a consensus rule that a bit 
+> MUST be set for the expected behaviour, and the bit may ONLY be set when the 
+> last output is exactly 00000000000000000181, would allow us to code the 
+> transaction serialisation up later. (Maybe it should be the first output 
+> instead of the last... Is there any legitimate reason one would have multiple 
+> such dummy outputs?)
+
+Your zero-val-OP_TRUE-can't-be-spent-after-same-block SF is interesting,
+but if we want a SF just give us SIGHASH_NOINPUT and we'll not need this
+at all (though others still might).  It's nicer than the previous
+discussions on after-the-fact feebumping[1] though.
+
+Meanwhile, our best mitigation against UTXO bloat is:
+1. Make the fees as low as possible[2]
+2. Put a CSV delay on the to-remote output (currently there's asymmetry)
+3. Attach more value to the OP_TRUE output, say 1000 satoshi.
+
+But turns out we probably don't want an OP_TRUE output nor P2SH, because
+then the spending tx would be malleable.  So P2WSH is is.
+
+This brings us another theoretical problem: someone could spend our
+OP_TRUE with a low-fee non-RBF tx, and we'd not be able to use it to
+CPFP the tx.  It'd be hard to do, but possible.  I think the network
+benefits from using OP_TRUE (anyone can clean, and size, vs some
+only-known-to-me pubkey) outweighs the risk, but it'd be nice if OP_TRUE
+P2WSH spends were always considered RBF.
+
+Thanks,
+Rusty.
+[1] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-April/015864.html
+[2] Because bitcoin core use legacy measurements, this is actually 253
+satoshi per kilosipa for us, see https://github.com/ElementsProject/lightning/commit/2e687b9b352c9092b5e8bd4a688916ac50b44af0
