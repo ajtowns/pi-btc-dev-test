@@ -1,0 +1,316 @@
+From: alex.mizrahi@gmail.com (Alex Mizrahi)
+Date: Fri, 18 May 2018 18:42:00 +0300
+Subject: [bitcoin-dev] UHS: Full-node security without maintaining a
+ full UTXO set
+In-Reply-To: <CAApLimjfPKDxmiy_SHjuOKbfm6HumFPjc9EFKvw=3NwZO8JcmQ@mail.gmail.com>
+References: <CAApLimjfPKDxmiy_SHjuOKbfm6HumFPjc9EFKvw=3NwZO8JcmQ@mail.gmail.com>
+Message-ID: <CAE28kUT0bK=hOMTqjSP8stC64eNXaqrXuz_HC-4DXx3+M4QJ7w@mail.gmail.com>
+
+You should read this:
+https://bitcointalk.org/index.php?topic=153662.10
+
+On Wed, May 16, 2018 at 7:36 PM, Cory Fields via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Tl;dr: Rather than storing all unspent outputs, store their hashes.
+> Untrusted
+> peers can supply the full outputs when needed, with very little overhead.
+> Any attempt to spoof those outputs would be apparent, as their hashes
+> would not
+> be present in the hash set. There are many advantages to this, most
+> apparently
+> in disk and memory savings, as well as a validation speedup. The primary
+> disadvantage is a small increase in network traffic. I believe that the
+> advantages outweigh the disadvantages.
+>
+> --
+>
+> Bitcoin?s unspent transaction output set (usually referred to as ?The UTXO
+> set?) has two primary roles: providing proof that previous outputs exist
+> to be
+> spent, and providing the actual previous output data for verification when
+> new
+> transactions attempts to spend them. These roles are not usually discussed
+> independently, but as Bram Cohen's TXO Bitfield [0] idea hints, there are
+> compelling reasons to consider them this way.
+>
+> To see why, consider running a node with the following changes:
+>
+> - For each new output, gather all extra data that will be needed for
+>   verification when spending it later as an input: the amount,
+> scriptPubKey,
+>   creation height, coinbaseness, and output type (p2pkh, p2sh, p2wpkh,
+> etc.).
+>   Call this the Dereferenced Prevout data.
+> - Create a hash from the concatenation of the new outpoint and the
+> dereferenced
+>   prevout data. Call this a Unspent Transaction Output Hash.
+> - Rather than storing the full dereferenced prevout entries in a UTXO set
+> as is
+>   currently done, instead store their hashes to an Unspent Transaction
+> Output
+>   Hash Set, or UHS.
+> - When relaying a transaction, append the dereferenced prevout for each
+> input.
+>
+> Now when a transaction is received, it contains everything needed for
+> verification, including the input amount, height, and coinbaseness, which
+> would
+> have otherwise required a lookup the UTXO set.
+>
+> To verify an input's unspentness, again create a hash from the
+> concatenation of
+> the referenced outpoint and the provided dereferenced prevout, and check
+> for
+> its presence in the UHS. The hash will only be present if a hash of the
+> exact
+> same data was previously added to (and not since removed from) the UHS. As
+> such, we are protected from a peer attempting to lie about the dereferenced
+> prevout data.
+>
+> ### Some benefits of the UHS model
+>
+> - Requires no consensus changes, purely a p2p/implementation change.
+>
+> - UHS is substantially smaller than a full UTXO set (just over half for the
+>   main chain, see below). In-memory caching can be much more effective as a
+>   result.
+>
+> - A block?s transactions can be fully verified before doing a potentially
+>   expensive database lookup for the previous output data. The UHS can be
+>   queried afterwards (or in parallel) to verify previous output inclusion.
+>
+> - Entire blocks could potentially be verified out-of-order because all
+> input
+>   data is provided; only the inclusion checks have to be in-order.
+> Admittedly
+>   this is likely too complicated to be realistic.
+>
+> - pay-to-pubkey outputs are less burdensome on full nodes, since they use
+> no
+>   more space on-disk than pay-to-pubkey-hash or pay-to-script-hash.
+> Taproot and
+>   Graftroot outputs may share the same benefits.
+>
+> - The burden of holding UTXO data is technically shifted from the
+> verifiers to
+>   the spender. In reality, full nodes will likely always have a copy as
+> well,
+>   but conceptually it's a slight improvement to the incentive model.
+>
+> - Block data from peers can also be used to roll backwards during a reorg.
+> This
+>   potentially enables an even more aggressive pruning mode.
+>
+> - UTXO storage size grows exactly linearly with UTXO count, as opposed to
+>   growing linearly with UTXO data size. This may be relevant when
+> considering
+>   new larger output types which would otherwise cause the UTXO Set size to
+>   increase more quickly.
+>
+> - The UHS is a simple set, no need for a key-value database. LevelDB could
+>   potentially be dropped as a dependency in some distant future.
+>
+> - Potentially integrates nicely with Pieter Wuille's Rolling UTXO set
+> hashes
+>   [1]. Unspent Transaction Output Hashes would simply be mapped to points
+> on a
+>   curve before adding them to the set.
+>
+> - With the help of inclusion proofs and rolling hashes, libbitcoinconsensus
+>   could potentially safely verify entire blocks. The size of the required
+>   proofs would be largely irrelevant as they would be consumed locally.
+>
+> - Others?
+>
+> ### TxIn De-duplication
+>
+> Setting aside the potential benefits, the obvious drawback of using a UHS
+> is a
+> significant network traffic increase. Fortunately, some properties of
+> transactions can be exploited to offset most of the difference.
+>
+> For quick reference:
+>
+> p2pkh scriptPubKey: DUP HASH160 [pubkey hash] EQUALVERIFY CHECKSIG
+> p2pkh scriptSig:    [signature] [pubkey]
+>
+> p2sh scriptPubKey:  HASH160 [script hash] EQUAL
+> p2sh scriptSig:     [signature(s)] [script]
+>
+> Notice that if a peer is sending a scriptPubKey and a scriptSig together,
+> as
+> they would when using a UHS, there would likely be some redundancy. Using a
+> p2sh output for example, the scriptPubKey contains the script hash, and the
+> scriptSig contains the script itself. Therefore when sending dereferenced
+> prevouts over the wire, any hash which can be computed can be omitted and
+> only
+> the preimages sent.
+>
+> Non-standard output scripts must be sent in-full, though because they
+> account
+> for only ~1% of all current UTXOs, they are rare enough to be ignored here.
+>
+> ### Intra-block Script De-duplication
+>
+> When transactions are chained together in the same block, dereferenced
+> prevout
+> data for these inputs would be redundant, as the full output data is
+> already
+> present. For that reason, these dereferenced prevouts can be omitted when
+> sending over the wire.
+>
+> The downside would be a new reconstruction pass requirement prior to
+> validation.
+>
+> ### Data
+>
+> Here's some preliminary testing with a naive POC implementation patched
+> into
+> Bitcoin Core. Note that the final sizes will depend on optimization of the
+> serialization format. The format used for these tests is suboptimal for
+> sure.
+> Syncing mainnet to block 516346:
+>
+>                       UTXO Node      UHS Node
+>   IBD Network Data:   153G           157G
+>   Block disk space:   175G           157G
+>   UTXO disk space :   2.8G           1.6G
+>   Total disk space:   177.8G         158.6G
+>
+> The on-disk block-space reduction comes from the elimination of the Undo
+> data
+> that Bitcoin Core uses to roll back orphaned blocks. For UHS Nodes, this
+> data
+> is merged into to the block data and de-duplicated.
+>
+> Compared to the UXTO model, using a UHS reduces disk space by ~12%, yet
+> only
+> requires ~5% more data over the wire.
+>
+> Experimentation shows intra-block de-duplication to be of little help in
+> practice, as it only reduces overhead by ~0.2% on mainnet. It could become
+> more
+> useful if, for example, CPFP usage increases substantially in the future.
+>
+> ### Safety
+>
+> Assuming sha256 for the UHS's hash function, I don't believe any
+> fundamental
+> changes to Bitcoin's security model are introduced. Because the unspent
+> transaction output hashes commit to all necessary data, including output
+> types,
+> it should not be possible to be tricked into validating using mutated or
+> forged
+> inputs.
+>
+> ### Compatibility
+>
+> Transitioning from the current UTXO model would be annoying, but not
+> particularly painful. I'll briefly describe my current preferred approach,
+> but
+> it makes sense to largely ignore this until there's been some discussion
+> about
+> UHS in general.
+>
+> A new service-bit should be allocated to indicate that a node is willing to
+> serve blocks and transactions with dereferenced prevout data appended. Once
+> connected to a node advertising this feature, nodes would use a new getdata
+> flag, creating MSG_PREVDATA_BLOCK and MSG_PREVDATA_TX.
+>
+> Because current full nodes already have this data readily available in the
+> block-undo files, it is trivial to append on-the-fly. For that reason, it
+> would
+> be easy to backport patches to the current stable version of Bitcoin Core
+> in
+> order to enable serving these blocks even before they could be consumed.
+> This
+> would avoid an awkward bootstrapping phase where there may only be a few
+> nodes
+> available to serve to all new nodes.
+>
+> Admittedly I haven't put much thought into the on-disk format, I'd rather
+> leave
+> that to a database person. Though it does seem like a reasonable excuse to
+> consider moving away from LevelDB.
+>
+> Wallets would begin holding full prevout data for their unspent outputs,
+> though
+> they could probably back-into the data as-is.
+>
+> ### Serialization
+>
+> I would prefer to delay this discussion until a more high-level discussion
+> has
+> been had, otherwise this would be a magnet for nits. The format used to
+> gather
+> the data above can be seen in the implementation below.
+>
+> It should be noted, though, that the size of a UHS is directly dependent
+> on the
+> chosen hash function. Smaller hashes could potentially be used, but I
+> believe
+> that to be unwise.
+>
+> ### Drawbacks
+>
+> The primary drawback of this approach is the ~5% network ovhead.
+>
+> Additionally, there is the possibility that a few "bridge nodes" may be
+> needed
+> for some time. In a future with a network of only pruned UHS nodes, an old
+> wallet with no knowledge of its dereferenced prevout data would need to
+> broadcast an old-style transaction, and have a bridge node append the extra
+> data before forwarding it along the network.
+>
+> I won't speculate further there, except to say that I can't imagine a
+> transition problem that wouldn't have a straightforward solution.
+>
+> Migration issues aside, am I missing any obvious drawbacks?
+>
+> ### Implementation
+>
+> This code [2] was a quick hack-job, just enough to gather some initial
+> data. It
+> builds a UHS in memory and never flushes to disk. Only a single run works,
+> nasty things will happen upon restart. It should only be viewed in order
+> to get
+> an idea of what changes are needed. Only enough for IBD is implemented,
+> mempool/wallet/rpc are likely all broken. It is definitely not
+> consensus-safe.
+>
+> ### Acknowledgement
+>
+> I consider the UHS concept to be an evolution of Bram Cohen's TXO bitfield
+> idea. Bram also provided invaluable input when initially walking through
+> the
+> feasibility of a UHS.
+>
+> Pieter Wuille's work on Rolling UTXO set hashes served as a catalyst for
+> rethinking how the UTXO set may be represented.
+>
+> Additional thanks to those at at Financial Crypto and the CoreDev event
+> afterwards who helped to flesh out the idea:
+>
+> Tadge Dryja
+> Greg Sanders
+> John Newbery
+> Neha Narula
+> Jeremy Rubin
+> Jim Posen
+> ...and everyone else who has chimed in.
+>
+>
+> [0] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> 2017-March/013928.html
+> [1] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> 2017-May/014337.html
+> [2] https://github.com/theuni/bitcoin/tree/utxo-set-hash3
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180518/81546ac9/attachment-0001.html>
