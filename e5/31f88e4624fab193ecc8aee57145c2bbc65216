@@ -1,0 +1,131 @@
+From: laolu32@gmail.com (Olaoluwa Osuntokun)
+Date: Fri, 18 May 2018 19:51:02 -0700
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <d43c6082-1b2c-c95b-5144-99ad0021ea6c@mattcorallo.com>
+References: <d43c6082-1b2c-c95b-5144-99ad0021ea6c@mattcorallo.com>
+Message-ID: <CAO3Pvs8t6rNBkdCNBfqH+cyxLftBPCUMB9ZjDuHq--SXGmCvnA@mail.gmail.com>
+
+Matt wrote:
+> I believe (1) could be skipped entirely - there is almost no reason why
+> you'd not be able to filter for, eg, the set of output scripts in a
+> transaction you know about
+
+Depending on the use-case, the txid is more precise than searching for the
+output script as it doesn't need to deal with duplicated output scripts. To
+my knowledge, lnd is the only major project that currently utilizes BIP
+157+158. At this point, we use the txid in the regular filter for
+confirmations (channel confirmed, sweep tx confirmed, cltv confirmed, etc).
+Switching to use output scripts instead wouldn't be _too_ invasive w.r.t
+changes required in the codebase, only the need to deal with output script
+duplication could be annoying.
+
+> (2) and (3) may want to be split out - many wallets may wish to just find
+> transactions paying to them, as transactions spending from their outputs
+> should generally be things they've created.
+
+FWIW, in the "rescan after importing by seed phrase" both are needed in
+order to ensure the wallet ends up with the proper output set after the
+scan. In lnd we actively use both (2) to detect deposits to the internal
+wallet, and (3) to be notified when our channel outputs are spent on-chain
+(and also generally when any of our special scripts are spent).
+
+> In general, I'm concerned about the size of the filters making existing
+SPV
+> clients less willing to adopt BIP 158 instead of the existing bloom filter
+> garbage and would like to see a further exploration of ways to split out
+> filters to make them less bandwidth intensive.
+
+Agreed that the current filter size may prevent adoption amongst wallets.
+However, the other factor that will likely prevent adoption amongst current
+BIP-37 mobile wallets is the lack of support for notifying _unconfirmed_
+transactions. When we drafted up the protocol last year and asked around,
+this was one of the major points of contention amongst existing mobile
+wallets that utilize BIP 37.
+
+On the other hand, the two "popular" BIP 37 wallets I'm aware of
+(Breadwallet, and Andreas Schildbach's Bitcoin Wallet) have lagged massively
+behind the existing set of wallet related protocol upgrades. For example,
+neither of them have released versions of their applications that take
+advantage of segwit in any manner. Breadwallet has more or less "pivoted"
+(they did an ICO and have a token) and instead is prioritizing things like
+adding random ICO tokens over catching up with the latest protocol updates.
+Based on this behavior, even if the filter sizes were even _more_ bandwidth
+efficient that BIP 37, I don't think they'd adopt the protocol.
+
+> Some further ideas we should probably play with before finalizing moving
+> forward is providing filters for certain script templates, eg being able
+to
+> only get outputs that are segwit version X or other similar ideas.
+
+Why should this block active deployment of BIP 157+158 as is now? As
+defined, the protocol already allows future updates to add additional filter
+types. Before the filters are committed, each filter type requires a new
+filter header. We could move to a single filter header that commits to the
+hashes of _all_ filters, but that would mean that a node couldn't serve the
+headers unless they had all currently defined features, defeating the
+optionality offered.
+
+Additionally, more filters entails more disk utilization for nodes serving
+these filters. Nodes have the option to instead create the filters at "query
+time", but then this counters the benefit of simply slinging the filters
+from disk (or a memory map or w/e). IMO, it's a desirable feature that
+serving light clients no longer requires active CPU+I/O and instead just
+passive I/O (nodes could even write the filters to disk in protocol msg
+format).
+
+To get a feel for the current filter sizes, a txid-only filter size, and a
+regular filter w/o txid's, I ran some stats on the last 10k blocks:
+
+regular size:    217107653  bytes
+regular avg:     21710.7653 bytes
+regular median:  22332      bytes
+regular max:     61901      bytes
+
+txid-only size:    34518463  bytes
+txid-only avg:     3451.8463 bytes
+txid-only median:  3258      bytes
+txid-only max:     10193     bytes
+
+reg-no-txid size:    182663961  bytes
+reg-no-txid avg:     18266.3961 bytes
+reg-no-txid median:  19198      bytes
+reg-no-txid max:     60172      bytes
+
+So the median regular filter size over the past 10k blocks is 20KB. If we
+extract the txid from the regular filter and add a txid-only filter, the
+median size of that is 3.2KB. Finally, the median size of a modified regular
+filter (no txid) is 19KB.
+
+-- Laolu
+
+
+On Thu, May 17, 2018 at 8:33 AM Matt Corallo via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> BIP 158 currently includes the following in the "basic" filter: 1)
+> txids, 2) output scripts, 3) input prevouts.
+>
+> I believe (1) could be skipped entirely - there is almost no reason why
+> you'd not be able to filter for, eg, the set of output scripts in a
+> transaction you know about and (2) and (3) may want to be split out -
+> many wallets may wish to just find transactions paying to them, as
+> transactions spending from their outputs should generally be things
+> they've created.
+>
+> In general, I'm concerned about the size of the filters making existing
+> SPV clients less willing to adopt BIP 158 instead of the existing bloom
+> filter garbage and would like to see a further exploration of ways to
+> split out filters to make them less bandwidth intensive. Some further
+> ideas we should probably play with before finalizing moving forward is
+> providing filters for certain script templates, eg being able to only
+> get outputs that are segwit version X or other similar ideas.
+>
+> Matt
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180518/58337833/attachment.html>
