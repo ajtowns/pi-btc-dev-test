@@ -1,0 +1,105 @@
+From: laolu32@gmail.com (Olaoluwa Osuntokun)
+Date: Mon, 21 May 2018 18:15:22 -0700
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <CAPg+sBhL8ZV+kswgyQfQyhd0Qv5Mkt1cYxrfFV4H32s9QYLo0A@mail.gmail.com>
+References: <d43c6082-1b2c-c95b-5144-99ad0021ea6c@mattcorallo.com>
+	<CAAS2fgRF-MhOvpFY6c_qAPzNMo3GQ28RExdSbOV6Q6Oy2iWn1A@mail.gmail.com>
+	<CAO3Pvs8DaphZjZUp8_Og+SMmYrrgFi3HyWTZb5J1mGVEcmkn8A@mail.gmail.com>
+	<CAPg+sBhL8ZV+kswgyQfQyhd0Qv5Mkt1cYxrfFV4H32s9QYLo0A@mail.gmail.com>
+Message-ID: <CAO3Pvs_fSWN5mQeJzD302LuGyy-VFrNbv9r8JVPJ=v3-_c4kCQ@mail.gmail.com>
+
+Hi Y'all,
+
+The script finished a few days ago with the following results:
+
+reg-filter-prev-script total size:  161236078  bytes
+reg-filter-prev-script avg:         16123.6078 bytes
+reg-filter-prev-script median:      16584      bytes
+reg-filter-prev-script max:         59480      bytes
+
+Compared to the original median size of the same block range, but with the
+current filter (has both txid, prev outpoint, output scripts), we see a
+roughly 34% reduction in filter size (current median is 22258 bytes).
+Compared to the suggested modified filter (no txid, prev outpoint, output
+scripts), we see a 15% reduction in size (median of that was 19198 bytes).
+This shows that script re-use is still pretty prevalent in the chain as of
+recent.
+
+One thing that occurred to me, is that on the application level, switching
+to the input prev output script can make things a bit awkward. Observe that
+when looking for matches in the filter, upon a match, one would need access
+to an additional (outpoint -> script) map in order to locate _which_
+particular transaction matched w/o access to an up-to-date UTOX set. In
+contrast, as is atm, one can locate the matching transaction with no
+additional information (as we're matching on the outpoint).
+
+At this point, if we feel filter sizes need to drop further, then we may
+need to consider raising the false positive rate.
+
+Does anyone have any estimates or direct measures w.r.t how much bandwidth
+current BIP 37 light clients consume? It would be nice to have a direct
+comparison. We'd need to consider the size of their base bloom filter, the
+accumulated bandwidth as a result of repeated filterload commands (to adjust
+the fp rate), and also the overhead of receiving the merkle branch and
+transactions in distinct messages (both due to matches and false positives).
+
+Finally, I'd be open to removing the current "extended" filter from the BIP
+as is all together for now. If a compelling use case for being able to
+filter the sigScript/witness arises, then we can examine re-adding it with a
+distinct service bit. After all it would be harder to phase out the filter
+once wider deployment was already reached. Similarly, if the 16% savings
+achieved by removing the txid is attractive, then we can create an
+additional
+filter just for the txids to allow those applications which need the
+information to seek out that extra filter.
+
+-- Laolu
+
+
+On Fri, May 18, 2018 at 8:06 PM Pieter Wuille <pieter.wuille at gmail.com>
+wrote:
+
+> On Fri, May 18, 2018, 19:57 Olaoluwa Osuntokun via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> Greg wrote:
+>> > What about also making input prevouts filter based on the scriptpubkey
+>> being
+>> > _spent_?  Layering wise in the processing it's a bit ugly, but if you
+>> > validated the block you have the data needed.
+>>
+>> AFAICT, this would mean that in order for a new node to catch up the
+>> filter
+>> index (index all historical blocks), they'd either need to: build up a
+>> utxo-set in memory during indexing, or would require a txindex in order to
+>> look up the prev out's script. The first option increases the memory load
+>> during indexing, and the second requires nodes to have a transaction index
+>> (and would also add considerable I/O load). When proceeding from tip, this
+>> doesn't add any additional load assuming that your synchronously index the
+>> block as you validate it, otherwise the utxo set will already have been
+>> updated (the spent scripts removed).
+>>
+>
+> I was wondering about that too, but it turns out that isn't necessary. At
+> least in Bitcoin Core, all the data needed for such a filter is in the
+> block + undo files (the latter contain the scriptPubKeys of the outputs
+> being spent).
+>
+> I have a script running to compare the filter sizes assuming the regular
+>> filter switches to include the prev out's script rather than the prev
+>> outpoint itself. The script hasn't yet finished (due to the increased I/O
+>> load to look up the scripts when indexing), but I'll report back once it's
+>> finished.
+>>
+>
+> That's very helpful, thank you.
+>
+> Cheers,
+>
+> --
+> Pieter
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180521/feb53119/attachment.html>
