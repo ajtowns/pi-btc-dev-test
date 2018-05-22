@@ -1,0 +1,88 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 22 May 2018 11:17:42 -0700
+Subject: [bitcoin-dev] Should Graftroot be optional?
+Message-ID: <CAPg+sBgKY-nmL=x+LVubtB0fFBAwd-1CDHT7zhidX8p9DLSGyg@mail.gmail.com>
+
+Hello all,
+
+Given the recent discussions about Taproot [1] and Graftroot [2], I
+was wondering if a practical deployment needs a way to explicitly
+enable or disable the Graftroot spending path. I have no strong
+reasons why this would be necessary, but I'd like to hear other
+people's thoughts.
+
+As a refresher, the idea is that a script type could exists which
+looks like a pubkey Q, but can be spent either:
+* By signing the spending transaction directly using Q (key spending)
+* By proving Q was derived as Q = P + H(P,S)*G, with a script S and
+its inputs (Taproot script spending).
+* By signing a script S using Q, and providing S's inputs (Graftroot
+script spending).
+
+Overall, these constructions let us create combined
+pay-to-pubkey-or-script outputs that are indistinguishable, and don't
+even reveal a script spending path existed in the first place when the
+key spending path is used. The two approaches ((T)aproot and
+(G)raftroot) for the script spending path have different trade-offs:
+* T outputs can be derived noninteractively from key and scripts; G
+outputs need an interaction phase where the key owner(s) sign off on
+the potential script spending paths.
+* T lets you prove what all the different spending paths are.
+* T without any other technology only needs to reveal an additional
+point when spending a single script; G needs half-aggregated
+signatures [3] to achieve the same, which complicates design (see
+[4]).
+* G is more compact when dealing with many spending paths (O(1) in the
+number of spending paths), while T spends need to be combined with
+Merkle branches to deal with large number of spends (and even then is
+still O(log n)).
+* G spending paths can be added after the output is created; T
+requires them be fixed at output creation time.
+
+My question is whether it is safe to always permit both types of
+script spending paths, or an explicit commitment to whether Graftroot
+is permitted is necessary. In theory, it seems that this shouldn't be
+needed: the key owners are always capable of spending the funds
+anyway, so them choosing to delegate to others shouldn't enable
+anything that isn't
+possible by the key owners already.
+
+There are a few concerns, however:
+
+* Accidentally (participating in) signing a script may have more broad
+consequences. Without Graftroot, that effect is limited to a single
+transaction with specific inputs and outputs, and only as long as all
+those inputs are unspent. A similar but weaker concern exists for
+SIGHASH_NOINPUT.
+
+* In a multisignature setting (where the top level key is an aggregate
+of multiple participants), the above translates to the ability for a
+(threshold satsisfying) subset of participants being able to (possibly
+permanently) remove others from the set of signers (rather than for a
+single output).
+
+* In a situation where private keys are stored in an HSM, without
+Graftroot an attacker needs access to the device and convince it to
+sign for every output he wants to steal (assuming the HSM prevents
+leaking private keys). With Graftroot, the HSM may be tricked into
+signing a script that does not include itself. Arguably, in a
+Graftroot setting such an HSM would need a degree of protection
+similar to not leaking private keys applied to not signing scripts,
+but this may be less obvious.
+
+Overall, none of these are convincing points, but they do make me
+uncomfortable about the effect the Graftroot spending path may have on
+some use cases. Given that Taproot/Graftroot's primary advantage is
+increasing fungibility by making all outputs look identical, it seems
+good to discuss potential reasons such outputs couldn't or wouldn't be
+adopted in certain applications.
+
+  [1] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-January/015614.html
+  [2] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-February/015700.html
+  [3] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-May/014308.html
+  [4] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-March/015838.html
+
+Cheers,
+
+-- 
+Pieter
