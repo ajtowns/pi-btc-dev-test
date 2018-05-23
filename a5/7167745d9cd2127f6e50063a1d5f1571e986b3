@@ -1,0 +1,99 @@
+From: naumenko.gs@gmail.com (Gleb Naumenko)
+Date: Wed, 23 May 2018 14:03:58 -0700
+Subject: [bitcoin-dev] Peer rotation
+Message-ID: <CAG0mztWq7RKExwnERQ=-b2Lpq7QYW-4r97RYwnmoLdeNvaVngQ@mail.gmail.com>
+
+Hi all,
+I'm bringing this up again because since the last time (2014) new papers on
+network attacks have been published, and in general I think this is
+something that has to be done in one or another form.
+
+### Motivation
+It has been shown that revealing the topology of the network may increase
+the risk of network-related attacks including partitioning/eclipse (and
+consequentially double-spending attacks and attacks on mining) and
+deanonymization of transactions.
+
+The current join/leave algorithm makes the network fairly static, which
+makes it possible to reconstruct the topology by observing events in the
+network (for example, see Dandelion threat model [1] or Exploiting
+Transaction Accumulation and Double Spends for Topology Inference in
+Bitcoin [2]).
+Rotation of the peers is an obvious solution, but there are several
+questions to answer.
+[The idea has also been discussed here: [3] and in the mailing list: [4],
+but ended up not well-researched.]
+
+### Issues with rotation
+In P2P network, rotation of peers may cause an additional threat, because
+it is safer to stick to the existing connections, due to the fact that
+having connections to more different peers increases the chances of
+connecting to an attacker. Considering the fact that an attacker can
+influence your future behavior including what connections you make, this
+may worsen the situation.
+
+One important detail to keep in mind here is that a node may act
+legitimately, but just to wait when all of the connections are under the
+control of an attacker. So a good idea here is to avoid disconnecting the
+most reliable peers.
+
+### Reliable peers
+There are several metrics that might be used to consider peers to be
+reliable:
+Which fraction of recent blocks have a particular node relayed to us?
+? of recent transactions ... ?
+For how long the connection has been maintained?
+
+### Implementation details
+Rotation of the outgoing connections only seems to be sufficient yet not
+very hard to implement and analyze. In addition, it will cause rotation of
+the incoming connections of nodes in the network due to the fact that each
+of the outgoing connections is also an incoming connection on the second
+side; and due to the scoring mechanism for replacing existing incoming
+connections when getting a new one.
+
+Current 8 peers for outgoing connections is an arbitrary number, however,
+there is a reason behind keeping a number of outgoing connections low.
+Anyway, considering the threat highlighted before it is a good idea to
+rotate only a fraction of peers.
+
+Thus, there are 3 values to discuss (N, M, T):
+N ? Number of persistent peers which are considered to be trustworthy based
+on the metrics as per Section 3
+M ? Number of peers to be rotated every T seconds
+
+The trade-off here is how to add enough entropy while not ending up being
+connected to dishonest peers only. It is tunable by modifying {N, M}.
+
+Lower bound for T is a value that won?t significantly delay transaction
+propagation because of establishing handshakes (and it will not result in
+connecting to dishonest peers only), while the upper bound is a value at
+which it would be still infeasible to execute an attack.
+
+Figuring out an optimal set {N, M, T} may be done analytically or by
+simulation.
+I'd be happy to discuss the way of figuring it out.
+
+### Protocol extensions
+It may also be useful to keep track of the previous connections (which were
+evicted due to the rotation) and get back to those after a while under
+certain conditions.
+
+For example, to decrease a chance of connecting to dishonest peers, a peer
+may alternate connecting to the brand new peer with connecting to the old
+and fairly reliable peer.
+
+### Transactions de-anonymized
+Rotation of the peers itself may increase the chance that particular
+Bitcoin address or set of transactions would be linked to a node.
+In this case either Dandelion [1] or sending own transactions to a static
+set of peers (say first 8 peers) may help.
+
+[1] https://github.com/mablem8/bips/blob/master/bip-dandelion.mediawiki
+[2] https://fc18.ifca.ai/bitcoin/papers/bitcoin18-final10.pdf
+[3] https://github.com/bitcoin/bitcoin/pull/4723
+[4]
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2014-August/006502.html
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180523/3364ae51/attachment.html>
