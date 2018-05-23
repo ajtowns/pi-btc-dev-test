@@ -1,0 +1,69 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Wed, 23 May 2018 02:15:03 -0400
+Subject: [bitcoin-dev] Should Graftroot be optional?
+In-Reply-To: <CAPg+sBgKY-nmL=x+LVubtB0fFBAwd-1CDHT7zhidX8p9DLSGyg@mail.gmail.com>
+References: <CAPg+sBgKY-nmL=x+LVubtB0fFBAwd-1CDHT7zhidX8p9DLSGyg@mail.gmail.com>
+Message-ID: <D3Cs5IbxxGQ_EvtMsOnbyOJGiGScqJN-fWeT82tGoOTN5zcLGZOvpMLZAoSwgQzOEUgEyUcSvHkWw26FiAqAUJGtMST9BmEkZC8nYsrnyPI=@protonmail.com>
+
+Good morning Pieter and list,
+
+It seems to me, naively, that it would be better to make Graftroot optional, and to somehow combine Taproot and Graftroot.
+
+So I propose that the Taproot equation be modified to the below:
+
+    Q = P + H(P, g, S) * G
+
+Where `g` is the "Graftroot flag", i.e. 0 if disable Graftroot, and 1 if enable Graftroot.
+
+A Graftroot spend would need to reveal P and the Taproot script S, then sign the Graftroot script using P (rather than Q).
+
+If an output wants to use Graftroot but not Taproot, then it uses Q = P + H(P, 1, {OP_FALSE}) * G, meaning the Taproot script can never succeed.  Then Graftroot scripts need to be signed using P.
+
+A simple wallet software (or hardware) that only cares about spending using keys `Q = q * G` it controls does not have to worry about accidentally signing a Graftroot script, since Q is not used to sign Graftroot scripts and it would be "impossible" to derive a P + H(P, 1, S) * G from Q (using the same argument that it is "impossible" to derive a P + H(P, S) * G from Q in Taproot).
+
+In a multisignature setting, it would not be possible (I think) to generate a single private key p1 + H(P1 + P2, 1, {<p1*G> OP_CHECKSIG}) that can be used to kick out P2, since that would be signature cancellation attack by another path.
+
+This increases the cost of Graftroot by one point P and a Taproot script (which could be just `OP_FALSE` if Taproot is not desired).  In addition, if both Taproot and Graftroot are used, then using any Graftroot branch will reveal the existence of a Taproot script.  Similarly, using the Taproot branch reveals whether or not we also had some (hidden) Graftroot branch.
+
+--
+
+Now the above has the massive privacy loss where using Taproot reveals whether or not you intended to use Graftroot too, and using Graftroot reveals whether or not you intended to use Taproot.
+
+So now let us consider the equation below instead:
+
+    Q = P + H(P, H(sign(P, g)), H(S)) * G
+
+A Taproot spend reveals P, H(sign(P,g)), and S, and the witness that makes S succeed.
+
+A Graftroot spend reveals P, sign(P, 1), H(S), and sign(P, Sg), and the witness that makes Sg succeed.
+
+If we want to use Graftroot but not Taproot, then we can agree on the script S = `push(random 256-bit) OP_FALSE`, which can never be made to succeed.  On spending using Taproot, we reveal H(S) but not the S.  Nobody can now distinguish between this and a Graftroot+Taproot spent using Graftroot.  We only need to store H(S), not the original S (but we do need to verify that the original S follows the correct template above).
+
+If we want to use Taproot but not Graftroot, then we can agree to do a `sign(P, 0)`, which definitely cannot be used to perform a Graftroot spend.  The act of signing requires a random nonce to be generated, hence making the signature itself random.  On spending using Graftroot, we reveal H(sign(P, 0)) but not the signature itself.  Nobody can now distinguish between this and a Graftroot+Taproot spent using Taproot.  We only need to store H(sign(P, 0)), not the original signature (but we do need to verify(P, sign(P, 0))).  Some other way of obfuscating the flag can be done, such as H(g, random), with the parties to the contract agreeing on the random obfuscation (but I am unsure of the safety of that).
+
+In effect, instead of the Taproot contract S, we use as contract a one-level Merkle tree, with one branch being an enable/disable of Graftroot and the other branch being an ordinary Script.
+
+Note that even if we are fooled into signing a message sign(P, 1), as long as we made sure that the output paid to a Q = P + H(P, H(sign(p, 0)), H(S)) * G in the first place, it cannot be used after-the-fact to make a non-Graftroot output a Graftroot output.
+
+Simple wallets that use Q = q * G need not worry whether signing arbitrary messages with that key might suddenly make their outputs spendable as Graftroot.
+
+This increases Taproot spends by a hash.
+
+This increases Graftroot spends by a point, a signature, and a hash.
+
+--
+
+I am not a mathematician and the above could be complete bunk.
+
+--
+
+The above also does not actually answer the question.
+
+Many users of Bitcoin have been depending on the ability to sign arbitrary messages using a public key that is also used to protect funds.  The use is common enough that people are asking for it for SegWit addresses: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-March/015818.html
+
+Now it might be possible that a valid Script can be shown as an ordinary ASCII text file containing some benign-looking message.  For example a message starting with "L" is OP_PUSHDATA1 (76), the next character encodes a length.  So "LA" means 65 bytes of data, and the succeeding 65 bytes can be an arbitrary message (e.g. "LARGE AMOUNTS OF WEALTH ARE SAFE TO STORE IN BITCOIN, DONCHA KNOW?\n").  Someone might challenge some fund owner to prove their control of some UTXO by signing such a message.  Unbeknownst to the signer, the message is actually also a valid Script (`OP_PUSHDATA1(65 random bytes)`) that lets the challenger trivially acquire access to the funds via Graftroot.
+
+Thus I think this is a valid concern and we should indeed make Graftroot be optional, and also ensure that the simple-signing case will not be a vulnerability for ordinary wallets, while keeping the property that use of Taproot and Graftroot is invisible if the onchain spend does not involve Taproot/Graftroot.
+
+Regards,
+ZmnSCPxj
