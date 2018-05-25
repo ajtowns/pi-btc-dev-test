@@ -1,0 +1,54 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Fri, 25 May 2018 18:42:41 +0000
+Subject: [bitcoin-dev] Minimizing the redundancy in Golomb Coded Sets
+In-Reply-To: <CAPg+sBgywj6PgijmSNkYYkKKQuek2g9-cSy6GJBpV+=gom7LfQ@mail.gmail.com>
+References: <CAPg+sBgywj6PgijmSNkYYkKKQuek2g9-cSy6GJBpV+=gom7LfQ@mail.gmail.com>
+Message-ID: <CAAS2fgS5cnNZSp7DJdDEdt1ainezfg7aoAbga2Py7gqfe267kw@mail.gmail.com>
+
+On Fri, May 25, 2018 at 5:54 PM, Pieter Wuille via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Hi all,
+>
+> I spent some time working out the optimal parameter selection for the
+> Golomb Coded Sets that are proposed in BIP158:
+> https://gist.github.com/sipa/576d5f09c3b86c3b1b75598d799fc845
+>
+> TL;DR: if we really want an FP rate of exactly 1 in 2^20, the Rice
+> parameter should be 19, not 20. If we don't, we should pick an FP rate
+> of 1 in a 1.4971*2^B. So for example M=784931 B=19 or M=1569861 B=20.
+
+
+I did a rough analysis using Pieter's approximations on what
+parameters minimizes the total communications for a lite wallet
+scanning the chain and fetching a witnessless block whenever they get
+a filter hit. For a wallet with 1000 keys and blocks of 1MB if the
+number of entries in the is at least 5096 then M=784931 results in a
+lower total data rate rate (FP blocks + filters) than M=1569861.
+M=392465 (the optimal value for the rice parameter 18) is
+communications is better if at least 10192 entries are set, and
+M=196233 (optimal FP for rice 17) is better if at least 20384 entries
+are set.
+
+The prior filter set proposal is setting roughly 13300 entries per
+full block,  and I guestimate that the in+out scripts only ones are
+setting about 7500 entries (if that actual number was in any of the
+recent posts I missed it, I'm guessing based on jimpo's sizes graph).
+
+The breakpoints are obviously different if the client is monitoring
+for, say, 10,000 keys instead of 1000 but I think it generally makes
+more sense to optimize for lower key counts since bigger users are
+more likely to tolerate the additional bandwidth usage.
+
+So I think that assuming that all-scripts inputs and outputs (but no
+txids) are used and that my guess of 7500 bits set for that
+configuration is roughly right, then M=1569861 and rice parameter 19
+should be used.
+
+The actual optimal FP rate for total data transferred won't be one
+that gets the optimal rice coding efficiency, but since different
+clients will be monitoring for different numbers of keys, it probably
+makes sense to pick a parameter with optimal compression rather than
+optimal-data-transfer-for-a-specific-key-count-- at least then we're
+spending the least amount of filter bits per false positive rate,
+whatever that rate is... if we can't be optimal at least we can be
+efficient. :)
