@@ -1,0 +1,42 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 25 May 2018 18:14:48 +0800
+Subject: [bitcoin-dev] Should Graftroot be optional?
+In-Reply-To: <CAAS2fgRXYtTyqqQp8Ehs_q_KsT7usA+vYSmngStnndd1rWNVNw@mail.gmail.com>
+References: <CAPg+sBgKY-nmL=x+LVubtB0fFBAwd-1CDHT7zhidX8p9DLSGyg@mail.gmail.com>
+	<CAPg+sBh4CESPV_5TpPn0H3Zpv2Ump_0txxS63W_S2f3Lxezq1A@mail.gmail.com>
+	<CAAS2fgRXYtTyqqQp8Ehs_q_KsT7usA+vYSmngStnndd1rWNVNw@mail.gmail.com>
+Message-ID: <D996F4E8-ACC6-4A49-B841-0F3285344DF6@xbt.hk>
+
+
+
+> On 24 May 2018, at 10:08 AM, Gregory Maxwell via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> On Thu, May 24, 2018 at 1:58 AM, Pieter Wuille via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> Thanks everyone who commented so far, but let me clarify the context
+>> of this question first a bit more to avoid getting into the weeds too
+>> much.
+> 
+> since the signer(s) could have signed an arbitrary
+> transaction instead, being able to delegate is strictly less powerful.
+> 
+
+
+Actually, we could introduce graftroot-like delegation to all existing and new P2PK and P2PKH UTXOs with a softfork:
+
+1. Define SIGHASH_GRAFTROOT = 0x40. New rules apply if (nHashType & SIGHASH_GRAFTROOT)
+
+2. The third stack item MUST be at least 64 bytes, with 32-byte R and 32-byte S, followed by a script of arbitrary size. It MUST be a valid signature for the script with the original public key.
+
+3. The remaining stack items MUST solve the script
+
+Conceptually this could be extended to arbitrary output types, not just P2PK and P2PKH. But it might be too complicated to describe here.
+
+(We can?t do this in P2WPKH and P2WSH due to the implicit CLEANSTACK rules. But nothing could stop us to do it by introducing another witness structure (which is invisible to current nodes) and store the extra graftroot signatures and scripts)
+
+A graftroot design like this is a strict subset of existing signature checking rules. If this is dangerous, the existing signature checking rules must be dangerous. This also doesn?t have any problem with blind signature, since the first signature will always sign the outpoint, with or without ANYONECANPAY. (As I pointed out in my reply to Andrew, his concern applies only to SIGHASH_NOINPUT, not graftroot)
+
+
+======
+
+With the example above, I believe there is no reason to make graftroot optional, at the expense of block space and/or reduced privacy. Any potential problem (e.g. interaction with blind signature) could be fixed by a proper rules design.
