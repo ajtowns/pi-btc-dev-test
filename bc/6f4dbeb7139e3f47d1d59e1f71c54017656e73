@@ -1,0 +1,96 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 25 May 2018 17:46:29 +0800
+Subject: [bitcoin-dev] Should Graftroot be optional?
+In-Reply-To: <20180523175239.GR14992@boulet.lan>
+References: <CAPg+sBgKY-nmL=x+LVubtB0fFBAwd-1CDHT7zhidX8p9DLSGyg@mail.gmail.com>
+	<20180523135013.GN14992@boulet.lan> <20180523175239.GR14992@boulet.lan>
+Message-ID: <AE21F8B7-2763-40CA-8A61-F862A80E18BB@xbt.hk>
+
+While you have rescind your concern, I?d like to point out that it?s strictly a problem of SIGHASH_NOINPUT, not graftroot (or script delegation in general).
+
+For example, we could modify graftroot. Instead of signing the (script), we require it to sign (outpoint | script). That means a graftroot signature would never be valid for more than one UTXO.
+
+> On 24 May 2018, at 1:52 AM, Andrew Poelstra via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> On Wed, May 23, 2018 at 01:50:13PM +0000, Andrew Poelstra via bitcoin-dev wrote:
+>> 
+>> Graftroot also break blind signature schemes. Consider a protocol such as [1]
+>> where some party has a bunch of UTXOs all controlled (in part) by the same
+>> key X. This party produces blind signatures on receipt of new funds, and can
+>> only verify the number of signatures he produces, not anything about what he
+>> is signing.
+>> 
+>> BTW, the same concern holds for SIGHASH_NOINPUT, which I'd also like to be
+>> disable-able. Maybe we should extend one of ZmnSCPxj's suggestions to include
+>> a free "flags" byte or two in the witness?
+>> 
+>> (I also had the same concern about signature aggregation. It seems like it's
+>> pretty hard to preserve the "one signature = at most one input" invariant of
+>> Bitcoin, but I think it's important that it is preserved, at least for
+>> outputs that need it.)
+>> 
+>> Or maybe, since it appears it will require a space hit to support optional
+>> graftroot anyway, we should simply not include it in a proposal for Taproot,
+>> since there would be no opportunity cost (in blockchain efficiency) to doing
+>> it later.
+>> 
+>> [1] https://github.com/apoelstra/scriptless-scripts/pull/1 
+>> 
+> 
+> On further thought, I rescind this concern (ditto for SIGHASH_NOINPUT) (but
+> not for aggregate sigs, they still interact badly with blind signatures).
+> 
+> As long as graftroot (and NOINPUT) sigs commit to the public key, it is
+> possible for a server to have unique keys for every output, even while
+> retaining the same private key, and thereby ensure that "one sig can spend
+> only one output" holds. To do this, suppose the server has a BIP32 xpubkey
+> (xG, cc). A blind signer using the private key x can be made to sign not
+> only for xG, but also for any publicly-derived child keys of (xG, cc).
+> 
+> Here is a simple scheme that does this:
+> 
+>  1. Signer provides a nonce R = kG
+> 
+>  2. Challenger computes bip32 tweak h, chooses blinders alpha and beta,
+>     and computes:
+>         R' = R + alpha*G + beta*P
+>         e  = H(P + hG || R' || tx)
+>         e' = e + beta
+>     and sends e' to the signer.
+> 
+>  3. Signer replies with s = k + xe' (= k + beta*x + (x + h)e - he)
+> 
+>  4. Challenger unblinds this as s' = s + alpha + he
+> 
+> (This blind signature scheme is vulnerable to Wagner's attack, though see
+> Schnorr 2004 [1] for mitigations that are perfectly compatible with this
+> modified BIP32ish scheme.)
+> 
+> I'm unsure whether key-prefixing is _actually_ necessary for this, but it
+> makes the security argument much clearer since the messagehash contains
+> some data which can be made unique per-utxo and is committed in the chain.
+> 
+> 
+> Andrew
+> 
+> 
+> [1] http://citeseerx.ist.psu.edu/viewdoc/download;jsessionid=8ECEF929559865FD68D1D873555D18FE?doi=10.1.1.68.9836&rep=rep1&type=pdf
+> 
+> 
+> -- 
+> Andrew Poelstra
+> Mathematics Department, Blockstream
+> Email: apoelstra at wpsoftware.net
+> Web:   https://www.wpsoftware.net/andrew
+> 
+> "A goose alone, I suppose, can know the loneliness of geese
+> who can never find their peace,
+> whether north or south or west or east"
+>       --Joanna Newsom
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+
