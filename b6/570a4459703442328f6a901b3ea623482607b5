@@ -1,0 +1,316 @@
+From: shiva@blockonomics.co (shiva sitamraju)
+Date: Wed, 30 May 2018 12:00:25 +0530
+Subject: [bitcoin-dev] New serialization/encoding format for key material
+Message-ID: <CABuOfuhMGFGc1tyjcOmnUk1OrWp2d6ppKc8phLT9pXCj8vs+qg@mail.gmail.com>
+
+The idea to add birthdate and gap limit sounds very good and addresses lots
+of problems users are facing.
+
+However, adding birthday to keys breaks two basic properties
+
+- Visually Comparing two keys to find if they are same (Important)
+- Different wallet software could set different birthday/gap limit.
+creating different xpub/xprv for the same set of mathematically derived
+individual keys. This removes the decoupling between key and wallet metadata
+
+In fact, same could be argued to add birthday to WIF private key format to
+let wallet discover funds faster.
+
+
+Is it possible to have a serialization so that in the encoding, the key
+part is still visually the same ?
+
+
+On Tue, May 29, 2018 at 5:30 PM, <
+bitcoin-dev-request at lists.linuxfoundation.org> wrote:
+
+> Send bitcoin-dev mailing list submissions to
+>         bitcoin-dev at lists.linuxfoundation.org
+>
+> To subscribe or unsubscribe via the World Wide Web, visit
+>         https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> or, via email, send a message with subject or body 'help' to
+>         bitcoin-dev-request at lists.linuxfoundation.org
+>
+> You can reach the person managing the list at
+>         bitcoin-dev-owner at lists.linuxfoundation.org
+>
+> When replying, please edit your Subject line so it is more specific
+> than "Re: Contents of bitcoin-dev digest..."
+>
+>
+> Today's Topics:
+>
+>    1. New serialization/encoding format for key material
+>       (Jonas Schnelli)
+>
+>
+> ----------------------------------------------------------------------
+>
+> Message: 1
+> Date: Tue, 29 May 2018 11:13:37 +0200
+> From: Jonas Schnelli <dev at jonasschnelli.ch>
+> To: Bitcoin Protocol Discussion
+>         <bitcoin-dev at lists.linuxfoundation.org>
+> Subject: [bitcoin-dev] New serialization/encoding format for key
+>         material
+> Message-ID: <03557E21-8CFC-4822-8494-F4A78E23860B at jonasschnelli.ch>
+> Content-Type: text/plain; charset="utf-8"
+>
+> Hi
+>
+> Extended public and private keys are defined in BIP32 [1].
+>
+> Encoded extended private keys should not be confused with a wallet ?seed?
+> (proposals like BIP39) while they can also partially serve the purpose to
+> ?seed? a wallet (there may be an overlap in the use-case).
+>
+> Recovering a wallet by its extended private master key (xpriv; may or may
+> not
+> be at depth 0) is a complex task with risks of failing to recover all
+> available
+> funds.
+>
+> It may be reasonable to consider that recovering a wallet purely based on
+> the
+> existence of an extended private master key is a forensic funds recovery
+> process and should probably be the last resort in case of a backup-recovery
+> situation. A simple example here is, that it was/is possible to have used
+> an
+> xpriv (referring to extended private master key) in production that is/was
+> used
+> to derive BIP45 based P2SH multisig addresses (1of1, used by Bitpays BWS
+> for
+> while), later used for bare BIP45ish multisig 1of1 as well as for P2PKH
+> after
+> BIP44 & vanilla BIP32 P2WPKH (m/0?/k?).
+> I?m not aware of any wallet that would recover 100% of those funds,
+> leading to
+> the risk that forwarding the unspents and destroying the extended master
+> key
+> may result in coins forever lost.
+>
+> The case above may be an edge case, but I?m generally under the assumption
+> that
+> recovering funds based on the sole existence of an xpriv (or seed) without
+> further
+> metadata is a fragile concept.
+>
+> Second, the missing birthday-metadata tend to lead to non-optimal
+> blockchain
+> scans (eventually increased p2p traffic). Recovering funds can take hours.
+>
+> Additionally, the BIP44 gap limit seems to be a weak construct. The
+> current gap
+> limit in BIP44 is set to 20 [2] which basically means, handing out more
+> then 20
+> incoming payment requests (addresses) results in taking the risks that
+> funds
+> may be destroyed (or at least not detected) during a recovery.
+> The Gap limit value may also depend on the use case, but the current
+> proposals
+> do not allow to set an arbitrary value. High load merchants very likely
+> need a
+> different gap limit value then individuals create a transaction once a
+> year.
+>
+> During creation time of an xpriv/xpub, it is impossible to know if the
+> created
+> xpriv will be used for an unforeseen derivation scheme. Future proposals
+> may
+> want to limit an extended key to a single derivation scheme.
+>
+>
+> This is an early draft in order to allow discussion that may lead to a
+> possible
+> proposal.
+> This proposals could also make BIP 178 obsolete since it can be replace the
+> WIF[3] standard.
+>
+>
+> Thanks for feedback
+> /jonas
+>
+>
+> ------------------------------------
+>
+>
+> Titel
+> ######
+> Bech32 encoded key material including metadata
+>
+> Abstract
+> ########
+> An error tolerant encoding format for key material up to 520bits with a
+> minimal
+> amount of metadata.
+>
+> Motivation
+> ##########
+> (See above; intro text)
+>
+>
+> Specification
+> #############
+>
+> ## Serialization format
+>
+> 1 bit version bit
+> 15 bits (bit 1 to 16) key-birthday (0-32767)
+> (12 bit gap limit)
+> 3 or 5 bits script type
+> 256 or 512 or 520 bits key material
+> = Total 275, 545, 553 bits
+>
+> The initial version bit allows extending the serialization-format in
+> future.
+> The encoding format must hint the total length and thus allow to calculate
+> the
+> length of the key material.
+>
+> The total length for 256 or 512 bit key material is optimised for Bech32
+> (power
+> of 5).
+>
+> ### Key material
+> If the key material length is 520 bits, it must contain an extended public
+> key
+> If the key material length is 512 bits, it must contain an extended
+> private key
+> Key material length other then 256, 512, 520 bits and invalid.
+>
+> If 520 bits are present, first 256 bits are the BIP32 chain code, to
+> second 264
+> bits (33 bytes) define the public key (according to BIP32)
+>
+> If 512 bits are present, first 256 bits are the BIP32 chain code, to
+> second 256
+> bits define the private key
+>
+> If 256 bits are present, those bits represent a pure private key (or seed)
+>
+> ### Key birthday
+> A 15 bit timestamp expressed in days since genesis (valid up to ~2098). The
+> birthday must be set to the first possible derivation of the according
+> extended
+> key, if unknown, the used seed birthday must be used. If both unknown, 0
+> (16x0bit) must be used.
+>
+> ### Gap limit delta
+> 12 bits, results in a possible range from 0 to 4095.
+>
+> If the total decoded serialization length is 275 bits (decode) or if the
+> key
+> material is 256 bits (encode), the gap limit must not be present.
+>
+> The base gap limit value is 20 (to disallow insane gap limits). The final
+> gap
+> limit is the base value + the gap limit delta stored in those 12 bits.
+> Key derivation gap limit must not be exceeded when deriving child keys and
+> must
+> be respected during transaction rescans.
+> Child key derivation must not be possible if gap limit is hit.
+>
+> ### Script type restriction
+> 3 or 5 bits (range 0-7 / 0-31)
+> 0 no restriction
+> 1 P2PKH compressed
+> 2 P2PKH | P2SH
+> 3 P2WPKH P2WSH nested in P2SH
+> 4 P2WPKH | P2WSH
+>
+> If the total decoded serialization length is 275 bits (decode) or if the
+> key
+> material is 256 bits (encode), 3 bits are used for the script type. 5 bits
+> are
+> used for key material with the size of 512, 520 bits.
+>
+> If the script type restriction is set, the according extended key must
+> only be
+> used to derive addresses with the selected script type.
+> This does not stands in contradiction to derivation path proposals ([4]).
+> It
+> does allow to derive and encode an extended key at a keypath where users
+> assume
+> restricted script types in derivation due to other supported proposals.
+>
+>
+> Encoding
+> ########
+>
+> Bech32 must be used as encoding format (see the Bech32 rational [5]).
+> Encoding
+> 545 or 553 bits (results in 109 resp. 111 x 5 bits) will exceed the Bech32
+> property of a
+> guaranteed detection of 4 errors (only 3 are).
+> It is possible that there are more efficient BCH codes, especially for
+> encoding
+> extended private keys. Since a Bech32 implementation needs to be present in
+> modern Bitcoin software, re-using Bech32 will allow to migrate to this
+> proposal
+> with a minimal implementation effort.
+> Forensic, cpu-intense key-recovery (including brute-force techniques) may
+> allow
+> to recover keys beyond the guaranteed error detection limits.
+>
+> Bech32 HRPs
+> Mainnet Private Extended: xp
+> Mainnet Public Extended: xpu
+> Testnet Private Extended: tp
+> Testnet Public Extended: tpu
+> Mainnet Key: pk-
+> Testnet Key: tk-
+>
+> Compatibility
+> ###########
+> Only new software will be able to use these serialization and encoding
+> format.
+>
+> References
+> ##########
+>
+>
+> [1] https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki <
+> https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki>
+> [2] https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki
+> [3] https://github.com/bitcoin/bips/blob/master/bip-0178.mediawiki
+> [4] https://github.com/bitcoin/bips/blob/master/bip-0049.mediawiki
+> [5] https://github.com/bitcoin/bips/blob/master/bip-0173.
+> mediawiki#rationale
+>
+> -------------- next part --------------
+> An HTML attachment was scrubbed...
+> URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> attachments/20180529/d2332b98/attachment-0001.html>
+> -------------- next part --------------
+> A non-text attachment was scrubbed...
+> Name: signature.asc
+> Type: application/pgp-signature
+> Size: 833 bytes
+> Desc: Message signed with OpenPGP
+> URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+> attachments/20180529/d2332b98/attachment-0001.sig>
+>
+> ------------------------------
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+> End of bitcoin-dev Digest, Vol 36, Issue 46
+> *******************************************
+>
+
+
+
+-- 
+Shiva S
+CEO @ Blockonomics <https://www.blockonomics.co>
+Decentralized and Permissionless Payments
+Know more about us here
+<https://www.blockonomics.co/docs/blockonomics-brochure.pdf>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180530/a8d03f62/attachment.html>
