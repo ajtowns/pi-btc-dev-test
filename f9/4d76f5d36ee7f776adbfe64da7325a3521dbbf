@@ -1,0 +1,68 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Wed, 30 May 2018 12:17:20 +0930
+Subject: [bitcoin-dev] Making OP_TRUE standard?
+In-Reply-To: <20180521035658.vfo4wx6ifum2s2o5@petertodd.org>
+References: <87po25lmzs.fsf@rustcorp.com.au>
+	<201805100227.42217.luke@dashjr.org>
+	<87vabnq9ui.fsf@rustcorp.com.au>
+	<CADZtCShwOV+GuJ5__GMi9hd2_X=BztASPBihDXakU3Mjb39wcQ@mail.gmail.com>
+	<87zi0tisft.fsf@rustcorp.com.au>
+	<20180521035658.vfo4wx6ifum2s2o5@petertodd.org>
+Message-ID: <87muwhvozr.fsf@rustcorp.com.au>
+
+Peter Todd <pete at petertodd.org> writes:
+> On Mon, May 21, 2018 at 01:14:06PM +0930, Rusty Russell via bitcoin-dev wrote:
+>> Jim Posen <jim.posen at gmail.com> writes:
+>> > I believe OP_CSV with a relative locktime of 0 could be used to enforce RBF
+>> > on the spending tx?
+>> 
+>> Marco points out that if the parent is RBF, this child inherits it, so
+>> we're actually good here.
+>> 
+>> However, Matt Corallo points out that you can block RBF will a
+>> large-but-lowball tx, as BIP 125 points out:
+>> 
+>>    will be replaced by a new transaction...:
+>> 
+>>    3. The replacement transaction pays an absolute fee of at least the sum
+>>       paid by the original transactions.
+>> 
+>> I understand implementing a single mempool requires these kind of
+>> up-front decisions on which tx is "better", but I wonder about the
+>> consequences of dropping this heuristic?  Peter?
+>
+> We've discussed this before: that rule prevents bandwidth usage DoS attacks on
+> the mempool; it's not a "heuristic". If you drop it, an attacker can repeatedly
+> broadcast and replace a series of transactions to use up tx relay bandwidth for
+> significantly lower cost than otherwise.
+>
+> Though these days with relatively high minimum fees that may not matter.
+
+AFAICT the optimal DoS is where:
+
+1.  Attacker sends a 100,000 vbyte tx @1sat/vbyte.
+2.  Replaces it with a 108 vbyte tx @2sat/vbyte which spends one of
+    those inputs.
+3.  Replaces that spent input in the 100k tx and does it again.
+
+It takes 3.5 seconds to propagate to 50% of network[1] (probably much worse
+given 100k txs), so they can only do this about 86 times per block.
+
+That means they send 86 * (100000 + 108) = 8609288 vbytes for a cost of
+86 * 2 * 108 + 100000 / 2 = 68576 satoshi (assuming 50% chance 100k tx
+gets mined).
+
+That's a 125x cost over just sending 1sat/vbyte txs under optimal
+conditions[2], but it doesn't really reach most low-bandwidth nodes
+anyway.
+
+Given that this rule is against miner incentives (assuming mempool is
+full), and makes things more complex than they need to be, I think
+there's a strong argument for its removal.
+
+Cheers,
+Rusty.
+[1] http://bitcoinstats.com/network/propagation/
+[2] Bandwidth overhead for just sending a 108-vbyte tx is about 160
+    bytes, so our actual bandwidth per satoshi is closer to 60x
+    even under optimal conditions.
