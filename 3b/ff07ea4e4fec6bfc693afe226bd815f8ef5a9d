@@ -1,0 +1,45 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Thu, 31 May 2018 12:17:58 +0930
+Subject: [bitcoin-dev] Making OP_TRUE standard?
+In-Reply-To: <87muwhvozr.fsf@rustcorp.com.au>
+References: <87po25lmzs.fsf@rustcorp.com.au>
+	<201805100227.42217.luke@dashjr.org>
+	<87vabnq9ui.fsf@rustcorp.com.au>
+	<CADZtCShwOV+GuJ5__GMi9hd2_X=BztASPBihDXakU3Mjb39wcQ@mail.gmail.com>
+	<87zi0tisft.fsf@rustcorp.com.au>
+	<20180521035658.vfo4wx6ifum2s2o5@petertodd.org>
+	<87muwhvozr.fsf@rustcorp.com.au>
+Message-ID: <87h8mov8v5.fsf@rustcorp.com.au>
+
+Rusty Russell <rusty at rustcorp.com.au> writes:
+> AFAICT the optimal DoS is where:
+>
+> 1.  Attacker sends a 100,000 vbyte tx @1sat/vbyte.
+> 2.  Replaces it with a 108 vbyte tx @2sat/vbyte which spends one of
+>     those inputs.
+> 3.  Replaces that spent input in the 100k tx and does it again.
+>
+> It takes 3.5 seconds to propagate to 50% of network[1] (probably much worse
+> given 100k txs), so they can only do this about 86 times per block.
+>
+> That means they send 86 * (100000 + 108) = 8609288 vbytes for a cost of
+> 86 * 2 * 108 + 100000 / 2 = 68576 satoshi (assuming 50% chance 100k tx
+> gets mined).
+
+This 50% chance assumption is wrong; it's almost 0% for a low enough
+fee.  Thus the cost is only 18576, making the cost for the transactions
+463x lower than just sending 1sat/vbyte txs under optimal conditions.
+That's a bit ouch.[1]
+
+I think a better solution is to address the DoS potential directly:
+if a replacement doesn't meet #3 or #4, but *does* increase the feerate
+by at least minrelayfee, processing should be delayed by 30-60 seconds.
+
+That means that eventually you will RBF a larger tx, but it'll take
+much longer.  Should be easy to implement, too, since similar timers
+will be needed for dandelion.
+
+Cheers,
+Rusty.
+[1] Christian grabbed some more detailed propagation stats for me: larger
+    txs do propagate slower, but only by a factor of 2.5 or so.
