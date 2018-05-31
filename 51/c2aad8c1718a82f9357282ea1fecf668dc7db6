@@ -1,0 +1,131 @@
+From: tamas.blummer@gmail.com (Tamas Blummer)
+Date: Thu, 31 May 2018 16:27:50 +0200
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <CAO3Pvs-YDzfRqmyJ85wTH0ciccjCvkm5stGyP_tVGGna=PMv3A@mail.gmail.com>
+References: <d43c6082-1b2c-c95b-5144-99ad0021ea6c@mattcorallo.com>
+	<CAAS2fgRF-MhOvpFY6c_qAPzNMo3GQ28RExdSbOV6Q6Oy2iWn1A@mail.gmail.com>
+	<22d375c7-a032-8691-98dc-0e6ee87a4b08@mattcorallo.com>
+	<CAAS2fgR3QRHeHEjjOS1ckEkL-h7=Na56G12hYW9Bmy9WEMduvg@mail.gmail.com>
+	<CADZtCShLmH_k-UssNWahUNHgHvWQQ1y638LwaOfnJEipwjbiYg@mail.gmail.com>
+	<CAAS2fgQLCN_cuZ-3QPjCLfYOtHfEk=SenTn5=y9LfGzJxLPR3Q@mail.gmail.com>
+	<CADZtCSjYr6VMBVQ=rx44SgRWcFSXhVXUZJB=rHMh4X78Z2eY1A@mail.gmail.com>
+	<CAO3Pvs9K3n=OzVQ06XGQvzNC+Aqp9S60kWM9VRPA8hWTJ3u9BQ@mail.gmail.com>
+	<c23a5346-9f99-44f0-abbf-d7e7979bf1d8@gmail.com>
+	<CAO3Pvs_MA4TtgCCu1NgCBjK2bZRN+rKnGQJN6m4yTrViBXRiPA@mail.gmail.com>
+	<CAD3i26BibcaMdbQv-j+Egz_1y0GuhzepBp5ATNpj=Qv8hi1TVA@mail.gmail.com>
+	<CADZtCShAYpbN=4qNoX5c8yd1j08+mEZzG8gZwcHrj2suY0mb9w@mail.gmail.com>
+	<CADZtCShYnM3A949H18V2+BArA-K9J+cDkd=rX8xRn0+0js5CwA@mail.gmail.com>
+	<CAAS2fgTXS5Tains7dfe_Rc9JxR6M=NuFW9UtieRELm+6N2uNog@mail.gmail.com>
+	<CAFfwr8F+ghYb2HYEgC7Lh7Z-ytNE7EABr6cxiVXYhWLk-TPO7A@mail.gmail.com>
+	<CADZtCShDzPK_jqeOrK4XBoB2uriU9c9T8Dm7By-8ew3XOoAeQg@mail.gmail.com>
+	<7E4FA664-BBAF-421F-8C37-D7CE3AA5310A@gmail.com>
+	<F87D7069-0FDC-4572-B02B-398A2A455935@gmail.com>
+	<CAAS2fgT716PiP0ucoASxryM9y+s9H2z06Z0ToaP1xT3BozAtNw@mail.gmail.com>
+	<CADZtCSguto2z6Z9CykymxnCokqo1G=sW0Ov0ht+KcD+KMnYyow@mail.gmail.com>
+	<CAO3Pvs-YDzfRqmyJ85wTH0ciccjCvkm5stGyP_tVGGna=PMv3A@mail.gmail.com>
+Message-ID: <08A283BC-13E0-4A42-A13F-3F0EAAEF5440@gmail.com>
+
+I processed the historic blockchain to create a single filter populated with spent input scripts and output scripts. The Golomb parameter was P=2^20
+
+The resulting chart shows a volatile history of same-block address re-use with a notable drops in relative filter size during the early history and in the time window where SatoshiDICE was popular, since then trending higher.
+The history of only the last half year suggests a current filter size of between 2.0% - 2.5% of block sizes.
+
+Since most outputs are spent within a short time period, but apparently not that often in same blocks, I think it was worth considering filter series that match over a windows of 2^n blocks (n=(0?10)). Applications could then bracket the 
+range of interest and then narrow down requesting finer filters or blocks.
+
+Then I created 1600 random (P2SH) scripts and totaled the false positive block download data size if observing 100, 200, 400, 800, 1600 of them. 
+The result suggests that even for 1600 the false positive overhead is less than 0.1% of blockchain data size. 
+
+I agree with Greg that we should optimize the parameters for a small observed set as those will be running on mobile devices.
+As of Pieter?s findings the simulation parameters were optimal for ca. 1000 observed scripts which is maybe to many for a ?small? application.
+On the other hand we do not know the needs of future popular mobile applications.  
+ 
+With parameters of the simulation the current minimal data burden on a mobile wallet would be ca. 0.1 GB / Month.
+
+Simulations with other parameters could be executed using this patch branch: https://github.com/tamasblummer/rust-bitcoin-spv/tree/blockfilterstats A run takes a few hours on a fast machine with release build and local bitcoind.
+The calculation can not be reduced to the recent history as the process builds in-memory utxo from genesis.
+
+The result of executing the binary is a CSV file containing:
+blocknumber, blocksize, utxo size, filter size, false positive data size for 100, false positive data size for 100, ? false positive data size for 100
+e.g:
+524994,1112181,57166825,21556,0,0,0,0,1112181
+
+Tamas Blummer
+
+
+> On May 29, 2018, at 06:01, Olaoluwa Osuntokun via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> > The additional benefit of the input script/outpoint filter is to watch for
+> > unexpected spends (coins getting stolen or spent from another wallet) or
+> > transactions without a unique change or output address. I think this is a
+> > reasonable implementation, and it would be nice to be able to download that
+> > filter without any input elements. 
+> 
+> As someone who's implemented a complete integration of the filtering
+> technique into an existing wallet, and a higher application I disagree.
+> There's not much gain to be had in splitting up the filters: it'll result in
+> additional round trips (to fetch these distinct filter) during normal
+> operation, complicate routine seed rescanning logic, and also is detrimental
+> to privacy if one is fetching blocks from the same peer as they've
+> downloaded the filters from.
+> 
+> However, I'm now convinced that the savings had by including the prev output
+> script (addr re-use and outputs spent in the same block as they're created)
+> outweigh the additional booking keeping required in an implementation (when
+> extracting the precise tx that matched) compared to using regular outpoint
+> as we do currently. Combined with the recently proposed re-parametrization
+> of the gcs parameters[1], the filter size should shrink by quite a bit!
+> 
+> I'm very happy with the review the BIPs has been receiving as of late. It
+> would've been nice to have this 1+ year ago when the draft was initially
+> proposed, but better late that never!
+> 
+> Based on this thread, [1], and discussions on various IRC channels, I plan
+> to make the following modifications to the BIP:
+> 
+>   1. use P=2^19 and M=784931 as gcs parameters, and also bind these to the
+>      filter instance, so future filter types may use distinct parameters
+>   2. use the prev output script rather than the prev input script in the
+>      regular filter
+>   3. remove the txid from the regular filter(as with some extra book-keeping
+>      the output script is enough) 
+>   4. do away with the extended filter all together, as our original use case
+>      for it has been nerfed as the filter size grew too large when doing
+>      recursive parsing. instead we watch for the outpoint being spent and
+>      extract the pre-image from it if it matches now
+> 
+> The resulting changes should slash the size of the filters, yet still ensure
+> that they're useful enough for our target use case.
+> 
+> [1]: https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-May/016029.html
+> 
+> -- Laolu
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180531/34f94f8e/attachment-0001.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: filtersize.png
+Type: image/png
+Size: 58848 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180531/34f94f8e/attachment-0003.png>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: lasthalfyear.png
+Type: image/png
+Size: 50431 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180531/34f94f8e/attachment-0004.png>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: falsepositive.png
+Type: image/png
+Size: 82663 bytes
+Desc: not available
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180531/34f94f8e/attachment-0005.png>
