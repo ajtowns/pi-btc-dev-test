@@ -1,0 +1,38 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Sat, 2 Jun 2018 01:03:05 +0800
+Subject: [bitcoin-dev] SIGHASH2 for version 1 witness programme
+In-Reply-To: <CAMZUoKms85DhtS1mN70nq4LSY7QtXym6E4_yvQk5Q0tizkVwEQ@mail.gmail.com>
+References: <9CCCE945-9432-41B9-8559-AFE7CF233603@xbt.hk>
+	<CAMZUoKms85DhtS1mN70nq4LSY7QtXym6E4_yvQk5Q0tizkVwEQ@mail.gmail.com>
+Message-ID: <C3ED56D2-CB1F-4DE5-AB43-F826705806FB@xbt.hk>
+
+
+
+> On 1 Jun 2018, at 11:03 PM, Russell O'Connor <roconnor at blockstream.io> wrote:
+> 
+> 
+> 
+> On Thu, May 31, 2018 at 2:35 PM, Johnson Lau via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org <mailto:bitcoin-dev at lists.linuxfoundation.org>> wrote:
+> 
+>   Double SHA256 of the serialization of:
+> 
+> Should we replace the Double SHA256 with a Single SHA256?  There is no possible length extension attack here.  Or are we speculating that there is a robustness of Double SHA256 in the presence of SHA256 breaking?
+> 
+> I suggest putting `sigversion` at the beginning instead of the end of the format.  Because its value is constant, the beginning of the SHA-256 computation could be pre-computed in advance.  Furthermore, if we make the `sigversion` exactly 64-bytes long then the entire first block of the SHA-256 compression function could be pre-computed.
+> 
+> Can we add CHECKSIGFROMSTACK or do you think that would go into a separate BIP?
+
+I think it?s just a tradition to use double SHA256. One reason we might want to keep dSHA256 is a blind signature might be done by giving only the single SHA256 hash to the signer. At the same time, a non-Bitcoin signature scheme might use SHA512-SHA256. So a blind signer could distinguish the message type without learning the message.
+
+sigversion is a response to Peter Todd?s comments on BIP143: https://petertodd.org/2016/segwit-consensus-critical-code-review#bip143-transaction-signature-verification <https://petertodd.org/2016/segwit-consensus-critical-code-review#bip143-transaction-signature-verification>
+
+I make it a 0x01000000 at the end of the message because the last 4 bytes has been the nHashType in the legacy/BIP143 protocol. Since the maximum legacy nHashType is 0xff, no collision could ever occur.
+
+Putting a 64-byte constant at the beginning should also work, since a collision means SHA256 is no longer preimage resistance. I don?t know much about SHA256 optimisation. How good it is as we put a 64-byte constant at the beginning, while we also make the message 64-byte longer?
+
+For CHECKSIGFROMSTACK (CSFS), I think the question is whether we want to make it as a separate opcode, or combine that with CHECKSIG. If it is a separate opcode, I think it should be a separate BIP. If it is combined with CHECKSIG, we could do something like this: If the bit 10 of SIGHASH2 is set, CHECKSIG will pop one more item from stack, and serialize its content with the transaction digest. Any thought?
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180602/72a9454f/attachment.html>
