@@ -1,0 +1,122 @@
+From: laolu32@gmail.com (Olaoluwa Osuntokun)
+Date: Thu, 31 May 2018 19:52:48 -0700
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <CAO3Pvs-YDzfRqmyJ85wTH0ciccjCvkm5stGyP_tVGGna=PMv3A@mail.gmail.com>
+References: <d43c6082-1b2c-c95b-5144-99ad0021ea6c@mattcorallo.com>
+	<CAAS2fgRF-MhOvpFY6c_qAPzNMo3GQ28RExdSbOV6Q6Oy2iWn1A@mail.gmail.com>
+	<22d375c7-a032-8691-98dc-0e6ee87a4b08@mattcorallo.com>
+	<CAAS2fgR3QRHeHEjjOS1ckEkL-h7=Na56G12hYW9Bmy9WEMduvg@mail.gmail.com>
+	<CADZtCShLmH_k-UssNWahUNHgHvWQQ1y638LwaOfnJEipwjbiYg@mail.gmail.com>
+	<CAAS2fgQLCN_cuZ-3QPjCLfYOtHfEk=SenTn5=y9LfGzJxLPR3Q@mail.gmail.com>
+	<CADZtCSjYr6VMBVQ=rx44SgRWcFSXhVXUZJB=rHMh4X78Z2eY1A@mail.gmail.com>
+	<CAO3Pvs9K3n=OzVQ06XGQvzNC+Aqp9S60kWM9VRPA8hWTJ3u9BQ@mail.gmail.com>
+	<c23a5346-9f99-44f0-abbf-d7e7979bf1d8@gmail.com>
+	<CAO3Pvs_MA4TtgCCu1NgCBjK2bZRN+rKnGQJN6m4yTrViBXRiPA@mail.gmail.com>
+	<CAD3i26BibcaMdbQv-j+Egz_1y0GuhzepBp5ATNpj=Qv8hi1TVA@mail.gmail.com>
+	<CADZtCShAYpbN=4qNoX5c8yd1j08+mEZzG8gZwcHrj2suY0mb9w@mail.gmail.com>
+	<CADZtCShYnM3A949H18V2+BArA-K9J+cDkd=rX8xRn0+0js5CwA@mail.gmail.com>
+	<CAAS2fgTXS5Tains7dfe_Rc9JxR6M=NuFW9UtieRELm+6N2uNog@mail.gmail.com>
+	<CAFfwr8F+ghYb2HYEgC7Lh7Z-ytNE7EABr6cxiVXYhWLk-TPO7A@mail.gmail.com>
+	<CADZtCShDzPK_jqeOrK4XBoB2uriU9c9T8Dm7By-8ew3XOoAeQg@mail.gmail.com>
+	<7E4FA664-BBAF-421F-8C37-D7CE3AA5310A@gmail.com>
+	<F87D7069-0FDC-4572-B02B-398A2A455935@gmail.com>
+	<CAAS2fgT716PiP0ucoASxryM9y+s9H2z06Z0ToaP1xT3BozAtNw@mail.gmail.com>
+	<CADZtCSguto2z6Z9CykymxnCokqo1G=sW0Ov0ht+KcD+KMnYyow@mail.gmail.com>
+	<CAO3Pvs-YDzfRqmyJ85wTH0ciccjCvkm5stGyP_tVGGna=PMv3A@mail.gmail.com>
+Message-ID: <CAO3Pvs9p5COiS_7Jbj1r2iAKTEdXUcnVTRzL27c3=CeuB9WDTQ@mail.gmail.com>
+
+Hi y'all,
+
+I've made a PR to the BIP repo to modify BIP 158 based on this thread, and
+other recent threads giving feedback on the current version of the BIP:
+
+  * https://github.com/bitcoin/bips/pull/687
+
+I've also updated the test vectors based on the current parameters (and
+filter format), and also the code used to generate the test vectors. Due to
+the change in parametrization, the test vectors now target (P=19 M=784931),
+and there're no longer any cases related to extended filters.
+
+One notable thing that I left off is the proposed change to use the previous
+output script rather than the outpoint. Modifying the filters in this
+fashion would be a downgrade in the security model for light clients, as it
+would allow full nodes to lie by omission, just as they can with BIP 37. As
+is now, if nodes present conflicting information, then the light client can
+download the target block, fully reconstruct the filter itself, then ban any
+nodes which advertised the incorrect filter. The inclusion of the filter
+header checkpoints make it rather straight forward for light clients to
+bisect the state to find the conflicting advertisement, and it's strongly
+recommended that they do so.
+
+To get a feel for the level of impact these changes would have on existing
+applications that depend on the txid being included in the filter, I've
+implemented these changes across btcutil, btcd, btcwallet, and lnd (which
+previously relied on the txid for confirmation notifications). For lnd at
+least, the code impact was rather minimal, as we use the pkScript for
+matching a block, but then still scan the block manually to find the precise
+transaction (by txid) that we were interested in (if it's there).
+
+-- Laolu
+
+
+On Mon, May 28, 2018 at 9:01 PM Olaoluwa Osuntokun <laolu32 at gmail.com>
+wrote:
+
+> > The additional benefit of the input script/outpoint filter is to watch
+> for
+> > unexpected spends (coins getting stolen or spent from another wallet) or
+> > transactions without a unique change or output address. I think this is a
+> > reasonable implementation, and it would be nice to be able to download
+> that
+> > filter without any input elements.
+>
+> As someone who's implemented a complete integration of the filtering
+> technique into an existing wallet, and a higher application I disagree.
+> There's not much gain to be had in splitting up the filters: it'll result
+> in
+> additional round trips (to fetch these distinct filter) during normal
+> operation, complicate routine seed rescanning logic, and also is
+> detrimental
+> to privacy if one is fetching blocks from the same peer as they've
+> downloaded the filters from.
+>
+> However, I'm now convinced that the savings had by including the prev
+> output
+> script (addr re-use and outputs spent in the same block as they're created)
+> outweigh the additional booking keeping required in an implementation (when
+> extracting the precise tx that matched) compared to using regular outpoint
+> as we do currently. Combined with the recently proposed re-parametrization
+> of the gcs parameters[1], the filter size should shrink by quite a bit!
+>
+> I'm very happy with the review the BIPs has been receiving as of late. It
+> would've been nice to have this 1+ year ago when the draft was initially
+> proposed, but better late that never!
+>
+> Based on this thread, [1], and discussions on various IRC channels, I plan
+> to make the following modifications to the BIP:
+>
+>   1. use P=2^19 and M=784931 as gcs parameters, and also bind these to the
+>      filter instance, so future filter types may use distinct parameters
+>   2. use the prev output script rather than the prev input script in the
+>      regular filter
+>   3. remove the txid from the regular filter(as with some extra
+> book-keeping
+>      the output script is enough)
+>   4. do away with the extended filter all together, as our original use
+> case
+>      for it has been nerfed as the filter size grew too large when doing
+>      recursive parsing. instead we watch for the outpoint being spent and
+>      extract the pre-image from it if it matches now
+>
+> The resulting changes should slash the size of the filters, yet still
+> ensure
+> that they're useful enough for our target use case.
+>
+> [1]:
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-May/016029.html
+>
+> -- Laolu
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180531/5499982f/attachment-0001.html>
