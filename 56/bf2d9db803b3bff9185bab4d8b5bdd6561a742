@@ -1,0 +1,81 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Sun, 3 Jun 2018 23:30:48 +0200
+Subject: [bitcoin-dev] New serialization/encoding format for key material
+In-Reply-To: <CAPg+sBiL9S29MV-cxrqGMeaWADO5-C3ejmxY21V_qUGHjhDHGw@mail.gmail.com>
+References: <CABuOfuhMGFGc1tyjcOmnUk1OrWp2d6ppKc8phLT9pXCj8vs+qg@mail.gmail.com>
+	<FE65454B-B30A-4CEF-B568-B2746BD2BC0B@jonasschnelli.ch>
+	<E449A58B-08C4-4A1C-8109-38C800B718AF@jonasschnelli.ch>
+	<CAPg+sBiL9S29MV-cxrqGMeaWADO5-C3ejmxY21V_qUGHjhDHGw@mail.gmail.com>
+Message-ID: <E06F947E-F077-4266-A93C-9904F6528BC7@jonasschnelli.ch>
+
+> I have some concerns about the use of Bech32. It is designed for
+> detecting 3 errors up to length 1023 (but is then picked specifically
+> to support 4 errors up to length 89). However, for error correction
+> this translates to just being able to efficiently correct 1 error
+> (3/2, rounded down) up to length 1023. You can of course always try
+> all combinations of up to N changes to the input (for any N), testing
+> the checksum, and comparing the results against the UTXO set or other
+> wallet information that may have been recovered. However, the checksum
+> at best gives you a small constant speedup here, not a fundamentally
+> improved way for recovery.
+
+Thanks Peter
+
+I removed the part in the proposals that made false claims about the error
+correction or cpu-intense key recovery.
+
+I wrote some test code and figured out that my Core i7 machine can
+do 31?775 operations per seconds of a addr-derivation-comparison
+(bech32 decode, bip32 ckd, hash160, Base58check).
+This is non-optimized code running non-parallelized.
+
+Just in case someone wants to do more math here.
+
+Without knowing to much about BCHs, ideally there would be a code that
+includes the fact that computational costs for error correction can be very
+high during a disaster recovery and that we can probably assume that the
+user can provide a derivation element like a used address or pubkey.
+
+Deriving one million child keys and comparing them against an address
+table will take less than a minute on consumer systems.
+
+> * correct 7 errors = 26 checksum characters (~ length * 1.25)
+> 
+> So it really boils down to a trade-off between length of the code, and
+> recovery properties.
+
+I think 5% error correction (7 errors at 555bits) with a 26 char checksum is
+probably an acceptable tradeoff.
+
+Resulting string with 26 checksum chars (mockup):
+xp1qqqqqq8z4rsgv54z9a92yla4m2yrsqdlwdl7gn6qldvwkuh3zrg66z8ad2snf832tgaxcuv3kmwugzl5x8wtnkj2q3a03ky0kg8p7dvv4czpjqgvv4zgnvv4zgnvv4zgnvv4zgngn
+(140 chars)
+
+Versus the bech32 (6 char checksum):
+xp1qqqqqq8z4rsgv54z9a92yla4m2yrsqdlwdl7gn6qldvwkuh3zrg66z8ad2snf832tgaxcuv3kmwugzl5x8wtnkj2q3a03ky0kg8p7dvv4czpjqgvv4zgn
+(120 chars)
+
+Versus an xpriv:
+xprv9wHokC2KXdTSpEepFcu53hMDUHYfAtTaLEJEMyxBPAMf78hJg17WhL5FyeDUQH5KWmGjGgEb2j74gsZqgupWpPbZgP6uFmP8MYEy5BNbyET
+(111 chars)
+
+Not sure if the additional 20 characters make the UX worse.
+Typing in +20 chars in a disaster recovery is probably acceptable.
+
+> If there is interest, I can construct a code + implementation for any
+> of these in a few days probably, once the requirements are clear.
+
+
+Yes. Please.
+Lets first wait for more feedback about the error robustness though.
+
+Thanks
+-
+Jonas
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 833 bytes
+Desc: Message signed with OpenPGP
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180603/2669b658/attachment.sig>
