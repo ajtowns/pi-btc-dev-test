@@ -1,0 +1,81 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Sun, 3 Jun 2018 12:23:17 -0700
+Subject: [bitcoin-dev] New serialization/encoding format for key material
+In-Reply-To: <E449A58B-08C4-4A1C-8109-38C800B718AF@jonasschnelli.ch>
+References: <CABuOfuhMGFGc1tyjcOmnUk1OrWp2d6ppKc8phLT9pXCj8vs+qg@mail.gmail.com>
+	<FE65454B-B30A-4CEF-B568-B2746BD2BC0B@jonasschnelli.ch>
+	<E449A58B-08C4-4A1C-8109-38C800B718AF@jonasschnelli.ch>
+Message-ID: <CAPg+sBiL9S29MV-cxrqGMeaWADO5-C3ejmxY21V_qUGHjhDHGw@mail.gmail.com>
+
+On Sun, Jun 3, 2018 at 9:51 AM, Jonas Schnelli via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Hi
+>
+> The BIP proposal is now available here:
+> https://gist.github.com/jonasschnelli/68a2a5a5a5b796dc9992f432e794d719
+>
+> Reference C code is available here:
+> https://github.com/jonasschnelli/bech32_keys
+>
+> Feedback, criticism, etc. welcome!
+
+First of all, thanks for working on this.
+
+I have some concerns about the use of Bech32. It is designed for
+detecting 3 errors up to length 1023 (but is then picked specifically
+to support 4 errors up to length 89). However, for error correction
+this translates to just being able to efficiently correct 1 error
+(3/2, rounded down) up to length 1023. You can of course always try
+all combinations of up to N changes to the input (for any N), testing
+the checksum, and comparing the results against the UTXO set or other
+wallet information that may have been recovered. However, the checksum
+at best gives you a small constant speedup here, not a fundamentally
+improved way for recovery.
+
+However, we can design other base32 BCH codes easily with different
+properties. As we mostly care about efficient algorithms for recovery
+(and not just error detection properties), it seems more important to
+have good design strength (as opposed to picking a code from a large
+set which happens to have better properties, but without efficient
+algorithm, like Bech32).
+
+This is what I find for codes designed for length 93 (the first length
+for which efficient codes exist with length long enough to support 256
+bits of data):
+* correct 1 error = 3 checksum characters
+* correct 2 errors = 6 checksum characters
+* correct 3 errors = 10 checksum characters
+* correct 4 errors = 13 checksum characters
+* correct 5 errors = 16 checksum characters
+* ...
+* correct 8 errors = 26 checksum characters (~ length * 1.5)
+* correct 11 errors = 36 checksum characters (~ maximum length without
+pushing checksum + data over 93 characters)
+
+For codes designed for length 341 (the first length enough to support
+512 bits of data):
+* correct 1 error = 3 checksum characters
+* correct 2 errors = 7 checksum characters
+* correct 3 errors = 11 checksum characters
+* correct 4 errors = 15 checksum characters
+* correct 5 errors = 19 checksum characters
+* ...
+* correct 7 errors = 26 checksum characters (~ length * 1.25)
+* correct 13 errors = 51 checksum characters (~ length * 1.5)
+* correct 28 errors = 102 checksum characters (~ length * 2)
+
+So it really boils down to a trade-off between length of the code, and
+recovery properties.
+
+These two sets of codes are distinct (a code designed for length 93
+has zero error correction properties when going above 93), so either
+we can pick a separate code for the two purposes, or be limited to the
+second set.
+
+If there is interest, I can construct a code + implementation for any
+of these in a few days probably, once the requirements are clear.
+
+Cheers,
+
+-- 
+Pieter
