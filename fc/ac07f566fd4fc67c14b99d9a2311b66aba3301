@@ -1,0 +1,74 @@
+From: ctpacia@gmail.com (Chris Pacia)
+Date: Tue, 5 Jun 2018 21:26:35 -0400
+Subject: [bitcoin-dev] [BIP Proposal] BetterHash Mining Protocol
+ Replacements
+In-Reply-To: <92215b88-75a4-6be7-dec6-89c567a74a9a@mattcorallo.com>
+References: <92215b88-75a4-6be7-dec6-89c567a74a9a@mattcorallo.com>
+Message-ID: <039bd3d3-c71c-8d40-7456-bc78fc0c7123@gmail.com>
+
+Really like that you're moving forward with this. A few months ago I was 
+working on something similar as it seemed like nobody else was interested.
+
+In regards to the specific proposal, would it make sense to offer a tx 
+subscription endpoint in addition to TRANSACTION_DATA_REQUEST? Such an 
+endpoint could respond to the subscription with the current full list of 
+transactions and then push the diff every time a new template is pushed. 
+A client that wants to inspect and modify the transactions would use 
+quite a bit less data than polling the request endpoint.
+
+
+On 06/05/2018 02:44 PM, Matt Corallo via bitcoin-dev wrote:
+> Been working on this one for a while, so its already been through a few
+> rounds of feeback (thanks to all those who already have provided feedback)!
+>
+> At a high level, this meets a few goals:
+>
+> 1) Replace getblocktemplate with something that is both more performant
+> (no JSON encoding, no full transactions sent over the wire to update a
+> job, hence we can keep the same CTransactionRef in Bitcoin Core making
+> lots of validation things way faster), more robust for consensus changes
+> (no need to add protocol changes to add commitments ala SegWit in the
+> future), and moves more block-switching logic inside of the work
+> provider (allowing Bitcoin Core to better optimize work switching as it
+> knows more than an outside pool server, specifically we can play more
+> games with how we do mempool eviction, empty block mining, and not
+> mining fresh transactions more easily by moving to a more "push" model
+> from the normal "pull" getblocktemplate implementation).
+>
+> 2) Replace Stratum with something more secure (sign messages when
+> applicable, without adding too much overhead to the pool), simpler to
+> implement (not JSON-wrapped-hex, no 32-byte-swapped-per-4-byte-byteorder
+> insanity), and better-defined (a clearly written spec, encompassing the
+> various things shoved backwards into stratum like suggested difficulty
+> in the password field and device identification by setting user to
+> "user.device") with VENDOR_MESSAGEs provided for extensibility instead
+> of conflicting specifications from various different vendors.
+>
+> 3) Provide the ability for a pool to accept work which the users of the
+> pool selected the transactions for, providing strong decentralization
+> pressure by removing the network-level centralization attacks pools can
+> do (or be compromised and used to perform) while still allowing them
+> full control of payout management and variance reduction.
+>
+> While (1) and (2) stand on their own, making it all one set of protocols
+> to provide (3) provides at least the opportunity for drastically better
+> decentralization in Bitcoin mining in the future.
+>
+> The latest version of the full BIP draft can be found at
+> https://github.com/TheBlueMatt/bips/blob/betterhash/bip-XXXX.mediawiki
+> and implementations of the work-generation part at
+> https://github.com/TheBlueMatt/bitcoin/commits/2018-02-miningserver and
+> pool/proxy parts at https://github.com/TheBlueMatt/mining-proxy (though
+> note that both implementations are currently on a slightly out-of-date
+> version of the protocol, I hope to get them brought up to date in the
+> coming day or two and make them much more full-featured. The whole stack
+> has managed to mine numerous testnet blocks on several different types
+> of hardware).
+>
+> Matt
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+
