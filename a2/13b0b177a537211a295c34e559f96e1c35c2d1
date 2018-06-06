@@ -1,0 +1,104 @@
+From: crypto@timruffing.de (Tim Ruffing)
+Date: Wed, 06 Jun 2018 14:48:01 +0200
+Subject: [bitcoin-dev] Should Graftroot be optional?
+In-Reply-To: <CAPg+sBgEUV5KNFi1L4MhR-3KAX9gbQKdzWneaEzF+QsKSXYu8A@mail.gmail.com>
+References: <CAPg+sBgKY-nmL=x+LVubtB0fFBAwd-1CDHT7zhidX8p9DLSGyg@mail.gmail.com>
+	<CAPg+sBh4CESPV_5TpPn0H3Zpv2Ump_0txxS63W_S2f3Lxezq1A@mail.gmail.com>
+	<CAAS2fgRXYtTyqqQp8Ehs_q_KsT7usA+vYSmngStnndd1rWNVNw@mail.gmail.com>
+	<D996F4E8-ACC6-4A49-B841-0F3285344DF6@xbt.hk>
+	<CAPg+sBgEUV5KNFi1L4MhR-3KAX9gbQKdzWneaEzF+QsKSXYu8A@mail.gmail.com>
+Message-ID: <f5c0012e55242d85ec2cc740cc8d081ef5da9145.camel@timruffing.de>
+
+I haven't read the original Graftroot thread, so maybe all of this has
+b
+een discussed already or is just wrong... Please correct me if this
+is
+the case.
+
+On Thu, 2018-05-31 at 17:25 -0700, Pieter Wuille via bitcoin-dev wrote:
+> The best argument for why Graftroot does not need to be optional I
+> think was how Greg put it: "since the signer(s) could have signed an
+> arbitrary transaction instead, being able to delegate is strictly
+> less
+> powerful.".
+
+I'm trying to get a more abstract view of the problem. One issue with
+Greg's argument is the following:
+
+If g-script is a script (containing a public key) that allows for
+Graftroot spending, then the following "flow" of coins is valid: 
+
+  g-script --g-sig--> script1 ---tx2---> script2
+
+Here, g-sig is a Graftroot signature on script1 and tx2 is a
+transaction that fulfills script1 and sends to script2. In other words,
+the only transaction involved here is tx2; it provides g-sig, script1,
+and a solution for tx1, and it spends to script2.
+
+Now Greg's argument (as I understand it) is that this can be already
+done without Grafroot with two transactions, namely a normal
+transaction tx1 that spends g-script normally and tx2 that spends tx1
+to script1.
+
+  g-script ---tx1---> script1 ---tx2---> script2.
+
+So far, so good. A difference however is that g-sig *alone* can't be
+committed to the chain but tx1 alone can be committed to the chain.
+That means
+
+  g-script --g-sig--> script1             (*)
+
+is "incomplete" but
+
+  g-script ---tx1---> script1             (**)
+
+is a perfectly valid transaction that can be committed to the chain. So
+I think Graftroot delegation is not "strictly less powerful" than just
+using a normal transaction: Graftroot enables to delegate in a way such
+that the delegation itself cannot be fixed in the chain. I think this
+is not possible currently. (Okay, you can just pass around the secret
+keys but has other problems obviously).
+
+Does this have practical implications?
+I don't see any but maybe this helps someone to identify an undesirable
+implication.
+
+One way to be on the safe side and probably make Greg's argument go
+through is to just define the semantics such that (*) is allowed, i.e.,
+call g-sig a "Graftroot transaction" and give it transaction semantics.
+This provides a new perspective on Graftroot: Then Graftroot does not
+introduce new semantics but (*) is just an optimized version of (**)
+that uses fewer bytes and may be better for privacy. 
+
+Interestingly Andrew's blind-sig example and Johnson's fix (g-sig signs
+the outpoint) are just a special case. If g-sig has transaction
+semantics, it must sign the outpoint (and other stuff).
+
+Now you can say that this is not really useful: if g-sig is essentially
+a full transaction that can committed to the blockchain, then it needs
+to specify inputs, outputs etc. So all the optimizations are lost and
+those were the reason we want to introduce Grafroot in the first place.
+
+But one observation here is that g-sig only needs to be a full
+transaction if it's used standalone as in (*). If we want to have 
+
+  g-script --g-sig--> script1 ---tx2---> script2
+
+(and this should be the common case) then just the bare signature  and
+script1 suffices, as in the Graftroot proposal. In some sense, inputs
+and outputs of the Graftroot transaction are just implicit in this
+case.
+
+Another way to look at this that instead of providing a transaction
+with g-sig, script1, and a solution for script1, you can also choose to
+provide a transaction with only g-sig and script1 (and don't solve
+script1), which then just sends to script1.
+
+I'm not saying that it's worth the hassle to add this possibility
+without being aware of a problem that arises if we don't add it -- but
+maybe my thoughts provide another perspective on the issue.
+
+Best,
+Tim
+
+
