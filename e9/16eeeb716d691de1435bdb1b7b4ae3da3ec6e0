@@ -1,0 +1,110 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 5 Jun 2018 21:01:00 -0700
+Subject: [bitcoin-dev] BIP proposal - Dandelion: Privacy Preserving
+ Transaction Propagation
+In-Reply-To: <CAGq_bNLvnZcOGU7c-8i7OL-OGAp4N2bX9T5SEROm59YBGL5yzw@mail.gmail.com>
+References: <CAGq_bNLvnZcOGU7c-8i7OL-OGAp4N2bX9T5SEROm59YBGL5yzw@mail.gmail.com>
+Message-ID: <CAPg+sBjdTmZ4m5c92CQK5DsU18M=GKgTM-OZZzwgjpE3hqe6=w@mail.gmail.com>
+
+On Thu, May 10, 2018 at 5:59 AM, Bradley Denby via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Hi all,
+>
+> ...
+>
+> This iteration of Dandelion has been tested on our own small network, and we
+> would like to get the implementation in front of a wider audience. An
+> updated
+> BIP document with further details on motivation, specification,
+> compatibility,
+> and implementation is located here:
+> https://github.com/mablem8/bips/blob/master/bip-dandelion.mediawiki
+
+Hi Bradley,
+
+thank you for working on this and going as far as implementing the
+entire protocol. It looks like a very well-worked out idea already,
+and its semantics can probably be adopted pretty much as-is. It would
+be very exciting to bring these kinds of privacy improvements to
+Bitcoin's P2P protocol.
+
+I do have a number of comments on the specification and suggested
+implementation in Bitcoin Core. I'm dumping my thoughts here, though
+at this stage the specification is probably more important. The
+implementation can be discussed more thoroughly when there is a PR
+open.
+
+Specification
+
+* Overall, I think it would be worthwhile to describe the intended
+node behavior in the BIP, at a higher level than Bitcoin Core
+patchsets, but more detailed than what is in the BIP now. The
+patch-based descriptions are both hard to read for developers working
+on different systems who are unfamiliar with the Core codebase, and
+don't make it clear to what extent implementation decisions are local
+policy (which can be changed without network coordination), and which
+follow from security or privacy arguments for the protocol.
+
+* Interaction with feefilter (BIP 133) and Bloom filter (BIP 37). When
+peers have given us filters on what transactions they will accept,
+should Dandelion transactions be subject to the same? Should it
+influence the choice of route? One simple possibility is perhaps to
+avoid choosing BIP37 peers as Dandelion routes, and treat transactions
+that do not pass the feefilter for its
+would-be-outgoing-Dandelion-route as an automatic fluff - justified by
+noting that relaying a transaction close to what fee is acceptable to
+the network's mempools is already less likely to get good privacy due
+to reduced chances of propagation.
+
+* Mempool dependant transactions. It looks like the current
+implementation accepts Dandelion transactions which are dependant on
+other Dandelion (stempool) transactions and on confirmed blockchain
+transactions, but not ones that are dependant on other unconfirmed
+normal mempool transactions. Is this intentional, or resulting from a
+difficulty in implementing this? Should the correct behaviour be
+specified, or left free for nodes to decide?
+
+* Orphan transactions. It looks like the current implementation
+assumes no orphan transactions, but in a dynamic network (especially
+with occasionally shuffling of Dandelion routes), I expect that
+sometimes a dependent transaction will go on a different route than
+its parent. Do you have any thoughts about that (even if not addressed
+in a very implementation). Could we have a Dandelion-orphan-pool of
+transactions, similar to the normal mempool has a set of orphan
+transactions?
+
+* Preferred connections. Should we bias the outgoing connection peer
+selection code to prefer Dandelion-capable peers when the number is
+too low?
+
+Implementation
+
+* How do we control the size of the stempool? Should acceptance of a
+transaction to the normal mempool and/or blockchain result in eviction
+of it (and conflicts) from the stempool? The existing code
+intentionally has an upper bound on the size of the mempool to assure
+predictable resource usage - the introduction of the stempool
+shouldn't change that.
+
+* I don't think you need to fully materialize all the routes. Instead,
+you can just maintain a vector of 2 selected Dandelion-supporting
+peers (and if one disconnects, replace just that one with another
+one). To map incoming peers to an index in that list of peers, you can
+use deterministic randomness (see SipHasher in the source code) with
+the incoming node_id as data and a single global secret nonce (chosen
+at startup, and reset on reshuffle).
+
+* setDandelionInventoryKnown looks like it can grow unboundedly. A
+rolling Bloom filter (like used for filterInventoryKnown) is perhaps
+easier to guarantee predictable memory usage for.
+
+* Use a scheduler job instead of a separate thread for shuffling the
+routes (extra threads use unnecessarily large amounts of memory).
+
+* (nit) coding style: doc/developer-notes.md has a number of
+guidelines on coding style you may want to check out.
+
+Cheers,
+
+-- 
+Pieter
