@@ -1,0 +1,123 @@
+From: crypto@timruffing.de (Tim Ruffing)
+Date: Wed, 06 Jun 2018 23:25:33 +0200
+Subject: [bitcoin-dev] Should Graftroot be optional?
+In-Reply-To: <CAPg+sBhYkQdjDcKvxUiGZCs220N0dqRMYoweCbOB2dgzD9UpzA@mail.gmail.com>
+References: <CAPg+sBgKY-nmL=x+LVubtB0fFBAwd-1CDHT7zhidX8p9DLSGyg@mail.gmail.com>
+	<CAPg+sBh4CESPV_5TpPn0H3Zpv2Ump_0txxS63W_S2f3Lxezq1A@mail.gmail.com>
+	<CAAS2fgRXYtTyqqQp8Ehs_q_KsT7usA+vYSmngStnndd1rWNVNw@mail.gmail.com>
+	<D996F4E8-ACC6-4A49-B841-0F3285344DF6@xbt.hk>
+	<CAPg+sBgEUV5KNFi1L4MhR-3KAX9gbQKdzWneaEzF+QsKSXYu8A@mail.gmail.com>
+	<f5c0012e55242d85ec2cc740cc8d081ef5da9145.camel@timruffing.de>
+	<CAPg+sBhYkQdjDcKvxUiGZCs220N0dqRMYoweCbOB2dgzD9UpzA@mail.gmail.com>
+Message-ID: <01976660b06809ea27af7db4bbceb08220ea2568.camel@timruffing.de>
+
+What you're saying makes sense.
+
+By the way, an even stronger reason why you shouldn't be able to
+"repurpose" just a Graftroot signature as a transaction: You may want
+to reveal to others that you've delegated. But if an observer sees the
+delegation (literally the Graftroot signature), this observer could
+send the Graftroot signature to the network (and lock out the other
+delegates and the initial owner). So you would need to keep the
+signature itself secret, otherwise we can't call this delegation.
+
+So it may sense to consider the idea of an implicit transaction for the
+case when one really solves the delegated script (as you mentioned) but
+only in this case.
+
+Tim
+
+
+On Wed, 2018-06-06 at 10:04 -0700, Pieter Wuille wrote:
+> On Wed, Jun 6, 2018 at 5:48 AM, Tim Ruffing via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > On Thu, 2018-05-31 at 17:25 -0700, Pieter Wuille via bitcoin-dev
+> > wrote:
+> > > The best argument for why Graftroot does not need to be optional
+> > > I
+> > > think was how Greg put it: "since the signer(s) could have signed
+> > > an
+> > > arbitrary transaction instead, being able to delegate is strictly
+> > > less
+> > > powerful.".
+> 
+> ...
+> 
+> > So
+> > I think Graftroot delegation is not "strictly less powerful" than
+> > just
+> > using a normal transaction: Graftroot enables to delegate in a way
+> > such
+> > that the delegation itself cannot be fixed in the chain. I think
+> > this
+> > is not possible currently. (Okay, you can just pass around the
+> > secret
+> > keys but has other problems obviously).
+> > 
+> > Does this have practical implications?
+> > I don't see any but maybe this helps someone to identify an
+> > undesirable
+> > implication.
+> 
+> Interesting point; I don't see any relevant implications to this
+> either, but it's indeed good to point out this as a distinction.
+> 
+> > One way to be on the safe side and probably make Greg's argument go
+> > through is to just define the semantics such that (*) is allowed,
+> > i.e.,
+> > call g-sig a "Graftroot transaction" and give it transaction
+> > semantics.
+> > This provides a new perspective on Graftroot: Then Graftroot does
+> > not
+> > introduce new semantics but (*) is just an optimized version of
+> > (**)
+> > that uses fewer bytes and may be better for privacy.
+> 
+> So you're saying: the Graftroot signature data could be made
+> identical
+> to the signature hash of an implicit 1-input-1-output transaction
+> spending the coin and creating a new output with the delegated script
+> as sPK, and the same amount.
+> 
+> I like that idea, but I don't think it can be *exactly* that. If it's
+> possible to take a Graftroot signature and instead construct a
+> transaction with it, you have inherently introduced a malleability.
+> The created outpoint will be different in both cases (different
+> txid),
+> meaning that a chain of dependent unconfirmed transactions may be
+> broken by giving one participant the ability to choose between
+> Graftroot delegation or actual spending.
+> 
+> Two points here: (1) the implicit transaction would be 0 fee (unless
+> we somehow assign a portion of the fee to the delegation itself for
+> purposes of sighash computing), and (2) this sounds very similar to
+> the issue SIGHASH_NOINPUT is intended to solve. About that...
+> 
+> > Interestingly Andrew's blind-sig example and Johnson's fix (g-sig
+> > signs
+> > the outpoint) are just a special case. If g-sig has transaction
+> > semantics, it must sign the outpoint (and other stuff).
+> 
+> You're right when you're comparing with existing transaction sighash
+> semantics, but not when SIGHASH_NOINPUT would exist. If that were the
+> case, the only real difference is your point above of not being able
+> to commit the implicit transaction separately. In other words, we're
+> back to something Johnson pointed out earlier: some of the perceived
+> problems with Graftroot are also issues with SIGHASH_NOINPUT.
+> 
+> I wonder if we can make this explicit: Graftroot spending becomes a
+> special sighash flag (which possibly is only allowed at the top
+> level)
+> - it builds an implicit transaction which moves all the coins to a
+> newly provided script, computes the sighash of that transaction
+> (taking all of the Graftroot signature's sighash flags into account -
+> including potentially SIGHASH_NOINPUT), and requires a signature with
+> that. The delegated script is then evaluated in the context of that
+> implicit transaction.
+> 
+> However, in order to avoid the malleability issue I think the actual
+> signature should still be different - possibly by simply passing
+> through the Graftroot sighash flag into the sighash being computed.
+> 
+> Cheers,
+> 
