@@ -1,0 +1,154 @@
+From: riccardo.casatta@gmail.com (Riccardo Casatta)
+Date: Wed, 6 Jun 2018 17:14:17 +0200
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <CAO3Pvs9tXte=_1UBPvLmrci+PD9QVbiKHu4R_6igpAEuQLJ3Wg@mail.gmail.com>
+References: <d43c6082-1b2c-c95b-5144-99ad0021ea6c@mattcorallo.com>
+	<CALJw2w7+VUYtMtdTexW6iE3mc0DsS9DME_ynP8skg_+-bv_tPA@mail.gmail.com>
+	<CADabwBDG2_2syU0AnjbEfqTL=5ERRQkL6NOyVN7gAyJTAaf7UA@mail.gmail.com>
+	<CAO3Pvs9tXte=_1UBPvLmrci+PD9QVbiKHu4R_6igpAEuQLJ3Wg@mail.gmail.com>
+Message-ID: <CADabwBAvq8jG42ctFPGix6brKen+dZ+mBEHaOykuSTkKWW8HsQ@mail.gmail.com>
+
+Sorry if I continue on the subject even if
+?custom filter types are considered in BIP 157/158
+.
+I am doing it
+ because
+?:
+1)?
+with a fixed target FP=2^-20  (or 1/784931)
+? and the multi layer filtering maybe it's reasonable to consider less than
+~20 bits for the golomb encoding of the per-block filter (one day committed
+in the blockchain)
+2) based on the answer received, privacy leak if downloading a subset of
+filters doesn't look a concern
+3)
+As far as I know, anyone is considering to use a map instead of a filter
+for the upper layers of the filter?.
+
+Simplistic example:
+Suppose to have a 2 blocks blockchain, every block contains N items for the
+filter:
+1) In the current discussed filter we have 2 filters of 20N bits
+2) In a two layer solution, we have 1 map of (10+1)2N bits and 2 filters of
+10N bits
+The additional bit in the map discriminate if the match is in the first or
+in the second block.
+Supposing to have 1 match in the two blocks, the filter size downloaded in
+the first case is always 40N bits, while the expected downloaded size in
+the second case is 22N+2^-10*10N+10N ~= 32N with the same FP because
+independence.
+This obviously isn't a full analysis of the methodology, the expected
+downloaded size in the second case could go from the best case 22N bits to
+the worst case of 42N bits...
+
+@Gregory
+> I don't know what portion of coins created are spent in the same 144 block
+window...
+
+About 50%
+source code <https://github.com/RCasatta/coincount>
+
+>From block 393216 to 458752  (still waiting for results on all the
+blockchain)
+Total outputs 264185587
+size: 2 spent: 11791058 ratio:0.04463172322871649
+size: 4 spent: 29846090 ratio:0.11297395266305728
+size: 16 spent: 72543182 ratio:0.2745917475051355
+size: 64 spent: 113168726 ratio:0.4283682818775424
+size: 144 spent: 134294070 ratio:0.508332311103709
+size: 256 spent: 148824781 ratio:0.5633342177747191
+size: 1024 spent: 179345566 ratio:0.6788620379960395
+size: 4096 spent: 205755628 ratio:0.7788298761355213
+size: 16384 spent: 224448158 ratio:0.849585174379706
+
+Another point to consider is that if we don't want the full transaction
+history of our wallet but only the UTXO, the upper layer map could contain
+only the item which are not already spent in the considered window. As we
+can see from the previous result if the window is 16384 ~85% of the
+elements are already spent suggesting a very high time locality. (apart
+144, I choose power of 2 windows so there are an integer number of bits in
+the map)
+
+It's possible we need ~20 bits anyway for the per-block filters because
+there are always connected wallets which one synced, always download the
+last filter, anyway the upper layer map looks very promising for longer
+sync.
+
+Il giorno mer 6 giu 2018 alle ore 03:13 Olaoluwa Osuntokun <
+laolu32 at gmail.com> ha scritto:
+
+> It isn't being discussed atm (but was discussed 1 year ago when the BIP
+> draft was originally published), as we're in the process of removing items
+> or filters that aren't absolutely necessary. We're now at the point where
+> there're no longer any items we can remove w/o making the filters less
+> generally useful which signals a stopping point so we can begin widespread
+> deployment.
+>
+> In terms of a future extension, BIP 158 already defines custom filter
+> types,
+> and BIP 157 allows filters to be fetched in batch based on the block height
+> and numerical range. The latter feature can later be modified to return a
+> single composite filter rather than several individual filters.
+>
+> -- Laolu
+>
+>
+> On Mon, Jun 4, 2018 at 7:28 AM Riccardo Casatta via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> I was wondering why this multi-layer multi-block filter proposal isn't
+>> getting any comment,
+>> is it because not asking all filters is leaking information?
+>>
+>> Thanks
+>>
+>> Il giorno ven 18 mag 2018 alle ore 08:29 Karl-Johan Alm via bitcoin-dev <
+>> bitcoin-dev at lists.linuxfoundation.org> ha scritto:
+>>
+>>> On Fri, May 18, 2018 at 12:25 AM, Matt Corallo via bitcoin-dev
+>>> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>> > In general, I'm concerned about the size of the filters making existing
+>>> > SPV clients less willing to adopt BIP 158 instead of the existing bloom
+>>> > filter garbage and would like to see a further exploration of ways to
+>>> > split out filters to make them less bandwidth intensive. Some further
+>>> > ideas we should probably play with before finalizing moving forward is
+>>> > providing filters for certain script templates, eg being able to only
+>>> > get outputs that are segwit version X or other similar ideas.
+>>>
+>>> There is also the idea of multi-block filters. The idea is that light
+>>> clients would download a pair of filters for blocks X..X+255 and
+>>> X+256..X+511, check if they have any matches and then grab pairs for
+>>> any that matched, e.g. X..X+127 & X+128..X+255 if left matched, and
+>>> iterate down until it ran out of hits-in-a-row or it got down to
+>>> single-block level.
+>>>
+>>> This has an added benefit where you can accept a slightly higher false
+>>> positive rate for bigger ranges, because the probability of a specific
+>>> entry having a false positive in each filter is (empirically speaking)
+>>> independent. I.e. with a FP probability of 1% in the 256 range block
+>>> and a FP probability of 0.1% in the 128 range block would mean the
+>>> probability is actually 0.001%.
+>>>
+>>> Wrote about this here: https://bc-2.jp/bfd-profile.pdf (but the filter
+>>> type is different in my experiments)
+>>> _______________________________________________
+>>> bitcoin-dev mailing list
+>>> bitcoin-dev at lists.linuxfoundation.org
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>
+>>
+>>
+>> --
+>> Riccardo Casatta - @RCasatta <https://twitter.com/RCasatta>
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>
+
+-- 
+Riccardo Casatta - @RCasatta <https://twitter.com/RCasatta>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180606/a82a07c6/attachment-0001.html>
