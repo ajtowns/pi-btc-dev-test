@@ -1,0 +1,100 @@
+From: bram@chia.net (Bram Cohen)
+Date: Thu, 7 Jun 2018 14:15:35 -0700
+Subject: [bitcoin-dev] Trusted merkle tree depth for safe tx inclusion
+ proofs without a soft fork
+In-Reply-To: <20180607171311.6qdjohfuuy3ufriv@petertodd.org>
+References: <20180607171311.6qdjohfuuy3ufriv@petertodd.org>
+Message-ID: <CAHUJnBB7UL3mH6SixP_M4yooMVP3DgZa+5hiQOmF=AiqfdpfOg@mail.gmail.com>
+
+Are you proposing a soft fork to include the number of transactions in a
+block in the block headers to compensate for the broken Merkle format? That
+sounds like a good idea.
+
+On Thu, Jun 7, 2018 at 10:13 AM, Peter Todd via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> It's well known that the Bitcoin merkle tree algorithm fails to distinguish
+> between inner nodes and 64 byte transactions, as both txs and inner nodes
+> are
+> hashed the same way. This potentially poses a problem for tx inclusion
+> proofs,
+> as a miner could (with ~60 bits of brute forcing) create a transaction that
+> committed to a transaction that was not in fact in the blockchain.
+>
+> Since odd-numbered inner/leaf nodes are concatenated with themselves and
+> hashed
+> twice, the depth of all leaves (txs) in the tree is fixed.
+>
+> It occured to me that if the depth of the merkle tree is known, this
+> vulnerability can be trivially avoided by simply comparing the length of
+> the
+> merkle path to that known depth. For pruned nodes, if the depth is saved
+> prior
+> to pruning the block contents itself, this would allow for completely safe
+> verification of tx inclusion proofs, without a soft-fork; storing this
+> data in
+> the block header database would be a simple thing to do.
+>
+> Lite client verification without a trusted source of known-valid headers is
+> dangerous anyway, so this protection makes for a fairly simple addition to
+> any
+> lite client protocol.
+>
+>
+> # Brute Force Cost Assuming a Valid Tx
+>
+> Consider the following 64 byte transaction:
+>
+>     tx = CTransaction([CTxIn(COutPoint(b'\xaa'*32,0xbbbbbbbb),
+> nSequence=0xcccccccc)],[CTxOut(2**44-1,CScript([b'\
+> xdd\xdd\xdd']))],nLockTime=2**31-1)
+>
+> If we serialize it, the last 32 bytes are:
+>
+>     aaaaaaaaaa bbbbbbbb 00 cccccccc 01 ffffffffff0f0000 04 03dddddd
+> ffffff7f
+>     ?prevhash? ? n    ?    ? seq  ?    ? nValue       ?    ? pubk ? ?lockt
+> ?
+>                         ? sig_len   ?num_txouts         ?scriptPubKey_len
+>
+> Of those fields, we have free choice of the following bits:
+>
+> prevhash:  40 - prev tx fully brute-forcable, as tx can be created to match
+> prev_n:    16 - can create a tx with up to about 2^16 outputs
+> seq:       32 - fully brute-forcable in nVersion=1 txs
+> nValue:    44 - assuming attacker has access to 175,921 BTC, worth ~1.3
+> billion right now
+> pubk:      32 - fully brute-forcable if willing to lose BTC spent; all
+> scriptPubKeys are valid
+> nLockTime: 31 - valid time-based nLockTime
+> Total: 195 bits free choice ? 61 bits need to be brute-forced
+>
+> Additionally, this can be improved slightly by a few more bits by checking
+> for
+> valid scriptSig/scriptPubKey combinations other than a zero-length
+> scriptSig;
+> the attacker can also avoid creating an unspendable output this way, and
+> recover their funds by spending it in the same block with a third
+> transaction.
+> An obvious implementation making use of this would be to check that the
+> high
+> bits of prevout.n are zero first, prior to doing more costly checks.
+>
+> Finally, if inflation is not controlled - and thus nValue can be set
+> freely -
+> note how the brute force is trivial. There may very well exist
+> crypto-currencies
+> for which this brute-force is much easier than it is on Bitcoin!
+>
+> --
+> https://petertodd.org 'peter'[:-1]@petertodd.org
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180607/6531c188/attachment.html>
