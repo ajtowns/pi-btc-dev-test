@@ -1,0 +1,228 @@
+From: laolu32@gmail.com (Olaoluwa Osuntokun)
+Date: Fri, 8 Jun 2018 16:35:29 -0700
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <CAAS2fgRmvqJrtk5n7e9xc-zPpDLCKa2Te_dGCk9xb9OH_AG0nw@mail.gmail.com>
+References: <7E4FA664-BBAF-421F-8C37-D7CE3AA5310A@gmail.com>
+	<F87D7069-0FDC-4572-B02B-398A2A455935@gmail.com>
+	<CAAS2fgT716PiP0ucoASxryM9y+s9H2z06Z0ToaP1xT3BozAtNw@mail.gmail.com>
+	<CADZtCSguto2z6Z9CykymxnCokqo1G=sW0Ov0ht+KcD+KMnYyow@mail.gmail.com>
+	<CAO3Pvs-YDzfRqmyJ85wTH0ciccjCvkm5stGyP_tVGGna=PMv3A@mail.gmail.com>
+	<CAO3Pvs9p5COiS_7Jbj1r2iAKTEdXUcnVTRzL27c3=CeuB9WDTQ@mail.gmail.com>
+	<CAAS2fgSyVi0d_ixp-auRPPzPfFeffN=hsWhWT5=EzDO3O+Ue1g@mail.gmail.com>
+	<CAO3Pvs_0qCZbRCfL8EJw6gzWjZeXWcJrtg27g_SJ7+PkYTHg6A@mail.gmail.com>
+	<CAAS2fgTs+aKyiL8Kg_AZk=Mdh6896MEg=KHa6ANAZO7unsGEsg@mail.gmail.com>
+	<CADZtCShyYbgKk2zsKzQniqDw--XKfYWTk3Hk3o50V=MgT6zeuQ@mail.gmail.com>
+	<20180602124157.744x7j4u7dqtaa43@email>
+	<343A3542-3103-42E9-95B7-640DFE958FFA@gmail.com>
+	<CAAS2fgQDdJpzPR9Ve81hhyqU+MO7Ryy125fzK-iv=sfwwORDCw@mail.gmail.com>
+	<37BECD1A-7515-4081-85AC-871B9FB57772@gmail.com>
+	<CAPg+sBjXbwTKW+qbGwJgau-Q2-uJC6N1JH8hH4KThv0Ah3WuqA@mail.gmail.com>
+	<CAO3Pvs9BQ2Dc9GCuJNxko_34Jx5kSOd8jxYkfpMW2E_1EOBEuQ@mail.gmail.com>
+	<CAAS2fgRmvqJrtk5n7e9xc-zPpDLCKa2Te_dGCk9xb9OH_AG0nw@mail.gmail.com>
+Message-ID: <CAO3Pvs89_196socS-mxZpciYNO172Fiif=ncSQF0DA9n1g0+fQ@mail.gmail.com>
+
+> That in argument against adopting the inferior version, as that will
+> contribute more momentum to doing it in a way that doesn't make sense long
+> term.
+
+That was moreso an attempt at a disclosure, rather than may argument. But
+also as noted further up in the thread, both approaches have a trade off:
+one is better for light clients in a p2p "one honest peer mode", while the
+other is more compact, but is less verifiable for the light clients. They're
+"inferior" in different ways.
+
+My argument goes more like: moving to prev scripts means clients cannot
+verify in full unless a block message is added to include the prev outs.
+This is a downgrade assuming a "one honest peer" model for the p2p
+interactions. A commitment removes this drawback, but ofc requires a soft
+fork. Soft forks take a "long" time to deploy. So what's the cost in using
+the current filter (as it lets the client verify the filter if they want to,
+or in an attempted "bamboozlement" scenario) in the short term (as we don't
+yet have a proposal for committing the filters) which would allow us to
+experiment more with the technique on mainnet before making the step up to
+committing the filter. Also, depending on the way the commitment is done,
+the filters themselves would need to be modified.
+
+> I don't agree at all, and I can't see why you say so.
+
+Sure it doesn't _have_ to, but from my PoV as "adding more commitments" is
+on the top of every developers wish list for additions to Bitcoin, it would
+make sense to coordinate on an "ultimate" extensible commitment once, rather
+than special case a bunch of distinct commitments. I can see arguments for
+either really.
+
+> This is inherent in how e.g. the segwit commitment is encoded, the initial
+> bytes are an identifying cookies. Different commitments would have
+different
+> cookies.
+
+Indeed, if the filter were to be committed, using an output on the coinbase
+would be a likely candidate. However, I see two issues with this:
+
+  1. The current filter format (even moving to prevouts) cannot be committed
+     in this fashion as it indexes each of the coinbase output scripts. This
+     creates a circular dependency: the commitment is modified by the
+     filter, which is modified by the commitment (the filter atm indexes the
+     commitment). So we'd need to add a special case to skip outputs with a
+     particular witness magic. However, we don't know what that witness
+     magic looks like (as there's no proposal). As a result, the type
+     filters that can be served over the p2p network may be distinct from
+     the type of filters that are to be committed, as the commitment may
+     have an impact on the filter itself.
+
+  2. Since the coinbase transaction is the first in a block, it has the
+     longest merkle proof path. As a result, it may be several hundred bytes
+     (and grows with future capacity increases) to present a proof to the
+     client. Depending on the composition of blocks, this may outweigh the
+     gains had from taking advantage of the additional compression the prev
+     outs allow.
+
+In regards to the second item above, what do you think of the old Tier Nolan
+proposal [1] to create a "constant" sized proof for future commitments by
+constraining the size of the block and placing the commitments within the
+last few transactions in the block?
+
+> but with an added advantage of permitting expirementation ahead of the
+> commitment.
+
+Indeed! To my knowledge, lnd is the only software deployed that even has
+code to experiment with the filtering proposal in general. Also, as I
+pointed out above, we may require an additional modification in order to be
+able to commit the filter. The nature of that modification may depend on how
+the filter is to be committed. As a result, why hinder experimentation today
+(since it might need to be changed anyway, and as you point out the filter
+being committed can even be swapped) by delaying until we know what the
+commitment will look like?
+
+> You can still scan blocks directly when peers disagree on the filter
+> content, regardless of how the filter is constructed
+
+But the difference is that one options lets you fully construct the filter
+from a block, while the other requires additional data.
+
+> but it makes the attack ineffective and using outpoints considerably
+increases
+> bandwidth for everyone without an attack
+
+So should we optimize for the ability to validate in a particular model
+(better
+security), or lower bandwidth in this case? It may also be the case that the
+overhead of receiving proofs of the commitment outweigh the savings
+depending
+on block composition (ofc entire block that re-uses the same address is
+super
+small).
+
+> It seems to me this point is being overplayed, especially considering the
+> current state of non-existing validation in SPV software (if SPV software
+> doesn't validate anything else they could be validating, why would they
+> implement a considerable amount of logic for this?).
+
+I don't think its fair to compare those that wish to implement this proposal
+(and actually do the validation) to the legacy SPV software that to my
+knowledge is all but abandoned. The project I work on that seeks to deploy
+this proposal (already has, but mainnet support is behind a flag as I
+anticipated further modifications) indeed has implemented the "considerable"
+amount of logic to check for discrepancies and ban peers trying to bamboozle
+the light clients. I'm confident that the other projects seeking to
+implement
+this (rust-bitcoin-spv, NBitcoin, bcoin, maybe missing a few too) won't
+find it
+too difficult to implement "full" validation, as they're bitcoin developers
+with quite a bit of experience.
+
+I think we've all learned from the past defects of past light clients, and
+don't seek to repeat history by purposefully implementing as little
+validation
+as possible. With these new projects by new authors, I think we have an
+opprotunity to implement light clients "correctly" this time around.
+
+[1]:
+https://github.com/TierNolan/bips/blob/00a8d3e1ac066ce3728658c6c40240e1c2ab859e/bip-aux-header.mediawiki
+
+-- Laolu
+
+
+On Fri, Jun 8, 2018 at 9:14 AM Gregory Maxwell <greg at xiph.org> wrote:
+
+> On Fri, Jun 8, 2018 at 5:03 AM, Olaoluwa Osuntokun via bitcoin-dev
+> <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > As someone who's written and reviews code integrating the proposal all
+> the
+> > way up the stack (from node to wallet, to application), IMO, there's no
+> > immediate cost to deferring the inclusion/creation of a filter that
+> includes
+> > prev scripts (b) instead of the outpoint as the "regular" filter does
+> now.
+> > Switching to prev script in the _short term_ would be costly for the set
+> of
+> > applications already deployed (or deployed in a minimal or flag flip
+> gated
+> > fashion) as the move from prev script to outpoint is a cascading one that
+> > impacts wallet operation, rescans, HD seed imports, etc.
+>
+> It seems to me that you're making the argument against your own case
+> here: I'm reading this as a "it's hard to switch so it should be done
+> the inferior way".  That in argument against adopting the inferior
+> version, as that will contribute more momentum to doing it in a way
+> that doesn't make sense long term.
+>
+> > Such a proposal would need to be generalized enough to allow several
+> components to be committed,
+>
+> I don't agree at all, and I can't see why you say so.
+>
+> > likely have versioning,
+>
+> This is inherent in how e.g. the segwit commitment is encoded, the
+> initial bytes are an identifying cookies. Different commitments would
+> have different cookies.
+>
+> > and also provide the necessary extensibility to allow additional items
+> to be committed in the future
+>
+> What was previously proposed is that the commitment be required to be
+> consistent if present but not be required to be present.  This would
+> allow changing whats used by simply abandoning the old one.  Sparsity
+> in an optional commitment can be addressed when there is less than
+> 100% participation by having each block that includes a commitment
+> commit to the missing filters ones from their immediate ancestors.
+>
+> Additional optionality can be provided by the other well known
+> mechanisms,  e.g. have the soft fork expire at a block 5 years out
+> past deployment, and continue to soft-fork it in for a longer term so
+> long as its in use (or eventually without expiration if its clear that
+> it's not going away).
+>
+> > wallets which wish to primarily use the filters for rescan purposes can't
+> > just construct them locally for this particular use case independent of
+> > what's currently deployed on the p2p network.
+>
+> Absolutely, but given the failure of BIP37 on the network-- and the
+> apparent strong preference of end users for alternatives that don't
+> scan (e.g. electrum and web wallets)-- supporting making this
+> available via P2P was already only interesting to many as a nearly
+> free side effect of having filters for local scanning.  If it's a
+> different filter, it's no longer attractive.
+>
+> It seems to me that some people have forgotten that this whole idea
+> was originally proposed to be a committed data-- but with an added
+> advantage of permitting expirementation ahead of the commitment.
+>
+> > Maintaining the outpoint also allows us to rely on a "single honest
+> peer"security model in the short term.
+>
+> You can still scan blocks directly when peers disagree on the filter
+> content, regardless of how the filter is constructed-- yes, it uses
+> more bandwidth if you're attacked, but it makes the attack ineffective
+> and using outpoints considerably increases bandwidth for everyone
+> without an attack.  These ineffective (except for increasing
+> bandwidth) attacks would have to be common to offset the savings. It
+> seems to me this point is being overplayed, especially considering the
+> current state of non-existing validation in SPV software (if SPV
+> software doesn't validate anything else they could be validating, why
+> would they implement a considerable amount of logic for this?).
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180608/347a6539/attachment-0001.html>
