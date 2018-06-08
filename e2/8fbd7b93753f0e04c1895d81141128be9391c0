@@ -1,0 +1,91 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Fri, 8 Jun 2018 16:14:41 +0000
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <CAO3Pvs9BQ2Dc9GCuJNxko_34Jx5kSOd8jxYkfpMW2E_1EOBEuQ@mail.gmail.com>
+References: <7E4FA664-BBAF-421F-8C37-D7CE3AA5310A@gmail.com>
+	<F87D7069-0FDC-4572-B02B-398A2A455935@gmail.com>
+	<CAAS2fgT716PiP0ucoASxryM9y+s9H2z06Z0ToaP1xT3BozAtNw@mail.gmail.com>
+	<CADZtCSguto2z6Z9CykymxnCokqo1G=sW0Ov0ht+KcD+KMnYyow@mail.gmail.com>
+	<CAO3Pvs-YDzfRqmyJ85wTH0ciccjCvkm5stGyP_tVGGna=PMv3A@mail.gmail.com>
+	<CAO3Pvs9p5COiS_7Jbj1r2iAKTEdXUcnVTRzL27c3=CeuB9WDTQ@mail.gmail.com>
+	<CAAS2fgSyVi0d_ixp-auRPPzPfFeffN=hsWhWT5=EzDO3O+Ue1g@mail.gmail.com>
+	<CAO3Pvs_0qCZbRCfL8EJw6gzWjZeXWcJrtg27g_SJ7+PkYTHg6A@mail.gmail.com>
+	<CAAS2fgTs+aKyiL8Kg_AZk=Mdh6896MEg=KHa6ANAZO7unsGEsg@mail.gmail.com>
+	<CADZtCShyYbgKk2zsKzQniqDw--XKfYWTk3Hk3o50V=MgT6zeuQ@mail.gmail.com>
+	<20180602124157.744x7j4u7dqtaa43@email>
+	<343A3542-3103-42E9-95B7-640DFE958FFA@gmail.com>
+	<CAAS2fgQDdJpzPR9Ve81hhyqU+MO7Ryy125fzK-iv=sfwwORDCw@mail.gmail.com>
+	<37BECD1A-7515-4081-85AC-871B9FB57772@gmail.com>
+	<CAPg+sBjXbwTKW+qbGwJgau-Q2-uJC6N1JH8hH4KThv0Ah3WuqA@mail.gmail.com>
+	<CAO3Pvs9BQ2Dc9GCuJNxko_34Jx5kSOd8jxYkfpMW2E_1EOBEuQ@mail.gmail.com>
+Message-ID: <CAAS2fgRmvqJrtk5n7e9xc-zPpDLCKa2Te_dGCk9xb9OH_AG0nw@mail.gmail.com>
+
+On Fri, Jun 8, 2018 at 5:03 AM, Olaoluwa Osuntokun via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> As someone who's written and reviews code integrating the proposal all the
+> way up the stack (from node to wallet, to application), IMO, there's no
+> immediate cost to deferring the inclusion/creation of a filter that includes
+> prev scripts (b) instead of the outpoint as the "regular" filter does now.
+> Switching to prev script in the _short term_ would be costly for the set of
+> applications already deployed (or deployed in a minimal or flag flip gated
+> fashion) as the move from prev script to outpoint is a cascading one that
+> impacts wallet operation, rescans, HD seed imports, etc.
+
+It seems to me that you're making the argument against your own case
+here: I'm reading this as a "it's hard to switch so it should be done
+the inferior way".  That in argument against adopting the inferior
+version, as that will contribute more momentum to doing it in a way
+that doesn't make sense long term.
+
+> Such a proposal would need to be generalized enough to allow several components to be committed,
+
+I don't agree at all, and I can't see why you say so.
+
+> likely have versioning,
+
+This is inherent in how e.g. the segwit commitment is encoded, the
+initial bytes are an identifying cookies. Different commitments would
+have different cookies.
+
+> and also provide the necessary extensibility to allow additional items to be committed in the future
+
+What was previously proposed is that the commitment be required to be
+consistent if present but not be required to be present.  This would
+allow changing whats used by simply abandoning the old one.  Sparsity
+in an optional commitment can be addressed when there is less than
+100% participation by having each block that includes a commitment
+commit to the missing filters ones from their immediate ancestors.
+
+Additional optionality can be provided by the other well known
+mechanisms,  e.g. have the soft fork expire at a block 5 years out
+past deployment, and continue to soft-fork it in for a longer term so
+long as its in use (or eventually without expiration if its clear that
+it's not going away).
+
+> wallets which wish to primarily use the filters for rescan purposes can't
+> just construct them locally for this particular use case independent of
+> what's currently deployed on the p2p network.
+
+Absolutely, but given the failure of BIP37 on the network-- and the
+apparent strong preference of end users for alternatives that don't
+scan (e.g. electrum and web wallets)-- supporting making this
+available via P2P was already only interesting to many as a nearly
+free side effect of having filters for local scanning.  If it's a
+different filter, it's no longer attractive.
+
+It seems to me that some people have forgotten that this whole idea
+was originally proposed to be a committed data-- but with an added
+advantage of permitting expirementation ahead of the commitment.
+
+> Maintaining the outpoint also allows us to rely on a "single honest peer"security model in the short term.
+
+You can still scan blocks directly when peers disagree on the filter
+content, regardless of how the filter is constructed-- yes, it uses
+more bandwidth if you're attacked, but it makes the attack ineffective
+and using outpoints considerably increases bandwidth for everyone
+without an attack.  These ineffective (except for increasing
+bandwidth) attacks would have to be common to offset the savings. It
+seems to me this point is being overplayed, especially considering the
+current state of non-existing validation in SPV software (if SPV
+software doesn't validate anything else they could be validating, why
+would they implement a considerable amount of logic for this?).
