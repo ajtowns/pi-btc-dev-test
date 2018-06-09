@@ -1,0 +1,109 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Sat, 9 Jun 2018 15:45:54 +0000
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <CAO3Pvs89_196socS-mxZpciYNO172Fiif=ncSQF0DA9n1g0+fQ@mail.gmail.com>
+References: <7E4FA664-BBAF-421F-8C37-D7CE3AA5310A@gmail.com>
+	<F87D7069-0FDC-4572-B02B-398A2A455935@gmail.com>
+	<CAAS2fgT716PiP0ucoASxryM9y+s9H2z06Z0ToaP1xT3BozAtNw@mail.gmail.com>
+	<CADZtCSguto2z6Z9CykymxnCokqo1G=sW0Ov0ht+KcD+KMnYyow@mail.gmail.com>
+	<CAO3Pvs-YDzfRqmyJ85wTH0ciccjCvkm5stGyP_tVGGna=PMv3A@mail.gmail.com>
+	<CAO3Pvs9p5COiS_7Jbj1r2iAKTEdXUcnVTRzL27c3=CeuB9WDTQ@mail.gmail.com>
+	<CAAS2fgSyVi0d_ixp-auRPPzPfFeffN=hsWhWT5=EzDO3O+Ue1g@mail.gmail.com>
+	<CAO3Pvs_0qCZbRCfL8EJw6gzWjZeXWcJrtg27g_SJ7+PkYTHg6A@mail.gmail.com>
+	<CAAS2fgTs+aKyiL8Kg_AZk=Mdh6896MEg=KHa6ANAZO7unsGEsg@mail.gmail.com>
+	<CADZtCShyYbgKk2zsKzQniqDw--XKfYWTk3Hk3o50V=MgT6zeuQ@mail.gmail.com>
+	<20180602124157.744x7j4u7dqtaa43@email>
+	<343A3542-3103-42E9-95B7-640DFE958FFA@gmail.com>
+	<CAAS2fgQDdJpzPR9Ve81hhyqU+MO7Ryy125fzK-iv=sfwwORDCw@mail.gmail.com>
+	<37BECD1A-7515-4081-85AC-871B9FB57772@gmail.com>
+	<CAPg+sBjXbwTKW+qbGwJgau-Q2-uJC6N1JH8hH4KThv0Ah3WuqA@mail.gmail.com>
+	<CAO3Pvs9BQ2Dc9GCuJNxko_34Jx5kSOd8jxYkfpMW2E_1EOBEuQ@mail.gmail.com>
+	<CAAS2fgRmvqJrtk5n7e9xc-zPpDLCKa2Te_dGCk9xb9OH_AG0nw@mail.gmail.com>
+	<CAO3Pvs89_196socS-mxZpciYNO172Fiif=ncSQF0DA9n1g0+fQ@mail.gmail.com>
+Message-ID: <CAAS2fgTtm0PaE=Z-eRNh_XVA-bvRAO09ijs-Twhf5ZQBNkux=g@mail.gmail.com>
+
+> So what's the cost in using
+> the current filter (as it lets the client verify the filter if they want to,
+
+An example of that cost is you arguing against specifying and
+supporting the design that is closer to one that would be softforked,
+which increases the time until we can make these filters secure
+because it slows convergence on the design of what would get
+committed.
+
+>> I don't agree at all, and I can't see why you say so.
+>
+> Sure it doesn't _have_ to, but from my PoV as "adding more commitments" is
+> on the top of every developers wish list for additions to Bitcoin, it would
+> make sense to coordinate on an "ultimate" extensible commitment once, rather
+> than special case a bunch of distinct commitments. I can see arguments for
+> either really.
+
+We have an extensible commitment style via BIP141 already. I don't see
+why this in particular demands a new one.
+
+>   1. The current filter format (even moving to prevouts) cannot be committed
+>      in this fashion as it indexes each of the coinbase output scripts. This
+>      creates a circular dependency: the commitment is modified by the
+>      filter,
+
+Great point, but it should probably exclude coinbase OP_RETURN output.
+This would exclude the current BIP141 style commitment and likely any
+other.
+
+Should I start a new thread on excluding all OP_RETURN outputs from
+BIP-158 filters for all transactions? -- they can't be spent, so
+including them just pollutes the filters.
+
+>   2. Since the coinbase transaction is the first in a block, it has the
+>      longest merkle proof path. As a result, it may be several hundred bytes
+>      (and grows with future capacity increases) to present a proof to the
+
+If 384 bytes is a concern, isn't 3840 bytes (the filter size
+difference is in this ballpark) _much_ more of a concern?  Path to the
+coinbase transaction increases only logarithmically so further
+capacity increases are unlikely to matter much, but the filter size
+increases linearly and so it should be much more of a concern.
+
+> In regards to the second item above, what do you think of the old Tier Nolan
+> proposal [1] to create a "constant" sized proof for future commitments by
+> constraining the size of the block and placing the commitments within the
+> last few transactions in the block?
+
+I think it's a fairly ugly hack. esp since it requires that mining
+template code be able to stuff the block if they just don't know
+enough actual transactions-- which means having a pool of spendable
+outputs in order to mine, managing private keys, etc... it also
+requires downstream software not tinker with the transaction count
+(which I wish it didn't but as of today it does). A factor of two
+difference in capacity-- if you constrain to get the smallest possible
+proof-- is pretty stark, optimal txn selection with this cardinality
+constraint would be pretty weird. etc.
+
+If the community considers tree depth for proofs like that to be such
+a concern to take on technical debt for that structure, we should
+probably be thinking about more drastic (incompatible) changes... but
+I don't think it's actually that interesting.
+
+> I don't think its fair to compare those that wish to implement this proposal
+> (and actually do the validation) to the legacy SPV software that to my
+> knowledge is all but abandoned. The project I work on that seeks to deploy
+
+Yes, maybe it isn't.  But then that just means we don't have good information.
+
+When a lot of people were choosing electrum over SPV wallets when
+those SPV wallets weren't abandoned, sync time was frequently cited as
+an actual reason. BIP158 makes that worse, not better.   So while I'm
+hopeful, I'm also somewhat sceptical.  Certainly things that reduce
+the size of the 158 filters make them seem more likely to be a success
+to me.
+
+> too difficult to implement "full" validation, as they're bitcoin developers
+> with quite a bit of experience.
+
+::shrugs:: Above you're also arguing against fetching down to the
+coinbase transaction to save a couple hundred bytes a block, which
+makes it impossible to validate a half dozen other things (including
+as mentioned in the other threads depth fidelity of returned proofs).
+There are a lot of reasons why things don't get implemented other than
+experience! :)
