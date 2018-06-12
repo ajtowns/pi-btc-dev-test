@@ -1,0 +1,116 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Mon, 11 Jun 2018 18:05:14 -0700
+Subject: [bitcoin-dev] BIP proposal - Dandelion: Privacy Preserving
+ Transaction Propagation
+In-Reply-To: <CAGq_bNKj4rA9pzk7CPA0r099PXOy3naNfZsr=MSPpYh08OZ6TQ@mail.gmail.com>
+References: <CAGq_bNLvnZcOGU7c-8i7OL-OGAp4N2bX9T5SEROm59YBGL5yzw@mail.gmail.com>
+	<CAPg+sBjdTmZ4m5c92CQK5DsU18M=GKgTM-OZZzwgjpE3hqe6=w@mail.gmail.com>
+	<CAGq_bNKj4rA9pzk7CPA0r099PXOy3naNfZsr=MSPpYh08OZ6TQ@mail.gmail.com>
+Message-ID: <CAPg+sBj7HoR8ptaZw9UeJYDegk2q6y0w9s8tOg6mc2bzNw4zVw@mail.gmail.com>
+
+On Mon, Jun 11, 2018, 07:37 Bradley Denby via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Thanks for the comments Pieter!
+>
+> We can make descriptions for the intended node behaviors more clear in the
+> BIP.
+>
+> Regarding interaction with BIPs 37 and 133, we have found that if
+> Dandelion routing decisions are based on self-reported features, malicious
+> nodes can often exploit that to launch serious deanonymization attacks. As
+> a result, we recommend not allowing fee filters from peers to influence the
+> choice of route. Your suggestion of automatically fluffing is a good
+> solution. Another (similar) option would be to apply fee filters in the
+> stempool. This would prevent the tx from propagating in stem phase, so
+> eventually an embargo timer on the stem will expire and the transaction
+> will fluff. This is slower than auto-fluffing, but requires (slightly) less
+> code.
+>
+
+I understand the argument about not making routing decisions based on
+self-reported features, but I would expect it to only matter if done
+selectively? Allowing a node to opt out of Dandelion entirely should always
+be possible regardless - as they can always indicate not supporting it.
+
+The reason for my suggestion was that most full nodes on the network use
+feefilter, while only (from the perspective of Dandelion uninteresting)
+light nodes and blocksonly nodes generally use Bloom filters.
+
+Just dropping stem transactions that would otherwise be sent to a Dandelion
+peer which fails its filter, and relying on embargo seems fine. But perhaps
+this option is something to describe in the BIP ("Nodes MAY choose to
+either drop stem transactions or immediately start diffusion when a
+transaction would otherwise be sent to a Dandelion node whose filter is not
+satisfied for that transaction. A node SHOULD NOT make any routing
+decisions based on the transaction itself, and thus SHOULD NOT try to find
+an alternative Dandelion node to forward to" for example).
+
+Regarding mempool-dependent transactions, the reference implementation adds
+> any mempool transactions to the stempool but not vice-versa so that the
+> stempool becomes a superset of the mempool. In other words, information is
+> free to flow from the mempool to the stempool. Information does not flow
+> from the stempool to the mempool except when a transaction fluffs. As a
+> result, a node's stempool should accept and propagate Dandelion
+> transactions that depend on other unconfirmed normal mempool transactions.
+> The behavior you described is not intended; if you have any tests
+> demonstrating this behavior, would you mind sharing them?
+>
+
+Oh, I see! I was just judging based on the spec code you published, but I
+must have missed this. Yes, that makes perfect sense. There may be some
+issues with this having a significant impact on stempool memory usage, but
+let's discuss this later on implementation.
+
+Orphans: stem orphans can occur when a node on the stem shuffles its route
+> between sending dependent transactions. One way to deal with this issue
+> would be to re-broadcast all previous Dandelion transactions that have not
+> been fluffed after Dandelion route shuffling. This could add a fair amount
+> of data and logic. This re-broadcast method also telegraphs the fact that a
+> Dandelion shuffle has taken place and can result in bursts of transactions
+> depending on traffic patterns. A second option (which we used in the
+> reference implementation) is to wait for the fluff phase to begin, at which
+> point the orphans will be resolved. This should happen within 15 seconds
+> for most transactions. Do you have any thoughts on which option would be
+> more palatable? Or if there are other options we have missed?
+>
+
+Another option (just brainstorming, I may be missing something here), is to
+remember which peer each stempool transaction was forwarded to. When a
+dependent stem transaction arrives, it is always sent to (one of?) the
+peers its dependencies were sent to, even if a reshuffle happened in
+between.
+
+Thinking more about it, relying on embargo is probably fine - it'll just
+result in slightly lowered average stem length, and perhaps multiple
+simultaneous fluffs starting?
+
+Regarding preferred connections, we have found that making Dandelion
+> routing decisions based on claims made by peer nodes can cause problems and
+> therefore would recommend against biasing the peer selection code.
+>
+
+Oh, I don't mean routing decisions, but connections in general.
+
+On the implementation side:
+>
+
+Let's discuss these later.
+
+
+> Based on the feedback we have received so far, we are planning to
+> prioritize writing up a clearer spec for node behavior in the BIP. Does
+> that seem reasonable, or are there other issues that are more pressing at
+> this point?
+>
+
+I think that's the primary thing to focus on at this point, but perhaps
+others on this list feel different.
+
+Cheers,
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180611/308dd73e/attachment-0001.html>
