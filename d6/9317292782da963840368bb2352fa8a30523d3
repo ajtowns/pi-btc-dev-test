@@ -1,0 +1,128 @@
+From: laolu32@gmail.com (Olaoluwa Osuntokun)
+Date: Tue, 12 Jun 2018 16:51:29 -0700
+Subject: [bitcoin-dev] BIP 158 Flexibility and Filter Size
+In-Reply-To: <20180609103445.alxrchjbbbxklkzt@email>
+References: <CAAS2fgTs+aKyiL8Kg_AZk=Mdh6896MEg=KHa6ANAZO7unsGEsg@mail.gmail.com>
+	<CADZtCShyYbgKk2zsKzQniqDw--XKfYWTk3Hk3o50V=MgT6zeuQ@mail.gmail.com>
+	<20180602124157.744x7j4u7dqtaa43@email>
+	<343A3542-3103-42E9-95B7-640DFE958FFA@gmail.com>
+	<CAAS2fgQDdJpzPR9Ve81hhyqU+MO7Ryy125fzK-iv=sfwwORDCw@mail.gmail.com>
+	<37BECD1A-7515-4081-85AC-871B9FB57772@gmail.com>
+	<CAPg+sBjXbwTKW+qbGwJgau-Q2-uJC6N1JH8hH4KThv0Ah3WuqA@mail.gmail.com>
+	<CAO3Pvs9BQ2Dc9GCuJNxko_34Jx5kSOd8jxYkfpMW2E_1EOBEuQ@mail.gmail.com>
+	<CAAS2fgRmvqJrtk5n7e9xc-zPpDLCKa2Te_dGCk9xb9OH_AG0nw@mail.gmail.com>
+	<CAO3Pvs89_196socS-mxZpciYNO172Fiif=ncSQF0DA9n1g0+fQ@mail.gmail.com>
+	<20180609103445.alxrchjbbbxklkzt@email>
+Message-ID: <CAO3Pvs_GYnFAS-pM=+OYCbJaEw8TOo-opnv5GVCBiDEurLvjYg@mail.gmail.com>
+
+> Doesn't the current BIP157 protocol have each filter commit to the filter
+> for the previous block?
+
+Yep!
+
+> If that's the case, shouldn't validating the commitment at the tip of the
+> chain (or buried back whatever number of blocks that the SPV client
+trusts)
+> obliviate the need to validate the commitments for any preceeding blocks
+in
+> the SPV trust model?
+
+Yeah, just that there'll be a gap between the p2p version, and when it's
+ultimately committed.
+
+> It seems like you're claiming better security here without providing any
+> evidence for it.
+
+What I mean is that one allows you to fully verify the filter, while the
+other allows you to only validate a portion of the filter and requires other
+added heuristics.
+
+> In the case of prevout+output filters, when a client receives
+advertisements
+> for different filters from different peers, it:
+
+Alternatively, they can decompress the filter and at least verify that
+proper _output scripts_ have been included. Maybe this is "good enough"
+until its committed. If a command is added to fetch all the prev outs along
+w/ a block (which would let you do another things like verify fees), then
+they'd be able to fully validate the filter as well.
+
+-- Laolu
+
+
+On Sat, Jun 9, 2018 at 3:35 AM David A. Harding <dave at dtrt.org> wrote:
+
+> On Fri, Jun 08, 2018 at 04:35:29PM -0700, Olaoluwa Osuntokun via
+> bitcoin-dev wrote:
+> >   2. Since the coinbase transaction is the first in a block, it has the
+> >      longest merkle proof path. As a result, it may be several hundred
+> bytes
+> >      (and grows with future capacity increases) to present a proof to the
+> >      client.
+>
+> I'm not sure why commitment proof size is a significant issue.  Doesn't
+> the current BIP157 protocol have each filter commit to the filter for
+> the previous block?  If that's the case, shouldn't validating the
+> commitment at the tip of the chain (or buried back whatever number of
+> blocks that the SPV client trusts) obliviate the need to validate the
+> commitments for any preceeding blocks in the SPV trust model?
+>
+> > Depending on the composition of blocks, this may outweigh the gains
+> > had from taking advantage of the additional compression the prev outs
+> > allow.
+>
+> I think those are unrelated points.  The gain from using a more
+> efficient filter is saved bytes.  The gain from using block commitments
+> is SPV-level security---that attacks have a definite cost in terms of
+> generating proof of work instead of the variable cost of network
+> compromise (which is effectively free in many situations).
+>
+> Comparing the extra bytes used by block commitments to the reduced bytes
+> saved by prevout+output filters is like comparing the extra bytes used
+> to download all blocks for full validation to the reduced bytes saved by
+> only checking headers and merkle inclusion proofs in simplified
+> validation.  Yes, one uses more bytes than the other, but they're
+> completely different security models and so there's no normative way for
+> one to "outweigh the gains" from the other.
+>
+> > So should we optimize for the ability to validate in a particular
+> > model (better security), or lower bandwidth in this case?
+>
+> It seems like you're claiming better security here without providing any
+> evidence for it.  The security model is "at least one of my peers is
+> honest."  In the case of outpoint+output filters, when a client receives
+> advertisements for different filters from different peers, it:
+>
+>     1. Downloads the corresponding block
+>     2. Locally generates the filter for that block
+>     3. Kicks any peers that advertised a different filter than what it
+>        generated locally
+>
+> This ensures that as long as the client has at least one honest peer, it
+> will see every transaction affecting its wallet.  In the case of
+> prevout+output filters, when a client receives advertisements for
+> different filters from different peers, it:
+>
+>     1. Downloads the corresponding block and checks it for wallet
+>        transactions as if there had been a filter match
+>
+> This also ensures that as long as the client has at least one honest
+> peer, it will see every transaction affecting its wallet.  This is
+> equivilant security.
+>
+> In the second case, it's possible for the client to eventually
+> probabalistically determine which peer(s) are dishonest and kick them.
+> The most space efficient of these protocols may disclose some bits of
+> evidence for what output scripts the client is looking for, but a
+> slightly less space-efficient protocol simply uses randomly-selected
+> outputs saved from previous blocks to make the probabalistic
+> determination (rather than the client's own outputs) and so I think
+> should be quite private.  Neither protocol seems significantly more
+> complicated than keeping an associative array recording the number of
+> false positive matches for each peer's filters.
+>
+> -Dave
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180612/295d1a52/attachment.html>
