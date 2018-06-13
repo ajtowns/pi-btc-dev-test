@@ -1,0 +1,86 @@
+From: brianlockhart@gmail.com (Brian Lockhart)
+Date: Wed, 13 Jun 2018 08:32:11 -0700
+Subject: [bitcoin-dev] Why not archive the backend of Bitcoin blockchain?
+In-Reply-To: <87fu1qdd5e.fsf@gmail.com>
+References: <fd403450-cf7f-ce56-79ca-93c77c042289@frankentrikes.com>
+	<0cc0a7249708ad26a7cbef702370b234.squirrel@boosthardware.com>
+	<CAN8S4uarZ39BqpmZQqqoof6nDXH7eSuH1rT03ABX2x-Gzc9sXg@mail.gmail.com>
+	<87fu1qdd5e.fsf@gmail.com>
+Message-ID: <CAJQ0i9v0T8w4LD13z9AePtgnMdiG7=1pjMFWVXTnCFRVB1bwpw@mail.gmail.com>
+
+Somewhat related question -
+
+In the interest of avoiding running multiple bitcoind full nodes - is there
+a method to allow a Lightning node to point to / access a separate
+already-existing node, vs. requiring it to have its own dedicated local
+instance of bitcoind running?
+
+I.e. if I already have a full bitcoin node running, could I use RPC calls
+or something to tell my Lightning node to use that node, instead of
+spinning up *another* full node? I?m currently minimizing the network
+thrashing by whitelisting my LN bitcoind node to only point to my existing
+full node for updates, but if I could just point my whole LN node at it,
+that?s save on disk storage etc. etc. etc.
+
+
+Apologies if this is already in there (or has been added) and I missed it
+because I haven?t kept up with release notes?
+
+
+
+
+On June 13, 2018 at 6:35:49 AM, Christian Decker via bitcoin-dev (
+bitcoin-dev at lists.linuxfoundation.org) wrote:
+
+Kulpreet Singh via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+writes:
+> But if I understand correctly, lightning nodes need to check if a
+> counterparty is broadcasting an old channel state and in response
+> broadcast a penalty/justice transaction. Does that mean lightning
+> nodes only need to watch for transactions that come after the funding
+> transaction? Is that the only reason lightning needs to run bitcoind
+> with txindex?
+
+Yes, Lightning nodes need to monitor the network for transactions that
+they need to react to. This is basically tailing the blockchain and
+looking for anything suspicious. The `bitcoind` sitting next to the
+lightning node however does not need to keep an index of the
+transactions, at least for c-lightning, because we just ask for the full
+block that then gets scanned for transactions of interest and then we
+discard the rest of the block. We never ask for a specific transaction
+from `bitcoind` and therefore we don't need to run with `-txindex`.
+
+> If that is the case, and a lightning node only needs to query
+> transactions broadcast after the funding transaction, then a pruned
+> bitcoind instance with txindex might be a bit handy.
+
+Pruned nodes should work, as long as the current blockchain head that
+the lightning node has seen does not fall into the pruned range, since
+in that case it won't be able to fetch and process the blocks anymore.
+
+> Also from [1] it seems that indexing pruned nodes is not supported
+> because it doesn't make sense, not that it was infeasible. Now with
+> the lightning requirements, does an indexed pruned node start to make
+> sense?
+
+I don't think we should ever require `-txindex` to run a lightning node
+(I know some implementations did in the past), since that'd be a very
+onerous requirement to run a lightning node. Tailing the blockchain is
+more than sufficient to get the necessary data, and hopefully we can get
+our reliance on `bitcoind` down to a minimum in the future.
+
+> Once again, please forgive my naive understanding of some of the issues
+> involved and thanks for your patience.
+
+Absolutely no problem, it is a common misconception that `-txindex` is
+required to run a lightning node in all cases :-)
+
+Cheers,
+Christian
+_______________________________________________
+bitcoin-dev mailing list
+bitcoin-dev at lists.linuxfoundation.org
+https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180613/3b904f54/attachment-0001.html>
