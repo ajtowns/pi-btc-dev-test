@@ -1,0 +1,121 @@
+From: jan.matejek@satoshilabs.com (matejcik)
+Date: Tue, 19 Jun 2018 16:22:30 +0200
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+Message-ID: <983ef62f-0147-2d62-3ecd-f149fa36818b@satoshilabs.com>
+
+hello,
+this is our second e-mail with replies to Pieter's suggestions.
+
+On 16.6.2018 01:34, pieter.wuille at gmail.com (Pieter Wuille) wrote:
+> * Key-value map model or set model.
+> 
+> This was suggested in this thread:
+> https://twitter.com/matejcik/status/1002618633472892929
+> 
+> The motivation behind using a key-value model rather than a simple
+> list of records was that PSBTs can be duplicated (given to multiple
+> people for signing, for example), and merged back together after
+> signing. With a generic key-value model, any implementation can remove
+> the duplication even if they don't understand fields that may have
+> been added in future extensions.
+> 
+> However, almost the same can be accomplished by using the simpler set
+> model (the file consists of a set of records, with no duplication
+> allowed). This would mean that it would technically be legal to have
+> two partial signatures with the same key for the same input, if a
+> non-deterministic signer is used.
+
+Strongly agree with this.
+
+Just to note, we should probably use varint for the <type> field - this
+allows us, e.g., to create ?namespaces? for future extensions by using
+one byte as namespace identifier and one as field identifier.
+
+> 
+> On the other hand, this means that certain data currently encoded
+> inside keys can be dropped, reducing the PSBT size. This is
+> particularly true for redeemscripts and witnessscripts, as they can
+> just be computed by the client when deserializing. The two types could
+> even be merged into just "scripts" records - as they don't need to be
+> separated based on the way they're looked up (Hash160 for P2SH, SHA256
+> for P2WSH). The same could be done for the BIP32 derivation paths,
+> though this may be expensive, as the client would need to derive all
+> keys before being able to figure out which one(s) it needs.
+
+It could be nice if the output scripts records would be ordered the same
+as their corresponding outputs. But what if the Creator doesn?t want to
+include a script for an output? Perhaps the Script record should have a
+<vout> field to match it to the appropriate output.
+
+As for input scripts, we suggest that they are per-input and not
+included in the global record, see the other thread.
+
+> 
+> One exception is the "transaction" record, which needs to be unique.
+> That can either be done by adding an exception ("there can only be one
+> transaction record"), or by encoding it separately outside the normal
+> records (that may also be useful to make it clear that it is always
+> required).
+
+This seems to be the case for some fields already - i.e., an input field
+must have exactly one of Non-witness UTXO or Witness Output. So ?adding
+an exception? is probably just a matter of language?
+
+
+We?d also like to note that the ?number of inputs? field should be
+mandatory - and as such, possibly also a candidate for outside-record field.
+
+> 
+> * Ability for Combiners to verify two PSBT are for the same transaction
+> 
+> Clearly two PSBTs for incompatible transactions cannot be combined,
+> and this should not be allowed.
+> 
+> It may be easier to enforce this if the "transaction" record inside a
+> PSBT was required to be in a canonical form, meaning with empty
+> scriptSigs and witnesses. In order to do so, there could be per-input
+> records for "finalized scriptSig" and "finalized witness". Actually
+> placing those inside the transaction itself would only be allowed when
+> all inputs are finalized.
+
+Agreed! Also increases clarity, which is desired.
+
+> * Derivation from xpub or fingerprint
+> 
+> For BIP32 derivation paths, the spec currently only encodes the 32-bit
+> fingerprint of the parent or master xpub. When the Signer only has a
+> single xprv from which everything is derived, this is obviously
+> sufficient. When there are many xprv, or when they're not available
+> indexed by fingerprint, this may be less convenient for the signer.
+> Furthermore, it violates the "PSBT contains all information necessary
+> for signing, excluding private keys" idea - at least if we don't treat
+> the chaincode as part of the private key.
+> 
+> For that reason I would suggest that the derivation paths include the
+> full public key and chaincode of the parent or master things are
+> derived from. This does mean that the Creator needs to know the full
+> xpub which things are derived from, rather than just its fingerprint.
+
+
+We don?t understand the rationale for this idea. Do you see a scenario
+where an index on master fingerprint is not available but index by xpubs
+is? In our envisioned use cases at least, indexing private keys by xpubs
+(as opposed to deriving from a BIP32 path) makes no sense.
+
+Maybe this folds into the proposal for generic derivation below, or
+something like implementation-specific derivation methods?
+
+best regards
+
+Jan Matejek
+Tomas Susanka
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 819 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180619/70447694/attachment-0001.sig>
