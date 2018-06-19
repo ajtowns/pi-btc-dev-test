@@ -1,0 +1,96 @@
+From: jan.matejek@satoshilabs.com (matejcik)
+Date: Tue, 19 Jun 2018 16:20:03 +0200
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+Message-ID: <5b6b9d44-8e6c-2799-438e-d311e221bb57@satoshilabs.com>
+
+Hello,
+
+First of all, we'd like to apologize for such a late feedback, since
+there is a PR for this already. We've come up with a few more notes on
+this, so we are introducing those in this message and replying on
+Pieter's points in another one.
+
+
+1) Why isn't the global type 0x03 (BIP-32 path) per-input? How do we
+know, which BIP-32 path goes to which input? The only idea that comes to
+my mind is that we should match the input's scriptPubKey's pubkey to
+this 0x03's key (the public key).
+
+If our understanding is correct, the BIP-32 path is global to save space
+in case two inputs share the same BIP-32 path? How often does that
+happen? And in case it does, doesn't it mean an address reuse which is
+discouraged?
+
+Also, we believe that if the public key is to be used as "spent to by an
+output" it should be in an output section. If the public key is to be
+used to sign an input, it should be in the input section. Again, how
+often are those the same? We understand creating another section might
+be cumbersome, but it'd significantly increase clarity to have global,
+input and output section.
+
+Alternately, we could keep ?spend to? public keys in the global section,
+and put the input public keys to the per-input sections. This is less
+clear, but doesn?t introduce another section. A question to consider is,
+will there be more per-output data? If yes, it might make sense to have
+an output section.
+
+
+2) The global items 0x01 (redeem script) and 0x02 (witness script) are
+somewhat confusing. Let's consider only the redeem script (0x01) to make
+it simple. The value description says: "A redeem script that will be
+needed to sign a Pay-To-Script-Hash input or is spent to by an output.".
+Does this mean that the record includes both input's redeem script
+(because we need to sign it), but also a redeem script for the output
+(to verify we are sending to a correct P2SH)? To mix those two seems
+really confusing.
+
+Yet again, adding a new output section would make this more readable. We
+would include the input?s redeem script in the input section and the
+output?s redeem script again in the output section, because they?ll most
+likely differ anyway.
+
+The rationale says that the scripts are global to avoid duplication.
+However, how often is this the case? The scripts include a hash of some
+OP codes and the recipient's public key for example. So a) how often are
+two scripts equal to justify this? b) if they're the same, doesn't it
+yet again signalize address reuse?
+
+
+3) The sighash type 0x03 says the sighash is only a recommendation. That
+seems rather ambiguous. If the field is specified shouldn't it be binding?
+
+
+4) Is it a good idea to skip records which types we are unaware of? We
+can't come up with a reasonable example, but intuitively this seems as a
+potential security issue. We think we should consider  introducing a
+flag, which would define if the record is "optional". In case the signer
+encounters a record it doesn't recognize and such flag is not set, it
+aborts the procedure. If we assume the set model we could change the
+structure to <type><optional flag><length>{data}. We are not keen on
+this, but we wanted to include this idea to see what you think.
+
+-----------
+
+In general, the standard is trying to be very space-conservative,
+however is that really necessary? We would argue for clarity and ease of
+use over space constraints. We think more straightforward approach is
+desired, although more space demanding. What are the arguments to make
+this as small as possible? If we understand correctly, this format is
+not intended for blockchain nor for persistent storage, so size doesn?t
+matter nearly as much.
+
+
+Thank you,
+
+Tomas Susanka
+Jan Matejek
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 819 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180619/57fc30e2/attachment.sig>
