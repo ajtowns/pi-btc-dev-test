@@ -1,0 +1,228 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 19 Jun 2018 10:16:51 -0700
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <5b6b9d44-8e6c-2799-438e-d311e221bb57@satoshilabs.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<5b6b9d44-8e6c-2799-438e-d311e221bb57@satoshilabs.com>
+Message-ID: <CAPg+sBhNzxq0eZvnLK+k=J3pWs7zjGSGPzU8G76VeBZc3s9oOg@mail.gmail.com>
+
+On Tue, Jun 19, 2018 at 7:20 AM, matejcik via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+Thanks for your comments so far. I'm very happy to see people dig into
+the details, and consider alternative approaches.
+
+> 1) Why isn't the global type 0x03 (BIP-32 path) per-input? How do we
+> know, which BIP-32 path goes to which input? The only idea that comes to
+> my mind is that we should match the input's scriptPubKey's pubkey to
+> this 0x03's key (the public key).
+
+> If our understanding is correct, the BIP-32 path is global to save space
+> in case two inputs share the same BIP-32 path? How often does that
+> happen? And in case it does, doesn't it mean an address reuse which is
+> discouraged?
+
+Yes, the reason is address reuse. It may be discouraged, but it still
+happens in practice (and unfortunately it's very hard to prevent
+people from sending to the same address twice).
+
+It's certainly possible to make them per-input (and even per-output as
+suggested below), but I don't think it gains you much. At least when a
+signer supports any kind of multisig, it needs to match up public keys
+with derivation paths. If several can be provided, looking them up
+from a global table or a per-input table shouldn't fundamentally
+change anything.
+
+However, perhaps it makes sense to get rid of the global section
+entirely, and make the whole format a transaction plus per-input and
+per-output extra fields. This would result in duplication in case of
+key reuse, but perhaps that's worth the complexity reduction.
+
+> 2) The global items 0x01 (redeem script) and 0x02 (witness script) are
+> somewhat confusing. Let's consider only the redeem script (0x01) to make
+> it simple. The value description says: "A redeem script that will be
+> needed to sign a Pay-To-Script-Hash input or is spent to by an output.".
+> Does this mean that the record includes both input's redeem script
+> (because we need to sign it), but also a redeem script for the output
+> (to verify we are sending to a correct P2SH)? To mix those two seems
+> really confusing.
+>
+> Yet again, adding a new output section would make this more readable. We
+> would include the input?s redeem script in the input section and the
+> output?s redeem script again in the output section, because they?ll most
+> likely differ anyway.
+
+I think here it makes sense because there can actually only be (up to)
+one redeemscript and (up to) one witnessscript. So if we made those
+per-input and per-output, it may simplify signers as they don't need a
+table lookup to find the correct one. That would also mean we can drop
+their hashes, even if we keep a key-value model.
+
+> 3) The sighash type 0x03 says the sighash is only a recommendation. That
+> seems rather ambiguous. If the field is specified shouldn't it be binding?
+
+Perhaps, yes.
+
+> 4) Is it a good idea to skip records which types we are unaware of? We
+> can't come up with a reasonable example, but intuitively this seems as a
+> potential security issue. We think we should consider  introducing a
+> flag, which would define if the record is "optional". In case the signer
+> encounters a record it doesn't recognize and such flag is not set, it
+> aborts the procedure. If we assume the set model we could change the
+> structure to <type><optional flag><length>{data}. We are not keen on
+> this, but we wanted to include this idea to see what you think.
+
+Originally there was at least this intuition for why it shouldn't be
+necessary: the resulting signature for an input is either valid or
+invalid. Adding information to a PSBT (which is what signers do)
+either helps with that or not. The worst case is that they simply
+don't have enough information to produce a signature together. But an
+ignored unknown field being present should never result in signing the
+wrong thing (they can always see the transaction being signed), or
+failing to sign if signing was possible in the first place. Another
+way of looking at it, the operation of a signer is driven by queries:
+it looks at the scriptPubKey of the output being spent, sees it is
+P2SH, looks for the redeemscript, sees it is P2WSH, looks for the
+witnessscript, sees it is multisig, looks for other signers'
+signatures, finds enough for the threshold, and proceeds to sign and
+create a full transaction. If at any point one of those things is
+missing or not comprehensible to the signer, he simply fails and
+doesn't modify the PSBT.
+
+However, if the sighash request type becomes mandatory, perhaps this
+is not the case anymore, as misinterpreting something like this could
+indeed result in an incorrect signature.
+
+If we go down this route, if a field is marked as mandatory, can you
+still act as a combiner for it? Future extensions should always
+maintain the invariant that a simple combiner which just merges all
+the fields and deduplicates should always be correct, I think. So such
+a mandatory field should only apply to signers?
+
+> In general, the standard is trying to be very space-conservative,
+> however is that really necessary? We would argue for clarity and ease of
+> use over space constraints. We think more straightforward approach is
+> desired, although more space demanding. What are the arguments to make
+> this as small as possible? If we understand correctly, this format is
+> not intended for blockchain nor for persistent storage, so size doesn?t
+> matter nearly as much.
+
+I wouldn't say it's trying very hard to be space-conservative. The
+design train of thought started from "what information does a signer
+need", and found a signer would need information on the transaction to
+sign, and on scripts to descend into, information on keys to derive,
+and information on signatures provided by other participants. Given
+that some of this information was global (at least the transaction),
+and some of this information was per-input (at least the signatures),
+separate scopes were needed for those. Once you have a global scope,
+and you envision a signer which looks up scripts and keys in a map of
+known ones (like the signing code in Bitcoin Core), there is basically
+no downside to make the keys and scripts global - while giving space
+savings for free to deduplication.
+
+However, perhaps that's not the right way to think about things, and
+the result is simpler if we only keep the transaction itself global,
+and everything else per-input (and per-output).
+
+I think there are good reasons to not be gratuitously large (I expect
+that at least while experimenting, people will copy-paste these things
+a lot and page-long copy pastes become unwieldy quickly), but maybe
+not at the cost of structural complexity.
+
+On Tue, Jun 19, 2018 at 7:22 AM, matejcik via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> hello,
+> this is our second e-mail with replies to Pieter's suggestions.
+>
+> On 16.6.2018 01:34, pieter.wuille at gmail.com (Pieter Wuille) wrote:
+>> * Key-value map model or set model.
+
+> Just to note, we should probably use varint for the <type> field - this
+> allows us, e.g., to create ?namespaces? for future extensions by using
+> one byte as namespace identifier and one as field identifier.
+
+Agree, but this doesn't actually need to be specified right now. As
+the key's (and or value's) interpretation (including the type) is
+completely unspecified, an extension can just start using 2-byte keys
+(as long as the first byte of those 2 isn't used by another field
+already).
+
+>> One exception is the "transaction" record, which needs to be unique.
+>> That can either be done by adding an exception ("there can only be one
+>> transaction record"), or by encoding it separately outside the normal
+>> records (that may also be useful to make it clear that it is always
+>> required).
+>
+> This seems to be the case for some fields already - i.e., an input field
+> must have exactly one of Non-witness UTXO or Witness Output. So ?adding
+> an exception? is probably just a matter of language?
+
+Hmm, I wouldn't say so. Perhaps the transaction's inputs and outputs
+are chosen by one entity, and then sent to another entity which has
+access to the UTXOs or previous transactions. So while the UTXOs must
+be present before signing, I wouldn't say the file format itself must
+enforce that the UTXOs are present.
+
+However, perhaps we do want to enforce at-most one UTXO per input. If
+there are more potential extensions like this, perhaps a key-value
+model is better, as it's much easier to enforce no duplicate keys than
+it is to add field-specific logic to combiners (especially for
+extensions they don't know about yet).
+
+> We?d also like to note that the ?number of inputs? field should be
+> mandatory - and as such, possibly also a candidate for outside-record field.
+
+If we go with the "not put signatures/witnesses inside the transaction
+until all of them are finalized" suggestion, perhaps the number of
+inputs field can be dropped. There would be always one exactly for
+each input (but some may have the "final script/witness" field and
+others won't).
+
+>> * Derivation from xpub or fingerprint
+>>
+>> For BIP32 derivation paths, the spec currently only encodes the 32-bit
+>> fingerprint of the parent or master xpub. When the Signer only has a
+>> single xprv from which everything is derived, this is obviously
+>> sufficient. When there are many xprv, or when they're not available
+>> indexed by fingerprint, this may be less convenient for the signer.
+>> Furthermore, it violates the "PSBT contains all information necessary
+>> for signing, excluding private keys" idea - at least if we don't treat
+>> the chaincode as part of the private key.
+>>
+>> For that reason I would suggest that the derivation paths include the
+>> full public key and chaincode of the parent or master things are
+>> derived from. This does mean that the Creator needs to know the full
+>> xpub which things are derived from, rather than just its fingerprint.
+>
+>
+> We don?t understand the rationale for this idea. Do you see a scenario
+> where an index on master fingerprint is not available but index by xpubs
+> is? In our envisioned use cases at least, indexing private keys by xpubs
+> (as opposed to deriving from a BIP32 path) makes no sense.
+
+Let me elaborate.
+
+Right now, the BIP32 fields are of the form <master
+fingerprint><childidx><childidx><childidx>...
+
+Instead, I suggest fields of the form <master pubkey><master
+chaincode><childidx><childidx><childidx>...
+
+The fingerprint in this case is identical to the first 32 bit of the
+Hash160 of <master pubkey>, so certainly no information is lost by
+making this change.
+
+This may be advantageous for three reasons:
+* It permits signers to have ~thousands of master keys (at which point
+32-bit fingerprints would start having reasonable chance for
+collisions, meaning multiple derivation attempts would be needed to
+figure out which one to use).
+* It permits signers to index their master keys by whatever they like
+(for example, SHA256 rather than Hash160 or prefix thereof).
+* It permits signers who don't store a chaincode at all, and just
+protect a single private key.
+
+Cheers,
+
+-- 
+Pieter
