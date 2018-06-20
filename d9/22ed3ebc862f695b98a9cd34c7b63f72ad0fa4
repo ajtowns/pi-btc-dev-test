@@ -1,0 +1,61 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Wed, 20 Jun 2018 08:12:28 -0400
+Subject: [bitcoin-dev] Should Graftroot be optional?
+In-Reply-To: <01976660b06809ea27af7db4bbceb08220ea2568.camel@timruffing.de>
+References: <CAPg+sBgKY-nmL=x+LVubtB0fFBAwd-1CDHT7zhidX8p9DLSGyg@mail.gmail.com>
+	<CAPg+sBh4CESPV_5TpPn0H3Zpv2Ump_0txxS63W_S2f3Lxezq1A@mail.gmail.com>
+	<CAAS2fgRXYtTyqqQp8Ehs_q_KsT7usA+vYSmngStnndd1rWNVNw@mail.gmail.com>
+	<D996F4E8-ACC6-4A49-B841-0F3285344DF6@xbt.hk>
+	<CAPg+sBgEUV5KNFi1L4MhR-3KAX9gbQKdzWneaEzF+QsKSXYu8A@mail.gmail.com>
+	<f5c0012e55242d85ec2cc740cc8d081ef5da9145.camel@timruffing.de>
+	<CAPg+sBhYkQdjDcKvxUiGZCs220N0dqRMYoweCbOB2dgzD9UpzA@mail.gmail.com>
+	<01976660b06809ea27af7db4bbceb08220ea2568.camel@timruffing.de>
+Message-ID: <7nh2F_OPfoHDxrXVG8Dlu51iJ4nnlLFo962B7gI1cN3nyLupsjjlZF9-2nO525E5ENlhMSXprJWkHty8AAxe7W7FRZZpv00C0BptZZcvzK8=@protonmail.com>
+
+Good morning Pieter and Tim and all,
+
+My understanding is that the idea now being discussed by Pieter and Tim is that the Graftroot signature is not `sign(P, script)` but instead `sign(P, sighash(tx))`, where `tx` is an "ordinary" transaction that spends the outpoint that pays to `P`, and a single output whose `scriptPubKey` is the Graftroot `script` and contains the entire value of the outpoint, and `sighash()` is the standard SegWit transaction digest algorithm used for signing (and is affected by other flags in the signature).
+
+This has the advantage that the Graftroot signature commits to a single outpoint and cannot be used to spend all outpoints that happen to pay to the same `P` public key.
+
+However I believe the ability to "immanentize" a Graftroot signature as a signature for a 1-input 1-output transaction is unsafe (so a Graftroot signature should probably not be "the same" as a signature for a 1-input 1-output transaction like the above).
+
+Let us consider a simple CoinSwap protocol.  Let us focus on one half of the procedure, which is a simple ZKCP, i.e. Alice pays Bob for a hash preimage, with a timeout imposed so that Bob needs to provide the preimage, within a specified time.
+
+1.  Alice and Bob generate a shared public key P which requires k_a (Alice secret key) and k_b (Bob secret key) to sign.
+
+2.  Alice creates but does not sign a funding transaction that pays to public key P and gives its txid to Bob.  Alice also provides a standard P2WPKH return address that Alice controls.
+
+3.  Bob creates a `nLockTime`-encumbered transaction (the timeout backoff transaction) on the agreed timeout, spending the above txid outpoint to the Alice return address, and provides its half of the signature to P signing the timeout backoff transaction to Alice.
+
+4.  Alice keeps the above signature (verifying it is to the correct `nLockTime` and Alice return address), then signs and broadcasts the funding transaction.  Both wait for the funding transaction to confirm deeply.
+
+5.  Alice then signs a Graftroot to the script `{ OP_HASH <hash> OP_EQUALVERIFY <P_b> OP_CHECKSIG }` and gives its half of the signature to P signing the Graftroot to Bob.  Bob keeps this signature.
+
+6.  Bob provides the preimage to the hash directly to Alice and a standard P2WPKH destination address that Bob controls.
+
+7.  Alice then signs a direct spend of the funding transaction outpoint (one that is not encumbered by `nLockTime`), spending the funding txid outpoint to the Bob destination address, and provides its half of the signature to P signing this transaction.  This completes Alice participation in the protocol (it has now received the preimage).
+
+8.  Bob completes the signature to the destination transaction and broadcasts it to the blockchain layer.
+
+If Alice or Bob stalls at step 5 or earlier then the transaction does not occur (Alice does not learn the preimage, Bob gets no money).
+
+If Bob stalls at step 6, Alice can use the timeout backoff.
+
+If Alice stalls at step 7, Bob can use the Graftroot signed at step 5 to claim its funds as long as the timeout is not reached.
+
+Now if Graftroot signature is "actually" just a standard signature of a transaction that is elided from the blockchain, however, it means that this elided transaction can be immanentized on the blockchain with the specified script.  Even if this transaction has e.g. no fee then Bob could collude with a miner via sidefees to get the (valid) transaction onchain.
+
+So Bob could take the signature made at 5 to create a transaction spending to the specified script, and prevent Alice from claiming the funds using the timeout backoff transaction.  Then Bob forever controls the UTXO and Alice cannot back out of the transaction, so even if the knowledge of the preimage ceases to be interesting, Alice has already paid Bob and Bob can provide the preimage at its leisure rather than constrained by the timeout.
+
+Thus we should somehow disallow immanentizing the Graftroot signature.
+
+An idea is that the Graftroot signature should sign a transaction with a specific special `nVersion`, that is then soft-forked to be invalid onchain (i.e. the `nVersion` is reserved for Graftroot and it is invalid for a transaction onchain to use that `nVersion`).  So the Graftroot signature can be used as a Graftroot spend, but not as a immanentized signature on an actual onchain transaction that could disable the timeout backoff transaction.
+
+Utilities that can sign an arbitrary message using your private keys could check if the first four bytes match the Graftroot `nVersion` and refuse to sign such messages to prevent inadvertently giving a Graftroot signature.
+
+Alternatively, we note that the "transaction" signed by Graftroot will not be referred to onchain anyway, and we could use a completely different `sighash()` algorithm, e.g. it could just be the outpoint being spent and the script to be executed, i.e. `sign(P, concat(txid, outnum, script))`.  This reduces code reuse, though.
+
+Regards,
+ZmnSCPxj
+
