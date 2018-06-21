@@ -1,0 +1,95 @@
+From: achow101-lists@achow101.com (Achow101)
+Date: Wed, 20 Jun 2018 20:39:05 -0400
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+Message-ID: <CHCiA27GTRiVfkF1DoHdroJL1rQS77ocB42nWxIIhqi_fY3VbB3jsMQveRJOtsJiA4RaCAVe3VZmLZsXVYS3A5wVLNP2OgKQiHE0T27P2qc=@achow101.com>
+
+Hi,
+
+On June 15, 2018 4:34 PM, Pieter Wuille via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> 
+> Hello all,
+> 
+> given some recent work and discussions around BIP 174 (Partially
+> Signed Bitcoin Transaction Format) I'd like to bring up a few ideas.
+> First of all, it's unclear to me to what extent projects have already
+> worked on implementations, and thus to what extent the specification
+> is still subject to change. A response of "this is way too late" is
+> perfectly fine.
+
+While I agree that the BIP itself should be revised to reflect these suggestions, I fear that it may be too late. I know of a few other developers who have implemented BIP 174 already but have not yet responded to this email.
+
+>     
+> -   Generic key offset derivation
+>
+>     Whenever a BIP32 derivation path does not include any hardened steps,
+>     the entirety of the derivation can be conveyed as "The private key for
+>     P is equal to the private key for Q plus x", with P and Q points and x
+>     a scalar. This representation is more flexible (it also supports
+>     pay-to-contract derivations), more efficient, and more compact. The
+>     downside is that it requires the Signer to support such derivation,
+>     which I don't believe any current hardware devices do.
+>     Would it make sense to add this as an additional derivation method?
+
+While this is a good idea, I'm not sure that implementers would understand this as it requires knowing the cryptography which makes this possible. As an optional feature, not all wallets would understand it, and those that do could create PSBTs which other wallets do not understand and thus cannot sign even if they have the private keys and actually can sign.
+
+>     
+> -   Hex encoding?
+>     
+>     This is a very minor thing. But presumably there will be some standard
+>     way to store PSBTs as text for copy-pasting - either prescribed by the
+>     spec, or de facto. These structures may become pretty large, so
+>     perhaps it's worth choosing something more compact than hexadecimal -
+>     for example Base64 or even Z85 (https://rfc.zeromq.org/spec:32/Z85/).
+
+Agreed. Are there any encodings that do not have double click breaking characters?
+
+
+On June 19, 2018 2:38 AM, Jonas Schnelli via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> I think it could be more flexible (generic) in BIP174.
+> It could be just a single child key {32-bit int}, or just a keypath ({32-bit int}]{32-bit int}?) which is very likely sufficient for a HWW to derive the relevant key without the creation of a lookup-window or other ?maps".
+
+This ignores all of the other times that a BIP32 keypath needs to be provided. It is not only used for multisig, there may be other times that there are multiple derivation paths and master keys due to multiple inputs and such. Adding a field specific to multisig and HWW only seems pointless and redundant to me.
+
+On June 19, 2018 2:38 AM, Jonas Schnelli via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+>
+> A question to consider is,
+> will there be more per-output data? If yes, it might make sense to have
+> an output section.
+
+I think it is unlikely that there would be anymore per-output data.
+
+> 3) The sighash type 0x03 says the sighash is only a recommendation. That
+>seems rather ambiguous. If the field is specified shouldn't it be binding?
+
+I disagree. It is up to the signer to decide what they wish to sign, not for the creator to specify what to sign. The creator can ask the signer to sign something in a particular way, but it is ultimately up to the signer to decide.
+
+> 4) Is it a good idea to skip records which types we are unaware of? We
+> can't come up with a reasonable example, but intuitively this seems as a
+> potential security issue. We think we should consider  introducing a
+> flag, which would define if the record is "optional". In case the signer
+> encounters a record it doesn't recognize and such flag is not set, it
+> aborts the procedure. If we assume the set model we could change the
+> structure to <type><optional flag><length>{data}. We are not keen on
+> this, but we wanted to include this idea to see what you think.
+
+The idea behind skipping unknown types is to allow forward compatibility. A combiner written now should be able to combine transactions created in the future with new types as combining is really only just merging the maps together.
+
+> In general, the standard is trying to be very space-conservative,
+> however is that really necessary? We would argue for clarity and ease of
+> use over space constraints. We think more straightforward approach is
+> desired, although more space demanding. What are the arguments to make
+> this as small as possible? If we understand correctly, this format is
+> not intended for blockchain nor for persistent storage, so size doesn?t
+> matter nearly as much.
+
+Size is not really a constraint, but we do not want to be unnecessarily large. The PSBT still has to be transmitted to other people. It will likely be used by copy and pasting the string into a text box. Copying and pasting very long strings of text can be annoying and cumbersome. So the goal is to keep the format still relatively clear while avoiding the duplication of data.
+
+
+Andrew
+
+
