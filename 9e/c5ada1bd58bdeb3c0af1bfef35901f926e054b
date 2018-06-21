@@ -1,0 +1,139 @@
+From: gsanders87@gmail.com (Greg Sanders)
+Date: Thu, 21 Jun 2018 11:40:04 -0400
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <21a616f5-7a17-35b9-85ea-f779f20a6a2d@satoshilabs.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<CHCiA27GTRiVfkF1DoHdroJL1rQS77ocB42nWxIIhqi_fY3VbB3jsMQveRJOtsJiA4RaCAVe3VZmLZsXVYS3A5wVLNP2OgKQiHE0T27P2qc=@achow101.com>
+	<21a616f5-7a17-35b9-85ea-f779f20a6a2d@satoshilabs.com>
+Message-ID: <CAB3F3DsA5KDx-zRuYyQbeWYAAjuY_+_gwma-9_ZRa0u8-B5p2g@mail.gmail.com>
+
+>Hmm, upon further reflection, maybe it's not even worth including *any*
+per-output data, aside from what the original transaction contains.
+
+>The output redeem script is either:
+- unknown, because we have received only an address from the receiver
+- or it is known, because it is ours and in that case it doesn?t make
+sense to include it in PSBT
+
+Signers are an extremely heterogeneous bunch. A signer may need to
+introspect on the script, such as "this is a 2-of-3,
+and I'm one of the keys". Even in basic p2pkh settings not adding any
+output information rules out things like change
+detection on any conceivable hardware wallet, or even simple software
+wallets that don't carry significant state.
+
+On Thu, Jun 21, 2018 at 10:35 AM Tomas Susanka via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Hello,
+>
+> First of all, let me thank you for all the hard work you and others have
+> put into this.
+>
+>
+> On 21.6.2018 02:39, Achow101 via bitcoin-dev wrote:
+> > While I agree that the BIP itself should be revised to reflect these
+> suggestions, I fear that it may be too late. I know of a few other
+> developers who have implemented BIP 174 already but have not yet responded
+> to this email.
+>
+> We do realize that this discussion should have happened earlier, however
+> agreeing on a good standard should be the number one priority for all
+> the parties involved.
+>
+> The fact that someone already implemented this is indeed unfortunate,
+> but I don't think we should lower our demands on the standard just
+> because of a bad timing.
+>
+> >> A question to consider is,
+> >> will there be more per-output data? If yes, it might make sense to have
+> >> an output section.
+> > I think it is unlikely that there would be anymore per-output data.
+>
+> Hmm, upon further reflection, maybe it's not even worth including *any*
+> per-output data, aside from what the original transaction contains.
+>
+> The output redeem script is either:
+> - unknown, because we have received only an address from the receiver
+> - or it is known, because it is ours and in that case it doesn?t make
+> sense to include it in PSBT
+>
+> We got stuck on the idea of the Creator providing future (output)
+> redeem/witness scripts. But that seems to be a minority use case and can
+> be solved efficiently via the same channels that coordinate the PSBT
+> creation. Sorry to change opinions so quickly on this one.
+>
+> >
+> >> 3) The sighash type 0x03 says the sighash is only a recommendation. That
+> >> seems rather ambiguous. If the field is specified shouldn't it be
+> binding?
+> > I disagree. It is up to the signer to decide what they wish to sign, not
+> for the creator to specify what to sign. The creator can ask the signer to
+> sign something in a particular way, but it is ultimately up to the signer
+> to decide.
+>
+> This seems very ambiguous. The Signer always has the option of not
+> signing. *What* to sign is a matter of coordination between the parties;
+> otherwise, you could make all the fields advisory and let anyone sign
+> anything they like?
+>
+> We don't understand the usecase for a field that is advisory but not
+> binding. On what basis would you choose to respect or disregard the
+> advisory field? Either one party has a preference, in which case they
+> have to coordinate with the other anyway - or they don't, in which case
+> they simply leave the field out.
+>
+> > Size is not really a constraint, but we do not want to be unnecessarily
+> large. The PSBT still has to be transmitted to other people. It will likely
+> be used by copy and pasting the string into a text box. Copying and pasting
+> very long strings of text can be annoying and cumbersome. So the goal is to
+> keep the format still relatively clear while avoiding the duplication of
+> data.
+>
+> I agree. Just to put some numbers on this: if we expect a 5-part
+> derivation path, and add the master key fingerprint, that is 4 + 5*4 =
+> 24 bytes (~32 base64 letters) per input and signer. I'd argue this is
+> not significant.
+> If we used full xpub, per Pieter's suggestion, that would grow to 32 +
+> 32 + 5*4 = 84 bytes (~112 letters) per input/signer, which is quite a lot.
+>
+> On the other hand, keeping the BIP32 paths per-input means that we don't
+> need to include the public key (as in the lookup key), so that's 32
+> bytes down per path. In general, all the keys can be fully reconstructed
+> from their values:
+>
+> redeem script key = hash160(value)
+> witness script key = sha256(value)
+> bip32 key = derive(value)
+>
+> The one exception is a partial signature. But even in that case we
+> expect that a given public key will always correspond to the same
+> signature, so we can act as if the public key is not part of the "key".
+> In other words, we can move the public key to the value part of the record.
+>
+> This holds true unless there's some non-deterministic signing scheme,
+> *and* multiple Signers sign with the same public key, which is what
+> Pieter was alluding to on Twitter
+> (https://twitter.com/pwuille/status/1002627925110185984). Still, I would
+> argue (as he also suggested) that keeping the format more complex to
+> support this particular use case is probably not worth it.
+>
+> Also, we can mostly ignore deduplication of witness/redeem scripts.
+> These still need to be included in the resulting transaction, duplicated
+> if necessary, so I think counting their repetition against the size of
+> PSBT isn't worth it.
+>
+>
+> Best,
+> Tomas
+>
+>
+>
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180621/b752efa0/attachment.html>
