@@ -1,0 +1,105 @@
+From: tomas.susanka@satoshilabs.com (Tomas Susanka)
+Date: Thu, 21 Jun 2018 13:44:37 +0200
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <CAPg+sBhNzxq0eZvnLK+k=J3pWs7zjGSGPzU8G76VeBZc3s9oOg@mail.gmail.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<5b6b9d44-8e6c-2799-438e-d311e221bb57@satoshilabs.com>
+	<CAPg+sBhNzxq0eZvnLK+k=J3pWs7zjGSGPzU8G76VeBZc3s9oOg@mail.gmail.com>
+Message-ID: <2699c3ac-63a8-6de4-07d8-002d4f903213@satoshilabs.com>
+
+Hi,
+
+On 19.6.2018 19:16, Pieter Wuille via bitcoin-dev wrote:
+> Yes, the reason is address reuse. It may be discouraged, but it still
+> happens in practice (and unfortunately it's very hard to prevent
+> people from sending to the same address twice).
+>
+> It's certainly possible to make them per-input (and even per-output as
+> suggested below), but I don't think it gains you much. At least when a
+> signer supports any kind of multisig, it needs to match up public keys
+> with derivation paths. If several can be provided, looking them up
+> from a global table or a per-input table shouldn't fundamentally
+> change anything.
+>
+> However, perhaps it makes sense to get rid of the global section
+> entirely, and make the whole format a transaction plus per-input and
+> per-output extra fields. This would result in duplication in case of
+> key reuse, but perhaps that's worth the complexity reduction.
+I think having a global section with just one record (the transaction)
+is just fine, in case we come up with some other fields later on which
+would fit the global section. Otherwise I totally agree.
+>> 2) The global items 0x01 (redeem script) and 0x02 (witness script) are
+>> somewhat confusing. Let's consider only the redeem script (0x01) to make
+>> it simple. The value description says: "A redeem script that will be
+>> needed to sign a Pay-To-Script-Hash input or is spent to by an output.".
+>> Does this mean that the record includes both input's redeem script
+>> (because we need to sign it), but also a redeem script for the output
+>> (to verify we are sending to a correct P2SH)? To mix those two seems
+>> really confusing.
+>>
+>> Yet again, adding a new output section would make this more readable. We
+>> would include the input?s redeem script in the input section and the
+>> output?s redeem script again in the output section, because they?ll most
+>> likely differ anyway.
+> I think here it makes sense because there can actually only be (up to)
+> one redeemscript and (up to) one witnessscript. So if we made those
+> per-input and per-output, it may simplify signers as they don't need a
+> table lookup to find the correct one. That would also mean we can drop
+> their hashes, even if we keep a key-value model.
+Yes, indeed. Just to clarify: in the first sentence you mean "per
+output", right? There can actually only be (up to) one redeemscript and
+(up to) one witnessscript *per output*.
+>> 4) Is it a good idea to skip records which types we are unaware of? We
+>> can't come up with a reasonable example, but intuitively this seems as a
+>> potential security issue. We think we should consider  introducing a
+>> flag, which would define if the record is "optional". In case the signer
+>> encounters a record it doesn't recognize and such flag is not set, it
+>> aborts the procedure. If we assume the set model we could change the
+>> structure to <type><optional flag><length>{data}. We are not keen on
+>> this, but we wanted to include this idea to see what you think.
+> Originally there was at least this intuition for why it shouldn't be
+> necessary: the resulting signature for an input is either valid or
+> invalid. Adding information to a PSBT (which is what signers do)
+> either helps with that or not. The worst case is that they simply
+> don't have enough information to produce a signature together. But an
+> ignored unknown field being present should never result in signing the
+> wrong thing (they can always see the transaction being signed), or
+> failing to sign if signing was possible in the first place. Another
+> way of looking at it, the operation of a signer is driven by queries:
+> it looks at the scriptPubKey of the output being spent, sees it is
+> P2SH, looks for the redeemscript, sees it is P2WSH, looks for the
+> witnessscript, sees it is multisig, looks for other signers'
+> signatures, finds enough for the threshold, and proceeds to sign and
+> create a full transaction. If at any point one of those things is
+> missing or not comprehensible to the signer, he simply fails and
+> doesn't modify the PSBT.
+The rationale behind this was, what if at some point we come up with a
+PSBT record, which forbids some kind of operation or alters some
+behaviour. In another words, by omitting such record the signer would
+create a signature, which is valid, but actually signed something
+different than the Creator intended.
+
+> However, if the sighash request type becomes mandatory, perhaps this
+> is not the case anymore, as misinterpreting something like this could
+> indeed result in an incorrect signature.
+I believe this use case illustrates it quite well. Let?s suppose the
+sighash record is binding and the Signer does not know it. The Creator
+creates a PSBT with sighash set SIGHASH_SINGLE. The Signer sings the
+transaction with SIGHASH_ALL, because they are not aware of such field.
+This results in a valid signature, however not what the Creator intended
+it to be.
+
+>> We?d also like to note that the ?number of inputs? field should be
+>> mandatory - and as such, possibly also a candidate for outside-record field.
+> If we go with the "not put signatures/witnesses inside the transaction
+> until all of them are finalized" suggestion, perhaps the number of
+> inputs field can be dropped. There would be always one exactly for
+> each input (but some may have the "final script/witness" field and
+> others won't).
+Agree. I'm be fine with dropping the field completely in that case.
+
+
+Thanks,
+Tomas
+
+
