@@ -1,0 +1,182 @@
+From: jan.matejek@satoshilabs.com (matejcik)
+Date: Thu, 21 Jun 2018 13:29:44 +0200
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <CAPg+sBhNzxq0eZvnLK+k=J3pWs7zjGSGPzU8G76VeBZc3s9oOg@mail.gmail.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<5b6b9d44-8e6c-2799-438e-d311e221bb57@satoshilabs.com>
+	<CAPg+sBhNzxq0eZvnLK+k=J3pWs7zjGSGPzU8G76VeBZc3s9oOg@mail.gmail.com>
+Message-ID: <9ceaba82-d2f2-439e-bced-8f5a337566d6@satoshilabs.com>
+
+On 19.6.2018 19:16, Pieter Wuille wrote:
+>> 1) Why isn't the global type 0x03 (BIP-32 path) per-input? How do we
+>> know, which BIP-32 path goes to which input? The only idea that comes to
+>> my mind is that we should match the input's scriptPubKey's pubkey to
+>> this 0x03's key (the public key).
+> 
+>> If our understanding is correct, the BIP-32 path is global to save space
+>> in case two inputs share the same BIP-32 path? How often does that
+>> happen? And in case it does, doesn't it mean an address reuse which is
+>> discouraged?
+> 
+> Yes, the reason is address reuse. It may be discouraged, but it still
+> happens in practice (and unfortunately it's very hard to prevent
+> people from sending to the same address twice).
+> 
+> It's certainly possible to make them per-input (and even per-output as
+> suggested below), but I don't think it gains you much. At least when a
+> signer supports any kind of multisig, it needs to match up public keys
+> with derivation paths. If several can be provided, looking them up
+> from a global table or a per-input table shouldn't fundamentally
+> change anything.
+
+So here?s a thing I?m still confused about.
+
+Imagine two cases, for a naive Signer:
+- either all data is global
+- or most data is per input.
+
+Now, the general signing flow is this:
+1. Pre-serialize the transaction
+2. Prepare the current input - fill out scriptPubKey (or equivalent for
+segwit)
+3. find a secret key
+4. output public key + signature
+
+Step (3) is the main issue here.
+
+In the case of everything per-input, the naive Signer can do this:
+1. (in the global section) pre-serialize the transaction
+2. (in each input) find and fill out scriptPubKey from the provided UTXO
+3. (for a given BIP32 path) check if the master fingerprint matches
+mine, if yes, derive secret key, output pubkey, signature
+4. goto 3 (more keys per input), goto 2 (next input)
+
+Note that this flow works perfectly for multisig; it?s going to be the
+job of a Finalizer to build the final scriptSig, but each input can have
+multiple partial signatures -- and, interestingly, the naive Signer
+doesn?t even need to know about multisig.
+
+A less naive Signer will want to check things, maybe derive a scriptSig
+itself and check if it matches the given hash, etc., but it can do this
+all in place. You go linearly through the signing flow and place a
+couple strategic assertions along the way.
+
+However, if the data is global, as is now, it gets more complicated:
+1. (in the global section) pre-serialize the transaction, prefill lookup
+tables
+2. (for a given BIP32 path) check if mine, then derive public key and
+store in a dictionary
+3. (for each input) find _and parse_ scriptPubKey, extract (PK or)
+script hash
+4. lookup redeem script based on script-hash; if not found, goto 2; if
+found, parse out public key
+5. lookup public key in the BIP32 dictionary; if not found, goto 2
+6. output pubkey, signature
+
+In addition to being more steps and lookups, it requires the Signer to
+understand the redeem script. A strict Signer will want that anyway, but
+in the first case, the Signer can regenerate the scripts and compare
+specificaly the ones it's working with; here, you need to parse them
+even before you know what you're comparing to.
+
+Is there something I?m missing? Because as I see it, there is literally
+no advantage to the more complicated flow; that?s why we assumed that
+the format is space-saving, because saving space was the only reason we
+could imagine.
+
+> If we go down this route, if a field is marked as mandatory, can you
+> still act as a combiner for it? Future extensions should always
+> maintain the invariant that a simple combiner which just merges all
+> the fields and deduplicates should always be correct, I think. So such
+> a mandatory field should only apply to signers?
+
+(...)
+
+> However, perhaps we do want to enforce at-most one UTXO per input. If
+> there are more potential extensions like this, perhaps a key-value
+> model is better, as it's much easier to enforce no duplicate keys than
+> it is to add field-specific logic to combiners (especially for
+> extensions they don't know about yet).
+
+In general, you seem to focus a lot on the role of Combiners, esp.
+simple Combiners. To me, that doesn?t look like a significant role. As I
+envision it, a Combiner really doesn?t need to do anything more
+complicated than merge and deduplicate records, simply based on the
+uniqueness of the whole record.
+It?s the Finalizer?s job to reconstruct and validate the result. Also
+ISTM if something messes up the PSBT (such as including multiple
+conflicting fields anywhere), it?s OK to leave it to Finalizer to fail.
+
+Are the Combiners supposed to be separate from Finalizers? (Is there a
+risk of a Combiner passing along a bad PSBT, Finalizer rejecting it, and
+the other parties not finding out?)
+
+
+> If we go with the "not put signatures/witnesses inside the transaction
+> until all of them are finalized" suggestion, perhaps the number of
+> inputs field can be dropped. There would be always one exactly for
+> each input (but some may have the "final script/witness" field and
+> others won't).
+
+Strongly agree with this. A guarantee that number of inputs in the
+transaction corresponds to number of input fields for PBST looks cleaner
+than specifying it separately. This way we can also drop the "input index".
+
+
+> Right now, the BIP32 fields are of the form <master
+> fingerprint><childidx><childidx><childidx>...
+> 
+> Instead, I suggest fields of the form <master pubkey><master
+> chaincode><childidx><childidx><childidx>...
+> 
+> The fingerprint in this case is identical to the first 32 bit of the
+> Hash160 of <master pubkey>, so certainly no information is lost by
+> making this change.
+> 
+> This may be advantageous for three reasons:
+> * It permits signers to have ~thousands of master keys (at which point
+> 32-bit fingerprints would start having reasonable chance for
+> collisions, meaning multiple derivation attempts would be needed to
+> figure out which one to use).
+> * It permits signers to index their master keys by whatever they like
+> (for example, SHA256 rather than Hash160 or prefix thereof)> * It permits signers who don't store a chaincode at all, and just
+> protect a single private key.
+
+I like this last usecase a lot, but perhaps that's a role for a
+"sub-Creator"? see below.
+
+Also, is there a reason to publish the chain code, wouldn't just the
+public key be sufficient to accomplish all three usecases you list?
+I sort of dislike the notion that you need to give all this information
+to a possibly untrusted Creator.
+
+
+An aside to this in particular, I?ve been thinking about the requirement
+to share derivation paths and public keys with the Creator. The spec
+assumes that this will happen; you?re talking about providing full
+xpub+chaincode too. At least, the Creator must prefill BIP32 paths and
+master key fingerprints. Possibly also prefill public keys in the redeem
+scripts?
+
+This might not be an improvement proposal, but a point worth being
+raised and maybe explained in the spec. Perhaps the original Creator
+doesn?t have access to this data, and delegates this to some
+?sub-Creators?  - I imagine a coordinator sending a PSBT to signing
+parties, each of which acts as a sub-Creator (fills out derivation paths
+and public keys) and a Signer (forwarding to a HWW). Some of the
+discussion even suggests some sort of generic ?key derivation field?
+with arbitrary contents - fingerprint + bip32 path? xpub + chain code?
+derivation points? encrypted xprv?
+
+thank you for your comments
+
+regards
+m.
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 819 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180621/92c941f5/attachment-0001.sig>
