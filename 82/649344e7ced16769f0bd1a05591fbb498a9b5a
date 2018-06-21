@@ -1,0 +1,195 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Thu, 21 Jun 2018 10:39:57 -0700
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <9ceaba82-d2f2-439e-bced-8f5a337566d6@satoshilabs.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<5b6b9d44-8e6c-2799-438e-d311e221bb57@satoshilabs.com>
+	<CAPg+sBhNzxq0eZvnLK+k=J3pWs7zjGSGPzU8G76VeBZc3s9oOg@mail.gmail.com>
+	<9ceaba82-d2f2-439e-bced-8f5a337566d6@satoshilabs.com>
+Message-ID: <CAPg+sBhZXFUUfUxQHZtA_=ivOhetLgWDV4MA4L3=fDsSxVJjEw@mail.gmail.com>
+
+On Thu, Jun 21, 2018 at 4:29 AM, matejcik <jan.matejek at satoshilabs.com> wrote:
+> In the case of everything per-input, the naive Signer can do this:
+> 1. (in the global section) pre-serialize the transaction
+> 2. (in each input) find and fill out scriptPubKey from the provided UTXO
+> 3. (for a given BIP32 path) check if the master fingerprint matches
+> mine, if yes, derive secret key, output pubkey, signature
+> 4. goto 3 (more keys per input), goto 2 (next input)
+>
+> Note that this flow works perfectly for multisig; it?s going to be the
+> job of a Finalizer to build the final scriptSig, but each input can have
+> multiple partial signatures -- and, interestingly, the naive Signer
+> doesn?t even need to know about multisig.
+
+Ah, you're thinking of an even simpler signer than I was imagining. I
+don't think this works in general, because the hash being signed
+depends on the structure of the script. For example, if it is P2SH, it
+is the redeemscript that goes into the scriptCode serialization rather
+than the scriptPubKey. If it is segwit, BIP143 serialization needs to
+be used, etc. It may work if your signing is restricted to just one of
+those structures, though.
+
+> A less naive Signer will want to check things, maybe derive a scriptSig
+> itself and check if it matches the given hash, etc., but it can do this
+> all in place. You go linearly through the signing flow and place a
+> couple strategic assertions along the way.
+
+Right - but I think anything but the simplest signer must do this,
+just to be able to distinguish between different kinds of signature
+hashing.
+
+But you're right, having per-input redeemscript/witnessscript
+simplifies things still - instead of needing to look a script hash in
+a map, you can just compare it with *the* redeemscript/witnessscript.
+
+> However, if the data is global, as is now, it gets more complicated:
+> 1. (in the global section) pre-serialize the transaction, prefill lookup
+> tables
+> 2. (for a given BIP32 path) check if mine, then derive public key and
+> store in a dictionary
+> 3. (for each input) find _and parse_ scriptPubKey, extract (PK or)
+> script hash
+> 4. lookup redeem script based on script-hash; if not found, goto 2; if
+> found, parse out public key
+> 5. lookup public key in the BIP32 dictionary; if not found, goto 2
+> 6. output pubkey, signature
+
+I understand your point now. I hadn't considered the possibility of
+just signing with all BIP32 derivation paths given for which the
+master matches, instead of extracting pubkeys/pkhs from the script.
+That's a major simplification for signers indeed. I do think you need
+some conditions before to determine the script structure (see above),
+but this is a good point in favour of making the derivation paths
+per-input.
+
+> In general, you seem to focus a lot on the role of Combiners, esp.
+> simple Combiners. To me, that doesn?t look like a significant role. As I
+> envision it, a Combiner really doesn?t need to do anything more
+> complicated than merge and deduplicate records, simply based on the
+> uniqueness of the whole record.
+
+It's more a side-effect of focusing on forward compatibility. I expect
+that we will have transactions with inputs spending different kinds of
+outputs, and some signers may not be able to understand all of them.
+However, as long as the design goal of having Combiners function
+correctly for things they don't understand, everything should be able
+to work together fine.
+
+> It?s the Finalizer?s job to reconstruct and validate the result. Also
+> ISTM if something messes up the PSBT (such as including multiple
+> conflicting fields anywhere), it?s OK to leave it to Finalizer to fail.
+
+Agree.
+
+> An aside to this in particular, I?ve been thinking about the requirement
+> to share derivation paths and public keys with the Creator. The spec
+> assumes that this will happen; you?re talking about providing full
+> xpub+chaincode too. At least, the Creator must prefill BIP32 paths and
+> master key fingerprints. Possibly also prefill public keys in the redeem
+> scripts?
+>
+> This might not be an improvement proposal, but a point worth being
+> raised and maybe explained in the spec. Perhaps the original Creator
+> doesn?t have access to this data, and delegates this to some
+> ?sub-Creators?  - I imagine a coordinator sending a PSBT to signing
+> parties, each of which acts as a sub-Creator (fills out derivation paths
+> and public keys) and a Signer (forwarding to a HWW). Some of the
+> discussion even suggests some sort of generic ?key derivation field?
+> with arbitrary contents - fingerprint + bip32 path? xpub + chain code?
+> derivation points? encrypted xprv?
+
+That makes sense - I think we've already touched this when discussing
+the requirement for UTXOs to be added. Perhaps those aren't added by
+the Creator, but by some index server. The same could be true for the
+scripts or derivations paths.
+
+And indeed, most of the information in the derivation paths is
+effectively opaque to the Creator - it's just some data given out by
+the Signer about its keys that gets passed back to it so it can
+identify the key. There is benefit in keeping it in a fixed structure
+(like xpub/chaincode, or fingerprint + derivation indexes), to
+guarantee compatibility between multiple signer implementations with
+access to the same key.
+
+On Tue, Jun 19, 2018 at 5:39 PM, Jason Les via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>Hex encoding?
+>
+> I was hoping for some standard here was well and I agree using something
+> more compact than hex is important. My understanding is Z85 is better for
+> use with JSON than Base64, which is probably a good benefit to have here.
+
+Both Base64 and Z85 can be stored in JSON strings without quoting
+(neither uses quotation characters or backslashes), but Z85 is
+slightly more compact (Z85 is 5 characters for 4 bytes, Base64 is 4
+characters for 3 bytes). Both use non-alphanumeric characters, so I
+don't think there is much difference w.r.t. copy-pastability either.
+Z85 is far less common though.
+
+On Thu, Jun 21, 2018 at 4:44 AM, Tomas Susanka via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> I think here it makes sense because there can actually only be (up to)
+>> one redeemscript and (up to) one witnessscript. So if we made those
+>> per-input and per-output, it may simplify signers as they don't need a
+>> table lookup to find the correct one. That would also mean we can drop
+>> their hashes, even if we keep a key-value model.
+> Yes, indeed. Just to clarify: in the first sentence you mean "per
+> output", right? There can actually only be (up to) one redeemscript and
+> (up to) one witnessscript *per output*.
+
+Up to one per output, and up to one per input - indeed.
+
+On Thu, Jun 21, 2018 at 7:32 AM, Tomas Susanka via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>> A question to consider is,
+>>> will there be more per-output data? If yes, it might make sense to have
+>>> an output section.
+>> I think it is unlikely that there would be anymore per-output data.
+>
+> Hmm, upon further reflection, maybe it's not even worth including *any*
+> per-output data, aside from what the original transaction contains.
+>
+> The output redeem script is either:
+> - unknown, because we have received only an address from the receiver
+> - or it is known, because it is ours and in that case it doesn?t make
+> sense to include it in PSBT
+>
+> We got stuck on the idea of the Creator providing future (output)
+> redeem/witness scripts. But that seems to be a minority use case and can
+> be solved efficiently via the same channels that coordinate the PSBT
+> creation. Sorry to change opinions so quickly on this one.
+
+Perhaps you're missing the reason for having output scripts? It is so
+that signers that wish to known the amounts transferred can be told
+which outputs of the to-be transaction are change, and thus shouldn't
+be counted towards the balance. By providing the scripts and
+derivation paths in a PSBT, the Creator can prove to the Signer that
+certain outputs do not actually move funds to some other entity.
+
+
+Based on the points before, my preference is having everything
+per-input and per-output except the transaction (with empty
+scriptSig/witness) itself, and having exactly one set/map per input
+and output (which may include a "finalized scriptSig/witness field"
+for finalized inputs). The overhead of having at least one separator
+byte for every input and output in the transaction is at most a few
+percent compared to the data in the transaction itself. If size is
+really an issue (but I think we've already established that small size
+gains aren't worth much extra complexity), we could also serialize the
+transaction without scriptSigs/witnesses (which are at least one byte
+each, and guaranteed to be empty).
+
+I'm unsure about typed record vs. key-value model. If we'd go with a
+per-input script approach, the key would just be a single byte ("the
+redeemscript" and "the witnessscript"), so the advantage of being able
+to drop the script hashes applies equally to both models. After that,
+it seems the only difference seems to be that a well-defined prefix of
+the records is enforced to be unique as opposed to the entire record
+being enforced to be unique. I don't think there is much difference in
+complexity, as Combiners and Signers still need to enforce some kind
+of uniqueness even in a typed records model.
+
+Cheers,
+
+-- 
+Pieter
