@@ -1,0 +1,112 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Fri, 22 Jun 2018 10:02:01 +0930
+Subject: [bitcoin-dev] [Lightning-dev] eltoo: A Simplified update
+	Mechanism for Lightning and Off-Chain Contracts
+In-Reply-To: <20180620153150.4mdash2sj7r2aiwo@email>
+References: <874ljsitvx.fsf@gmail.com> <20180619115618.ppycfvdh76rdagfo@email>
+	<87tvpy96lz.fsf@gmail.com> <20180619180251.j4l3zvxfmwi5mwlb@email>
+	<20180620153150.4mdash2sj7r2aiwo@email>
+Message-ID: <87wourr79a.fsf@rustcorp.com.au>
+
+"David A. Harding" <dave at dtrt.org> writes:
+> On Tue, Jun 19, 2018 at 02:02:51PM -0400, David A. Harding wrote:
+>> Anyone can rewrite a SIGHASH_NOINPUT input's outpoint, but the actual
+>> transaction containing the settlement is expected to have (at least) two
+>> inputs, with the second one originating the fees.  That second input's
+>> signature is (I assume) using SIGHASH_ALL to commit to all outpoints in
+>> the transaction, so it can't be arbitrarily rewritten by a third-party
+>> to apply to a different state outpoint
+>
+> I realized that the fee-paying input could possibly be signed with
+> SIGHASH_ALL|SIGHASH_ANYONECANPAY to allow anyone to arbitrarily
+> rewrite the other input signed with SIGHASH_NOINPUT.  However, this
+> reminded me of the well-known DoS against transactions signed with
+> SIGHASH_ANYONECANPAY[1], which seems to apply generally against
+> SIGHASH_NOINPUT as well and may allow theft from HTLCs.
+
+Yes, RBF Rule #3 again :( It makes RBF unusable in adversarial
+conditions, and it's not miner incentive-compatible.
+
+The only mitigations I have been able to come up with are:
+
+1. Reduce the RBF grouping depth to 2, not 10.  This doesn't help
+   here though, since you can still have ~infinite fan-out of txs
+   (create 1000 outputs, spend each with a 400ksipa tx).
+
+2. Revert #3 to a simple "greater feerate" rule, but delay propagation
+   proportional to tx weight, say 60 seconds (fuzzed) for a 400 ksipa
+   tx.  That reduces your ability to spam the network (you can always
+   connect directly to nodes and waste their time and bandwidth, but you
+   can do that pretty much today).
+
+Frankly, I'd also like a similar mechanism to not reject low-fee txs
+(above 250 satoshi per ksipa) but simply not propagate them.  Drop them
+after 60 seconds if there's no CPFP to increase their effective feerate.
+That would allow us to use CPFP on lightning commitment txs today,
+without having to guess what fees will be sometime in the future.
+
+Cheers,
+Rusty.
+
+> ## DoS against Eltoo settlements
+>
+> Alice and Mallory have a channel with some state updates.  Alice tries
+> to initiate a cooperate close, but Mallory stalls and instead broadcasts
+> the trigger transaction and the first state (state 0).  Notably, the
+> first state is bundled into a very large vsize transaction with a low
+> feerate.  State 1 is added to another very large low-feerate
+> transaction, as are states 2 through 9. 
+>
+> Alice could in theory RBF the state 0 transaction, but per BIP125 rule
+> #3, she needs to pay an absolute fee greater than all the transactions
+> being replaced (not just a higher feerate).  That could cost a lot.
+> Alice could also create a transaction that binds the final state to the
+> state 9 transaction and attempt CPFP, but increasing the feerate for the
+> transaction ancestor group to a satisfactory degree would cost the same
+> amount as RBF.
+>
+> So Alice is stuck waiting for states 0-9 to confirm before the final
+> state can be confirmed.  During recent periods of full mempools on
+> default nodes, the waiting time for 10 nBTC/vbyte transactions has been
+> more than two weeks.
+>
+> ## HTLC theft
+>
+> If Mallory is able to introduce significant settlement delays, HTLC
+> security is compromised.  For example, imagine this route:
+>
+>     Mallory <-> Alice <-> Bob
+>
+> Mallory orders a widget from Bob and pays via LN by sending 1 BTC to
+> Alice hashlocked and timelocked, which Alice forwards to Bob also
+> hashlocked and timelocked.  Mallory releases the preimage to Bob, who
+> claims the funds from Alice and ships the widget, giving Alice the
+> preimage.
+>
+> At this point, Mallory broadcasts the transactions described in the
+> preceding section.
+>
+> If the low feerate of states 0-9 prevent them from confirming before the
+> timeout, Mallory can create a transaction containing a dishonest final
+> state that executes the refund branch.  Like before, she can bury this
+> in an ancestor transaction chain that would be cost prohibitive for Alice
+> to RBF.
+>
+> Considered independently, this is a very expensive attack for Mallory,
+> and so perhaps impractical.  But Mallory can join forces with someone
+> already creating large low-feerate consolidation transactions.  Better
+> yet, from Mallory's perspective, she can execute the attack against
+> hundreds of channels at once (creating long chains of ancestor
+> transactions that are large in aggregate rather than individually
+> large), using the aggregate size of all the victims' channels against
+> each of the individual victims.
+>
+> Thanks,
+>
+> -Dave
+>
+> [1] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2014-August/006438.html
+> _______________________________________________
+> Lightning-dev mailing list
+> Lightning-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/lightning-dev
