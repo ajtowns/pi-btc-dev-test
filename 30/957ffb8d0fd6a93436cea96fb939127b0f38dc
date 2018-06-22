@@ -1,0 +1,61 @@
+From: achow101-lists@achow101.com (Achow101)
+Date: Fri, 22 Jun 2018 18:28:33 -0400
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <CAPg+sBgdQqZ8sRSn=dd9EkavYJA6GBiCu6-v5k9ca-9WLPp72Q@mail.gmail.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<CHCiA27GTRiVfkF1DoHdroJL1rQS77ocB42nWxIIhqi_fY3VbB3jsMQveRJOtsJiA4RaCAVe3VZmLZsXVYS3A5wVLNP2OgKQiHE0T27P2qc=@achow101.com>
+	<21a616f5-7a17-35b9-85ea-f779f20a6a2d@satoshilabs.com>
+	<20180621195654.GC99379@coinkite.com>
+	<CAPg+sBgdQqZ8sRSn=dd9EkavYJA6GBiCu6-v5k9ca-9WLPp72Q@mail.gmail.com>
+Message-ID: <ljk5Z_a3KK6DHfmPJxI8o9W2CkwszkUG34h0i1MTGU4ss8r3BTQ3GnTtDTfWF6J7ZqcSAmejzrr11muWqYN-_wnWw_0NFn5_lggNnjI0_Rc=@achow101.com>
+
+Hi all,
+
+After reading the comments here about BIP 174, I would like to propose the following changes:
+
+- Moving redeemScripts, witnessScripts, and BIP 32 derivation paths to per-input and per-output data
+
+I think that by moving these three fields into input and output specific maps, the format will be
+easier to read and simpler for signers to parse. Instead of having to be able to parse entire
+scripts and extract pubkeys, the signer can simply look at which pubkeys are provided in the inputs
+and sign the input based upon the presence of a pubkey for which the signer has a privkey.
+
+A neat trick that fits well with this model is that a plain pubkey (one that is not part of a BIP 32
+derivation) can still be put in a BIP 32 derivation path field where the value is just the fingerprint
+of the pubkey itself. This would indicate that no derivation needs to be done from the master key, and
+the master key is just the specified key itself.
+
+Additionally, by having the redeemScript and witnessScript readily available in the input, signers
+do not need to construct a map to find a redeemScript or witnessScript and can instead just look
+directly in the input data. There is also no need to include the hashes of these scripts, so the key
+is just the type. This also allows us to enforce the requirement for only one redeemScript and one
+witnessScript per input easily by continuing to follow the generic rule of unique keys.
+
+By using input specific and output specific fields, there is no need for the input index and the input
+count types as all inputs will be accounted for.
+
+- Finalized scriptSig and scriptWitness fields
+
+To determine whether two PSBTs are the same, we can compare the unsigned transaction. To ensure that the
+unsigned transactions are the same for two PSBTs with data for the same tx, we cannot put scriptSigs or
+scriptWitnesses into it. Thus for each input, two new fields have been added to store the finalized scriptSig
+and finalized scriptWitness.
+
+- Mandatory sighash
+
+The sighash type field will be changed from a recommendation to a requirement. Signatures will need to 
+use the specified sighash type for that input. If a Signer cannot sign for a particular sighash type, it
+must not add a partial signature.
+
+- Encoding
+
+I have decided that PSBTs should either be in binary or encoded as a Base64 string. For the latter, several
+Bitcoin clients already support Base64 encoding of data (for signed messages) so this will not add any extra
+dependencies like Z85 would.
+
+
+A draft of the revised BIP can be found here: https://github.com/achow101/bips/blob/bip174-rev/bip-0174.mediawiki
+If these changes are satisfactory, I will open a PR to the BIPs repo to update the BIP tomorrow. I will also
+create test vectors and update the implementation PR'ed to Core.
+
+Andrew
