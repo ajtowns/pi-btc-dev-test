@@ -1,0 +1,135 @@
+From: jan.matejek@satoshilabs.com (matejcik)
+Date: Tue, 26 Jun 2018 17:33:14 +0200
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<CHCiA27GTRiVfkF1DoHdroJL1rQS77ocB42nWxIIhqi_fY3VbB3jsMQveRJOtsJiA4RaCAVe3VZmLZsXVYS3A5wVLNP2OgKQiHE0T27P2qc=@achow101.com>
+	<21a616f5-7a17-35b9-85ea-f779f20a6a2d@satoshilabs.com>
+	<20180621195654.GC99379@coinkite.com>
+	<CAPg+sBgdQqZ8sRSn=dd9EkavYJA6GBiCu6-v5k9ca-9WLPp72Q@mail.gmail.com>
+	<ljk5Z_a3KK6DHfmPJxI8o9W2CkwszkUG34h0i1MTGU4ss8r3BTQ3GnTtDTfWF6J7ZqcSAmejzrr11muWqYN-_wnWw_0NFn5_lggNnjI0_Rc=@achow101.com>
+	<f8f5b1e3-692a-fc1e-2ad3-c4ad4464957f@satoshilabs.com>
+	<TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+Message-ID: <c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+
+hello,
+
+in general, I agree with my colleague Tomas, the proposed changes are
+good and achieve the most important things that we wanted. We'll review
+the proposal in more detail later.
+
+For now a couple minor things I have run into:
+
+- valid test vector 2 ("one P2PKH input and one P2SH-P2WPKH input")
+seems broken, at least its hex version; a delimiter seems to be missing,
+misplaced or corrupted
+- at least the first signing vector is not updated, but you probably
+know that
+- BIP32 derivation fields don't specify size of the "master public key",
+which would make it un-parsable :)
+- "Transaction format is specified as follows" and its table need to be
+updated.
+
+
+I'm still going to argue against the key-value model though.
+
+It's true that this is not significant in terms of space. But I'm more
+concerned about human readability, i.e., confusing future implementers.
+At this point, the key-value model is there "for historical reasons",
+except these aren't valid even before finalizing the format. The
+original rationale for using key-values seems to be gone (no key-based
+lookups are necessary). As for combining and deduplication, whether key
+data is present or not is now purely a stand-in for a "repeatable" flag.
+We could just as easily say, e.g., that the high bit of "type" specifies
+whether this record can be repeated.
+
+(Moreover, as I wrote previously, the Combiner seems like a weirdly
+placed role. I still don't see its significance and why is it important
+to correctly combine PSBTs by agents that don't understand them. If you
+have a usecase in mind, please explain.
+ISTM a Combiner could just as well combine based on whole-record
+uniqueness, and leave the duplicate detection to the Finalizer. In case
+the incoming PSBTs have incompatible unique fields, the Combiner would
+have to fail anyway, so the Finalizer might as well do it. Perhaps it
+would be good to leave out the Combiner role entirely?)
+
+There's two remaining types where key data is used: BIP32 derivations
+and partial signatures. In case of BIP32 derivation, the key data is
+redundant ( pubkey = derive(value) ), so I'd argue we should leave that
+out and save space. In case of partial signatures, it's simple enough to
+make the pubkey part of the value.
+
+Re breaking change, we are proposing breaking changes anyway, existing
+code *will* need to be touched, and given that this is a hand-parsed
+format, changing `parse_keyvalue` to `parse_record` seems like a small
+matter?
+
+---
+
+At this point I'm obliged to again argue for using protobuf.
+
+Thing is: BIP174 *is basically protobuf* (v2) as it stands. If I'm
+succesful in convincing you to switch to a record set model, it's going
+to be "protobuf with different varint".
+
+I mean this very seriously: (the relevant subset of) protobuf is a set
+of records in the following format:
+<record type><varint field length><field data>
+Record types can repeat, the schema specifies whether a field is
+repeatable or not - if it's not, the last parsed value is used.
+
+BIP174 is a ad-hoc format, simple to parse by hand; but that results in
+_having to_ parse it by hand. In contrast, protobuf has a huge
+collection of implementations that will do the job of sorting record
+types into relevant struct fields, proper delimiting of records, etc.
+...while at the same time, implementing "protobuf-based-BIP174" by hand
+is roughly equally difficult as implementing the current BIP174.
+
+N.B., it's possible to write a parser for protobuf-BIP174 without
+needing a general protobuf library. Protobuf formats are designed with
+forwards- and backwards- compatibility in mind, so having a hand-written
+implementation should not lead to incompatibilities.
+
+I did an experiment with this and other variants of the BIP174 format.
+You can see them here:
+[1] https://github.com/matejcik/bip174-playground
+see in particular:
+[2] https://github.com/matejcik/bip174-playground/blob/master/bip174.proto
+
+The tool at [1] does size comparisons. On the test vectors, protobuf is
+slightly smaller than key-value, and roughly equal to record-set, losing
+out a little when BIP32 fields are used.
+(I'm also leaving out key-data for BIP32 fields.)
+
+There's some technical points to consider about protobuf, too:
+
+- I decided to structure the message as a single "PSBT" type, where
+"InputType" and "OutputType" are repeatable embedded fields. This seemed
+better in terms of extensibility - we could add more sections in the
+future. But the drawback is that you need to know the size of
+Input/OutputType record in advance.
+The other option is sending the messages separated by NUL bytes, same as
+now, in which case you don't need to specify size.
+
+- in InputType, i'm using "uint32" for sighash. This type is not
+length-delimited, so non-protobuf consumers would have to understand it
+specially. We could also declare that all fields must be
+length-delimited[1] and implement sighash as a separate message type
+with one field.
+
+- non-protobuf consumers will also need to understand both protobuf
+varint and bitcoin compact uint, which is a little ugly
+
+best regards
+matejcik
+
+
+[1] https://developers.google.com/protocol-buffers/docs/encoding#structure
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 819 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180626/a1c4e6e5/attachment.sig>
