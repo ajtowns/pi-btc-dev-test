@@ -1,0 +1,110 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 26 Jun 2018 13:30:04 -0700
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<CHCiA27GTRiVfkF1DoHdroJL1rQS77ocB42nWxIIhqi_fY3VbB3jsMQveRJOtsJiA4RaCAVe3VZmLZsXVYS3A5wVLNP2OgKQiHE0T27P2qc=@achow101.com>
+	<21a616f5-7a17-35b9-85ea-f779f20a6a2d@satoshilabs.com>
+	<20180621195654.GC99379@coinkite.com>
+	<CAPg+sBgdQqZ8sRSn=dd9EkavYJA6GBiCu6-v5k9ca-9WLPp72Q@mail.gmail.com>
+	<ljk5Z_a3KK6DHfmPJxI8o9W2CkwszkUG34h0i1MTGU4ss8r3BTQ3GnTtDTfWF6J7ZqcSAmejzrr11muWqYN-_wnWw_0NFn5_lggNnjI0_Rc=@achow101.com>
+	<f8f5b1e3-692a-fc1e-2ad3-c4ad4464957f@satoshilabs.com>
+	<TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+	<c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+Message-ID: <CAPg+sBhhYuMi6E1in7wZovX7R7M=450cm6vxaGC1Sxr=cJAZsw@mail.gmail.com>
+
+On Tue, Jun 26, 2018 at 8:33 AM, matejcik via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> I'm still going to argue against the key-value model though.
+>
+> It's true that this is not significant in terms of space. But I'm more
+> concerned about human readability, i.e., confusing future implementers.
+> At this point, the key-value model is there "for historical reasons",
+> except these aren't valid even before finalizing the format. The
+> original rationale for using key-values seems to be gone (no key-based
+> lookups are necessary). As for combining and deduplication, whether key
+> data is present or not is now purely a stand-in for a "repeatable" flag.
+> We could just as easily say, e.g., that the high bit of "type" specifies
+> whether this record can be repeated.
+
+I understand this is a philosophical point, but to me it's the
+opposite. The file conveys "the script is X", "the signature for key X
+is Y", "the derivation for key X is Y" - all extra metadata added to
+inputs of the form "the X is Y". In a typed record model, you still
+have Xes, but they are restricted to a single number (the record
+type). In cases where that is insufficient, your solution is adding a
+repeatable flag to switch from "the first byte needs to be unique" to
+"the entire record needs to be unique". Why just those two? It seems
+much more natural to have a length that directly tells you how many of
+the first bytes need to be unique (which brings you back to the
+key-value model).
+
+Since the redundant script hashes were removed by making the scripts
+per-input, I think the most compelling reason (size advantages) for a
+record based model is gone.
+
+> (Moreover, as I wrote previously, the Combiner seems like a weirdly
+> placed role. I still don't see its significance and why is it important
+> to correctly combine PSBTs by agents that don't understand them. If you
+> have a usecase in mind, please explain.
+
+Forward compatibility with new script types. A transaction may spend
+inputs from different outputs, with different script types. Perhaps
+some of these are highly specialized things only implemented by some
+software (say HTLCs of a particular structure), in non-overlapping
+ways where no piece of software can handle all scripts involved in a
+single transaction. If Combiners cannot deal with unknown fields, they
+won't be able to deal with unknown scripts. That would mean that
+combining must be done independently by Combiner implementations for
+each script type involved. As this is easily avoided by adding a
+slight bit of structure (parts of the fields that need to be unique -
+"keys"), this seems the preferable option.
+
+> ISTM a Combiner could just as well combine based on whole-record
+> uniqueness, and leave the duplicate detection to the Finalizer. In case
+> the incoming PSBTs have incompatible unique fields, the Combiner would
+> have to fail anyway, so the Finalizer might as well do it. Perhaps it
+> would be good to leave out the Combiner role entirely?)
+
+No, a Combiner can pick any of the values in case different PSBTs have
+different values for the same key. That's the point: by having a
+key-value structure the choice of fields can be made such that
+Combiners don't need to care about the contents. Finalizers do need to
+understand the contents, but they only operate once at the end.
+Combiners may be involved in any PSBT passing from one entity to
+another.
+
+> There's two remaining types where key data is used: BIP32 derivations
+> and partial signatures. In case of BIP32 derivation, the key data is
+> redundant ( pubkey = derive(value) ), so I'd argue we should leave that
+> out and save space. In case of partial signatures, it's simple enough to
+> make the pubkey part of the value.
+
+In case of BIP32 derivation, computing the pubkeys is possibly
+expensive. A simple signer can choose to just sign with whatever keys
+are present, but they're not the only way to implement a signer, and
+even less the only software interacting with this format. Others may
+want to use a matching approach to find keys that are relevant;
+without pubkeys in the format, they're forced to perform derivations
+for all keys present.
+
+And yes, it's simple enough to make the key part of the value
+everywhere, but in that case it becomes legal for a PSBT to contain
+multiple signatures for a key, for example, and all software needs to
+deal with that possibility. With a stronger uniqueness constraint,
+only Combiners need to deal with repetitions.
+
+> Thing is: BIP174 *is basically protobuf* (v2) as it stands. If I'm
+> succesful in convincing you to switch to a record set model, it's going
+> to be "protobuf with different varint".
+
+If you take the records model, and then additionally drop the
+whole-record uniqueness constraint, yes, though that seems pushing it
+a bit by moving even more guarantees from the file format to
+application level code. I'd like to hear opinions of other people who
+have worked on implementations about changing this.
+
+Cheers,
+
+-- 
+Pieter
