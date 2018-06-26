@@ -1,0 +1,152 @@
+From: achow101-lists@achow101.com (Achow101)
+Date: Tue, 26 Jun 2018 17:56:26 -0400
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<CHCiA27GTRiVfkF1DoHdroJL1rQS77ocB42nWxIIhqi_fY3VbB3jsMQveRJOtsJiA4RaCAVe3VZmLZsXVYS3A5wVLNP2OgKQiHE0T27P2qc=@achow101.com>
+	<21a616f5-7a17-35b9-85ea-f779f20a6a2d@satoshilabs.com>
+	<20180621195654.GC99379@coinkite.com>
+	<CAPg+sBgdQqZ8sRSn=dd9EkavYJA6GBiCu6-v5k9ca-9WLPp72Q@mail.gmail.com>
+	<ljk5Z_a3KK6DHfmPJxI8o9W2CkwszkUG34h0i1MTGU4ss8r3BTQ3GnTtDTfWF6J7ZqcSAmejzrr11muWqYN-_wnWw_0NFn5_lggNnjI0_Rc=@achow101.com>
+	<f8f5b1e3-692a-fc1e-2ad3-c4ad4464957f@satoshilabs.com>
+	<TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+	<c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+Message-ID: <J0KV-aP96fSVHPkPw85N2qdKV_F5vqXt5fIFwKDp9wBjRKJ6bZpUEtzbgHyxlWW9PCXMOEVZnyUnJ-kW281ZbblbCp2sbZI_UyTP46q-PiY=@achow101.com>
+
+Hi,
+
+On June 26, 2018 8:33 AM, matejcik via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> ??
+> 
+> hello,
+> 
+> in general, I agree with my colleague Tomas, the proposed changes are
+> 
+> good and achieve the most important things that we wanted. We'll review
+> 
+> the proposal in more detail later.
+> 
+> For now a couple minor things I have run into:
+> 
+> -   valid test vector 2 ("one P2PKH input and one P2SH-P2WPKH input")
+>     
+>     seems broken, at least its hex version; a delimiter seems to be missing,
+>     
+>     misplaced or corrupted
+
+Fixed
+
+>     
+> -   at least the first signing vector is not updated, but you probably
+>     
+>     know that
+
+I updated all of the tests yesterday so they should be correct now. I will be adding more tests
+this week.
+
+>     
+> -   BIP32 derivation fields don't specify size of the "master public key",
+>     
+>     which would make it un-parsable :)
+
+Oops, that's actually supposed to be master key fingerprint, not master public key. I have updated
+the BIP to reflect this.
+
+>     
+> -   "Transaction format is specified as follows" and its table need to be
+>     
+>     updated.
+
+Done.
+
+>     
+>     I'm still going to argue against the key-value model though.
+>     
+>     It's true that this is not significant in terms of space. But I'm more
+>     
+>     concerned about human readability, i.e., confusing future implementers.
+>     
+>     At this point, the key-value model is there "for historical reasons",
+>     
+>     except these aren't valid even before finalizing the format. The
+>     
+>     original rationale for using key-values seems to be gone (no key-based
+>     
+>     lookups are necessary). As for combining and deduplication, whether key
+>     
+>     data is present or not is now purely a stand-in for a "repeatable" flag.
+>     
+>     We could just as easily say, e.g., that the high bit of "type" specifies
+>     
+>     whether this record can be repeated.
+>     
+>     (Moreover, as I wrote previously, the Combiner seems like a weirdly
+>     
+>     placed role. I still don't see its significance and why is it important
+>     
+>     to correctly combine PSBTs by agents that don't understand them. If you
+>     
+>     have a usecase in mind, please explain.
+
+There is a diagram in the BIP that explains this. The combiner's job is to combine two PSBTs that
+are for the same transaction but contain different data such as signatures. It is easier to implement
+a combiner that does not need to understand the types at all, and such combiners are forwards compatible,
+so new types do not require new combiner implementations.
+
+>     
+>     ISTM a Combiner could just as well combine based on whole-record
+>     
+>     uniqueness, and leave the duplicate detection to the Finalizer. In case
+>     
+>     the incoming PSBTs have incompatible unique fields, the Combiner would
+>     
+>     have to fail anyway, so the Finalizer might as well do it. Perhaps it
+>     
+>     would be good to leave out the Combiner role entirely?)
+
+A transaction that contains duplicate keys would be completely invalid. Furthermore, in the set of typed
+records model, having more than one redeemScript and witnessScript should be invalid, so a combiner
+would still need to understand what types are in order to avoid this situation. Otherwise it would produce
+an invalid PSBT.
+
+I also dislike the idea of having type specific things like "only one redeemScript" where a more generic
+thing would work.
+
+>     
+>     There's two remaining types where key data is used: BIP32 derivations
+>     
+>     and partial signatures. In case of BIP32 derivation, the key data is
+>     
+>     redundant ( pubkey = derive(value) ), so I'd argue we should leave that
+>     
+>     out and save space. 
+
+I think it is still necessary to include the pubkey as not all signers who can sign for a given pubkey may
+know the derivation path. For example, if a privkey is imported into a wallet, that wallet does not necessarily
+know the master key fingerprint for the privkey nor would it necessarily have the master key itself in
+order to derive the privkey. But it still has the privkey and can still sign for it.
+
+>     
+>     Re breaking change, we are proposing breaking changes anyway, existing
+>     
+>     code will need to be touched, and given that this is a hand-parsed
+>     
+>     format, changing `parse_keyvalue` to `parse_record` seems like a small
+>     
+>     matter?
+
+The point is to not make it difficult for existing implementations to change. Mostly what has been done now is just
+moving things around, not an entire format change itself. Changing to a set of typed records model require more
+changes and is a complete restructuring of the format, not just moving things around.
+
+Additionally, I think that the current model is fairly easy to hand parse. I don't think a record set model would make
+it easier to follow. Furthermore, moving to Protobuf would make it harder to hand parse as varints are slightly more
+confusing in protobuf than with Compact size uints. And with the key-value model, you don't need to know the types
+to know whether something is valid. You don't need to interpret any data.
+
+
+
+Andrew
+
+
