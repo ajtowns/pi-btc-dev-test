@@ -1,0 +1,59 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Wed, 27 Jun 2018 17:29:09 +1000
+Subject: [bitcoin-dev] Should Graftroot be optional?
+In-Reply-To: <CAPg+sBgEUV5KNFi1L4MhR-3KAX9gbQKdzWneaEzF+QsKSXYu8A@mail.gmail.com>
+References: <CAPg+sBgKY-nmL=x+LVubtB0fFBAwd-1CDHT7zhidX8p9DLSGyg@mail.gmail.com>
+	<CAPg+sBh4CESPV_5TpPn0H3Zpv2Ump_0txxS63W_S2f3Lxezq1A@mail.gmail.com>
+	<CAAS2fgRXYtTyqqQp8Ehs_q_KsT7usA+vYSmngStnndd1rWNVNw@mail.gmail.com>
+	<D996F4E8-ACC6-4A49-B841-0F3285344DF6@xbt.hk>
+	<CAPg+sBgEUV5KNFi1L4MhR-3KAX9gbQKdzWneaEzF+QsKSXYu8A@mail.gmail.com>
+Message-ID: <20180627072909.5hqnl4kfrnqfvhc4@erisian.com.au>
+
+On Thu, May 31, 2018 at 05:25:04PM -0700, Pieter Wuille via bitcoin-dev wrote:
+> The best argument for why Graftroot does not need to be optional I
+> think was how Greg put it: "since the signer(s) could have signed an
+> arbitrary transaction instead, being able to delegate is strictly less
+> powerful.".
+
+This seems persuasive to me. I think you could implement graftroot in
+a way that makes this explicit:
+
+ * A graftroot input has >=2 items on the witness stack, a signature,
+   a script (S), and possibly witness elements for the script. The
+   signature has a SIGHASH_GRAFTROOT bit set.
+
+ * To validate the signature, a virtual transaction is constructed:
+
+     nVersion = 1
+     locktime = 0
+     inputs = [(txhash, txoutidx, 0, "", 0xffffffff)]
+     outputs = [(txvalue, len(S), S)]
+     locktime = 0
+
+   The signature is then checked against the virtual transaction.
+
+ * If the signature is valid, the virtual transaction is discarded, and
+   the script and witness elements are checked against the original tx.
+
+I think this approach (or one like it) would make it clear that
+graftroot is a simple optimisation, rather than changing the security
+parameters. Some caveats:
+
+ * You'd presumably want to disallow signatures with SIGHASH_GRAFTROOT
+   from being used in signatures in scripts, so as not to end up having
+   to support recursive graftroot.
+
+ * Checking the script/witness against the original transaction instead
+   of the virtual one cheats a bit, but something like it is necessary
+   to ensure locktime/csv checks in the script S behave sanely. You
+   could have the virtual transaction be treated as being confirmed in
+   the same block as the original transaction instead though, I think.
+
+ * You would need to use SIGHASH_NOINPUT (or similar) in conjuction
+   to allow graftroot delegation prior to constructing the tx (otherwise
+   the signature would be committing to txhash/txoutidx). BIP118 would
+   still commit to txvalue, but would otherwise work fine, I think.
+
+Cheers,
+aj
+
