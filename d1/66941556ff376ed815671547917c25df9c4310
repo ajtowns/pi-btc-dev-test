@@ -1,0 +1,173 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Wed, 27 Jun 2018 08:06:39 -0700
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <881def14-696c-3207-cf6c-49f337ccf0d1@satoshilabs.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<CHCiA27GTRiVfkF1DoHdroJL1rQS77ocB42nWxIIhqi_fY3VbB3jsMQveRJOtsJiA4RaCAVe3VZmLZsXVYS3A5wVLNP2OgKQiHE0T27P2qc=@achow101.com>
+	<21a616f5-7a17-35b9-85ea-f779f20a6a2d@satoshilabs.com>
+	<20180621195654.GC99379@coinkite.com>
+	<CAPg+sBgdQqZ8sRSn=dd9EkavYJA6GBiCu6-v5k9ca-9WLPp72Q@mail.gmail.com>
+	<ljk5Z_a3KK6DHfmPJxI8o9W2CkwszkUG34h0i1MTGU4ss8r3BTQ3GnTtDTfWF6J7ZqcSAmejzrr11muWqYN-_wnWw_0NFn5_lggNnjI0_Rc=@achow101.com>
+	<f8f5b1e3-692a-fc1e-2ad3-c4ad4464957f@satoshilabs.com>
+	<TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+	<c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+	<CAPg+sBhhYuMi6E1in7wZovX7R7M=450cm6vxaGC1Sxr=cJAZsw@mail.gmail.com>
+	<881def14-696c-3207-cf6c-49f337ccf0d1@satoshilabs.com>
+Message-ID: <CAPg+sBg4MCOoMDBVQ2eZ=p3iS3dq506Jh4vUNBmmM20a6uCwYw@mail.gmail.com>
+
+On Wed, Jun 27, 2018, 07:04 matejcik <jan.matejek at satoshilabs.com> wrote:
+
+> hello,
+>
+> On 26.6.2018 22:30, Pieter Wuille wrote:
+> >> (Moreover, as I wrote previously, the Combiner seems like a weirdly
+> >> placed role. I still don't see its significance and why is it important
+> >> to correctly combine PSBTs by agents that don't understand them. If you
+> >> have a usecase in mind, please explain.
+> >
+> > Forward compatibility with new script types. A transaction may spend
+> > inputs from different outputs, with different script types. Perhaps
+> > some of these are highly specialized things only implemented by some
+> > software (say HTLCs of a particular structure), in non-overlapping
+> > ways where no piece of software can handle all scripts involved in a
+> > single transaction. If Combiners cannot deal with unknown fields, they
+> > won't be able to deal with unknown scripts.
+>
+> Record-based Combiners *can* deal with unknown fields. Either by
+> including both versions, or by including one selected at random. This is
+> the same in k-v model.
+>
+
+Yes, I wasn't claiming otherwise. This was just a response to your question
+why it is important that Combiners can process unknown fields. It is not an
+argument in favor of one model or the other.
+
+> combining must be done independently by Combiner implementations for
+> > each script type involved. As this is easily avoided by adding a
+> > slight bit of structure (parts of the fields that need to be unique -
+> > "keys"), this seems the preferable option.
+>
+> IIUC, you're proposing a "semi-smart Combiner" that understands and
+> processes some fields but not others? That doesn't seem to change
+> things. Either the "dumb" combiner throws data away before the "smart"
+> one sees it, or it needs to include all of it anyway.
+>
+
+No, I'm exactly arguing against smartness in the Combiner. It should always
+be possible to implement a Combiner without any script specific logic.
+
+> No, a Combiner can pick any of the values in case different PSBTs have
+> > different values for the same key. That's the point: by having a
+> > key-value structure the choice of fields can be made such that
+> > Combiners don't need to care about the contents. Finalizers do need to
+> > understand the contents, but they only operate once at the end.
+> > Combiners may be involved in any PSBT passing from one entity to
+> > another.
+>
+> Yes. Combiners don't need to care about the contents.
+> So why is it important that a Combiner properly de-duplicates the case
+> where keys are the same but values are different? This is a job that,
+> AFAICT so far, can be safely left to someone along the chain who
+> understands that particular record.
+>
+
+That's because PSBTs can be copied, signed, and combined back together. A
+Combiner which does not deduplicate (at all) would end up having every
+original record present N times, one for each copy, a possibly large blowup.
+
+For all fields I can think of right now, that type of deduplication can be
+done through whole-record uniqueness.
+
+The question whether you need whole-record uniqueness or specified-length
+uniqueness (=what is offered by a key-value model) is a philosophical one
+(as I mentioned before). I have a preference for stronger invariants on the
+file format, so that it becomes illegal for a PSBT to contain multiple
+signatures for the same key for example, and implementations do not need to
+deal with the case where multiple are present.
+
+It seems that you consider the latter PSBT "invalid". But it is well
+> formed and doesn't contain duplicate records. A Finalizer, or a
+> different Combiner that understands field F, can as well have the rule
+> "throw away all but one" for this case.
+>
+
+It's not about considering. We're writing a specification. Either it is
+made invalid, or not.
+
+In a key-value model you can have dumb combiners that must pick one of the
+keys in case of duplication, and remove the necessity of dealing with
+duplication from all other implementations (which I consider to be a good
+thing). In a record-based model you cannot guarantee deduplication of
+records that permit repetition per type, because a dumb combiner cannot
+understand what part is supposed to be unique. As a result, a record-based
+model forces you to let all implementations deal with e.g. multiple partial
+signatures for a single key. This is a minor issue, but in my view shows
+how records are a less than perfect match for the problem at hand.
+
+To repeat and restate my central question:
+> Why is it important, that an agent which doesn't understand a particular
+> field structure, can nevertheless make decisions about its inclusion or
+> omission from the result (based on a repeated prefix)?
+>
+
+Again, because otherwise you may need a separate Combiner for each type of
+script involved. That would be unfortunate, and is very easily avoided.
+
+Actually, I can imagine the opposite: having fields with same "key"
+> (identifying data), and wanting to combine their "values" intelligently
+> without losing any of the data. Say, two Signers producing separate
+> parts of a combined-signature under the same common public key?
+>
+
+That can always be avoided by using different identifying information as
+key for these fields. In your example, assuming you're talking about some
+form of threshold signature scheme, every party has their own "shard" of
+the key, which still uniquely identifies the participant. If they have no
+data that is unique to the participant, they are clones, and don't need to
+interact regardless.
+
+> In case of BIP32 derivation, computing the pubkeys is possibly
+> > expensive. A simple signer can choose to just sign with whatever keys
+> > are present, but they're not the only way to implement a signer, and
+> > even less the only software interacting with this format. Others may
+> > want to use a matching approach to find keys that are relevant;
+> > without pubkeys in the format, they're forced to perform derivations
+> > for all keys present.
+>
+> I'm going to search for relevant keys by comparing master fingerprint; I
+> would expect HWWs generally don't have index based on leaf pubkeys.
+> OTOH, Signers with lots of keys probably aren't resource-constrained and
+> can do the derivations in case of collisions.
+>
+
+Perhaps you want to avoid signing with keys that are already signed with?
+If you need to derive all the keys before even knowing what was already
+signed with, you've already performed 80% of the work.
+
+> If you take the records model, and then additionally drop the
+> > whole-record uniqueness constraint, yes, though that seems pushing it
+> > a bit by moving even more guarantees from the file format to
+> > application level code.
+>
+> The "file format" makes no guarantees, because the parsing code and
+> application code is the same anyway. You could say I'm proposing to
+> separate these concerns ;)
+>
+
+Of course a file format can make guarantees. If certain combinations of
+data in it do not satsify the specification, the file is illegal, and
+implementations do not need to deal with it. Stricter file formats are
+easier to deal with, because there are less edge cases to consider.
+
+To your point: proto v2 afaik has no way to declare "whole record
+uniqueness", so either you drop that (which I think is unacceptable - see
+the copy/sign/combine argument above), or you deal with it in your
+application code.
+
+Cheers,
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180627/fecd0346/attachment-0001.html>
