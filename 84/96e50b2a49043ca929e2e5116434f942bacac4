@@ -1,0 +1,111 @@
+From: rodolfo@coinkite.com (Rodolfo Novak)
+Date: Thu, 28 Jun 2018 16:42:09 -0400
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <0BT4A0BFbcfUM9xlYjS-7Cy1zpaI1J9qsIpWH_xgv2ZLhcmxb4Es5KlpMJCvHVEu8BDbBweZ92RHnES5HxDMulRhJkYSZAPi-CgXQ3uwkfY=@achow101.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<20180621195654.GC99379@coinkite.com>
+	<CAPg+sBgdQqZ8sRSn=dd9EkavYJA6GBiCu6-v5k9ca-9WLPp72Q@mail.gmail.com>
+	<ljk5Z_a3KK6DHfmPJxI8o9W2CkwszkUG34h0i1MTGU4ss8r3BTQ3GnTtDTfWF6J7ZqcSAmejzrr11muWqYN-_wnWw_0NFn5_lggNnjI0_Rc=@achow101.com>
+	<f8f5b1e3-692a-fc1e-2ad3-c4ad4464957f@satoshilabs.com>
+	<TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+	<c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+	<J0KV-aP96fSVHPkPw85N2qdKV_F5vqXt5fIFwKDp9wBjRKJ6bZpUEtzbgHyxlWW9PCXMOEVZnyUnJ-kW281ZbblbCp2sbZI_UyTP46q-PiY=@achow101.com>
+	<87k1qk7oca.fsf@jb55.com>
+	<0BT4A0BFbcfUM9xlYjS-7Cy1zpaI1J9qsIpWH_xgv2ZLhcmxb4Es5KlpMJCvHVEu8BDbBweZ92RHnES5HxDMulRhJkYSZAPi-CgXQ3uwkfY=@achow101.com>
+Message-ID: <9EE074B3-5A3D-489E-90F1-207BBD281BBE@coinkite.com>
+
+Hello Folks,
+
+Thanks for expediting this debate, I understand some still disagree about how this final spec should look like.
+
+1. Coldcard's plugin for Electrum using the original BIP spec is ready, https://github.com/spesmilo/electrum/pull/4470 <https://github.com/spesmilo/electrum/pull/4470>
+2. Our hardware is ready with this spec (src will be public soon)
+3. Samourai Wallet and Sentinel also are ready with the current spec.
+
+We intend to upgrade it once the final spec is ready, but I need to ship Coldcard.
+
+Cheers,
+
+?.
+
+Rodolfo Novak  ||  Founder, Coinkite  ||  twitter @nvk  ||  GPG: B444CDDA
+
+> On Jun 27, 2018, at 13:55, Achow101 via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> Hi,?
+> 
+> On June 26, 2018 11:09 PM, William Casarin <jb55 at jb55.com> wrote:
+> 
+>> ??
+>> 
+>> Hey Andrew,
+>> 
+>> If I'm reading the spec right: the way it is designed right now, you
+>> 
+>> could create hundreds of thousands of zero bytes in the input or output
+>> 
+>> key-value arrays. As far as I can tell this would be considered valid,
+>> 
+>> as it is simply a large array of empty dictionaries. Is this right? I'm
+>> 
+>> worried about buffer overflows in cases where someone sends a large blob
+>> 
+>> of zeros to an unsuspecting implementation.
+> 
+> No, that is incorrect. That whole paragraph is actually outdated, it was intended
+> for the possibility of adding output maps, which we have already done. I have 
+> removed it from the BIP.
+> 
+> However, it is possible for a PSBT to contain very large unknown key-value pairs 
+> which could potentially cause a problem. But I do not think that large PSBTs should 
+> really be a problem as they are really something that the user has to enter rather 
+> than something received remotely without user interaction.
+> 
+> 
+> 
+> On June 27, 2018 6:39 AM, Andrea via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+>> ??
+>> 
+>> Hi William, Andrew, list,
+>> 
+>> As noted by William there are some types missing in the global-types definition, because the number of each map for I/O must be known to the parser in order to use the correct definitions for the types. At the moment a parser reading a key-value record does not know whether it should read it as per-input type or per-output, a way to address this is to declare in advance the number of maps and ensure they are ordered (inputs first). If you haven't already worked out some types for that i propose using:
+>> 
+> 
+> Parsers actually do know because that information is present in the unsigned transaction 
+> at the beginning of each PSBT. Since each input and output must be accounted for,
+> a parser can just parse the unsigned transaction and from there it can know how
+> many inputs and outputs to expect. If it sees more or less, it should throw an error
+> as the transaction is invalid.
+> 
+> Of course this implies that implementations will need to parse the unsigned transaction,
+> but not all actually need to. Combiners do not need to, they just need to merge the
+> maps together and follow the key uniqueness rule. They don't really need to know
+> or care about the number of inputs and outputs, just that the PSBTs being merged
+> share the same unsigned transaction and have the same number of maps.
+> 
+> Other roles need to understand the unsigned transaction anyways, so they still need
+> to parse it thus this isn't really a problem for those roles.
+> 
+>> 
+>>    On another note I think we can set a hard limit on the size of the PSBT, currently is 'legal' to produce a very large PSBT with an excessive number of Inputs and Outputs. By excessive I mean that even in the best case scenario (using the smallest possible scriptPubKey as in P2WPKH) it is possible to create a PSBT that would certainly create an invalid transaction (because of its size) when finalized. I haven't found anything related to this in the previous discussions, please ignore this if it was already proposed/discussed.
+>> 
+> 
+> I don't think such a limitation is practical or useful. A transaction can currently have, at most,
+> ~24000 inputs and ~111000 outputs (+/- a few hundred) which is well beyond any useful limit.
+> Additionally, such limits may not be as extensible for future work. It is hard to determine what
+> is a reasonable limit on transaction size, and I don't think it is useful to have a limit. At worst
+> we would simply create an invalid transaction if it were too large.
+> 
+> 
+> Andrew
+> 
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180628/176ddd27/attachment.html>
