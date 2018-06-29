@@ -1,0 +1,251 @@
+From: jan.matejek@satoshilabs.com (matejcik)
+Date: Fri, 29 Jun 2018 11:53:34 +0200
+Subject: [bitcoin-dev]  BIP 174 thoughts
+In-Reply-To: <CAPg+sBg4MCOoMDBVQ2eZ=p3iS3dq506Jh4vUNBmmM20a6uCwYw@mail.gmail.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<CHCiA27GTRiVfkF1DoHdroJL1rQS77ocB42nWxIIhqi_fY3VbB3jsMQveRJOtsJiA4RaCAVe3VZmLZsXVYS3A5wVLNP2OgKQiHE0T27P2qc=@achow101.com>
+	<21a616f5-7a17-35b9-85ea-f779f20a6a2d@satoshilabs.com>
+	<20180621195654.GC99379@coinkite.com>
+	<CAPg+sBgdQqZ8sRSn=dd9EkavYJA6GBiCu6-v5k9ca-9WLPp72Q@mail.gmail.com>
+	<ljk5Z_a3KK6DHfmPJxI8o9W2CkwszkUG34h0i1MTGU4ss8r3BTQ3GnTtDTfWF6J7ZqcSAmejzrr11muWqYN-_wnWw_0NFn5_lggNnjI0_Rc=@achow101.com>
+	<f8f5b1e3-692a-fc1e-2ad3-c4ad4464957f@satoshilabs.com>
+	<TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+	<c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+	<CAPg+sBhhYuMi6E1in7wZovX7R7M=450cm6vxaGC1Sxr=cJAZsw@mail.gmail.com>
+	<881def14-696c-3207-cf6c-49f337ccf0d1@satoshilabs.com>
+	<CAPg+sBg4MCOoMDBVQ2eZ=p3iS3dq506Jh4vUNBmmM20a6uCwYw@mail.gmail.com>
+Message-ID: <95137ba3-1662-b75d-e55f-893d64c76059@satoshilabs.com>
+
+Short version:
+
+- I propose that conflicting "values" for the same "key" are considered
+invalid.
+- Let's not optimize for invalid data.
+- Given that, there's an open question on how to handle invalid data
+when encountered
+
+In general, I don't think it's possible to enforce correctness at the
+format level. You still need application level checks - and that calls
+into question what we gain by trying to do this on the format level.
+
+
+Long version:
+
+
+Let's look at this from a different angle.
+
+There are roughly two possible "modes" for the format with regard to
+possibly-conflicting data. Call them "permissive" and "restrictive".
+
+The spec says:
+"""
+Keys within each scope should never be duplicated; all keys in the
+format are unique. PSBTs containing duplicate keys are invalid. However
+implementors will still need to handle events where keys are duplicated
+when combining transactions with duplicated fields. In this event, the
+software may choose whichever value it wishes.
+"""
+The last sentence of this paragraph sets the mode to permissive:
+duplicate values are pretty much OK. If you see them, just pick one.
+
+You seem to argue that Combiners, in particular simple ones that don't
+understand field semantics, should merge _keys_ permissively, but
+deduplicate _values_ restrictively.
+IOW: if you receive two different values for the same key, just pick
+whichever, but $deity forbid you include both!
+
+This choice doesn't make sense to me.
+
+What _would_ make sense is fully restrictive mode: receiving two
+different values for the same key is a fatal condition with no recovery.
+If you have a non-deterministic scheme, put a differentiator in the key.
+Or all the data, for that matter.
+(Incidentally, this puts key-aware and keyless Combiners on the same
+footing. As long as all participants uphold the protocol, different
+value = different key = different full record.)
+
+Given that, it's nice to have the Combiner perform the task of detecting
+this and failing. But not at all necessary. As the quoted paragraph
+correctly notes, consumers *still need to handle* PSBTs with duplicate keys.
+(In this context, your implied permissive/restrictive Combiner is
+optimized for dealing with invalid data. That seems like a wrong
+optimization.)
+
+A reasonable point to decide is whether the handling at the consumer
+should be permissive or restrictive. Personally I'm OK with either. I'd
+go with the following change:
+"""
+In this event, the software MAY reject the transaction as invalid. If it
+decides to accept it, it MUST choose the last value encountered.
+"""
+(deterministic way of choosing, instead of "whichever you like")
+
+We could also drop the first part, explicitly allowing consumers to
+pick, and simplifying the Combiner algorithm to `sort -u`.
+Note that this sort of "picking" will probably be implicit. I'd expect
+the consumer to look like this:
+```
+for key, value in parse(nextRecord()):
+  data[key] = value
+```
+
+Or we could drop the second part and switch MAY to MUST, for a fully
+restrictive mode - which, funnily enough, still lets the Combiner work
+as `sort -u`.
+To see why, remember that distinct values for the same key are not
+allowed in fully restrictive mode. If a Combiner encounters two
+conflicting values F(1) and F(2), it should fail -- but if it doesn't,
+it includes both and the same failure WILL happen on the fully
+restrictive consumer.
+
+This was (or is) my point of confusion re Combiners: the permissive key
++ restrictive value mode of operation doesn't seem to help subsequent
+consumers in any way.
+
+
+Now, for the fully restrictive consumer, the key-value model is indeed
+advantageous (and this is the only scenario that I can imagine in which
+it is advantageous), because you can catch key duplication on the parser
+level.
+
+But as it turns out, it's not enough. Consider the following records:
+key(<PSBT_IN_REDEEM_SCRIPT> + abcde), value(<some redeem script>)
+and:
+key(<PSBT_IN_REDEEM_SCRIPT> + fghij), value(<some other redeem script>)
+
+A purely syntactic Combiner simply can't handle this case. The
+restrictive consumer needs to know whether the key is supposed to be
+repeating or not.
+We could fix this, e.g., by saying that repeating types must have high
+bit set and non-repeating must not. We also don't have to, because the
+worst failure here is that a consumer passes an invalid record to a
+subsequent one and the failure happens one step later.
+
+At this point it seems weird to be concerned about the "unique key"
+correctness, which is a very small subset of possibly invalid inputs. As
+a strict safety measure, I'd instead propose that a consumer MUST NOT
+operate on inputs or outputs, unless it understand ALL included fields -
+IOW, if you're signing a particular input, all fields in said input are
+mandatory. This prevents a situation where a simple Signer processes an
+input incorrectly based on incomplete set of fields, while still
+allowing Signers with different capabilities within the same PSBT.
+
+(The question here is whether to have either a flag or a reserved range
+for "optional fields" that can be safely ignored by consumers that don't
+understand them, but provide data for consumers who do.)
+
+
+>> To repeat and restate my central question: Why is it important, 
+>> that an agent which doesn't understand a particular field 
+>> structure, can nevertheless make decisions about its inclusion or 
+>> omission from the result (based on a repeated prefix)?
+>> 
+> 
+> Again, because otherwise you may need a separate Combiner for each 
+> type of script involved. That would be unfortunate, and is very 
+> easily avoided.
+
+This is still confusing to me, and I would really like to get to the
+same page on this particular thing, because a lot of the debate hinges
+on it. I think I covered most of it above, but there are still pieces to
+clarify.
+
+As I understand it, the Combiner role (actually all the roles) is mostly
+an algorithm, with the implication that it can be performed
+independently by a separate agent, say a network node.
+
+So there's two types of Combiners:
+
+a) Combiner as a part of an intelligent consumer -- the usual scenario
+is a Creator/Combiner/Finalizer/Extractor being one participant, and
+Updater/Signers as other participants.
+
+In this case, the discussion of "simple Combiners" is actually talking
+about intelligent Combiners which don't understand new fields and must
+correctly pass them on. I argue that this can safely be done without
+loss of any important properties.
+
+b) Combiner as a separate service, with no understanding of semantics.
+Although parts of the debate seem to assume this scenario, I don't think
+it's worth considering. Again, do you have an usecase in mind for it?
+
+You also insist on enforcing a limited form of correctness on the
+Combiner level, but that is not worth it IMHO, as discussed above.
+
+Or am I missing something else?
+
+
+> Perhaps you want to avoid signing with keys that are already signed 
+> with? If you need to derive all the keys before even knowing what
+> was already signed with, you've already performed 80% of the work.
+
+This wouldn't concern me at all, honestly. If the user sends an already
+signed PSBT to the same signer, IMHO it is OK to sign again; the
+slowdown is a fault of the user/workflow. You could argue that signing
+again is the valid response. Perhaps the Signer should even "consume"
+its keys and not pass them on after producing a signature? That seems
+like a sensible rule.
+
+
+> To your point: proto v2 afaik has no way to declare "whole record 
+> uniqueness", so either you drop that (which I think is unacceptable
+> - see the copy/sign/combine argument above), or you deal with it in 
+> your application code.
+
+Yes. My argument is that "whole record uniqueness" isn't in fact an
+important property, because you need application-level checks anyway.
+Additionally, protobuf provides awareness of which fields are repeated
+and which aren't, and implicitly implements the "pick last" resolution
+strategy for duplicates.
+
+The simplest possible protobuf-based Combiner will:
+- assume all fields are repeating
+- concatenate and parse
+- deduplicate and reserialize.
+
+More knowledgeable Combiner will intelligently handle non-repeating
+fields, but still has to assume that unknown fields are repeating and
+use the above algorithm.
+
+For "pick last" strategy, a consumer can simply parse the message and
+perform appropriate application-level checks.
+
+For "hard-fail" strategy, it must parse all fields as repeating and
+check that there's only one of those that are supposed to be unique.
+This is admittedly more work, and yes, protobuf is not perfectly suited
+for this task.
+
+But:
+
+One, this work must be done by hand anyway, if we go with a custom
+hand-parsed format. There is a protobuf implementation for every
+conceivable platform, we'll never have the same amount of BIP174 parsing
+code.
+(And if you're hand-writing a parser in order to avoid the dependency,
+you can modify it to do the checks at parser level. Note that this is
+not breaking the format! The modifed parser will consume well-formed
+protobuf and reject that which is valid protobuf but invalid bip174 - a
+correct behavior for a bip174 parser.)
+
+Two, it is my opinion that this is worth it in order to have a standard,
+well described, well studied and widely implemented format.
+
+
+Aside: I ha that there is no advantage to a record-set based
+custom format by itself, so IMHO the choice is between protobuf vs
+a custom key-value format. Additionally, it's even possible to implement
+a hand-parsable key-value format in terms of protobuf -- again, arguing
+that "standardness" of protobuf is valuable in itself.
+
+regards
+m.
+
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 819 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180629/358c1483/attachment-0001.sig>
