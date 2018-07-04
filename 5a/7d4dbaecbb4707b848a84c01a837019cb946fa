@@ -1,0 +1,134 @@
+From: achow101-lists@achow101.com (Achow101)
+Date: Wed, 04 Jul 2018 14:35:16 -0400
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <c7a4476b-8643-3ddd-723b-1ff8b8910e36@satoshilabs.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+	<c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+	<CAPg+sBhhYuMi6E1in7wZovX7R7M=450cm6vxaGC1Sxr=cJAZsw@mail.gmail.com>
+	<881def14-696c-3207-cf6c-49f337ccf0d1@satoshilabs.com>
+	<CAPg+sBg4MCOoMDBVQ2eZ=p3iS3dq506Jh4vUNBmmM20a6uCwYw@mail.gmail.com>
+	<95137ba3-1662-b75d-e55f-893d64c76059@satoshilabs.com>
+	<RdSjdFhvANrG9ve8bXVnqs68ih5_iVK11jdOAL6WoMI2358TdylR3H2SyGHQfByKwMYYOfIJIOq0l6clYf-az8_D_D-D7cByzqbyYt1nV4c=@achow101.com>
+	<c7a4476b-8643-3ddd-723b-1ff8b8910e36@satoshilabs.com>
+Message-ID: <7cIbglgQM_K07YQ3dgHTMIQwC_7OXa9DeqFquUZyfuM7HnliTUiIQZuJzo753ICjzUhqh5qLKPbGBVtGGrUT5DvkB7p3YQZePDEtiWd5Xs4=@achow101.com>
+
+Hi,?
+
+
+On July 4, 2018 6:19 AM, matejcik <jan.matejek at satoshilabs.com> wrote:
+
+> ??
+> 
+> hello,
+> 
+> we still have some concerns about the BIP as currently proposed - not
+> 
+> about the format or data contents, but more about strictness and
+> 
+> security properties. I have raised some in the previous e-mails, but
+> 
+> they might have been lost in the overall talk about format.
+> 
+> -   Choosing from duplicate keys when combining.
+>     
+>     We believe that "choose whichever value it wishes" is not a good
+>     
+>     resolution strategy. We propose to either change this to "in case of
+>     
+>     conflicts, software MUST reject the conflicting PSBTs", or explain in
+>     
+>     more detail why picking at random is a safe choice.
+
+You cannot simply reject PSBTs for having conflicting values for the same key. Especially
+for the Partial Signatures, you can have two signatures for the same pubkey that are both
+completely valid. This situation could happen, for example, if a signer that does not use deterministic
+k values can sign multiple inputs but one input is missing a UTXO so it doesn't sign it. So it receives
+ one PSBT and signs the first input but not the second. It receives a PSBT for the same transaction
+which has the second input's UTXO but does not have its signatures for the first input. The signer
+would sign both inputs. When the two PSBTs are combined (suppose the first PSBT has other 
+signatures too), you will have two keys that have different values. The different values are both
+valid signatures, just with different k values since they were randomly generated instead of
+deterministically. If we fail to merge these, then you could potentially have a situation where
+nothing can be done with the PSBTs now, or now everyone has to resign and in some specific
+order to avoid the conflict. That complicates things and is much more annoying to deal with.
+So a simple solution is to allow the combiner to choose any value it wants as it is likely that
+both values are valid.
+
+Allowing combiners to choose any value also allows for intelligent combiners to choose the
+correct values in the case of conflicts. A smart combiner could, when combining redeem scripts
+and witness scripts, check that the redeem scripts and witness scripts match the hash provided
+in the UTXO (or in the redeem script) and choose the correct redeem script and witness script
+accordingly if there were, for some reason, a conflict there.
+
+Can you explain why it would be unsafe for combiners to arbitrarily choose a value?
+
+>     
+> -   Signing records with unknown keys.
+>     
+>     There's been some talk about this at start, but there should be a clear
+>     
+>     strategy for Signers when unknown fields are encountered. We intend to
+>     
+>     implement the rule: "will not sign an input with any unknown fields
+>     
+>     present".
+>     
+>     Maybe it is worth codifying this behavior in the standard, or maybe
+>     
+>     there should be a way to mark a field as "optional" so that strict
+>     
+>     Signers know they can safely ignore the unknown field.
+
+I think that requiring there to be no unknowns is a safe change.
+
+>     
+>     And two minor points:
+>     
+> -   Fields with empty keys.
+>     
+>     This might be inferred from the definition, but is probably worth
+>     
+>     spelling out explicitly: If a field definition states that the key data
+>     
+>     is empty, an implementation MUST enforce this and reject PSBTs that
+>     
+>     contain non-empty data.
+>     
+>     We suggest adding something to the effect of:
+>     
+>     "If a key or value data in a field doesn't match the specified format,
+>     
+>     the PSBT is invalid. In particular, if key data is specified as "none"
+>     
+>     but the key contains data beyond the type specifier, implementation MUST
+>     
+>     reject the PSBT."
+>     
+>     (not sure about the languge, this should of course allow processing
+>     
+>     unknown fields)
+
+Agreed.
+
+>     
+> -   "Combiner can detect inconsistencies"
+>     
+>     Added in response to this comment [1], the current wording looks like
+>     
+>     it's describing what the Combiner is capable of, as opposed to
+>     
+>     prescribing what the combiner is allowed to do.
+>     
+>     We suggest changing to something like:
+>     
+>     "For every field type that the Combiner understands, it MAY also refuse
+>     
+>     to combine PSBTs that have inconsistencies in that field, or cause a
+>     
+>     conflict when combined."
+
+Agreed.
+
+
+Andrew
