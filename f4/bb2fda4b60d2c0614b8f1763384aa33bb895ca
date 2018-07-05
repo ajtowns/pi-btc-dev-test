@@ -1,0 +1,156 @@
+From: jan.matejek@satoshilabs.com (matejcik)
+Date: Thu, 5 Jul 2018 13:52:02 +0200
+Subject: [bitcoin-dev]  BIP 174 thoughts
+In-Reply-To: <CAPg+sBjczKB-tvGTpsDr8qDwfh6b_8M-2AdCwHR+DSC8pwY92Q@mail.gmail.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<ljk5Z_a3KK6DHfmPJxI8o9W2CkwszkUG34h0i1MTGU4ss8r3BTQ3GnTtDTfWF6J7ZqcSAmejzrr11muWqYN-_wnWw_0NFn5_lggNnjI0_Rc=@achow101.com>
+	<f8f5b1e3-692a-fc1e-2ad3-c4ad4464957f@satoshilabs.com>
+	<TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+	<c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+	<CAPg+sBhhYuMi6E1in7wZovX7R7M=450cm6vxaGC1Sxr=cJAZsw@mail.gmail.com>
+	<881def14-696c-3207-cf6c-49f337ccf0d1@satoshilabs.com>
+	<CAPg+sBg4MCOoMDBVQ2eZ=p3iS3dq506Jh4vUNBmmM20a6uCwYw@mail.gmail.com>
+	<95137ba3-1662-b75d-e55f-893d64c76059@satoshilabs.com>
+	<RdSjdFhvANrG9ve8bXVnqs68ih5_iVK11jdOAL6WoMI2358TdylR3H2SyGHQfByKwMYYOfIJIOq0l6clYf-az8_D_D-D7cByzqbyYt1nV4c=@achow101.com>
+	<c7a4476b-8643-3ddd-723b-1ff8b8910e36@satoshilabs.com>
+	<CAPg+sBjczKB-tvGTpsDr8qDwfh6b_8M-2AdCwHR+DSC8pwY92Q@mail.gmail.com>
+Message-ID: <d1cc06c5-1d75-902a-1f2b-e5352c862fd6@satoshilabs.com>
+
+
+On 4.7.2018 20:35, Achow101 wrote:
+> You cannot simply reject PSBTs for having conflicting values for the same key. Especially
+> for the Partial Signatures, you can have two signatures for the same pubkey that are both
+
+(...)
+
+> order to avoid the conflict. That complicates things and is much more annoying to deal with.
+> So a simple solution is to allow the combiner to choose any value it wants as it is likely that
+> both values are valid.
+>
+> Allowing combiners to choose any value also allows for intelligent combiners to choose the
+> correct values in the case of conflicts. A smart combiner could, when combining redeem scripts
+> and witness scripts, check that the redeem scripts and witness scripts match the hash provided
+> in the UTXO (or in the redeem script) and choose the correct redeem script and witness script
+> accordingly if there were, for some reason, a conflict there.
+>
+> Can you explain why it would be unsafe for combiners to arbitrarily choose a value?
+
+We're worried that the "pick one of non-deterministic signatures" is a
+special case and that most fields don't have this property:
+
+* conflicts in UTXOs, sighash type, redeem/witness scripts, derivation
+paths, are at best a recoverable error, usually an unrecoverable error,
+at worst malicious activity.
+
+* conflict in finalized scripts, in case more than one valid
+finalization exists, might indicate that the Finalizers picked different
+ND signatures, or it might indicate two possible interpretations of the
+transaction (see next point). Picking arbitrarily in the latter case
+would be an error.
+
+* even for partial signatures: if two Signers with the same public key
+use different sighash types, the Combiner shouldn't pick the winning one
+arbitrarily.
+
+It seems generally safer to default to rejecting conflicts, and
+explicitly allowing the Combiner to process them intelligently if it
+understands the relevant fields.
+
+
+On 4.7.2018 21:09, Pieter Wuille wrote:
+> combined again may fail. So I think we should see it the other way: we
+> choose the keys in such a way that picking arbitrarily is safe. If
+> there really is a future extension for which it would not be the case
+> that picking arbitrarily is acceptable, more data can be moved to the
+> keys, and leave the actual resolution strategy to the Finalizer.
+
+I like this explanation and I think that if nothing else, this should be
+spelled out explicitly in the spec.
+
+But I don't think it answers the above points very well.
+
+
+> An alternative would be to have a fixed resolution strategy (for
+> example, when combining multiple PSBTs, pick the value from the first
+> one that has a particular key set), but I don't think this adds very
+> much - if picking the first is fine, picking a arbitrary one should be
+> fine too.
+
+Agreed.
+
+
+>> * Signing records with unknown keys.
+>> There's been some talk about this at start, but there should be a clear
+>> strategy for Signers when unknown fields are encountered. We intend to
+>> implement the rule: "will not sign an input with any unknown fields
+>> present".
+>> Maybe it is worth codifying this behavior in the standard, or maybe
+>> there should be a way to mark a field as "optional" so that strict
+>> Signers know they can _safely_ ignore the unknown field.
+> 
+> Can you envision a situation in which this is needed? In every
+> scenario I can come up with, the worst that can happen is that the
+> resulting signature is just invalid.
+
+(...)
+
+> I believe that what you're trying to accomplish is preventing signing
+> something you don't understand, but that's an independent issue.
+
+We're actually trying to prevent signing something we don't _intend_.
+
+I agree with your response, and I also think that in technical sense,
+the worst that can happen is an invalid signature. Our concern is twofold:
+
+1. the produced signature is most likely valid, _for a different
+transaction_ than the Creator intended. It is a transaction that the
+Signer must have authorized, so we could argue that they would not mind
+if that unintended transaction was published. Nevertheless, this opens
+an attack surface.
+
+2. defence in depth: the "worst that can happen" assumption is only
+valid if the rest of the protocol does things right.
+
+At an intersection lies an example: say there's a fork that changes
+format of inputs in the network serialized tx, in a way that happens to
+be invisible to PSBT (because scripts must be set to empty). To
+differentiate, we add a "Fork ID", but old Signers will still produce
+signatures valid on the original chain - and, importantly, this will be
+invisible to users.
+
+This is of course contrived and several mistakes would have to happen at
+the same time, but that's what defence in depth is for.
+
+
+> Here is (perhaps far fetched) example of why it may not be desirable
+> to reject unknown fields when signing. Imagine an extension is defined
+
+This is definitely worth taking into consideration. But I'd argue that
+some way of signalling "optionalness" is a better match here.
+Alternately, a pre-processor with the appropriate knowledge can strip
+the new fields for a legacy Signer - that's what I expect to happen in
+practice.
+
+> I would not be opposed to having fields with an explicit flag bit that
+> says "Don't sign if you don't understand this", but I expect that that
+> can also be left for future extensions.
+
+It seems safer to consider this flag be on by default, and leave it to a
+future extension to allow non-mandatory fields. The worst case here is
+that legacy Signers can't natively process new PSBTs (solvable by a
+preprocessor) - as opposed to legacy Signers signing unintended values.
+
+regards
+m.
+
+
+
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 819 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180705/ab413ef2/attachment-0001.sig>
