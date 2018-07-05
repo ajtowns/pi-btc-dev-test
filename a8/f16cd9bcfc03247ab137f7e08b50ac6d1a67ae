@@ -1,0 +1,145 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Thu, 5 Jul 2018 15:06:53 -0700
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <d1cc06c5-1d75-902a-1f2b-e5352c862fd6@satoshilabs.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<ljk5Z_a3KK6DHfmPJxI8o9W2CkwszkUG34h0i1MTGU4ss8r3BTQ3GnTtDTfWF6J7ZqcSAmejzrr11muWqYN-_wnWw_0NFn5_lggNnjI0_Rc=@achow101.com>
+	<f8f5b1e3-692a-fc1e-2ad3-c4ad4464957f@satoshilabs.com>
+	<TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+	<c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+	<CAPg+sBhhYuMi6E1in7wZovX7R7M=450cm6vxaGC1Sxr=cJAZsw@mail.gmail.com>
+	<881def14-696c-3207-cf6c-49f337ccf0d1@satoshilabs.com>
+	<CAPg+sBg4MCOoMDBVQ2eZ=p3iS3dq506Jh4vUNBmmM20a6uCwYw@mail.gmail.com>
+	<95137ba3-1662-b75d-e55f-893d64c76059@satoshilabs.com>
+	<RdSjdFhvANrG9ve8bXVnqs68ih5_iVK11jdOAL6WoMI2358TdylR3H2SyGHQfByKwMYYOfIJIOq0l6clYf-az8_D_D-D7cByzqbyYt1nV4c=@achow101.com>
+	<c7a4476b-8643-3ddd-723b-1ff8b8910e36@satoshilabs.com>
+	<CAPg+sBjczKB-tvGTpsDr8qDwfh6b_8M-2AdCwHR+DSC8pwY92Q@mail.gmail.com>
+	<d1cc06c5-1d75-902a-1f2b-e5352c862fd6@satoshilabs.com>
+Message-ID: <CAPg+sBi1Rt_V1V0K50RN-c6wr8hW+5OYWx4aR-Kh8Dp-U0LLdA@mail.gmail.com>
+
+On Thu, Jul 5, 2018 at 4:52 AM, matejcik <jan.matejek at satoshilabs.com> wrote:
+>> Allowing combiners to choose any value also allows for intelligent combiners to choose the
+>> correct values in the case of conflicts. A smart combiner could, when combining redeem scripts
+>> and witness scripts, check that the redeem scripts and witness scripts match the hash provided
+>> in the UTXO (or in the redeem script) and choose the correct redeem script and witness script
+>> accordingly if there were, for some reason, a conflict there.
+>>
+>> Can you explain why it would be unsafe for combiners to arbitrarily choose a value?
+>
+> We're worried that the "pick one of non-deterministic signatures" is a
+> special case and that most fields don't have this property:
+>
+> * conflicts in UTXOs, sighash type, redeem/witness scripts, derivation
+> paths, are at best a recoverable error, usually an unrecoverable error,
+> at worst malicious activity.
+>
+> * conflict in finalized scripts, in case more than one valid
+> finalization exists, might indicate that the Finalizers picked different
+> ND signatures, or it might indicate two possible interpretations of the
+> transaction (see next point). Picking arbitrarily in the latter case
+> would be an error.
+>
+> * even for partial signatures: if two Signers with the same public key
+> use different sighash types, the Combiner shouldn't pick the winning one
+> arbitrarily.
+>
+> It seems generally safer to default to rejecting conflicts, and
+> explicitly allowing the Combiner to process them intelligently if it
+> understands the relevant fields.
+
+So consider two possible topologies for a multiparty signing:
+
+A) Creator and Updater produce a PSBT T. T is sent to signer 1 who
+turns it into PSBT T1. T1 is then forwarded to Signer 2 who turns it
+into T12. A Finalizer extracts the transaction.
+B) Creator and Updater produce a PSBT T. T is sent to signer 1 and 2
+simultaneously, who then produce T1 and T2 respectively. A Combiner
+combines those into T12. A Finalizer extracts the transaction.
+
+The only case where "malicious" conflicting values can occur is when
+one of the Signers produces an invalid signature, or modifies any of
+the other fields already present in the PSBT for consumption by
+others. If this were an issue, it would be an issue regardless of the
+Combiner's operation, as in topology A no Combiner is even present.
+This is generally true I think - Combiners can always be replaced with
+just a different (and possibly less parallel) topology of data flow.
+
+So the question is independent of Combiners IMHO, and really about how
+we deal with roles that intentionally or unintentionally produce
+invalid values. I believe this is mostly not an issue. Let's go over
+the cases:
+* If a partial signature is invalid, the resulting transaction will be invalid.
+* if a non-witness UTXO is incorrect, you'll fail to sign because the
+txid mismatches the input's prevout (which you do have to check)
+* If a witness UTXO is incorrect, the resulting signature will be invalid.
+* If a derivation path is incorrect, the signer will fail to find the
+key, or sign with the wrong key resulting in an invalid transaction.
+* If a witnessscript or redeemscript is incorrect, the resulting
+signature will be invalid (as those go into the scriptCode of the
+sighash, and affect the type of sighashing)
+* If a sighash type is incorrect, the resulting transaction may be
+useless for its intended purpose (but still something every signer
+agreed to sign).
+
+So all of this boils down to dealing with the possibility that there
+can be roles which intentionally or unintentionally create incorrect
+fields in a PSBT, and the solution is (a) checking that prevout txids
+match non-witness utxos (b) checking that the transaction you're
+signing is one you want to sign (including sighash type) (c) worst
+case accepting that the resulting transaction may be invalid.
+
+Now, (c) can sometimes be caught early, by implementing additional
+sanity checks for known fields. For example, rejecting PSBTs with
+partial signatures that are invalid (feed them through a verifier).
+This is something a Combiner can of course optionally do, but so can a
+Signer or any other role.
+
+The bottom line is that a Combiner which picks arbitrarily in case of
+conflicts will never end up with something worse than what you already
+need to deal with. If you disregard the case of invalid fields
+(because the result will just be an invalid transaction), then any
+choice the Combiner makes is fine, because all the values it can pick
+from are valid.
+
+> I agree with your response, and I also think that in technical sense,
+> the worst that can happen is an invalid signature. Our concern is twofold:
+>
+> 1. the produced signature is most likely valid, _for a different
+> transaction_ than the Creator intended. It is a transaction that the
+> Signer must have authorized, so we could argue that they would not mind
+> if that unintended transaction was published. Nevertheless, this opens
+> an attack surface.
+
+If you're worried about attack surface, I don't believe rejecting
+invalid fields ever matters. An attacker can always drop the fields
+you don't understand before giving you the PSBT, making your behavior
+identical to one where you'd have ignore those fields in the first
+place.
+
+At best, you can make it protect against accidental mistakes that
+would result in invalid transactions anyway.
+
+If there is a way to sign a message in a way that can be
+misinterpreted as a signature on a different message with a different
+meaning, then that is a huge flaw in Bitcoin itself, and not going to
+be solved by rejecting to sign unknown fields.
+
+With regard to defense in depth:
+
+>> I would not be opposed to having fields with an explicit flag bit that
+>> says "Don't sign if you don't understand this", but I expect that that
+>> can also be left for future extensions.
+>
+> It seems safer to consider this flag be on by default, and leave it to a
+> future extension to allow non-mandatory fields. The worst case here is
+> that legacy Signers can't natively process new PSBTs (solvable by a
+> preprocessor) - as opposed to legacy Signers signing unintended values.
+
+There could be some rule like "if the highest bit of the field type is
+set, don't sign", but I don't think there is any current field where
+such a flag would be necessary right now.
+
+Cheers,
+
+-- 
+Pieter
