@@ -1,0 +1,98 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Fri, 6 Jul 2018 17:05:03 -0400
+Subject: [bitcoin-dev] Schnorr signatures BIP
+In-Reply-To: <CAPg+sBj7f+=OYXuOMdNeJk3NBG67FSQSF8Xv3seFCvwxCWq69A@mail.gmail.com>
+References: <CAPg+sBj7f+=OYXuOMdNeJk3NBG67FSQSF8Xv3seFCvwxCWq69A@mail.gmail.com>
+Message-ID: <CAMZUoKks9of0oWdn8J=601cY2PMf+EV4e=PeWpDAXPcGPNFkRw@mail.gmail.com>
+
+Some quick comments:
+
+Signing
+>
+> To sign:
+>
+>    - Let *k = int(hash(bytes(d) || m)) mod n*[8
+>    <https://github.com/sipa/bips/blob/bip-schnorr/bip-schnorr.mediawiki#cite_note-8>
+>    ].
+>    - Let *R = kG*.
+>    - If *jacobi(y(R)) ? 1*, let *k = n - k*.
+>    - Let *e = int(hash(bytes(x(R)) || bytes(dG) || m)) mod n*.
+>    - The signature is *bytes(x(R)) || bytes(k + ex mod n)*.
+>
+> Can we avoid mutable variables in these specification?  I know this is
+commonly done in RFCs, but I think it is fairly confusing to have `k`
+defined in two different ways within a single specification.
+Let's let k' = k when jacobi(y(R)) = 1 and let k' = n - k when jacobi(y(R))
+= -1.  Note that this ensures that jacobi(y(k'G)) = 1.
+
+Also you've sort of left it undefined what to do when k = 0.  According to
+the current specification, you will produce an invalid signature.  The
+expected result is that you should win a 1000 BTC prize.
+
+One solution is to let k = *1 + int(hash(bytes(d) || m)) mod (n-1)*.
+Alternatively you could let k' = 1 when k = 0.  Or you could just make a
+note that signature generation fails with this message and private key pair
+when this happens.
+
+Let *e = int(hash(bytes(x(R)) || bytes(dG) || m)) mod n*.
+>
+
+P = dG should probably be noted somewhere in the text.  I.e. this signature
+is generated for the public key P = dG.
+
+If the inputs to hash were reordered as *hash(bytes(dG) || bytes(x(R)) ||
+m)* then there is an opportunity for SHA256 expander to be partially
+prefilled for a fixed public key.  This could provide a little benefit,
+especially when multiple signatures for a single public key need to be
+generated and/or verified.  If all things are otherwise equal, perhaps this
+alternate order is better.
+
+ The signature is *bytes(x(R)) || bytes(k + ex mod n)*.
+
+
+You haven't defined `x`.  I'm guessing you mean `d` instead.
+
+> Optimizations
+>
+> *Jacobian coordinates*
+>
+>    - *oncurve(P)* can be implemented as *y2 = x3 + 7z6 mod p*.
+>
+> oncurve(P) requires that `P` be on the curve and not infinity.  You need
+another condition here to ensure that `P` is not infinity.
+
+
+On Fri, Jul 6, 2018 at 2:08 PM, Pieter Wuille via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Hello everyone,
+>
+> Here is a proposed BIP for 64-byte elliptic curve Schnorr signatures,
+> over the same curve as is currently used in ECDSA:
+> https://github.com/sipa/bips/blob/bip-schnorr/bip-schnorr.mediawiki
+>
+> It is simply a draft specification of the signature scheme itself. It
+> does not concern consensus rules, aggregation, or any other
+> integration into Bitcoin - those things are left for other proposals,
+> which can refer to this scheme if desirable. Standardizing the
+> signature scheme is a first step towards that, and as it may be useful
+> in other contexts to have a common Schnorr scheme available, it is its
+> own informational BIP.
+>
+> If accepted, we'll work on more production-ready reference
+> implementations and tests.
+>
+> This is joint work with several people listed in the document.
+>
+> Cheers,
+>
+> --
+> Pieter
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180706/46edd80f/attachment.html>
