@@ -1,0 +1,50 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Fri, 6 Jul 2018 22:00:28 +0000
+Subject: [bitcoin-dev] Schnorr signatures BIP
+In-Reply-To: <CAMZUoKks9of0oWdn8J=601cY2PMf+EV4e=PeWpDAXPcGPNFkRw@mail.gmail.com>
+References: <CAPg+sBj7f+=OYXuOMdNeJk3NBG67FSQSF8Xv3seFCvwxCWq69A@mail.gmail.com>
+	<CAMZUoKks9of0oWdn8J=601cY2PMf+EV4e=PeWpDAXPcGPNFkRw@mail.gmail.com>
+Message-ID: <CAAS2fgTM+8mORcgjGdQxGxMkXjW7NOqByZwD1_VEad80ofVObA@mail.gmail.com>
+
+On Fri, Jul 6, 2018 at 9:05 PM, Russell O'Connor via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> If the inputs to hash were reordered as hash(bytes(dG) || bytes(x(R)) || m)
+> then there is an opportunity for SHA256 expander to be partially prefilled
+> for a fixed public key.  This could provide a little benefit, especially
+> when multiple signatures for a single public key need to be generated and/or
+> verified.  If all things are otherwise equal, perhaps this alternate order
+> is better.
+
+There is a minor design preference to have message before nonce when
+H() is a MD-style hash function.  Say the attacker knows some weakness
+in H and can find pairs of messages m and m' so that the compression
+function results in the same midstate.  He could then ask you to sign
+m but get a signature that also works for m'.   If the signer
+controlled R value comes first, then this doesn't work.    The pubkey
+being where it is in the current design just follows from the idea
+that it is just logically prepended on the message.  I don't think the
+pubkey is sufficiently attacker controlled that the above argument
+would apply,  so H(P || R.x || m) would be okay.
+
+BUT, the sha256 compression function reads 64 bytes at a time. PRM
+would not let you precompute a whole compression function run, but
+instead would just let you hardwire part of the expander in a pubkey
+dependant way-- an optimization I'm pretty confident virtually no one
+would use.  (Hardwiring to a constant, yes. Hardwiring to a reused
+dynamic value that comes in from the network, no)
+
+If instead the hash function were defined as using 31 zeros then
+P||R||m (or P || 31 zeros bytes || R || m, I'm not sure what would be
+better), an entire midstate could be cached for different pubkeys. m
+is often 32 bytes, sadly- - but the final compression run in that case
+would only be the constant update with the length.... and
+almost-all-zeros + constant length, is an easy optimization. (Bitcoin
+core even has it for computing sha256(sha256())).
+
+[I'm not really sure if I was clear, so I'll try TLDRing it:  I think
+optimizing sha256 where part of the input is constant is realistic,
+optimizing midstate reuse is realistic, optimizing where part is
+reused is less realistic.  If we insert padding, and put P first, we
+can make it possible to midstate cache P,  and the 'extra' compression
+function run ends up with all constant input, so it could be made
+faster.]
