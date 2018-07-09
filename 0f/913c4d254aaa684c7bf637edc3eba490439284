@@ -1,0 +1,114 @@
+From: danrobinson010@gmail.com (Dan Robinson)
+Date: Mon, 9 Jul 2018 11:57:07 -0400
+Subject: [bitcoin-dev] Multiparty signatures
+In-Reply-To: <CAJowKgJ3K=wmCEtoZXJZhrnnA8XJcHYg788KP+7MCeP4Mxf-0w@mail.gmail.com>
+References: <CAJowKgLrSe77sqO2iB7mYboo_HW=YjO4=AFdv7L5FUi2vygMiQ@mail.gmail.com>
+	<08201f2292587821e6d23f6cc201d95e6e5ad2cd.camel@timruffing.de>
+	<CAAS2fgSPUc7xRq36rZ9BVLjUTdd152Fgho4sjJXLhfrc71vPMw@mail.gmail.com>
+	<CAJowKgL-nRcruXhWdGWrT4x+oV7i3jYST2Wa3bF5m6iT_mOyMw@mail.gmail.com>
+	<CAPg+sBjdu4mnda-P0y7Ddu-rN7a1GiUt0hY_wYGsy_bJLKOYMA@mail.gmail.com>
+	<CAJowKgLSQZ1LrZayDi7EFc-NSfK_AD+zBdyaF7jBeQRP7tOwYQ@mail.gmail.com>
+	<CAPg+sBizrx20XShpeZRvZd4bfq1=E+MFUDmSC9X-xK1CSbV5kQ@mail.gmail.com>
+	<CAJowKg+=7nS4gNmtc8a4-2cu1uCOPqxjfchFwDVqUciKNMUYWQ@mail.gmail.com>
+	<CAJowKgJ3K=wmCEtoZXJZhrnnA8XJcHYg788KP+7MCeP4Mxf-0w@mail.gmail.com>
+Message-ID: <CAD438Htt-FiFAQ0O=wUsa0k0EoWitAdLyfhOfQ1GY3mEC_Pjkg@mail.gmail.com>
+
+Can you please clarify which terms in that description are elliptic curve
+points, and which are scalars?
+On Mon, Jul 9, 2018 at 11:10 AM Erik Aronesty via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> Actually, it looks like in order to compute a multiparty signature you
+> will need to broadcast shares of r first, so it's not offline :(
+>
+> It is still seems, to me, to be a simpler mechanism than musig - with
+> security assumptions that match the original Schnorr construction more
+> closely, and should therefore be easier to prove secure in a multiparty
+> context.
+>
+> Shamir/Schnorr threshold multi-signature scheme:
+>
+> Each party:
+>
+> - Has a public key g*x', where x' is their private key, and where H(g*x)
+> can be considered their public index for the purposes of Shamir polynomial
+> interpolation
+> - Rolls a random k' and compute r' = g*k'
+> - Broadcast r' as a share
+> - Computes g*k, via lagrange interpolation across shares.   At this point
+> k is not known to any party unless Shamir is vulnerable or DL is not hard
+> - Computes e' = H(M) * r'
+> - Computes s' = k'-x*e'
+> - Share of signature is (s', e')
+>
+> Verification is the same as Scnhorr, but only after using interpolation to
+> get the needed (s, e, g*x) from shares of s', e' and g*x':
+>
+> - Using lagrange interpolation, compute the public key g*x
+> - Again, using lagrange interpolation, compute (s, e)
+> - Verify the signature as per standard Schnorr
+>
+> Security assumptions:
+>
+>  - Because this is not additive, and instead we are using Shamir
+> combination, the additional blinding and masking steps of musig are not
+> needed to create a secure scheme.
+>  - The scheme is the same as Schnorr otherwise
+>  - The only thing to prove is that H(M) * r does not reveal any
+> information about k ... which relies on the same DL assumptions as Bitcoin
+> itself
+>  - Overall, this seems, to me at least, to have a smaller attack surface
+> because there's fewer moving parts
+>
+>
+> On Mon, Jul 9, 2018 at 8:24 AM, Erik Aronesty <erik at q32.com> wrote:
+>
+>> I was hoping that nobody in this group saw an obvious problem with it
+>> then I'd sit down and try to write up a paper.
+>>
+>> Not that hard to just reuse the work done on schnorr.   And demonstrate
+>> that there are no additional assumptions.
+>>
+>
+>> On Mon, Jul 9, 2018, 12:40 AM Pieter Wuille <pieter.wuille at gmail.com>
+>> wrote:
+>>
+>>> On Sun, Jul 8, 2018, 21:29 Erik Aronesty <erik at q32.com> wrote:
+>>>
+>>>> Because it's non-interactive, this construction can produce multisig
+>>>> signatures offline.   Each device produces a signature using it's own
+>>>> k-share and x-share.   It's only necessary to interpolate M of n shares.
+>>>>
+>>>> There are no round trips.
+>>>>
+>>>> The security is Shamir + discrete log.
+>>>>
+>>>> it's just something I've been tinkering with and I can't see an obvious
+>>>> problem.
+>>>>
+>>>> It's basically the same as schnorr, but you use a threshold hash to fix
+>>>> the need to be online.
+>>>>
+>>>> Just seems more useful to me.
+>>>>
+>>>
+>>> That sounds very useful if true, but I don't think we should include
+>>> novel cryptography in Bitcoin based on your not seeing an obvious problem
+>>> with it.
+>>>
+>>> I'm looking forward to seeing a more complete writeup though.
+>>>
+>>> Cheers,
+>>>
+>>> --
+>>> Pieter
+>>>
+>>>
+>>> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180709/d898f72d/attachment.html>
