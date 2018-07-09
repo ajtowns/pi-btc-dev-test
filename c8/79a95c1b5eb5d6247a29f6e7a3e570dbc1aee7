@@ -1,0 +1,81 @@
+From: erik@q32.com (Erik Aronesty)
+Date: Mon, 9 Jul 2018 13:59:23 -0400
+Subject: [bitcoin-dev] Multiparty signatures
+In-Reply-To: <CAAS2fgRrkzq6Fa5T_-YDwLDkwi30LpDtMObMEBE+Fmmj0LJpBw@mail.gmail.com>
+References: <CAJowKgLrSe77sqO2iB7mYboo_HW=YjO4=AFdv7L5FUi2vygMiQ@mail.gmail.com>
+	<08201f2292587821e6d23f6cc201d95e6e5ad2cd.camel@timruffing.de>
+	<CAAS2fgSPUc7xRq36rZ9BVLjUTdd152Fgho4sjJXLhfrc71vPMw@mail.gmail.com>
+	<CAJowKgL-nRcruXhWdGWrT4x+oV7i3jYST2Wa3bF5m6iT_mOyMw@mail.gmail.com>
+	<CAPg+sBjdu4mnda-P0y7Ddu-rN7a1GiUt0hY_wYGsy_bJLKOYMA@mail.gmail.com>
+	<CAJowKgLSQZ1LrZayDi7EFc-NSfK_AD+zBdyaF7jBeQRP7tOwYQ@mail.gmail.com>
+	<CAPg+sBizrx20XShpeZRvZd4bfq1=E+MFUDmSC9X-xK1CSbV5kQ@mail.gmail.com>
+	<CAJowKg+=7nS4gNmtc8a4-2cu1uCOPqxjfchFwDVqUciKNMUYWQ@mail.gmail.com>
+	<CAJowKgJ3K=wmCEtoZXJZhrnnA8XJcHYg788KP+7MCeP4Mxf-0w@mail.gmail.com>
+	<CAAS2fgSmA02s6Vdk_FYv6NJ4smLBgxnuT4jRYU44G7=bbzv2MA@mail.gmail.com>
+	<CAJowKgJjQ8EGgbCurOSjTh8ij42_BVeD6dE0y67tzN0Zop3pyg@mail.gmail.com>
+	<CAAS2fgRrkzq6Fa5T_-YDwLDkwi30LpDtMObMEBE+Fmmj0LJpBw@mail.gmail.com>
+Message-ID: <CAJowKgL0b3RT7XwRTF+ohoJCyZAW-ZJ+-8Lijj_s1rqqxgU7VQ@mail.gmail.com>
+
+ - Adaptive r choice shouldn't be possible since r is derived from the
+original threshold prf and it's not possible for a party to have any
+adaptive impact on the value of r
+ - I'm guess I don't see how an attacker can use adaptive key choice in
+this context either.   Any modification of the key should be useless
+AH!
+
+I forgot to include some assumptions.   The important part here is that
+each party only has a share of the private key and publishes a share of the
+public key.
+
+This hopefully should preclude any sort of adaptive key attack.
+
+>From scratch:
+
+1. Has a public g^x'
+2. Computes and broadcasts g^k' ... where k' is a random number
+3. Computes r = g^k using lagrange interpolation (see
+http://crypto.stanford.edu/~dabo/papers/homprf.pdf)
+4. Computes H(r || M), as per standard schnorr
+5. Computes s' = k' - xe , as per standard schnorr .. except k' is a "share"
+6. Publish (s', e, g^x')
+
+Verification:
+
+With m of n share-signatures:
+
+1. Interpolation on m of n s' shares to get s
+2. Interpolation on m of n g^x' shares to get g^x
+3. Standard schnorr verification
+
+The actual public key of the "set of signers" is interpolated.
+
+
+
+On Mon, Jul 9, 2018 at 12:58 PM, Gregory Maxwell <greg at xiph.org> wrote:
+
+> On Mon, Jul 9, 2018 at 4:33 PM, Erik Aronesty <erik at q32.com> wrote:
+> >>> with security assumptions that match the original Schnorr construction
+> more closely,
+> >> More closely than what?
+> > More closely than musig.
+>
+> Musig is instructions on using the original schnorr construction for
+> multiparty signing which is secure against participants adaptively
+> choosing their keys, which is something the naive scheme of just
+> interpolating keys and shares is vulnerable to. It works as
+> preprocessing on the keys, then you continue on with the naive
+> protocol. The verifier (e.g. network consensus rules) is the same.
+>
+> Now that you're back to using a cryptographic hash, I think what
+> you're suggesting is "use naive interpolation of schnorr signatures"
+> -- which you can do, including with the verifier proposed in the BIP,
+> but doing that alone is insecure against adaptive key choice (and
+> potentially adaptive R choice, depending on specifics which aren't
+> clear enough to me in your description). In particular, although it
+> seems surprising picking your interpolation locations with the hash of
+> each key isn't sufficient to prevent cancellation attacks due to the
+> remarkable power of wagner's algorithm.
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180709/5b9f7929/attachment.html>
