@@ -1,0 +1,84 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Wed, 11 Jul 2018 11:27:11 -0700
+Subject: [bitcoin-dev] BIP 174 thoughts
+In-Reply-To: <797d9751-9795-55e6-35c9-61532e067d27@satoshilabs.com>
+References: <CAPg+sBhGMxXatsyCAqeboQKH8ASSFAfiXzxyXR9UrNFnah5PPw@mail.gmail.com>
+	<f8f5b1e3-692a-fc1e-2ad3-c4ad4464957f@satoshilabs.com>
+	<TGyS7Azu3inMQFv9QFn8USr9v2m5QbhDRmiOI-4FWwscUeuIB9rA7mCmZA4-kwCJOMAx92fO7XICHtE7ES_QmIYLDy6RHof1WLALskGUYAc=@achow101.com>
+	<c32dc90d-9919-354b-932c-f93fe329760b@satoshilabs.com>
+	<CAPg+sBhhYuMi6E1in7wZovX7R7M=450cm6vxaGC1Sxr=cJAZsw@mail.gmail.com>
+	<881def14-696c-3207-cf6c-49f337ccf0d1@satoshilabs.com>
+	<CAPg+sBg4MCOoMDBVQ2eZ=p3iS3dq506Jh4vUNBmmM20a6uCwYw@mail.gmail.com>
+	<95137ba3-1662-b75d-e55f-893d64c76059@satoshilabs.com>
+	<RdSjdFhvANrG9ve8bXVnqs68ih5_iVK11jdOAL6WoMI2358TdylR3H2SyGHQfByKwMYYOfIJIOq0l6clYf-az8_D_D-D7cByzqbyYt1nV4c=@achow101.com>
+	<c7a4476b-8643-3ddd-723b-1ff8b8910e36@satoshilabs.com>
+	<CAPg+sBjczKB-tvGTpsDr8qDwfh6b_8M-2AdCwHR+DSC8pwY92Q@mail.gmail.com>
+	<d1cc06c5-1d75-902a-1f2b-e5352c862fd6@satoshilabs.com>
+	<CAPg+sBi1Rt_V1V0K50RN-c6wr8hW+5OYWx4aR-Kh8Dp-U0LLdA@mail.gmail.com>
+	<797d9751-9795-55e6-35c9-61532e067d27@satoshilabs.com>
+Message-ID: <CAPg+sBi0zqpUka_YLDAgh1WHbYmXCdRyb=Givz-k1X=L9hV+Lw@mail.gmail.com>
+
+On Tue, Jul 10, 2018 at 5:10 AM, matejcik <jan.matejek at satoshilabs.com> wrote:
+> On 6.7.2018 00:06, Pieter Wuille wrote:> The only case where "malicious"
+> conflicting values can occur is when
+>> one of the Signers produces an invalid signature, or modifies any of
+>> the other fields already present in the PSBT for consumption by
+>> others. If this were an issue, it would be an issue regardless of the
+>> Combiner's operation, as in topology A no Combiner is even present.
+>> This is generally true I think - Combiners can always be replaced with
+>> just a different (and possibly less parallel) topology of data flow.
+>
+> This is an interesting thesis, and also an unspoken assumption ISTM. It
+> seems worth adding something like this to the spec:
+> """
+> In general, the result of Combiner combining two PSBTs from independent
+> participants A and B should be functionally equivalent to a result
+> obtained from processing the original PSBT by A and then B in a sequence.
+> or, for participants performing fA(psbt) and fB(psbt):
+> Combine(fA(psbt), fB(psbt)) == fA(fB(psbt)) == fB(fA(psbt))
+> """
+
+Adding that sounds like a good idea, indeed.
+
+>> The bottom line is that a Combiner which picks arbitrarily in case of
+>> conflicts will never end up with something worse than what you already
+>> need to deal with. If you disregard the case of invalid fields
+>> (because the result will just be an invalid transaction), then any
+>> choice the Combiner makes is fine, because all the values it can pick
+>> from are valid.
+>
+> This sounds reasonable and IMHO it would be good to have a summary of
+> this argument in the Rationale section.
+
+Sounds good.
+
+>> If you're worried about attack surface, I don't believe rejecting
+>> invalid fields ever matters. An attacker can always drop the fields
+>> you don't understand before giving you the PSBT, making your behavior
+>> identical to one where you'd have ignore those fields in the first
+>> place.
+>
+> I'm reluctant to sign an input with unknown data, on the premise that there could be *anything* in that data
+
+But the point is: you are not signing an input with unknown data. You
+are signing your own interpretation (since you compute the sighash
+yourself), which doesn't include what you don't understand. If that
+interpretation doesn't match reality, the signature is at worst
+useless. Who cares that someone added information about a transaction
+that doesn't affect what you sign?
+
+> We are most likely to implement the "do not sign with unknown fields"
+> rule in any case (technically a whitelist of "known OK" field types),
+> and resolve potential problems as they arise. I raised this point mainly
+> because I think discussing this explicitly in the spec is beneficial: a
+> distinction between mandatory and optional fields is one way, mentioning
+> or prescribing possible signing strategies is another.
+
+I don't think that's a particularly useful policy, but certainly
+Signers are allowed to implement any policy they like about what they
+accept in signing.
+
+Cheers,
+
+-- 
+Pieter
