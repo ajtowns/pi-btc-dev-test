@@ -1,0 +1,79 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Fri, 13 Jul 2018 13:07:48 +0200
+Subject: [bitcoin-dev] [Lightning-dev]  BIP sighash_noinput
+In-Reply-To: <VI1PR1001MB1309AFFE2838D85CBCB77C66DE580@VI1PR1001MB1309.EURPRD10.PROD.OUTLOOK.COM>
+References: <871sewirni.fsf@gmail.com>
+	<CAAS2fgS-_D7aBcDf_nAbuREBxv65zYMr60-1YqCnx-esvRVfEg@mail.gmail.com>
+	<201807031213.51127.luke@dashjr.org>
+	<CAK_c0Xo0G9-YiOGZK_8WsYNkzjQRaH+u7XOUAozKosggXeXTNg@mail.gmail.com>
+	<878t6gxapt.fsf@rustcorp.com.au>
+	<VI1PR1001MB1309AFFE2838D85CBCB77C66DE580@VI1PR1001MB1309.EURPRD10.PROD.OUTLOOK.COM>
+Message-ID: <87sh4n75rv.fsf@gmail.com>
+
+fred savage via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> writes:
+> the issues with sighash_noinput is this
+>
+>   1.  you cannot prevent address-reuse. because bitcoin is a PUSH
+>   payment. meaning other people can send funds to one address without
+>   the owner of the key approval/refusal. thus luke cannot control
+>   address reuse if many people start spamming him donations.
+
+This point is pretty much moot since these are scripts, that are used in
+very specialized contexts, and should not be shown to any
+end-user. Sure, if you go through the blockchain looking for these
+addresses, and send the exact same value to it, and create a matching
+script then you could end up exposing those funds to this, however
+that'd be very silly of you, and you'd have jumped through a lot of
+hoops to lose money :-)
+
+>   2.  for average users who would just 'autopilot' LN and only see the
+> GUI. they will have no clue what transaction types and technicals are
+> happening under the hood. also with LN being not validated by the
+> community. a user creating a channel could tweak their own LN node to
+> make their counterparty sign a sighash-noinput as a term/condition of
+> the channel this is also a risk for the under the hood raw tx risks
+> where a tx can be signed but then allow the out's to alter value(using
+> a different opcode). .. you know the premiss of allowing a counterpart
+> to alter the outs value to vary so that they can control the broadcast
+> fee at the time of broadcast to cover being acceptd onchain.. which
+> can be abused by a counter party just editing it so A gets nothing and
+> B gets it all..
+
+You cannot force the counterparty to sign with a sighash-flag that they
+don't chose themselves. We are very clear in the BIP that you should
+only use sighash_noinput_unsafe in the context of protocols, that need
+to be designed in such a way that these issues are excluded. In
+particular, eltoo uses a public key, provided by the signing party,
+which they can ensure is not reused (ensuring script
+uniqueness). Finally, wallets that are not part of LN or eltoo, won't
+even know how to sign with sighash-noinput (try signing anything but
+sighash-all on a hardware wallet for example).
+
+The kind of editing you describe also doesn't work, since sighash-single
+is used for the late fee binding, not sighash-noinput. sighash-single
+makes sure that the input is only valid if the matching output is still
+intact, so redirecting funds away from the desired output doesn't work.
+
+>   3.  by allowing certain things to change after signing. is infact
+>   bringing back malleability for those that use a TXID to identify a
+>   tx has been confirmed. as a TXID would change if values
+>   change.. just like how malleation abused old transactions by editing
+>   a tx without needing to re-sign a tx
+
+Again, this is only to be used in the context of applications that
+require it, which also means that they know how to deal with this
+malleability (in fact this malleability is wanted here). If you squint
+at it you can probably see that sighash-noinput is also a poor-man's
+malleability fix, allowing you to take a transaction that is based on a
+malleated output, and rebind it to re-establish the connection.
+
+It seems people believe that we are advocating the use of
+sighash-noinput-unsafe in general purpose wallets and in everyday
+transactions, this couldn't be further from the truth: sighash-noinput
+is a sharp tool, that should only be used in very specific situations,
+to enable a bit more flexibility, and it can improve the safety of
+off-chain protocols a lot, however general purpose wallets should not
+even allow signing with it.
+
+Cheers,
+Christian
