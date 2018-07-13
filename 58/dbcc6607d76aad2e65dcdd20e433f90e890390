@@ -1,0 +1,152 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 13 Jul 2018 11:51:57 +1000
+Subject: [bitcoin-dev] Generalised taproot
+In-Reply-To: <CAAS2fgSApdSYUWZx+_G7tMPPQm5bC4xjYzZ_mQZv=w-FD-4jWw@mail.gmail.com>
+References: <CAAS2fgTXg5kk6TyUM9dS=tf5N0_Z-GKVmzMLwTW1HxUgrqdo+Q@mail.gmail.com>
+	<CAAS2fgSApdSYUWZx+_G7tMPPQm5bC4xjYzZ_mQZv=w-FD-4jWw@mail.gmail.com>
+Message-ID: <20180713015157.k637vndspx4hgpfu@erisian.com.au>
+
+On Fri, Jan 26, 2018 at 09:34:39PM +0000, Gregory Maxwell via bitcoin-dev wrote:
+> I ask because recursive taproot by itself isn't very interesting,
+> since (other than accountability) there is no gain to not just merging
+> the alternative, but if there are additional conditions then it can be
+> useful. E.g.
+> 
+> [pubkey]
+>       \-[pubkey]&&CSV
+>              \-[fancy script]
+
+I think it's possible to do recursive taproot in this manner in a
+neat way, using Pedersen Commitments. 
+
+(Background: A Pedersen commitment uses a second generator in the curve,
+and rather than constructing a point from a single secret, like A=a*G,
+it constructs a point from two secrets, like C=a*G+b*G2, and finding a
+different c,d such that C=c*G+d*G2 gives you the discrete log of G2)
+
+So combining this with the taproot structure gives an equation like:
+
+  P = a*G + s*G2 + H(a*G+s*G2, Q)*G
+
+If you take "a" to be a private key (so A=a*G is the corresponding
+pubkey), "s" to be (the hash of) a set of additional conditions for
+spending with the pubkey, and "Q" to be an alternative method of spending,
+you get a recursive taproot construction.
+
+To spend "P", you would either:
+
+  - sign with P directly (only possible if s=0, indicating there are no
+    additional conditions to satisfy when spending with this key)
+
+  - reveal the extra conditions you have to satisfy (s), satisfy
+    them, and provide a signature the key "P-s*G2"
+
+  - reveal the points "a*G+s*G2" and "Q", and satisfy "Q"
+
+If you structure the conditions as:
+
+  (pubkey A) |
+    (pubkey B & script x) |
+      (pubkey C & script y) |
+        (merkle tree of scripts, root=z)
+
+Then you can construct a pubkey point as:
+
+   D' = z
+   C' = C + y*G2 + H(C+y*G2, D')*G
+   B' = B + x*G2 + H(B+x*G2, C')*G
+   A' = A + H(A, B')*G
+
+and if you want to spend something with a scriptPubKey of A', you could
+use:
+
+   (1) plain signature with privkey = a+H(A,B')
+
+   (2) reveal [A, B'], reveal [x], provide [witness(x)],
+       signature with privkey = b+H(B+x*G2,C')
+
+   (3) reveal [A, B'], reveal [B+x*G2, C'], reveal [y], provide
+       [witness(y)], signature with privkey = c+H(C+y*G2, D')
+
+   (4) reveal [A, B'], reveal [B+x*G2, C'], reveal [C+y*G2],
+       reveal [script], reveal merkle path from script to z,
+       provide [witness(script)].
+
+That way, you can keep two sets of things secret:
+
+ - until you hit the merkle-tree of scripts, you don't reveal
+   whether there are or aren't any lower layers
+
+ - you don't reveal the conditions corresponding with any of the
+   keys, other than the key you're spending with
+
+This is as (space) efficient as basic taproot:
+
+  taproot: P + H(P, [Q CHECKSIGVERIFY cond]) 
+  witness:
+    (1) sig(P)
+    (2) P [Q CHECKSIGVERIFY cond] sig(Q) witness(cond)
+
+becomes:
+
+  g'root: P + H(P, Q + cond*G2)*G
+  witness:
+    (1) sig(P+H(..)*G)
+    (2) P Q sig(Q) cond witness(cond)
+
+[0]
+
+It's potentially more efficient for cases where the taproot assumption
+doesn't hold, and the common case is to spend with conditions:
+
+  g'root: P + cond*G2 + H(P+cond*G2, Q)*G
+  witness:
+    (1) cond witness(cond) sig(P+H(..)*G)
+    (2) [P+cond*G2] Q sig(Q)
+
+  taproot: Q + H(Q, [P checksig cond])*G
+    (1) Q [P CHECKSIG cond] [sig(P) witness(cond)]   (64 bytes overhead)
+    (2) sig(Q+H(..)*G)                               (64 bytes saved)
+
+It's also potentially more efficient than using a merkle tree with taproot
+when there are three spending paths, and one merkle branch is more likely
+than the other, eg, if the conditions are "sign with A", or "sign with
+B and satisfy x", or (least likely) "sign with C and satisfy y":
+
+Let s = [B CHECKSIGVERIFY x], t = [C CHECKSIGVERIFY y], r = H(H(s),H(t))
+
+ taproot+MAST: A + H(A,r)*G
+  (1t) sig(A+H(..)*G)
+  (2t) A,s,H(t),sig(B),witness(x)
+  (3t) A,t,H(s),sig(C),witness(y)
+
+ g'root: A', where:
+           C' = C + y*G2
+           B' = B + x*G2 + H(B+x*G2,C')*G
+           A' = A + H(A,B')*G
+  (1g) sig(A+H(..)*G)
+  (2g) A B' x sig(B'-x*G2) witness(x)
+  (3g) A B' [B+x*G2] C' y sig(C) witness(y)
+
+(1t) and (1g) are the same; (2t) is about 32B larger than (2g) because
+s=[B x], and  (3t) is about 32B smaller than (3g) because the g'root
+descent reveals two additional points.
+
+(As far as deployment goes, I think it makes sense to get an initial
+schnorr/taproot/mast deployment out first, and add graftroot/aggregation
+later. My feeling is there's no great urgency for generalised taproot, so
+it would make sense to keep doing schnorr/taproot/mast for now, take time
+analysing generalised taproot, and if it seems sane and useful, aim to
+enable it in a later phase, eg at the same time as graftroot/aggregation)
+
+Cheers,
+aj
+
+[0] My inital name for these was "MAST-ended sc'roots", since it
+    combines "taproot" and "scripts" and something MAST-like but only
+    at the very end, but I was warned that the Mimblewimble folks have
+    vast teams monitoring for Harry Potter references and will DMCA me,
+    which I assume stands for "Dementors, Ministry, Cruciatus and Avada
+    kedavra"... So I'm abbreviating generalised taproot as "g'root"
+    instead. After all, what's the worst the Marvel guys could do?
+
