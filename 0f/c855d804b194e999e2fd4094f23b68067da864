@@ -1,0 +1,73 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Sat, 14 Jul 2018 14:20:48 -0700
+Subject: [bitcoin-dev] Schnorr signatures BIP
+In-Reply-To: <A899D97B-5D47-4AB0-8A7F-57F91C58ADE1@sprovoost.nl>
+References: <CAPg+sBj7f+=OYXuOMdNeJk3NBG67FSQSF8Xv3seFCvwxCWq69A@mail.gmail.com>
+	<A899D97B-5D47-4AB0-8A7F-57F91C58ADE1@sprovoost.nl>
+Message-ID: <CAPg+sBg1WuG1MihC3zBHJpxVqC2Sys7Y52iWs6JXEMmnL_tE_w@mail.gmail.com>
+
+On Sat, Jul 14, 2018 at 8:42 AM, Sjors Provoost <sjors at sprovoost.nl> wrote:
+> Questions:
+>
+> Regarding verification: why does bytes(P) use compressed key serialization rather than the implicit Y coordinate used for signing? I understand space savings don't matter since these values don't end up on the blockchain. Is it just easier to implement or is it faster?
+
+Following the design decision to use key-prefixed Schnorr, the
+signature must commit to the entire public key, including its Y
+coordinate.
+
+It would be possible to only permit public keys whose Y coordinates
+are even, or quadratic residues (like the signature internally uses
+for the R point), but that would mean changing what public keys are
+acceptable. Not doing so has significant practical advantages, like
+not breaking existing key generation mechanisms (like BIP32 and
+derivatives).
+
+So if we're going to serialize the public key into the hash, in full,
+the easiest choice seems to be to use the encoding everyone already
+uses for public keys.
+
+> Regarding rationale for choosing (e,s) vs. (R,s), you say that (e,s) "avoids the difficulty of encoding a point R in the signature". But since e = H(sG - eP || m) also involves converting a point to some byte encoding in order to hash it, how much difficulty is actually avoided? Is that, like for previous question, because you could get away with compressed keys rather than implicit Y coordinates?
+
+This is mostly a historical argument. When Schnorr is applied to an
+integer multiplication group rather than an elliptic curve group,
+serializing a group element is many times larger than serializing a
+hash. For elliptic curve based Schnorr, there is hardly any benefit
+for choosing the (e,s) form over (R,s).
+
+> Regarding batch verification: "randomly generated independently for each batch of verifications" - by whom? I assume randomly picked by the verifier?
+
+Randomly picked by the verifier, yes. The randomization factors are
+there so that an attacker cannot choose signatures which cancel out
+other invalid signatures within the same batch.
+
+> Regarding random number used for signing. The suggested (?) deterministic algorithm to derive secret key ''k'' from the private key ''d''  seems similar to RFC6979. Maybe it's useful to briefly explain the difference, as well as your rationale for not making it mandatory (presumably the same as why RFC6979 isn't mandatory although most (?) wallets use it).
+
+What would "mandatory" mean? To follow the BIP, signers must sign
+using nonces generated deterministically following the provided
+method. That's as far as mandatory can go.
+
+However, it is not possible to enforce (by a verifier) than nonces
+were generated in a specific way. To do so, the verifier would need to
+know the nonce, which implies learning the private key. So the nonce
+choosing algorithm cannot be enforced by the verifier. This implies
+that it is possible to generate valid (and secure) nonces in a way
+that does not follow the BIP.
+
+> * Motivation: "signatures ... These are standardized", but the "standardized" link points to the secp256k1 curve parameters, not to anything signature related afaik
+
+There are two documents on the site linked to. One describes the ECDSA
+signing algorithm and serializations, the other specifies the curve
+parameter. I could link to both.
+
+> * "message m: an array of 32 bytes", maybe add "typically the sha256 hash of the transaction components commited to by SIGHASH_TYPE?
+
+Ok.
+
+> * I left a few even smaller nits as a PR: https://github.com/sipa/bips/pull/10
+
+Thanks for your comments, will review.
+
+Cheers,
+
+-- 
+Pieter
