@@ -1,0 +1,83 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Sun, 5 Aug 2018 10:33:52 -0400
+Subject: [bitcoin-dev] Schnorr signatures BIP
+In-Reply-To: <CAMZUoKm4Qs2yAc+WKgN1J2D8MDgbzNnK69kF+hbY2GDyRqdVdg@mail.gmail.com>
+References: <CAPg+sBj7f+=OYXuOMdNeJk3NBG67FSQSF8Xv3seFCvwxCWq69A@mail.gmail.com>
+	<A899D97B-5D47-4AB0-8A7F-57F91C58ADE1@sprovoost.nl>
+	<CAPg+sBg1WuG1MihC3zBHJpxVqC2Sys7Y52iWs6JXEMmnL_tE_w@mail.gmail.com>
+	<CAMZUoKm4Qs2yAc+WKgN1J2D8MDgbzNnK69kF+hbY2GDyRqdVdg@mail.gmail.com>
+Message-ID: <CAMZUoKm_ij4Ffzx5Wpipa5RAFA=5F06jhiTCMJhp3vAj1q+2jA@mail.gmail.com>
+
+Over chat it has been pointed out to me that computing the non-quadratic
+residue is not the same cost as computing a quadratic residue.  As pointed
+out in footnote 7 of the the proposed BIP, c^((p+1)/4) is always a
+quadratic residue and must be negated to find the non-quadratic residue.
+
+In light of this, I revise my proposed change to make the verification
+equation
+
+R + sG + eP = 0.
+
+(by 0 in the equation above I mean the identity element for the (+)
+operation, which is the point at infinity.)
+
+This equation is suitable for batch verification.  This equation is clearly
+written as a linear combination that doesn't use negation.  In most
+implementations, equality comparison tests are implemented by subtraction
+and a comparison with zero. By writing the verification equation this way,
+we clearly see that only the comparison with zero test is needed.
+
+For single signature verification the check becomes, compute Q := sG + eP.
+Verify that Q isn't the point at infinity and Q.x = r.  Verify that Q.y is
+*not* a quadratic residue. (While I was incorrect earlier about the costs
+of computing a non-residue, it is the case the *verifying* a value is a
+quadratic residue is the same cost as verifying a value is a non-residue.)
+
+Effectively in my first email I was suggesting that the 'e' value in a
+signature be negated from the current BIP proposal.  In this revision I am
+effectively suggesting that the 's' value in a signature should be the one
+that is negated instead.
+
+On Sat, Aug 4, 2018 at 8:22 AM, Russell O'Connor <roconnor at blockstream.io>
+wrote:
+
+> I propose changing the verification equation from "Let *R = sG - eP*" to
+>
+>     Let *R = sG + eP*
+>
+> This allows faster verification by avoiding negating a point (or a
+> coefficient).
+>
+>
+> If, instead of directly following the literal verification specification,
+> one is instead reconstructing R from r by finding a y coordinate that is a
+> quadratic residue, under the existing scheme one would verify
+>
+>
+> *sG - eP = R*
+>
+> which is effectively verifying
+>
+>   0 = *sG - eP* - R  or 0 = R - *sG + eP*
+>
+> Either way one needs to negate at least one point (or one coefficient)
+> because of the opposite signs between sG and eP.
+>
+>
+> Under my proposed revised verification scheme, one would instead verify
+>
+>   0 = sG + eP + (-R).
+>
+> While it seems that this requires negating R, it does not.  Rather (-R)
+> can be directly constructed from r by finding a y coordinate that is *not*
+> a quadratic residue, which is precisely the same amount of work that
+> construction R from r was.
+>
+> In either verification procedure, changing the verification equation to my
+> proposal removes one negation operation from the cost of doing verification.
+>
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180805/08b47da6/attachment.html>
