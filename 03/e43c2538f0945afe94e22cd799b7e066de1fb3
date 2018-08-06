@@ -1,0 +1,128 @@
+From: eric@voskuil.org (Eric Voskuil)
+Date: Sun, 5 Aug 2018 22:29:31 -0700
+Subject: [bitcoin-dev] Capping the size of locators [trivial protocol
+ change BIP]
+In-Reply-To: <CAAS2fgR=TvME_ps5oXYPeFJyjVZfaAtc=KQb5Ts2WQ4C2uO8+g@mail.gmail.com>
+References: <CAAS2fgR=TvME_ps5oXYPeFJyjVZfaAtc=KQb5Ts2WQ4C2uO8+g@mail.gmail.com>
+Message-ID: <6fde4ed2-9b33-95b0-558f-145e43d3bc95@voskuil.org>
+
+Libbitcoin has implemented a 11 + log2(height) limit since version3 for
+this reason. This message can be very costly if not constrained.
+
+The presumed protocol inherently limits valid locator size for a given
+recipient. IMO it's worth considering instead describing the expected
+semantics of the message and thereby its *inherent* limits. Doing so
+gives the recipient an upper bound on valid locator size, eliminating
+the need to introduce an arbitrary limit.
+
+I have commonly seen locators with 100 elements, I believe from
+BitcoinJ. I recall posting a query on the issue to their IRC but got no
+response. So it would seem that a quick survey and a limit of 64 would
+not have prevented the issue of concern.
+
+But in any case, I agree that implementations should enforce a limit.
+
+e
+
+On 08/05/2018 07:15 PM, Gregory Maxwell via bitcoin-dev wrote:
+> Coinr8d posted on bct that the node software would process large
+> locators limited only by the maximum message size yet sensible usage
+> of locators only results in messages of log2(n_blocks) size. He was
+> concerned that it might be a DOS vulnerability but quick measurements
+> indicated to me that it likely wasn't worse than many other protocol
+> messages.  It still seems silly to allow absurd locators. So I propose
+> that the size of locators be limited.
+> 
+> However, capping them is a P2P change that could potentially result in
+> network splits if older nodes would potentially produce larger
+> locators (esp if triggered to produce unexpectedly large ones by
+> forks).  A quick survey of node software indicated that no software I
+> could find would ever produce a locator with more than 42 hashes
+> before encountering other limits, so I think a limit of 64 will be
+> automatically compatible with all or virtually all nodes on the
+> network.
+> 
+> I'm bothering writing a BIP because there might be some naive
+> implementation lurking out there that sends a crazy number due to
+> sub-exponential backoff that would be broken by nodes enforcing a
+> limit... particularly since the correct use of locators was never
+> previously mandated and might not be obvious to all developers.
+> 
+> I take the opportunity to also specify that the locators be correctly
+> ordered in terms of total work, but  don't specify that they all come
+> from the same chain.
+> 
+> Cheers,
+> 
+> ==Introduction==
+> 
+> ===Abstract===
+> 
+> This document proposes limiting the locator messages used in the getblocks
+> and getheaders to 64 entries and requiring that be ordered by total
+> work.
+> 
+> ===Copyright===
+> 
+> This document is licensed under the 2-clause BSD license.
+> 
+> ==Motivation==
+> 
+> The Bitcoin P2P protocol uses a simple and efficient data structure
+> to reconcile blockchains between nodes called a locator.  A locator
+> communicates a list of known hashes which allows a peer to find a
+> recent common ancestor between the best chains on two nodes.  By
+> exponentially increasing the space between each entry, the locator
+> allows a log() sized message to find the difference between two nodes
+> with only a constant factor overhead.
+> 
+> Because short forks are much more common than long forks the typical
+> usage of the locator includes a small number of topmost hashes before
+> switching to exponential spacing.
+> 
+> The original Bitcoin implementation provided no explicit limit to the
+> number of hashes in a locator message, allowing for absurd and
+> wasteful uses like including
+> all hashes in a chain.
+> 
+> Although locators are very inexpensive for existing node software to
+> process there is no known utility for sending very large locators.
+> To reduce the worst case cost of processing a locator message it would
+> be useful if the size of locator messages were strictly
+> bounded to sensible levels.
+> 
+> Common implementations have implicit limitations of 2^32 blocks and an
+> exponent of 2 after the first 10 locators and so could never request
+> more than 42 hashes in any case.
+> 
+> == Specification ==
+> 
+> A locator included in a getblock or getheaders message may include no more
+> than 64 hashes, including the final hash_stop hash. Additionally, the blocks
+> referenced by the locator must be in order of equal or decreasing total
+> work.
+> 
+> Sending a locator that violates these requirements may result in normal
+> processing, the message being ignored, a disconnection, or a ban.
+> 
+> Implementations that seek to handle larger numbers of blocks than afforded
+> by this limit with an exponent of 2 can adaptively switch to a larger
+> exponent as required to stay within the limit.
+> 
+> == Acknowledgements ==
+> 
+> Thanks to Coinr8d on bitcointalk for pointing out that node software would
+> process and respond to locators with about 125,000 hashes in them.
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: OpenPGP digital signature
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180805/645df6f7/attachment.sig>
