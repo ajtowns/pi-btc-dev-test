@@ -1,0 +1,253 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 31 Aug 2018 15:42:07 +0800
+Subject: [bitcoin-dev] SIGHASH2 for version 1 witness programme
+In-Reply-To: <87sh2vlgsc.fsf@gmail.com>
+References: <9CCCE945-9432-41B9-8559-AFE7CF233603@xbt.hk>
+	<B35E0135-2135-405A-9627-F67EFB9D2614@xbt.hk>
+	<87sh2vlgsc.fsf@gmail.com>
+Message-ID: <23B1C9E3-9C94-43A3-A543-0AF9A8C10C7E@xbt.hk>
+
+Great, I?ll revise it.
+
+Follow-up questions:
+
+1. Is there any useful case which one would like to use NOINPUT with scriptCode and/or scriptPubKey committed? (Note that with taproot/MAST, scriptCode and scriptPubKey are not interchangeable. scriptPubKey commits to all branches, and scriptCode is just one script branch). If yes, we could make this configurable.
+
+2. Which of the following approaches is better?
+A) sign scriptPubKey in every cases except NOINPUT
+B) sign the type (P2SH-segwit vs. Native-segwit) of scriptPubKey in every cases, including NOINPUT
+C) all of the above
+D) none of the above
+
+Option B is very easy to implement as SignatureHash() could distinguish the type by the size of scriptSig in TxTo. Option A is more complicated as GenericTransactionSignatureChecker needs to know the scriptPubKey.
+
+If the only reason for doing this is to allow hardware wallet to distinguish the segwit type, option B is probably enough. This is also compatible with eltoo.
+
+Option A is useful when a hardware wallet reuses the same public key in different scripts, but it couldn?t be applied to NOINPUT
+
+3. Is the proposed DUALOUTPUT somehow useful for eltoo? Eltoo use NOINPUT|SINGLE to allow fee pumping, since it is an one-input-one-output tx. This is not possible with the existing LN as the tx is one-input-two-output. If we had DUALOUTPUT which signs the matched and last output, fee-pumping would be possible in the existing LN.
+
+
+
+
+> On 31 Aug 2018, at 4:51 AM, Christian Decker <decker.christian at gmail.com> wrote:
+> 
+> Thanks for the update Johnson, just wanted to give a really quick NACK
+> on the SIGHASH_NOINPUT variant: the whole idea of BIP 118 is to have
+> floating transactions that can be bound to predecessors, and still
+> enforce some application logic. In eltoo's case this is the fact that
+> the state number needs to be smaller than the state number of the
+> transaction that is being rewritten. The state number that we bind to is
+> part of the `scriptPubKey`, so we can't commit to the `scriptPubKey` in
+> the signature since we don't know which output (and thus it's
+> scriptPubKey`) is at the time we sign.
+> 
+> If we are committing to `scriptPubKey` this whole way of enforcing order
+> in updates is no longer possible, and the only thing we actually get
+> from this change is a (very weak) malleability fix. The same argument
+> goes for `scriptCode`.
+> 
+> Cheers,
+> Christian
+> 
+> Johnson Lau <jl2012 at xbt.hk> writes:
+>> After gathering some feedbacks I substantially revised the proposal. This version focus on improving security, and reduces the number of optional features.
+>> 
+>> Formatted BIP and sample code at:
+>> https://github.com/jl2012/bips/blob/sighash2/bip-sighash2.mediawiki
+>> https://github.com/jl2012/bitcoin/commits/sighash2
+>> 
+>> The major new features compared with BIP143:
+>> 
+>> 1. If signing all inputs, also sign all input value. BIP143 signature only covers the value of the same input. In some cases this may not be adequate for hardware wallet to determine the right amount of fees. Signing all input values will secure any possible case.
+>> 2. Sign both scriptCode and previous scriptPubKey. In the original bitcoin design, previous scriptPubKey is signed as the scriptCode. However, this is not the case with P2SH and segwit. Explicitly committing to the scriptPubKey allows hardware wallet to confirm what it is actually signing (e.g. P2SH-segwit vs. Native-segwit).
+>> 3. SIGHASH2_NOINPUT: basically same as BIP118, but the signature commits to both scriptCode and scriptPubKey. This prevents signature replay if the same public key is used in different scripts.
+>> 4. SIGHASH2_MATCHOUTPUT (previously SIGHASH_SINGLE) disallows out-of-range case.
+>> 5. SIGHASH2_LASTOUTPUT: signs only the highest index output.
+>> 6. SIGHASH2_DUALOUTPUT: signs the matched output and the highest index output. Described by gmaxwell at https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-July/016188.html <https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-July/016188.html>
+>> 7. Signing the amount of fees (optional, yes by default). In case of not signing all inputs or outputs, users may still want to commit to a specific fee amount.
+>> 8. Signing the witness size (optional, yes by default). While segwit fixed txid malleability, it is not a fix of script malleability. It may cause some trouble if an attacker could bloat the witness and reduce the fee priority of a transaction. Although the witness size is not malleable for most simple scripts, this is not guaranteed for more complex ones. Such kind of size malleability could be avoided if signatures commit to the size of witness.
+>> 
+>> Any suggestions are welcomed. But I have the following questions:
+>> 
+>> 1. Should NOINPUT commit to scriptCode and/or scriptPubKey? I think it should, because that helps avoid signature replay in some cases, and also lets hardware wallets know what they are signing. I am asking this because BIP118 proposes the opposite. I want to make sure I?m not missing something here.
+>> 2. Do we want to add LASTOUTPUT and DUALOUTPUT? Suggested by gmaxwell, an example use case is kickstarter, where individual supporters send money to the last output for a kickstarter project, and send change to the matched output. However, I doubt if this would be actually used this way, because the kickstarter organiser could always take the money before the target is met, by making up the difference with his own input. This is an inherent problem for any anonymous kickstarter scheme. If these new SIGHASHs are not useful in other applications, I am not sure if we should add them.
+>> 3. Instead of these restrictive MATCH/LAST/DUALOUTPUT, do we want a fully flexible way to sign a subset of outputs? The indexes of signed outputs are put at the end of the signature, and the signature won?t commit to these index values. Therefore, a third party could collect all transactions of this kind and merge them into one transaction. To limit the sighash cost, number of signed outputs might not be more than 2 or 3. Some potential problems: a) code complexity; b) 1-byte or 2-byte index: 1-byte will limit the number of outputs to 256. 2-byte will use more space even for smaller txs; c) highly variable signature size makes witness size estimation more difficult
+>> 4. Should we sign the exact witness size (as proposed), or an upper size limit? Signing an upper limit will take up more space, as the limit has to be explicitly shown in the witness. The overhead could be avoided by showing the limit only if the actual witness size is not equal to the committed limit. However, I tend to keep it simple and sign the exact value. If in a multi-sig setup some signers are unable to accurately estimate the witness size, they should leave this responsibility to the last signer who should know the exact size.
+>> 
+>> 
+>>> On 1 Jun 2018, at 2:35 AM, Johnson Lau via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>>> 
+>>> Since 2016, I have made a number of proposals for the next generation of script. Since then, there has been a lot of exciting development on this topic. The most notable ones are Taproot and Graftroot proposed by Maxwell. It seems the most logical way is to implement MAST and other new script functions inside Taproot and/or Graftroot. Therefore, I substantially simplified my earlier proposal on SIGHASH2. It is a superset of the existing SIGHASH and the BIP118 SIGHASH_NOINPUT, with further flexibility but not being too complicated. It also fixes some minor problems that we found in the late stage of BIP143 review. For example, the theoretical (but not statistical) possibility of having same SignatureHash() results for a legacy and a witness transaction. This is fixed by padding a constant at the end of the message so collision would not be possible.
+>>> 
+>>> A formatted version and example code could be found here:
+>>> https://github.com/jl2012/bips/blob/sighash2/bip-sighash2.mediawiki
+>>> https://github.com/jl2012/bitcoin/commits/sighash2
+>>> 
+>>> 
+>>> ========
+>>> 
+>>> BIP: YYY
+>>> Layer: Consensus (soft fork)
+>>> Title: Signature checking operations in version 1 witness program
+>>> Author: Johnson Lau <jl2012 at xbt.hk>
+>>> Comments-Summary: No comments yet.
+>>> Comments-URI: https://github.com/bitcoin/bips/wiki/Comments:BIP-0YYY
+>>> Status: Draft
+>>> Type: Standards Track
+>>> Created: 2017-07-19
+>>> License: BSD-3-Clause
+>>> 
+>>> 
+>>> *Abstract
+>>> 
+>>> This BIP defines signature checking operations in version 1 witness program.
+>>> 
+>>> *Motivation
+>>> 
+>>> Use of compact signatures to save space.
+>>> 
+>>> More SIGHASH options, more flexibility
+>>> 
+>>> *Specification
+>>> 
+>>> The following specification is applicable to OP_CHECKSIG and OP_CHECKSIGVERIFY in version 1 witness program.
+>>> 
+>>> **Public Key Format
+>>> 
+>>> The pubic key MUST be exactly 33 bytes.
+>>> 
+>>> If the first byte of the public key is a 0x02 or 0x03, it MUST be a compressed public key. The signature is a Schnorr signature (To be defined separately)
+>>> 
+>>> If the first byte of the public key is neither 0x02 nor 0x03, the signature is assumed valid. This is for future upgrade.
+>>> 
+>>> **Signature Format
+>>> 
+>>> The following rules apply only if the first byte of the public key is a 0x02 or 0x03.
+>>> 
+>>> If the signature size is 64 to 66 byte, it MUST be a valid Schnorr signature or the script execution MUST fail (cf. BIP146 NULLFAIL). The first 32-byte is the R value in big-endian. The next 32-byte is the S value in big-endian. The remaining data, if any, denotes the hashtype in little-endian (0 to 0xffff).
+>>> 
+>>> hashtype MUST be minimally encoded. Any trailing zero MUST be removed.
+>>> 
+>>> If the signature size is zero, it is accepted as the "valid failing" signature for OP_CHECKSIG to return a FALSE value to the stack. (cf. BIP66)
+>>> 
+>>> The script execution MUST fail with a signature size not 0, 64, 65, or 66-byte.
+>>> 
+>>> **New hashtype definitions
+>>> 
+>>> hashtype and the SignatureHash function are re-defined:
+>>> 
+>>> Double SHA256 of the serialization of:
+>>>    1. nVersion (4-byte little endian)
+>>>    2. hashPrevouts (32-byte hash)
+>>>    3. hashSequence (32-byte hash)
+>>>    4. outpoint (32-byte hash + 4-byte little endian)
+>>>    5. scriptCode (serialized as scripts inside CTxOuts)
+>>>    6. nAmount (8-byte little endian)
+>>>    7. nSequence (4-byte little endian)
+>>>    8. hashOutputs (32-byte hash)
+>>>    9. nLocktime (4-byte little endian)
+>>>   10. nInputIndex (4-byte little endian)
+>>>   11. nFees (8-byte little endian)
+>>>   12. hashtype (4-byte little endian)
+>>>   13. sigversion (4-byte little endian for the fixed value 0x01000000)
+>>> 
+>>> The bit 0 to 3 of hashtype denotes a value between 0 and 15:
+>>> 
+>>> 	? If the value is 1, the signature is invalid.
+>>> 	? If the value is 3 or below, hashPrevouts is the hash of all input, same as defined in BIP143. Otherwise, it is 32-byte of 0x0000......0000.
+>>> 	? If the value is 7 or below, outpoint is the COutPoint of the current input. Otherwise, it is 36-byte of 0x0000......0000.
+>>> 	? If the value is 0, hashSequence is the hash of all sequence, same as defined in BIP143. Otherwise, it is 32-byte of 0x0000......0000.
+>>> 	? If the value is even (including 0), nSequence is the nSequence of the current input. Otherwise, it is 0x00000000.
+>>> 	? If the value is 6, 7, 10, 11, 14, or 15, nInputIndex is 0x00000000. Otherwise, it is the index of the current input.
+>>> 	? If the value is 11 or below, nAmount is the value of the current input (same as BIP143). Otherwise, it is 0x0000000000000000.
+>>> 
+>>> The bit 4 and 5 of hashtype denotes a value between 0 and 3:
+>>> 
+>>> 	? If the value is 0, hashOutputs is same as the SIGHASH_ALL case in BIP143 as a hash of all outputs.
+>>> 	? If the value is 1, the signature is invalid.
+>>> 	? If the value is 2, hashOutputs is same as the SIGHASH_SINGLE case in BIP143 as a hash of the matching output. If a matching output does not exist, hashOutputs is 32-byte of 0x0000......0000.
+>>> 	? If the value is 3, hashOutputs is 32-byte of 0x0000......0000.
+>>> If bit 6 is set (SIGHASH2_NOFEE), nFees is 0x0000000000000000. Otherwise, it is the fee paid by the transaction.
+>>> If bit 7 is set (SIGHASH2_NOLOCKTIME), nLockTime is 0x00000000. Otherwise, it is the transaction nLockTime.
+>>> 
+>>> If bit 8 is set (SIGHASH2_NOVERSION), nVersion is 0x00000000. Otherwise, it is the transaction nVersion.
+>>> 
+>>> If bit 9 is set (SIGHASH2_NOSCRIPTCODE), scriptCode is an empty script. Otherwise, it is same as described in BIP143.
+>>> 
+>>> Bits 10 to 15 are reserved and ignored, but the signature still commits to their value as hashtype.
+>>> 
+>>> hashtype of 0 is also known as SIGHASH2_ALL, which covers all the available options. In this case the singnature MUST be exactly 64-byte.
+>>> 
+>>> hashtype of 0x3ff is also known as SIGHASH2_NONE, which covers nothing and is effectively forfeiting the right related to this public key to anyone.
+>>> 
+>>> *Rationale
+>>> 
+>>> **Signature Format
+>>> 
+>>> The current DER format is a complete waste of block space. The new format saves ~8 bytes per signature.
+>>> 
+>>> **New hashtype definitions
+>>> 
+>>> The default and most commonly used case is SIGHASH2_ALL. Making it zero size to save space. As a result, the bit flags are defined in a negative way (e.g. NOLOCKTIME)
+>>> 
+>>> Why decouple INPUT and SEQUENCE? Maybe you want NOINPUT but still have a relative lock-time?
+>>> 
+>>> Why some combinations are missing? To save some bits for useless flags. If you sign all inputs, you must know its index and value. If you sign only this input, you must know its value, but probably don't know its index in the input vector.
+>>> 
+>>> Why only allow signing all SEQUENCE if all INPUT are signed? It doesn't make much sense if you care about their sequence without even knowing what they are.
+>>> 
+>>> Why signing INPUTINDEX? Legacy and BIP143 SINGLE|ANYONECANPAY behaves differently for input index. Better make it explicit and optional.
+>>> 
+>>> Why signing FEE? Sometimes you don't sign all inputs / outputs but still want to make sure the fees amount is correct.
+>>> 
+>>> Putting NOVERSION and NOSCRIPTCODE in the second byte makes most signatures below 66 bytes:
+>>> 
+>>> 	? NOVERSION: Currently the only use of transaction version is to enforce BIP68. It could be safely assumed that version 2 is used. The only case one would like to use NOVERSION is to make the signature compatible with some unknown new features that use a different transaction version.
+>>> 	? NOSCRIPTCODE: It would be very rare if one could make a signature without knowing what the script is (at least they know the public key). The only scenario that a NOSCRIPTCODE is really needed is the public key being reused in different scripts, and the user wants to use a single signature to cover all these scripts.
+>>> Reserved bits: These bits are ignored but should normally be unset. Users MUST NOT set these bits until they are defined by a future proposal, or they might lose money.
+>>> Why sigversion? Make sure the message digest won't collide with SIGHASH schemes in the past (legacy and BIP143) and future (which will use a different sigversion).
+>>> 
+>>> *Examples
+>>> 
+>>> Equivalent SIGHASH2 value for other SIGHASH schemes:
+>>> Legacy/BIP143 ALL: 0 (commit to everything)
+>>> Legacy/BIP143 SINGLE with matching output: 0x62 (all input, one sequence, one output, no fee)
+>>> Legacy SINGLE without matching output: 0x3ff (Not exactly. Both signatures commit to nothing, but the legacy one is valid only without a matched output. Practically, they are both "wildcard" signatures that allow anyone to spend any related UTXO)
+>>> Legacy/BIP143 NONE: 0x72 (all input, one sequence, no output, no fee)
+>>> Legacy/BIP143 ANYONECANPAY|ALL: 0x46 (one input without index, one sequence, all output, no fee)
+>>> Legacy ANYONECANPAY|SINGLE with matching output: 0x64 (one input with index, one sequence, one output, no fee)
+>>> Legacy/BIP143 ANYONECANPAY|NONE: 0x76 (one input without index, one sequence, no output, no fee)
+>>> BIP143 SINGLE without matching output: 0x62 (all input, one sequence, no output, no fee)
+>>> BIP143 ANYONECANPAY|SINGLE with matching output: 0x66 (one input without index, one sequence, one output, no fee)
+>>> BIP143 ANYONECANPAY|SINGLE without matching output: 0x66 (one input without index, one sequence, no output, no fee)
+>>> BIP118 NOINPUT: 0x14b (no input but with value, no index, no sequence, no fee, no scriptcode)
+>>> 
+>>> Notes:
+>>> 
+>>> 1. In legacy and BIP143 SIGHASH, only ALL but not other types implicitly commits to the fee paid.
+>>> 2. Legacy SIGHASH always implicitly commits to the input value. BIP143 and BIP118 commits to that explicitly.
+>>> 3. Legacy and BIP143 SIGHASH behaves differently in the case of SINGLE without matching output. In legacy SIGHASH it is a true "wildcard signature" that allows anyone to spend any related UTXO. In BIP143 such signature applies only to a specific UTXO.
+>>> 4. BIP143 ANYONECANPAY never commits to the input index. Legacy ANYONECANPAY|SINGLE implicitly commits to the input index.
+>>> 
+>>> *Backward compatibility
+>>> 
+>>> This is a soft-fork.
+>>> 
+>>> *Deployment
+>>> 
+>>> Exact details TBD.
+>>> 
+>>> *Reference Implementation
+>>> 
+>>> https://github.com/jl2012/bitcoin/commits/sighash2 (To be updated)
+>>> 
+>>> *Copyright
+>>> 
+>>> This document is licensed as BSD 3-clause.
+>>> _______________________________________________
+>>> bitcoin-dev mailing list
+>>> bitcoin-dev at lists.linuxfoundation.org
+>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+
+
