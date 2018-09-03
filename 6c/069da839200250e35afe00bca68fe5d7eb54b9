@@ -1,0 +1,67 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Mon, 03 Sep 2018 15:53:33 +0200
+Subject: [bitcoin-dev] SIGHASH2 for version 1 witness programme
+In-Reply-To: <23B1C9E3-9C94-43A3-A543-0AF9A8C10C7E@xbt.hk>
+References: <9CCCE945-9432-41B9-8559-AFE7CF233603@xbt.hk>
+	<B35E0135-2135-405A-9627-F67EFB9D2614@xbt.hk>
+	<87sh2vlgsc.fsf@gmail.com>
+	<23B1C9E3-9C94-43A3-A543-0AF9A8C10C7E@xbt.hk>
+Message-ID: <87in3mlmaq.fsf@gmail.com>
+
+Johnson Lau <jl2012 at xbt.hk> writes:
+
+> Great, I?ll revise it.
+>
+> Follow-up questions:
+>
+> 1. Is there any useful case which one would like to use NOINPUT with
+> scriptCode and/or scriptPubKey committed? (Note that with
+> taproot/MAST, scriptCode and scriptPubKey are not
+> interchangeable. scriptPubKey commits to all branches, and scriptCode
+> is just one script branch). If yes, we could make this configurable.
+
+There is the poor man's malleability fix that you get if you make only
+the previous outpoint rewritable, but that use-case is better covered by
+segwit already, and since both of our proposals would be for segwit
+outputs only, I don't see a point in doing that.
+
+> 2. Which of the following approaches is better?
+> A) sign scriptPubKey in every cases except NOINPUT
+> B) sign the type (P2SH-segwit vs. Native-segwit) of scriptPubKey in every cases, including NOINPUT
+> C) all of the above
+> D) none of the above
+
+What do we effectively gain by committing to the scriptPubkey type? Is
+the concern here that we might run into ambiguity about whether this is
+a MAST, P2SH, or similar output, allowing an attacker to sideload
+unwanted effects?
+
+> Option B is very easy to implement as SignatureHash() could
+> distinguish the type by the size of scriptSig in TxTo. Option A is
+> more complicated as GenericTransactionSignatureChecker needs to know
+> the scriptPubKey.
+>
+> If the only reason for doing this is to allow hardware wallet to
+> distinguish the segwit type, option B is probably enough. This is also
+> compatible with eltoo.
+
+Agreed on compatibility :-)
+
+> Option A is useful when a hardware wallet reuses the same public key
+> in different scripts, but it couldn?t be applied to NOINPUT
+>
+> 3. Is the proposed DUALOUTPUT somehow useful for eltoo? Eltoo use
+> NOINPUT|SINGLE to allow fee pumping, since it is an
+> one-input-one-output tx. This is not possible with the existing LN as
+> the tx is one-input-two-output. If we had DUALOUTPUT which signs the
+> matched and last output, fee-pumping would be possible in the existing
+> LN.
+
+That's a very strange concept, but it strongly relies on the structure
+of the commitment, having two outputs. As soon as we have HTLCs included
+in the commitment we no longer have 2 outputs (2 for the endpoints, and
+1 as a base for the two-phase HTLC resolution), so this would be a
+rather brittle fix or would require major restructuring of LN imho.
+
+Cheers,
+Christian
