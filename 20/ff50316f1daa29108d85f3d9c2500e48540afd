@@ -1,0 +1,86 @@
+From: dev@jonasschnelli.ch (Jonas Schnelli)
+Date: Mon, 3 Sep 2018 14:16:19 +0200
+Subject: [bitcoin-dev] Overhauled BIP151
+Message-ID: <640D015D-3DDB-43C4-9752-96ADABF64C91@jonasschnelli.ch>
+
+Hi
+
+During work on the implementation of BIP151 [1] I figured out that the current
+published proposal could be further optimized.
+
+I wrote an overhauled BIP151 specification with some ? partially radical ?
+changes.
+
+Now it?s unclear to me if this should be published under a new BIP nr. or if it
+is acceptable to change the existing 151 proposal.
+If a new BIP number would be required, I think withdrawing BIP151 should be
+done (which somehow indicates we should alter 151).
+
+The only BIP151 implementation I?m aware of is the one from Armory [2].
+BCoins implementation has been removed [3].
+
+The new proposal draft is available here:
+https://gist.github.com/jonasschnelli/c530ea8421b8d0e80c51486325587c52
+
+Major changes
+=============
+- the encryption handshake no longer requires the v1 protocol, it?s a pure
+  32bytes-per-side ?pseudorandom" key exchange that happens before anything else.
+- the multi message envelope has been removed.
+- a new NODE_ENCRYPTED service bit
+- the key derivation and what communication direction uses what key is now more
+  specific
+- the length of a packet uses now a 3-byte integer with 23 available bits
+- introduction of short-command-ID (ex.: uint8_t 13 == INV, etc.) which result in
+  some v2 messages require less bandwidth then v1
+- rekeying doesn?t require a message and can be signaled in the most
+  significant bit in the packet-size field
+
+
+Points that are in discussion and may be added to the BIP (or to a new one):
+
+Hybrid NewHope key exchange
+===========================
+The current ECDH key exchange is vulnerable to Shor?s algorithm and is thus not
+considered quantum-safe.
+Following TORs approach [4] by adding a NewHope [5] key-exchange the handshake
+protocol would very likely make the encryption PQ safe with little costs.
+There is also a straight forward implementation [6] from the NewHope team that
+has been submitted to NIST PQC project.
+
+Inefficiency of ChaCha20Poly1305 at openssh
+========================================
+The proposed AEAD could eventually be further optimized.
+ChaCha20Poly1305 at openssh uses at least three rounds of ChaCha20 which
+eventually can be reduced to two (messages below <=64 bytes [inv, ping,
+pong,...] only require one round of ChaCha20, but two for the Poly1305 key and
+the message length encryption where the Poly1305 key chacha round ?throws away?
+32 bytes).
+
+
+I would suggest that we don?t rehash discussions about the general
+concept of encrypting the traffic. This has already been discussed [7][8].
+
+I hope we can limit this thread to discuss further ideas for optimisation as well as
+technical details of the published proposal or its implementation.
+
+
+[1] https://github.com/bitcoin/bitcoin/pull/14032
+[2] https://github.com/goatpig/BitcoinArmory/pull/510
+[3] https://github.com/bcoin-org/bcoin/commit/41af7acfd68b0492a6442865afd439300708e662
+[4] https://gitweb.torproject.org/user/isis/torspec.git/plain/proposals/XXX-newhope-hybrid-handshake.txt?h=draft/newhope
+[5] https://eprint.iacr.org/2015/1092
+[6] https://github.com/newhopecrypto/newhope
+
+[7] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2017-February/013565.html
+[8] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2016-June/012826.html
+
+
+Thanks
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 833 bytes
+Desc: Message signed with OpenPGP
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180903/82a75538/attachment-0001.sig>
