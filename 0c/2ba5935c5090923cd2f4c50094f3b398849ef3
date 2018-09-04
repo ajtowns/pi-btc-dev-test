@@ -1,0 +1,63 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 4 Sep 2018 09:57:28 -0700
+Subject: [bitcoin-dev] Extending BIP174 for HTLCs
+In-Reply-To: <CAFLuHNFD8vTyYfF+64e2Xs_HympQs4ufzSAxQ96jkLZg=pdm7A@mail.gmail.com>
+References: <CAFLuHNFD8vTyYfF+64e2Xs_HympQs4ufzSAxQ96jkLZg=pdm7A@mail.gmail.com>
+Message-ID: <CAPg+sBhiMPAc4tzsMVBjGuG2RqKLTrD9F0vm9rvpp6DrSm3T1Q@mail.gmail.com>
+
+On Tue, Sep 4, 2018, 04:32 Alex Bosworth via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> I've been experimenting with a format tag for BIP 174 to help support
+> HTLC scripts I've been working with.
+>
+
+I've been thinking about this as well.
+
+A useful way to look at it IMHO is to see a hash as the analogue of a
+public key, and the preimage as the analogue of a signature.
+
+That would suggest adding two fields to PSBT:
+* A request for the preimage of a given hash (similar to the pubkey/path
+field currently)
+* A revealed preimage for a given hash (similar to the partial signature
+field currently).
+
+The workflow would in this case would be:
+* An updater recognizes an output/script as being one that requires a
+preimage, and adds a preimage request field to the input (along with pubkey
+fields for all involved keys).
+* A "signer" who knows the preimage sees the request field, verifies he's
+willing to divulge the secret, and adds a preimage field (along with any
+signatures he may be able to create).
+* A finalizer who is compatible with the type of hashlock script combines
+all signatures and preimages into a final scriptSig/witness stack.
+
+An obvious difficulty is having updaters and finalizers which are
+compatible with all possible variations of hashlocks and other scripts.
+
+Not sure on the best format for this, but what I have been thinking
+> about is a new input type that defines elements that should be
+> inserted in the final p2sh/p2wsh stack such as a preimage or a refund
+> path flag.
+>
+
+That's one approach to reducing the complexity of the finalizer: adding
+information about the composition of the scriptSig to the PSBT itself.
+However, I don't think that approach scales very well (you'd need new
+fields for all kinds of new script constructions). In particular, dealing
+with multiple possible satisfactions may complicate things, especially when
+the number of combinations is intractable.
+
+I've been working on another approach that doesn't involve changes to PSBT,
+but instead uses an easily-parsable subset of script (which includes
+and/or/threshold/pubkey/locktimes/hashlocks). I hope to publish something
+soon about it.
+
+Cheers,
+
+-- 
+Pieter
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180904/5dd946d0/attachment.html>
