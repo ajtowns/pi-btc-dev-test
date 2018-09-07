@@ -1,0 +1,205 @@
+From: crypto@timruffing.de (Tim Ruffing)
+Date: Fri, 07 Sep 2018 15:00:08 +0200
+Subject: [bitcoin-dev] Overhauled BIP151
+In-Reply-To: <CAAS2fgQPkR63FmUyP8mAkmv4D-ttJ1C3rZismNr9_takBRS1qQ@mail.gmail.com>
+References: <640D015D-3DDB-43C4-9752-96ADABF64C91@jonasschnelli.ch>
+	<061aa38d8ceeb6caaae19d7c86e435a5f86b293b.camel@timruffing.de>
+	<CAAS2fgQPkR63FmUyP8mAkmv4D-ttJ1C3rZismNr9_takBRS1qQ@mail.gmail.com>
+Message-ID: <d48a1f9bf13ff19e73ffafbe62f590f86e9b9c66.camel@timruffing.de>
+
+On Fri, 2018-09-07 at 02:31 +0000, Gregory Maxwell wrote:
+> Currently, Tor provides _no confidentiality at all_ in that threat
+> model.  Part of why I think this enhancement is interesting is
+> because
+> without it BIP151 doesn't actually add anything for those p2p
+> connections running over Tor, but with it -- it at least adds some
+> long term confidentiality hedge.
+> 
+Okay, sure, I was assuming that Tor will deploy it at some point. No
+idea what the status is.
+
+> > It's not worth the hassle, would hinder adoption,
+> 
+> Why do you say this?
+My assumption is that NewHope is harder to implement. If you just 
+drop-in existing code, it's not. And I've neither implemented NewHope
+nor Elligator Squared, so I may just be wrong.
+
+> 
+> > impression of "bulletproof" security. Even worse, there will be too
+> > many people that will suddenly
+> > assume that Bitcoin is post-quantum secure.
+> 
+> People already make that claim with respect to public key hashing.  I
+> don't think "we shouldn't improve security because someone will
+> mistake an improvement for perfection" is an an especially
+> interesting
+> argument.
+
+I don't like the argument either but I think it's real.
+
+> (Blockstream  previously wrote the SW forward transform for asset
+> generation, but this requires the inverse too, as well as glue code.
+> It also isn't clear to me if it's possible to make this construction
+> constant time, which would be okay for BIP151 purposes but if we
+> wanted to have a generic uniform encoder in libsecp256k1 I think we'd
+> prefer it be constant time? maybe?)
+No idea if it can be made constant time but yeah I think it's not
+crucial in this case.
+
+> 
+> I don't believe that indistinguishable keys are actually useful
+> outside of the context of things like stegnographic embedding-- cases
+> where protocol 'metadata' doesn't tell you that a key is there
+> regardless.
+
+I wasn't specific but my point is that these are indeed interesting
+future directions. You can easily make the traffic look like any other
+protocol which uses encryption. That's a really useful property if you
+want to avoid censorship, even if traffic analysis still works. That's
+true even if this it's not in the scope of this BIP, which is of course
+the case.
+
+If you ask me, that is more interesting than protecting against
+potential decryption of P2P connections in a few decades. But I don't
+have a definitive argument for this of course.
+
+
+> I also prefer the contributory key model, but Pieter proved me on IRC
+> last week that the attack form that I was concerned about was not
+> possible.
+> 
+> Do you actually have an attack in mind that you can spell out
+> here?  I
+> don't see a harm in changing that, but given that I'd already twice
+> talked myself out of proposing the same thing, I'd like to understand
+> if I'm missing something. :)
+
+I don't have a harmful example but here is harmless one (that you
+probably know because it's really the simplest one can think of):
+
+A             M             B 
+   -- aG -->
+                 <-- bG --
+                  -- aG -->
+  <-- bG --
+
+Now A and B share the same session id but any attempt to communicate
+will fail because they both think that they're the initiator. Of course
+that's not a big deal because M is in neither of those sessions. So
+it's not an attack but it's a weird property of the key exchange. But I
+think it's desirable to avoid such things if the cost to do so is very
+low.
+
+Also, here is a better argument:
+
+A             M             B 
+   -- aG -->
+                 <-- bG --
+  <-- xG --
+                  -- yG -->
+
+After B's message, M's goal is create a collision of the session ids.
+Since M can freely choose x and y, that's a birthday attack on the hash
+function and needs 2^(l/2) work if the session id is l bits long.
+
+Telegram has (had?) the same issue:
+https://www.alexrad.me/discourse/a-264-attack-on-telegram-and-why-a-super-villain-doesnt-need-it-to-read-your-telegram-chats.html
+
+With the other variant, M cannot collect both aG and bG upfront:
+
+A             M             B 
+   -- aG -->
+                  -- yG -->
+                 <-- bG --
+  <-- xG --
+
+Now M can only choose x, so this is a second-preimage attack and takes
+2^l work. So with the this variant, you can have a session id that's
+only half the size. That's a real difference if session ids are meant
+to be comparable by humans, e.g., over the phone. 
+
+(I think) it's possible to even go further with a 3-way handshake:
+A                M                B 
+   -- H(aG) -->
+                    -- H(yG) -->
+                   <--  bG   --
+  <--  xG   --
+   --  aG   -->
+                    --  yG   -->
+
+Here M has no flexibility at all, so the probability of a successful
+attack against a single key exchange is just 2^(-l). This is similar to
+ZRTP. I'm not saying that we should do this, it's something worth
+noting that.
+
+  
+> 
+> > Re-keying
+> > =========
+> > The problem with signalling re-keying in the length field is that
+> > the length field is not covered
+> > by the MAC.
+> 
+> It's AAD data in the mac, unless I misunderstand the protocol.
+
+Oh nevermind.
+
+> Personally I'd prefer that we used a ciphersuite that effectively
+> "rekeyed" every message-- along the lines of the constructions
+> described https://blog.cr.yp.to/20170723-random.html   Unfortunately
+> I
+> was unable to find _any_ well analyized  authenticated encryption
+> mode
+> that has the fast erasure property.   It's too bad because it would
+> be
+> trivial to adhoc one (e.g. use the extra 32 bytes from the poly1305
+> chacha run to update the keys for the next message).
+
+That adhoc construction is a very interesting idea. Hm... Just fyi, the
+closest that comes to my mind is:
+https://core.ac.uk/download/pdf/20880831.pdf
+
+> The norm in Bitcoin is to ignore messages you don't know how to parse
+> anyways,  so there is no complexity that arises from "may negotiate"
+> itself-- only from actually making use of that possibility in the
+> future, so the merits of any particular usage could be decided when
+> something wants to actually use it.  The purpose of pointing out "may
+> negotiate" is, I think, primarily to avoid a debate about who would
+> assign numbers from this limited space in the future-- and the answer
+> just is that they're implementation defined (e.g. by the BIPs using
+> them).
+
+Yeah, my point was not to write the entire list in stone. That was not
+really clear from my message, sorry. Of course, new message types can
+be added later. But I don't see a big advantage in allowing both ASCII
+strings and short IDs. So I wanted to say that the usage of short IDs
+should be written stone.
+
+On Fri, 2018-09-07 at 10:34 +0200, Jonas Schnelli wrote:
+> 
+> > I didn't think about this in detail: maybe there are a few
+> meaningful cases where padding could
+> > hide the message length without too much overhead. (I'm not
+> convinced, just a random thought.)
+> 
+> I think a new message type that could contain message + pad would be
+> trivial.
+> Would this again be to obfuscate traffic patterns? Anti DPI is not
+> the scope of BIP151.
+
+Well, it's indeed to obfuscate traffic patterns but primarily for
+confidentiality. If I see the length of the message, I can guess the
+message type fairly well for example. (That's not no matter if my goal
+as an attacker is to break your privacy or to censor your connection.
+Of course more confidentiality helps also against DPI/censorship but
+that was not my point here.)
+
+> I was under the false impression that it is obvious to disconnect in
+> those cases.
+
+Yeah I think it's by far the most natural thing to do but it may be
+better to make it explicit.
+
+Tim
+
