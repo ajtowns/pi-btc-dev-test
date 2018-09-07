@@ -1,0 +1,210 @@
+From: greg@xiph.org (Gregory Maxwell)
+Date: Fri, 7 Sep 2018 02:31:15 +0000
+Subject: [bitcoin-dev] Overhauled BIP151
+In-Reply-To: <061aa38d8ceeb6caaae19d7c86e435a5f86b293b.camel@timruffing.de>
+References: <640D015D-3DDB-43C4-9752-96ADABF64C91@jonasschnelli.ch>
+	<061aa38d8ceeb6caaae19d7c86e435a5f86b293b.camel@timruffing.de>
+Message-ID: <CAAS2fgQPkR63FmUyP8mAkmv4D-ttJ1C3rZismNr9_takBRS1qQ@mail.gmail.com>
+
+On Thu, Sep 6, 2018 at 11:33 PM Tim Ruffing via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> Now you can argue that the attacker is storing encrypted traffic today to decrypt it later.
+
+That is the argument. We know for that state level parties are storing
+unimaginable amounts of data for future decryption, that threat isn't
+theoretical.
+
+> Sure,
+> but if that's your threat model then Bitcoin is probably not the right tool for you. (And if
+
+Why not?
+
+> you insist that Bitcoin is the right tool, then you can and probably should use it over Tor
+> anyway.)
+
+Currently, Tor provides _no confidentiality at all_ in that threat
+model.  Part of why I think this enhancement is interesting is because
+without it BIP151 doesn't actually add anything for those p2p
+connections running over Tor, but with it -- it at least adds some
+long term confidentiality hedge.
+
+> It's not worth the hassle, would hinder adoption,
+
+Why do you say this?
+
+> impression of "bulletproof" security. Even worse, there will be too many people that will suddenly
+> assume that Bitcoin is post-quantum secure.
+
+People already make that claim with respect to public key hashing.  I
+don't think "we shouldn't improve security because someone will
+mistake an improvement for perfection" is an an especially interesting
+argument.
+
+> Key exchange indistinguishable from random
+> ==========================================
+> I would rather love to see a simple ECDH key exchange as currently used but with an encoding of
+> public key that provides indistinguishability from random bitstrings. "Elligator" does not work
+> but "Elligator Squared" [1] does the job for secp256k1 -- it just doubles the size of the public
+
+Here is where I turn the argument around on you:   This requires
+writing a non-trivial amount of moderately complex new cryptographic
+code (which is not the case for PQ schemes-- that merely requires
+dropping in pre-existing code) and yet I am not aware of any attack
+model that this which would any improvement in actually delivered
+security:  Bitcoin traffic is _trivially_ identifiable by its traffic
+patterns.
+
+(Blockstream  previously wrote the SW forward transform for asset
+generation, but this requires the inverse too, as well as glue code.
+It also isn't clear to me if it's possible to make this construction
+constant time, which would be okay for BIP151 purposes but if we
+wanted to have a generic uniform encoder in libsecp256k1 I think we'd
+prefer it be constant time? maybe?)
+
+The scheme in the BIP thus far achieves the property that there are no
+fixed bytes for brain-dead byte matching DPI traffic filtering or
+anti-virus to match on (or accidentally false positive on).  AV false
+positives are already an existing problem with the current protocol
+and any fixed bytes in the communication are at risk for false
+positives or targeted filtering.   And achieving that property
+requires basically nothing: a test for the first byte of a generated
+serialized pubkey and a negate on the private key if it was wrong.
+
+> key. Together with the encrypted packet lengths, the entire data stream looks like random then,
+
+No, it doesn't-- due to traffic analysis.  Including, for example, the
+pattern that 64-bytes must be sent in each direction, before further
+data continues, bursts of traffic coinciding with blocks newly found
+on the network, etc.
+
+I don't believe that indistinguishable keys are actually useful
+outside of the context of things like stegnographic embedding-- cases
+where protocol 'metadata' doesn't tell you that a key is there
+regardless.
+
+I suppose if the code already existed to do it I might as well go
+"okay, sure why not", it's not going to harm anything (the added
+computation time to generate the uniform encoding would probably be no
+more than a 10% slowdown).  I wouldn't argue against it on the basis
+that someone might believe it resulted in anti-censorship properties
+that it doesn't have ... even though it's clearly the case... because
+I categorically reject that form of argument. :)
+
+I think your view on the two distinctive proposals is askew: PQ
+agreement has a clear benefit under a plausible threat model and is
+quite easy to implement... while uniform encoding is somewhat harder
+to implement (though admittedly not very hard) but doesn't appear to
+provide a concrete benefit under any threat model that I'm currently
+aware of...
+
+> The key derivation can be improved. It should include each peer's understanding of its role,
+> i.e., requester (or "initiator" is the more common term) or responder. At the moment, an attacker
+> can create a situation where two peers think they're in the same session (with the same session
+> id) but they're actually not. Also, it's possible for an attacker to rerandomize the public keys.
+> That's nothing bad by itself but anything which restricts the flexibility of the attacker without
+> adding complexity is a good idea. Something like
+>    "salt = BitcoinSharedSecret||INITIATOR_PUBKEY||RESPONDER_PUBKEY" should just avoid this issue.
+
+I also prefer the contributory key model, but Pieter proved me on IRC
+last week that the attack form that I was concerned about was not
+possible.
+
+Do you actually have an attack in mind that you can spell out here?  I
+don't see a harm in changing that, but given that I'd already twice
+talked myself out of proposing the same thing, I'd like to understand
+if I'm missing something. :)
+
+> Re-keying
+> =========
+> The problem with signalling re-keying in the length field is that the length field is not covered
+> by the MAC.
+
+It's AAD data in the mac, unless I misunderstand the protocol.
+
+> Deterministic rekeying rules may be better. Otherwise there will be implementations that rekey
+> every 10 seconds
+
+That would be pretty harmless, since the rekeying operation costs
+similar to one message decryption.
+
+> and implementations that just don't rekey at all (rendering the 10 s rekeying
+> interval in the opposite direction useless).
+
+The protocol requires rekeying at least after a given amount of data
+is transmitted. Peers that violate that can be disconnected. But it
+could be unfortunately infrequent.
+
+> Different policies also make it possible to
+> fingerprint implementations.
+
+I agree that is a good point.
+
+Personally I'd prefer that we used a ciphersuite that effectively
+"rekeyed" every message-- along the lines of the constructions
+described https://blog.cr.yp.to/20170723-random.html   Unfortunately I
+was unable to find _any_ well analyized  authenticated encryption mode
+that has the fast erasure property.   It's too bad because it would be
+trivial to adhoc one (e.g. use the extra 32 bytes from the poly1305
+chacha run to update the keys for the next message).
+
+> What's better: 5 min or 30 min? I don't know, but both are reasonable choices. (Thats's very much
+
+It doesn't much matter, except for fingerprinting reasons.
+
+> like discussions about ciphers... What's better AES-GCM or ChaCha20/Poly1305? I don't know, but
+> again both are reasonable choices.)
+
+Here we have a very clear motiviation.  On devices without hardware
+AES/clmul constant time AES-GCM is _terribly slow_ compared to
+ChaCha20/Poly1305. Performance on the slowest devices is where the
+the ones where the ciphersuite choice likely matters at all (because
+it could actually make a meaningful difference in their system's
+ability to keep up), and the slowest devices that I'm aware of users
+commonly using are also devices without good AES-GCM performance.
+Unfortunately.
+
+On fast desktop hardware the performance of AES-GCM and
+ChaCha20/Poly1305 is also fairly close.
+
+So when it matters, chacha20/poly1305 is higher performance by a wide
+margin.  (Too bad, because otherwise I'd much rather use AES-GCM)
+
+> I didn't think about this in detail: maybe there are a few meaningful cases where padding could
+> hide the message length without too much overhead. (I'm not convinced, just a random thought.)
+
+This can be done at the message level. E.g. new TX messages that round
+tx sizes up to the next multiple. I don't think useful low overhead
+padding is otherwise possible.
+
+
+> written in stone, again to avoid complexity and to avoid fingerprinting.
+
+Writing things in stone is a great way to never finish a protocol.
+Right now we know we have new upcoming proposals for messages where
+the overhead matters, e.g. we need a replacement addr message ASAP,
+and there is ongoing work for transaction relay that would also
+benefit from low overhead.
+
+The norm in Bitcoin is to ignore messages you don't know how to parse
+anyways,  so there is no complexity that arises from "may negotiate"
+itself-- only from actually making use of that possibility in the
+future, so the merits of any particular usage could be decided when
+something wants to actually use it.  The purpose of pointing out "may
+negotiate" is, I think, primarily to avoid a debate about who would
+assign numbers from this limited space in the future-- and the answer
+just is that they're implementation defined (e.g. by the BIPs using
+them).
+
+> necessary anyway, so maybe just use IDs for anything? ASCII is nice if you want to debug your code
+> or some random network failure but that's hard anyway when encryption is used.
+
+Right, encryption kills external analysers in any case. It's also easy
+to just logprintf traffic (this is open source software after all),
+which doesn't have a decoding problem.
+
+>  - "The Re-Keying must be done after every 1GB of data sent or received" Hm, every peer updates its
+>  own sending key, so this should just read "sent" instead of "sent or received"?
+
+I think it says 'received there' mostly because it's implicitly
+telling you that you can hang up on someone who violates it. I agree
+it would be more consistent to express it sending side there.
