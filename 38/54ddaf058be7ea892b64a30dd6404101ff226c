@@ -1,0 +1,85 @@
+From: sjors@sprovoost.nl (Sjors Provoost)
+Date: Mon, 10 Sep 2018 14:30:46 +0200
+Subject: [bitcoin-dev] bustapay BIP :: a practical sender/receiver
+ coinjoin protocol
+In-Reply-To: <TtjH2zicjKr8PBVCMOvA7ryt2z_XXvtrpC4y1wuWSxexNwMdbPGE7vPmu6UnzmfYqYBMxZ8NNoz4VUnODdIcjR4j-E1sYz_FA6ZZMjKHtuM=@protonmail.com>
+References: <TtjH2zicjKr8PBVCMOvA7ryt2z_XXvtrpC4y1wuWSxexNwMdbPGE7vPmu6UnzmfYqYBMxZ8NNoz4VUnODdIcjR4j-E1sYz_FA6ZZMjKHtuM=@protonmail.com>
+Message-ID: <82F5C582-1B93-44CF-B5AA-A93AAEA32AB2@sprovoost.nl>
+
+
+> Op 30 aug. 2018, om 22:24 heeft Ryan Havar via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> het volgende geschreven:
+> 
+> ==Motivation==
+> 
+> One of the most powerful heuristic's employed by those whose goal is to undermine
+> bitcoin's fungiblity has been to assume all inputs of a transaction are signed by
+> a single party. In the few cases this assumption does not hold, it is generally
+> readibly recognizable (e.g. traditional coinjoins have a very obvious structure,
+> or multisig outputs are most frequently validated onchain).
+
+In addition to mixers, custodial wallets and exchanges also contribute to breaking this heuristic; even though there?s a single entity signing multiple inputs, that entity doesn?t represent a single owner of the funds. As with mixers, exchanges and custodial wallets can sometimes be spotted as well, but we don?t know what percentage is missed.
+
+Breaking this heuristic at scale would be good, but do we know to what degree it?s already broken? Is there any empirical research measuring its accuracy and false positive rate?
+
+> Should bustapay enjoy widespread adoption, a "v2" specification
+> will be created with desired extensions.
+
+I would not put future promises in a BIP. Rather, explain how extension might work.
+
+> ==Specification==
+> 
+> A bustapay payment is made from a sender to a receiver.
+> 
+> Step 1. Sender creates a bitcoin transaction paying the receiver
+> 
+> This transaction must be fully valid, signed and all inputs must use segwit. This transaction is known as the "template transaction?.
+
+Using PSBT?
+
+> This transaction must not be propagated on the bitcoin network.
+
+This can?t be guaranteed, and even after step 5 a reorg could cause it to get confirmed. It?s useful to explain why this doesn?t matter.
+
+> 
+> Step 2. Sender gives the "template transaction" to the receiver
+> 
+> This would generally be done as an HTTP POST.
+> The exact URL to submit it to could be specified with a bip21 encoded address. Such as bitcoin:2NABbUr9yeRCp1oUCtVmgJF8HGRCo3ifpTT?bustapay=https://bp.bustabit.com/submit <https://bp.bustabit.com/submit> and the HTTP body should be the raw transaction hex encoded as text.
+
+This seems too detailed. If you want to specify the message protocol, maybe that can have it?s own section where you list each of the messages, the URL, parameters and encoding. Then you can keep this overview section shorter.
+
+The use of HTTPS kind of forces sender and recipient to use a 3rd party service, even though this could done bilaterally. What if the payment request contained a (single-use) Onion URL an expiration date? The recipient would have to keep a hidden service up until the expiration date, though the sender could try again if there?s temporary reachability issue.
+
+Adding a (onion) URL to the the payment request also makes gradual adoption easier, because recipients don?t need to worry if senders support this protocol.
+
+> Step 3. Receiver processes the transaction and returns a partially signed coinjoin
+> 
+> The receiver validates the transaction is valid, pays himself and is eligible for propation. The receiver then adds one of his own inputs (known as the "contributed input") and increase the output that pays himself by the contributed input amount. Doing so will invalidate the "template transaction"'s original input signatures, so the sender needs to return this "partial transaction" back to the receiver to sign. This is returned as a hex-encoded raw transaction a response to the original HTTP POST request.
+
+> * Bustapay could be abused by a malicious party to query if you own a deposit address or not. So never accept a bustapay transaction that pays an already used deposit address
+
+
+Indeed, once the recipient adds funds, they reveal more about themselves to the sender then they would otherwise. I think that needs more elaboration.
+
+I assume the transaction in step (1) is some sort of collateral to insure they?re not just trying to extract private information from you? However if fees are low they could still double-spend it after the recipient revealed their address, especially because the recipient has no way of RBF?ing the original (though CPFP could help). Perhaps require that the original transaction pays a fee based on the expected size of the final transaction?
+
+> 
+> Notes for sending applications:
+> 
+> * The HTTP response must *not* be trusted. It should be fully validated that no unexpected changes have been made to the transaction.
+
+Not trusting anything is obvious. :-) It?s better to explicitly state what exactly needs to be verified (amounts, destinations, inputs, etc), and maybe list a few obvious shenanigans to watch out for.
+
+A more general concern is that the sender can?t know for sure the recipient really supports this protocol, so it should assume that whatever information it pings to some API could be used maliciously. In what ways could it be abused?
+
+Sjors
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180910/d1d40a7e/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 833 bytes
+Desc: Message signed with OpenPGP
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180910/d1d40a7e/attachment.sig>
