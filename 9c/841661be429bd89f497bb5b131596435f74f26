@@ -1,0 +1,213 @@
+From: karljohan-alm@garage.co.jp (Karl-Johan Alm)
+Date: Tue, 11 Sep 2018 13:41:57 +0900
+Subject: [bitcoin-dev] RFC: BIP 322: Generic Signed Message Format
+Message-ID: <CALJw2w6m4iJWC_ySt32-oKD_1e4p1UcJqJG1Lm5gZDnrPgEwmQ@mail.gmail.com>
+
+Hi.
+
+[note: BIP number was assigned to PR before this email was sent; I did
+not self-assign the BIP number]
+
+Below is a proposal to extend the existing sign/verifymessage format
+to a more generalized variant relying on the script verification
+mechanism in Bitcoin itself for message signing/verification, based on
+the original discussion
+(https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-March/015818.html)
+.
+
+PR is here: https://github.com/bitcoin/bips/pull/725
+
+A formatted version of this text can be seen here:
+https://github.com/kallewoof/bips/blob/bip-generic-signmessage/bip-generic-signmessage.mediawiki
+
+Note: I am not sure how to best deal with CLTV/CSV stuff here, ultimately.
+
+Note 2: I have received suggestions from several people to use a
+Bitcoin transaction instead. If someone could explain why this is
+beneficial, it would be very helpful. I'm not against it, just feels
+like the whole transaction part is unnecessary complexity/overhead.
+
+---
+<pre>
+  BIP: 322
+  Layer: Applications
+  Title: Generic Signed Message Format
+  Author: Karl-Johan Alm <karljohan-alm at garage.co.jp>
+  Comments-Summary: No comments yet.
+  Comments-URI: https://github.com/bitcoin/bips/wiki/Comments:BIP-0322
+  Status: Draft
+  Type: Standards Track
+  Created: 2018-09-10
+  License: CC0-1.0
+</pre>
+
+== Abstract ==
+
+A standard for interoperable generic signed messages based on the
+Bitcoin Script format.
+
+== Motivation ==
+
+The current message signing standard only works for P2PKH (1...)
+addresses. By extending it to use a Bitcoin Script based approach, it
+could be made more generic without causing a too big burden on
+implementers, who most likely have access to Bitcoin Script
+interpreters already.
+
+== Specification ==
+
+A new structure <code>SignatureProof</code> is added, which is a
+simple serializable scriptSig & witnessProgram container.
+
+Two actions "Sign" and "Verify" are defined.
+
+=== SignatureProof container ===
+
+{|class="wikitable" style="text-align: center;"
+|-
+!Type
+!Length
+!Name
+!Comment
+|-
+|Uint32||4||flags||standard flags (1-to-1 with standard flags in Bitcoin Core)
+|-
+|VarInt||1-8||msglen||Number of bytes in message string, excluding NUL
+termination
+|-
+|Char*||[msglen]||msg||The message being signed for all subjects,
+excluding NUL termination
+|-
+|Uint8||1||entries||Number of proof entries<ref><strong>Why support
+multiple proofs?</strong> In particular with proof of funds, it is
+non-trivial to check a large number of individual proofs (one per
+UTXO) for duplicates. Software could be written to do so, but it seems
+more efficient to build this check into the specification
+itself.</ref>
+|}
+
+The above is followed by [entries] number of signature entries:
+
+{|class="wikitable" style="text-align: center;"
+|-
+!Type
+!Length
+!Name
+!Comment
+|-
+|VarInt||1-8||scriptsiglen||Number of bytes in scriptSig data
+|-
+|Uint8*||[scriptsiglen]||scriptsig||ScriptSig data
+|-
+|VarInt||1-8||witlen||Number of bytes in witness program data
+|-
+|Uint8*||[witlen]||wit||Witness program
+|}
+
+In some cases, the scriptsig may be empty (scriptsiglen=0).
+
+=== Signing ===
+
+The "Sign" action takes as input a scriptPubKey and a message (e.g.
+"hello world"). It succeeds or fails.
+
+# FAIL if scriptPubKey already exists in scriptPubKeys set, otherwise
+insert it<ref><strong>Why track duplicates?</strong> Because a 3-entry
+proof is not proving 3 scriptPubKeys unless they are all distinct, or
+unless they are proving different UTXO:s (see Future Extensions)</ref>
+# Derive the private key privkey for the scriptPubKey, or FAIL
+# Define the message pre-image as the sequence "Bitcoin Message:"
+concatenated with the message, encoded in UTF-8 using Normalization
+Form Compatibility Decomposition (NFKD)
+# Let sighash = sha256(sha256(scriptPubKey || pre-image))
+# Generate a signature sig with privkey=privkey, sighash=sighash
+
+Repeat the above operation for each scriptPubKey, retaining the
+scriptPubKeys set. As noted, if the same scriptPubKey appears more
+than once, the sign operation must fail.
+
+=== Verifying ===
+
+The "Verify" action takes as input a standard flags value, a
+scriptPubKey, a message, a script sig, and a witness program.
+It emits one of INCONCLUSIVE, VALID, INVALID, or ERROR.
+
+# Return ERROR if scriptPubKey already exists in scriptPubKeys set,
+otherwise insert it
+# If one or more of the standard flags are unknown, return INCONCLUSIVE
+# Define the message pre-image as the sequence "Bitcoin Message:"
+concatenated with the message, encoded in UTF-8 using Normalization
+Form Compatibility Decomposition (NFKD).
+# Let sighash = sha256(sha256(scriptPubKey || pre-image))
+# Verify Script with flags=standard flags, scriptSig=script sig,
+scriptPubKey=scriptPubKey, witness=witness program, and
+sighash=sighash
+# Return VALID if verify succeeds, otherwise return INVALID
+
+Repeat the above operation for each scriptPubKey, retaining the
+scriptPubKeys set. As noted, if the same scriptPubKey appears more
+than once, the verify operation must fail with an ERROR.
+
+* If a verification call returns ERROR or INVALID, return ERROR or
+INVALID immediately, ignoring as yet unverified entries.
+* After all verifications complete, return INCONCLUSIVE if any
+verification call returned INCONCLUSIVE.
+* Return VALID if and only if every verification returned VALID.
+
+== Future Extensions ==
+
+=== Proof of Funds ===
+
+The specification can be extended to handle proof of funds in the
+following manner:
+
+* Let the message be prefixed with "POF:", followed by a
+newline-terminated string<ref><strong>Why not just the UTXO
+data?</strong> We want the verifier to be able to challenge the prover
+with a custom message to sign, or anyone can reuse the POF proof for a
+set of UTXO:s once they have seen it, and the funds have not yet been
+spent</ref>, followed by [entries] series of hex-encoded transaction
+ID:vout pairs, separated by a single space (" ") character
+* Fail if the number of txid:vout pairs is not exactly equal to [entries]
+* Retain the message as is for all sighash operations (i.e. all sign
+and verify operations should sign and verify the entire list of
+UTXO:s)<ref><strong>Why use same sighash?</strong> The prover is
+proving that they have a set of UTXO:s at their disposal. Taking a
+sub-set of the proofs and turning them into a new proof should not be
+valid.</ref>
+* Add a verification that the txid/vout is a valid UTXO according to a
+synced up Bitcoin node, and that its corresponding scriptPubKey
+matches the one given by the proof. Return ERROR if scriptPubKey
+mismatch, and SPENT error if spent
+* Extend the scriptPubKeys set check to only fail if the same
+scriptPubKey and proof-of-funds txid/vout combination is encountered
+
+== Compatibility ==
+
+This specification is not backwards compatible with the legacy
+signmessage/verifymessage specification. However, legacy addresses
+(1...) may be used in this implementation without any problems.
+
+== Rationale ==
+
+<references/>
+
+== Reference implementation ==
+
+To do.
+
+== Acknowledgements ==
+
+TODO
+
+== References ==
+
+# Original mailing list thread:
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-March/015818.html
+
+== Copyright ==
+
+This document is licensed under the Creative Commons CC0 1.0 Universal license.
+---
+
+-Kalle.
