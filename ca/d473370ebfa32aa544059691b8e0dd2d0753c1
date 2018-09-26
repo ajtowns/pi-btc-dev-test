@@ -1,0 +1,69 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Thu, 27 Sep 2018 03:45:49 +0800
+Subject: [bitcoin-dev] BIP sighash_noinput
+In-Reply-To: <feff454d-2cc2-2104-5c6c-69630506bd56@gmail.com>
+References: <871sewirni.fsf@gmail.com>
+	<CAMZUoK=V9Dii7ja6n6mpW_tWt00PuT=-9Z8XoyKOY3y0_AwK5w@mail.gmail.com>
+	<feff454d-2cc2-2104-5c6c-69630506bd56@gmail.com>
+Message-ID: <D3D0114C-0D5C-4EE4-AD48-B046551BAAD4@xbt.hk>
+
+In BIP143, the nSequence of the same input is always signed, with any hashtype. Why do you need to sign the sequence of other inputs?
+
+> On 26 Sep 2018, at 5:36 PM, Jonas Nick via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+>> At the risk of bikeshedding, shouldn't NOINPUT also zero out the
+>> hashSequence so that its behaviour is consistent with ANYONECANPAY?
+> 
+> There is a good reason for not doing that. If NOINPUT would sign the
+> hashSequence then it would be possible to get rid of OP_CSV in eltoo update
+> scripts. As a result update scripts could be taprootified because the more
+> common branch (settlement) would be just a 2-of-2 multisig. Applying taproot
+> would then make unilateral settlement look like a single pubkey spend and avoid
+> having to reveal the unexecuted (update) branch.
+> 
+> Eltoo update transaction outputs consist of two branches, update and
+> settlement, where the update branch can be spend by a more recent update
+> transaction if an obsolete update transaction ends up spending the funding
+> output. The settlement branch is a 2-of-2 multisig with a relative timelock
+> using OP_CSV. Removing OP_CSV is possible because both parties signature is
+> required to spend the update transaction. They will only sign if the input has
+> the right sequence numbers which is sufficient to enforce the timeout (BIP68) -
+> assuming they are covered by the signature.
+> 
+> There's a catch: hashSequence includes the sequence numbers of all transaction
+> inputs. That's not a problem for eltoo because settlement transactions only
+> have one input. The update mechanism with update transactions relies on being
+> able to bump the fee by unilaterally adding inputs and and change outputs to
+> the transaction. That's also not a problem because update spends do not use
+> relative timelocks and they are signed with SINGLE. So whenever NOINPUT is
+> combined SINGLE the hashSequence should be zeroed. This is in fact what a
+> minimal change to the current NOINPUT implementation would naturally do (see
+> below). However, that's error-prone when using NOINPUT in other contexts so in
+> general it would be better if NOINPUT would only sign the sequence number of
+> the corresponding input.
+> 
+> Another downside of this approach is that you can never rebind to an output
+> with an OP_CSV that requires a larger sequence number, unless you also sign
+> with SIGHASH_SINGLE. It's difficult to imagine application where this would be
+> an issue.
+> 
+> This is the modification to the NOINPUT implementation
+> (https://github.com/cdecker/bitcoin/commits/noinput) which makes eltoo
+> unilateral closes taprootifiable:
+> +++ b/src/script/interpreter.cpp
+> @@ -1223,7 +1223,7 @@ uint256 SignatureHash(const CScript& scriptCode, const CTransaction& txTo, unsig
+>             hashPrevouts = cacheready ? cache->hashPrevouts : GetPrevoutHash(txTo);
+>         }
+> 
+> -        if (!(nHashType & SIGHASH_ANYONECANPAY) && (nHashType & 0x1f) != SIGHASH_SINGLE && (nHashType & 0x1f) != SIGHASH_NONE && !noinput) {
+> +        if (!(nHashType & SIGHASH_ANYONECANPAY) && (nHashType & 0x1f) != SIGHASH_SINGLE && (nHashType & 0x1f) != SIGHASH_NONE) {
+>             hashSequence = cacheready ? cache->hashSequence : GetSequenceHash(txTo);
+>         }
+> 
+> On 5/1/18 4:58 PM, Russell O'Connor via bitcoin-dev wrote:
+>> At the risk of bikeshedding, shouldn't NOINPUT also zero out the
+>> hashSequence so that its behaviour is consistent with ANYONECANPAY?
+>> 
+> 
+
+
