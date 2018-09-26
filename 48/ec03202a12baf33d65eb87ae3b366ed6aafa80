@@ -1,0 +1,146 @@
+From: jonasdnick@gmail.com (Jonas Nick)
+Date: Wed, 26 Sep 2018 09:36:57 +0000
+Subject: [bitcoin-dev] BIP sighash_noinput
+In-Reply-To: <CAMZUoK=V9Dii7ja6n6mpW_tWt00PuT=-9Z8XoyKOY3y0_AwK5w@mail.gmail.com>
+References: <871sewirni.fsf@gmail.com>
+	<CAMZUoK=V9Dii7ja6n6mpW_tWt00PuT=-9Z8XoyKOY3y0_AwK5w@mail.gmail.com>
+Message-ID: <feff454d-2cc2-2104-5c6c-69630506bd56@gmail.com>
+
+> At the risk of bikeshedding, shouldn't NOINPUT also zero out the
+> hashSequence so that its behaviour is consistent with ANYONECANPAY?
+
+There is a good reason for not doing that. If NOINPUT would sign the
+hashSequence then it would be possible to get rid of OP_CSV in eltoo update
+scripts. As a result update scripts could be taprootified because the more
+common branch (settlement) would be just a 2-of-2 multisig. Applying taproot
+would then make unilateral settlement look like a single pubkey spend and avoid
+having to reveal the unexecuted (update) branch.
+
+Eltoo update transaction outputs consist of two branches, update and
+settlement, where the update branch can be spend by a more recent update
+transaction if an obsolete update transaction ends up spending the funding
+output. The settlement branch is a 2-of-2 multisig with a relative timelock
+using OP_CSV. Removing OP_CSV is possible because both parties signature is
+required to spend the update transaction. They will only sign if the input has
+the right sequence numbers which is sufficient to enforce the timeout (BIP68) -
+assuming they are covered by the signature.
+
+There's a catch: hashSequence includes the sequence numbers of all transaction
+inputs. That's not a problem for eltoo because settlement transactions only
+have one input. The update mechanism with update transactions relies on being
+able to bump the fee by unilaterally adding inputs and and change outputs to
+the transaction. That's also not a problem because update spends do not use
+relative timelocks and they are signed with SINGLE. So whenever NOINPUT is
+combined SINGLE the hashSequence should be zeroed. This is in fact what a
+minimal change to the current NOINPUT implementation would naturally do (see
+below). However, that's error-prone when using NOINPUT in other contexts so in
+general it would be better if NOINPUT would only sign the sequence number of
+the corresponding input.
+
+Another downside of this approach is that you can never rebind to an output
+with an OP_CSV that requires a larger sequence number, unless you also sign
+with SIGHASH_SINGLE. It's difficult to imagine application where this would be
+an issue.
+
+This is the modification to the NOINPUT implementation
+(https://github.com/cdecker/bitcoin/commits/noinput) which makes eltoo
+unilateral closes taprootifiable:
++++ b/src/script/interpreter.cpp
+@@ -1223,7 +1223,7 @@ uint256 SignatureHash(const CScript& scriptCode, const CTransaction& txTo, unsig
+             hashPrevouts = cacheready ? cache->hashPrevouts : GetPrevoutHash(txTo);
+         }
+
+-        if (!(nHashType & SIGHASH_ANYONECANPAY) && (nHashType & 0x1f) != SIGHASH_SINGLE && (nHashType & 0x1f) != SIGHASH_NONE && !noinput) {
++        if (!(nHashType & SIGHASH_ANYONECANPAY) && (nHashType & 0x1f) != SIGHASH_SINGLE && (nHashType & 0x1f) != SIGHASH_NONE) {
+             hashSequence = cacheready ? cache->hashSequence : GetSequenceHash(txTo);
+         }
+
+On 5/1/18 4:58 PM, Russell O'Connor via bitcoin-dev wrote:
+> At the risk of bikeshedding, shouldn't NOINPUT also zero out the
+> hashSequence so that its behaviour is consistent with ANYONECANPAY?
+> 
+> On Mon, Apr 30, 2018 at 12:29 PM, Christian Decker via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+>> Hi all,
+>>
+>> I'd like to pick up the discussion from a few months ago, and propose a new
+>> sighash flag, `SIGHASH_NOINPUT`, that removes the commitment to the
+>> previous
+>> output. This was previously mentioned on the list by Joseph Poon [1], but
+>> was
+>> never formally proposed, so I wrote a proposal [2].
+>>
+>> We have long known that `SIGHASH_NOINPUT` would be a great fit for
+>> Lightning.
+>> They enable simple watch-towers, i.e., outsource the need to watch the
+>> blockchain for channel closures, and react appropriately if our
+>> counterparty
+>> misbehaves. In addition to this we just released the eltoo [3,4] paper
+>> which
+>> describes a simplified update mechanism that can be used in Lightning, and
+>> other
+>> off-chain contracts, with any number of participants.
+>>
+>> By not committing to the previous output being spent by the transaction,
+>> we can
+>> rebind an input to point to any outpoint with a matching output script and
+>> value. The binding therefore is no longer explicit through a reference, but
+>> through script compatibility, and the transaction ID reference in the
+>> input is a
+>> hint to validators. The sighash flag is meant to enable some off-chain
+>> use-cases
+>> and should not be used unless the tradeoffs are well-known. In particular
+>> we
+>> suggest using contract specific key-pairs, in order to avoid having any
+>> unwanted
+>> rebinding opportunities.
+>>
+>> The proposal is very minimalistic, and simple. However, there are a few
+>> things
+>> where we'd like to hear the input of the wider community with regards to
+>> the
+>> implementation details though. We had some discussions internally on
+>> whether to
+>> use a separate opcode or a sighash flag, some feeling that the sighash flag
+>> could lead to some confusion with existing wallets, but given that we have
+>> `SIGHASH_NONE`, and that existing wallets will not sign things with unknown
+>> flags, we decided to go the sighash way. Another thing is that we still
+>> commit
+>> to the amount of the outpoint being spent. The rationale behind this is
+>> that,
+>> while rebinding to outpoints with the same value maintains the value
+>> relationship between input and output, we will probably not want to bind to
+>> something with a different value and suddenly pay a gigantic fee.
+>>
+>> The deployment part of the proposal is left vague on purpose in order not
+>> to
+>> collide with any other proposals. It should be possible to introduce it by
+>> bumping the segwit script version and adding the new behavior.
+>>
+>> I hope the proposal is well received, and I'm looking forward to discussing
+>> variants and tradeoffs here. I think the applications we proposed so far
+>> are
+>> quite interesting, and I'm sure there are many more we can enable with this
+>> change.
+>>
+>> Cheers,
+>> Christian
+>>
+>> [1] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/
+>> 2016-February/012460.html
+>> [2] https://github.com/cdecker/bips/blob/noinput/bip-xyz.mediawiki
+>> [3] https://blockstream.com/2018/04/30/eltoo-next-lightning.html
+>> [4] https://blockstream.com/eltoo.pdf
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+> 
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
