@@ -1,0 +1,102 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 23 Oct 2018 19:22:24 -0700
+Subject: [bitcoin-dev] Generalised taproot
+In-Reply-To: <20180713015157.k637vndspx4hgpfu@erisian.com.au>
+References: <CAAS2fgTXg5kk6TyUM9dS=tf5N0_Z-GKVmzMLwTW1HxUgrqdo+Q@mail.gmail.com>
+	<CAAS2fgSApdSYUWZx+_G7tMPPQm5bC4xjYzZ_mQZv=w-FD-4jWw@mail.gmail.com>
+	<20180713015157.k637vndspx4hgpfu@erisian.com.au>
+Message-ID: <CAPg+sBhAE_WtZvbe7dEmWPMCsxwK4GmDKx2721X45Ua9KvhfEg@mail.gmail.com>
+
+On Thu, Jul 12, 2018 at 6:52 PM Anthony Towns via bitcoin-dev
+<bitcoin-dev at lists.linuxfoundation.org> wrote:
+> On Fri, Jan 26, 2018 at 09:34:39PM +0000, Gregory Maxwell via bitcoin-dev wrote:
+> > [pubkey]
+> >       \-[pubkey]&&CSV
+> >              \-[fancy script]
+>
+> I think it's possible to do recursive taproot in this manner in a
+> neat way, using Pedersen Commitments.
+>
+> (Background: A Pedersen commitment uses a second generator in the curve,
+> and rather than constructing a point from a single secret, like A=a*G,
+> it constructs a point from two secrets, like C=a*G+b*G2, and finding a
+> different c,d such that C=c*G+d*G2 gives you the discrete log of G2)
+>
+> So combining this with the taproot structure gives an equation like:
+>
+>   P = a*G + s*G2 + H(a*G+s*G2, Q)*G
+>
+> If you take "a" to be a private key (so A=a*G is the corresponding
+> pubkey), "s" to be (the hash of) a set of additional conditions for
+> spending with the pubkey, and "Q" to be an alternative method of spending,
+> you get a recursive taproot construction.
+
+I think this is a very neat construction, and has advantages beyond
+solving the recursive-taproot-without-revealing-intermediary-scripts problem
+(which is useful, but I would consider a stretch goal at best).
+
+To summarize, this is my understanding of g'root:
+* A spending condition is a policy of the form "sign with public key A
+  and additionally satsify script S". Such a condition is associated with
+  the point P = A + s*G2 (where G2 is a second independent generator for the
+  curve, and s=H(S)). To satisfy such a condition, you reveal S, provide
+  inputs that satisfy S, together with a signature for public key (P - s*G2).
+  We'll call A the companion key of spending condition P (as opposed to other
+  public keys which may appear in the script S).
+* A scriptPubKey (or redeemScript in case of P2SH) can either be a spending
+  condition P directly, or a P2C derivation (using P + H(P,Q)G) of a spending
+  condition and an alternative. That alternative can either be another P2C
+  derivation ("recursive Taproot"), or a Merkle tree of disjunct spending
+  conditions.
+
+This is elegant in that it removes the distinction between pay-to-pubkey and
+pay-to-script constructions; every point becomes the representation of both.
+As long as every script(branch) requires at least one pubkey check, it
+comes at no cost (neither witness size or computational).
+
+However, I think it also offers an easy way to construct a softfork-safe
+cross-input aggregation system (discussed here before:
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-March/015838.html).
+
+Essentially what's done here is extracting one key out of every spending
+condition, given it a special place (the companion key) in the execution
+structure - rather than being part of freeform script opcodes - and made it
+cheaper to satisfy (as no pubkey needs to be revealed for it). This makes sense,
+as we can assume that every (secure) script contains at least one CHECKSIG or
+semantically equivalent operation, and with Schnorr multisignatures, can often
+expect that to be just one key representing the set of all those who have to
+sign.
+
+However, it also means we could simply restrict a future cross-input signature
+aggregation system to only apply to the set of these companion keys (one per
+input). They are not subject to potential changes to the scripting language, as
+they're outside of that. Under the assumption that most spending policies can be
+encoded s a tractably-sized set of disjunct conditions, each with just a single
+fixed set of public keys, the companion keys actually embody all public keys
+involved in a transaction.
+
+> (As far as deployment goes, I think it makes sense to get an initial
+> schnorr/taproot/mast deployment out first, and add graftroot/aggregation
+> later. My feeling is there's no great urgency for generalised taproot, so
+> it would make sense to keep doing schnorr/taproot/mast for now, take time
+> analysing generalised taproot, and if it seems sane and useful, aim to
+> enable it in a later phase, eg at the same time as graftroot/aggregation)
+
+Agree.
+
+> [0] My inital name for these was "MAST-ended sc'roots", since it
+>     combines "taproot" and "scripts" and something MAST-like but only
+>     at the very end, but I was warned that the Mimblewimble folks have
+>     vast teams monitoring for Harry Potter references and will DMCA me,
+>     which I assume stands for "Dementors, Ministry, Cruciatus and Avada
+>     kedavra"... So I'm abbreviating generalised taproot as "g'root"
+>     instead. After all, what's the worst the Marvel guys could do?
+
+Sebastian Geisler, Glenn Willen, and I had an hour long discussion to come up
+with a name for the privileged key in g'root, but unfortunately had to resort
+to the Valve universe instead to find "companion key"...
+
+Cheers,
+
+-- 
+Pieter
