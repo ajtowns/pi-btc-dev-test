@@ -1,0 +1,97 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Wed, 21 Nov 2018 06:29:04 +1000
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+Message-ID: <20181120202904.gmbg5ebegvsgqfys@erisian.com.au>
+
+On Mon, Nov 19, 2018 at 02:37:57PM -0800, Pieter Wuille via bitcoin-dev wrote:
+> Here is a combined proposal:
+> * Three new sighash flags are added: SIGHASH_NOINPUT, SIGHASH_NOFEE,
+> and SIGHASH_SCRIPTMASK.
+> * A new opcode OP_MASK is added, which acts as a NOP during execution.
+> * The sighash is computed like in BIP143, but:
+>   * If SIGHASH_SCRIPTMASK is present, for every OP_MASK in scriptCode
+> the subsequent opcode/push is removed.
+>   * The scriptPubKey being spent is added to the sighash, unless
+> SIGHASH_SCRIPTMASK is set.
+>   * The transaction fee is added to the sighash, unless SIGHASH_NOFEE is set.
+>   * hashPrevouts, hashSequence, and outpoint are set to null when
+> SIGHASH_NOINPUT is set (like BIP118, but not for scriptCode).
+
+Current flags are {ALL, NONE, SINGLE} and ANYONECANPAY, and the BIP143
+tx digest consists of the hash of:
+
+  1 nVersion
+  4 outpoint
+  5 input scriptCode
+  6 input's outpoint value
+  7 input's nSeq
+  9 nLocktime
+ 10 sighash
+
+  2 hashPrevOuts (commits to 4,5,6; unless ANYONECANPAY)
+  3 hashSequence (commits to 7; only if ALL and not ANYONECANPAY)
+  8 hashOutputs
+       - NONE: 0
+       - SINGLE: {value,scriptPubKey} for corresponding output
+       - otherwise: {value,scriptPubKey} for all outputs
+
+The fee is committed to by hashPrevOuts and hashOutputs, which means
+NOFEE is only potentially useful if ANYONECANPAY or NONE or SINGLE is set.
+
+For NOINPUT, (2),(3),(4) are cleared, and SCRIPTMASK (which munges (5))
+is only useful given NOINPUT, since (4) indirectly commits to (5). 
+
+Given this implementation, NOINPUT effectively implies ANYONECANPAY,
+I think. (I think that is also true of BIP 118's NOINPUT spec)
+
+Does it make sense to treat this as two classes of options, affecting
+the input and output side:
+
+  output: (pick one, using bits 0,1)
+    * NONE -- don't care where the money goes
+    * SINGLE -- want this output
+    * ALL -- want exactly this set of outputs
+
+  input: (pick one, using bits 4,5)
+    * PARTIALSCRIPT -- spending from some tx with roughly this script (and
+                       maybe others; SCRIPTMASK|NOINPUT|ANYONECANPAY)
+    * KNOWNSCRIPT -- spending from some tx with exactly this script (and
+                     maybe others; NOINPUT|ANYONECANPAY)
+    * KNOWNTX -- spending from this tx (and maybe others; ANYONECANPAY)
+    * ALL_INPUTS -- spending from exactly these txes
+
+  combo: (flag, bit 6)
+    * NOFEE -- don't commit to the fee
+
+I think NONE without NOFEE doesn't make much sense, and
+NOFEE|ALL|ALL_INPUTS would also be pretty weird. Might make sense to
+warn/error on signing when asking for those combinations, and maybe even
+to fail on validating them.
+
+(Does it make sense to keep SIGHASH_NONE? I guess SIGHASH_NONE|ALL_INPUTS
+could be useful if you just use sigs on one of the other inputs to commit
+to a useful output)
+
+FWIW, OP_MASK seems a bit complicated to me. How would you mask a script
+that looks like:
+
+   OP_MASK IF <p> ENDIF <q> ...
+
+or:
+
+   IF OP_MASK ENDIF <p> ...
+
+I guess if you make the rule be "for every OP_MASK in scriptCode the
+*immediately* subsequent opcode/push is removed (if present)" it would
+be fine though -- that would make OP_MASK in both the above not have
+any effect. (Maybe a more explicit name like "MASK_PUSH_FOR_SIGHASH"
+or something might be good?)
+
+I don't have a reason why, but committing to the scriptCode feels to me
+like it reduces the "hackiness" of NOINPUT a lot.
+
+Cheers,
+aj
+
