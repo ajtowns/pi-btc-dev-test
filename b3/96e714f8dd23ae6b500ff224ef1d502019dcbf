@@ -1,0 +1,131 @@
+From: natanael.l@gmail.com (Natanael)
+Date: Tue, 20 Nov 2018 02:51:44 +0100
+Subject: [bitcoin-dev] BIP- & SLIP-0039 -- better multi-language support
+In-Reply-To: <CABsxsG1QZ7h9Cxs=rzuBEOsMY+oJ1n4q5zhRxVE1JsS1e-hgew@mail.gmail.com>
+References: <CABsxsG27bJN0vGRJOP3=zriPvkL+G8n3t2nd6Y8L6KwW4ePdeg@mail.gmail.com>
+	<CABsxsG1QZ7h9Cxs=rzuBEOsMY+oJ1n4q5zhRxVE1JsS1e-hgew@mail.gmail.com>
+Message-ID: <CAAt2M1_5apKwQoBc_WkNox36Y9xRdo5rZRVA51RQHyJVJX0nFg@mail.gmail.com>
+
+Den m?n 19 nov. 2018 21:21 skrev Steven Hatzakis via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org>:
+
+> Hi Weiji, and Everyone,
+>
+> I think this is an important topic so sharing my two cents in case in
+> helps: It makes sense for users to know that they can't merely just
+> translate a word from one language into another and expect the same
+> underlying entropy to be mapped, as the wordlists are not the same (i.e.
+> words differ at the same index values across languages).
+>
+> However, while the words for each language cannot translate directly to
+> their equivalent in another language, in terms of entropy (bits), the
+> underlying entropy is, in fact, the same, when comparing mnemonics
+> generated across languages (see English/Spanish comparison below) when
+> sourced from the same initial entropy.
+>
+> Importantly, the entropy is a pre-image of the resulting mnemonic and
+> doesn't change as the language changes, where the only changes are to the
+> resulting words which depend on the language chosen, for a given entropy
+> string. Ideally, the wallet/software should deal with these nuances, I
+> don't think the protocol needs any revision (except for how the BIP39 seed
+> is derived, perhaps), even if someone made up their own wordlist, as long
+> as the wallet/software has a copy of it to map those words to the
+> underlying index values, it's *those underlying index values and the
+> entropy they map too is what really matters**. *
+>
+> I fully support the idea for users to back up this pre-image (initial
+> entropy) as it can also be used to check the validity of the mnemonic and
+> check that it mapped correctly, see Ian Coleman's BIP39 tool which shows
+> index values, a feature that I proposed last year and was since
+> implemented. Below is an example of how two mnemonics generated with the
+> same entropy will produce different BIP39 seeds.
+>
+> * Example initial entropy of 128 bits +4 bit checksum derived from hash of
+> byte array: *
+>
+> 10001101000 01010100100 11011010000 11100001101 01010001101 00010010001
+> 01100000010 10101110100 00100100011 11110000111 01100011010 1100010 (+1110
+> checksum)
+>
+> *In English*: minimum fee sure ticket faculty banana gate purse caught
+> valley globe shift
+>
+> The same initial entropy above (all 132 bits) produces this mnemonic:
+>
+> *In Spanish*: mercado faja soledad tarea evadir aries gafas peine bu?ho
+> tumor gerente reja
+>
+> And the underlying index values below are the same for both the English
+> and Spanish mnemonics above:
+>
+> Word Indexes: 1128, 676, 1744, 1805, 653, 145, 770, 1396, 291, 1927, 794,
+> 1582
+>
+> *ISSUE AT HAND*:  While the initial entropy is the same, and word indexes
+> the same for a given entropy, (i.e. same pre-image), the resulting BIP39
+> seed is not the same when comparing the above English mnemonic with its
+> Spanish counterpart:
+>
+>    - *English BIP39 seed:*
+>    ce7618075099c89e986f18dc495daa3be190450ed07bef77d4334a54dbc1cd7e205797ffed2615ac0999a5d691f65bf316e2cdbfd2c9d7d90b03e77ff1e6a6f5
+>    - *Spanish BIP39 seed*:
+>    9f164de0fb09af51b5831886e424d6d2479d49b5e5a1b28f5c09467ea36089b144cd94bb9b636b3c27ccff96a8958e5b7ce43cf1dea81423fc66fa7fef0aea2c
+>
+>
+> *Option 1:* Without changing anything in terms of the entropy
+> generation/mapping process in the BIP39 spec, the wallet/client-side
+> software would ideally recognize the language and show the corresponding
+> index value per wordlist, and reverse-calculate the entropy and then re-map
+> it to the language selected.
+>
+> *Option 2*: Perhaps a revision is needed to how the BIP39 seed is
+> generated in the first place, such as by hashing the entropy instead of the
+> words. Any thoughts on how viable that could be where the initial entropy
+> is fed into the PBKDF2 function and not the words?
+>
+> *Closing thoughts and tiny checksum nitpick: *
+>
+>       - The multiple BIP39 seeds per language lend some similarities to
+> BIP44 multi-account, so perhaps this can be an advantage, depends on how it
+> is applied in UI/UX's (compared to having one BIP39 seed regardless of
+> language, for a given initial entropy).
+>       - There is perhaps an opportunity to add greater detail to the BIP39
+> spec in terms of standards/best-practices for computing checksum values, as
+> some software may be hashing bits, versus hashing bytes, or hashing the
+> entropy as a hex string, etc.. for a given entropy, which will result in
+> different checksum values for the same "valid" mnemonic, that might not be
+> "valid" in another wallet which may format the data differently before
+> hashing to compute the checksum.
+>
+
+This probably wouldn't work as a drop-in replacement, but having the
+identifier of the chosen wordlist be part of the mnemonic might work?
+Perhaps the raw seed would then be [hash of chosen dictionary]+[sequence of
+word indexes].
+
+The user experience then involves always selecting a dictionary by name. I
+also suggest maintaining an official list of named dictionaries.
+
+The purpose of including the dictionary in the seed is so that if you use
+the last word as a checksum, you also can verify that the dictionary
+selection is correct as well as the word sequence.
+
+This allows substitution of words to other languages by manually specifying
+a different input dictionary, but you would then have to remember both the
+seed language and the translated language so you can specify both
+correctly.
+
+The user experience here matches your option 1, while the implementation
+matches option 2.
+
+If you remove specification of the seed's original language, you would need
+auto detection during entry when the raw seed is just the index. I do not
+recommend trying that, especially if any language would end up with
+multiple competing dictionaries. Even more so if there's many related
+languages which might collide (like all the Latin languages, or even US vs
+UK English...).
+
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20181120/f6a48b42/attachment.html>
