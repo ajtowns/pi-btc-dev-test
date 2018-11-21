@@ -1,0 +1,50 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Wed, 21 Nov 2018 12:07:30 -0500
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+Message-ID: <CAMZUoK==Bdn73Lc=swgf2F5_mqE84TR1GRBFhrFkn7kab4jBaw@mail.gmail.com>
+
+On Mon, Nov 19, 2018 at 10:22 PM Pieter Wuille via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> So my question is whether anyone can see ways in which this introduces
+> redundant flexibility, or misses obvious use cases?
+>
+
+Hopefully my comment is on-topic for this thread:
+
+Given that we want to move away from OP_CODESEPARATOR, because each call to
+this operation effectively takes O(script-size) time, we need a replacement
+for the functionality it currently provides.  While perhaps the original
+motivation for OP_CODESEPARTOR is surrounded in mystery, it currently can
+be used (or perhaps abused) for the task of creating signature that covers,
+not only which input is being signed, but which specific branch within that
+input Script code is being signed for.
+
+For example, one can place an OP_CODESEPARATOR within each branch of an IF
+block, or by placing an OP_CODESEPARATOR before each OP_CHECKSIG
+operation.  By doing so, signatures created for one clause cannot be used
+as signatures for another clause.  Since different clauses in Bitcoin
+Script may be enforcing different conditions (such as different time-locks,
+hash-locks, etc), it is useful to be able to sign in such a way that your
+signature is only valid when the conditions for a particular branch are
+satisfied.  In complex Scripts, it may not be practical or possible to use
+different public keys for every different clause. (In practice, you will be
+able to get away with fewer OP_CODESEPARATORS than one in every IF block).
+
+One suggestion I heard (I think I heard it from Pieter) to achieve the
+above is to add an internal counter that increments on every control flow
+operator, OP_IF, OP_NOTIF, OP_ELSE, OP_ENDIF, and have the signature cover
+the value of this counter.  Equivalently we divide every Bitcoin Script
+program into blocks deliminated by these control flow operator and have the
+signature cover the index of the block that the OP_CHECKSIG occurs within.
+More specifically, we will want a SigHash flag to enables/disable the
+signature covering this counter.
+
+There are many different ways one might go about replacing the remaining
+useful behaviour of OP_CODESEPARATOR than the one I gave above. I would be
+happy with any solution.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20181121/785d31a4/attachment-0001.html>
