@@ -1,0 +1,84 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Wed, 21 Nov 2018 12:15:44 +0100
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+Message-ID: <87k1l6d6lb.fsf@gmail.com>
+
+Hi Pieter,
+
+great proposal, I think this may address some of the (perceived)
+downsides of BIP118, by committing to the script when possible
+(always?). One minor thing that I noticed a while ago and that I meant
+to fix on BIP118 is that `hashSequence` does not need to be blanked for
+eltoo to work (since where it is needed we also use `sighash_single`),
+so I'm tempted to remove that redundant blanking. It may not make a lot
+of difference but it'd limit the ability to change the number of inputs
+to a NOINPUT transaction (this now being the only field that commits to
+the set of inputs).
+
+As for your proposal, I really like the `sighash_scriptmask` proposal,
+and committing to the fees (with the `nofee` escape hatch) also works
+seems also a nice fix. My one concern is that introducing a new opcode
+to mask things in the sighash looks like a similar layering violation as
+`codeseparator` was, but that's just a minor issue imho.
+
+Cheers,
+Christian
+
+Pieter Wuille via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+writes:
+> Hello everyone,
+>
+> For future segwit versions, I think it would be good add a few things
+> to the sighash by default that were overlooked in BIP143:
+> * Committing to the absolute transaction fee (in addition to just the
+> amount being spent in each input) would categorically remove concerns
+> about wallets lying about fees to HW devices or airgapped signers.
+> * Committing to the scriptPubKey (in addition to the scriptCode) would
+> prevent lying to devices about the type of output being spent, even
+> when the scriptCode is correct. As a reminder, the scriptCode is the
+> actually executed script (which is the redeemscript in non-segwit
+> P2SH, and the witnesscript in P2WSH/P2WPKH).
+>
+> As this implies additional information that may not be desirable to
+> commit to in all circumstances, it makes sense to make these optional.
+> This obviously interacts with SIGHASH_NOINPUT, which really adds two
+> different ways of rebinding signatures to inputs:
+> * Changing the prevout (so that the txid doesn't need to be known when
+> the signature is created)
+> * Changing the script (so that the exact scriptPubKey/redeemScript/...
+> doesn't need to be known when the signature is created)
+>
+> Of course, the second implies the first, but do all use cases require
+> both being able to change the prevout and (arbitrarily) changing the
+> scriptPubKey? While BIP118 correctly points out this is secure if the
+> same keys are only used in scripts with which binding is to be
+> permitted, I feel it would be preferable if signatures/scripts would
+> explicitly state what can change. One way to accomplish this is by
+> indicating exactly what in a script is subject to change.
+>
+> Here is a combined proposal:
+> * Three new sighash flags are added: SIGHASH_NOINPUT, SIGHASH_NOFEE,
+> and SIGHASH_SCRIPTMASK.
+> * A new opcode OP_MASK is added, which acts as a NOP during execution.
+> * The sighash is computed like in BIP143, but:
+>   * If SIGHASH_SCRIPTMASK is present, for every OP_MASK in scriptCode
+> the subsequent opcode/push is removed.
+>   * The scriptPubKey being spent is added to the sighash, unless
+> SIGHASH_SCRIPTMASK is set.
+>   * The transaction fee is added to the sighash, unless SIGHASH_NOFEE is set.
+>   * hashPrevouts, hashSequence, and outpoint are set to null when
+> SIGHASH_NOINPUT is set (like BIP118, but not for scriptCode).
+>
+> So my question is whether anyone can see ways in which this introduces
+> redundant flexibility, or misses obvious use cases?
+>
+> Cheers,
+>
+> -- 
+> Pieter
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
