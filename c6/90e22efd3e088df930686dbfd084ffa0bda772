@@ -1,0 +1,70 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 23 Nov 2018 16:04:04 +1000
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <87k1l6d6lb.fsf@gmail.com>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<87k1l6d6lb.fsf@gmail.com>
+Message-ID: <20181123060404.fu4eyzcynbppmjcy@erisian.com.au>
+
+On Wed, Nov 21, 2018 at 12:15:44PM +0100, Christian Decker via bitcoin-dev wrote:
+> One minor thing that I noticed a while ago and that I meant
+> to fix on BIP118 is that `hashSequence` does not need to be blanked for
+> eltoo to work (since where it is needed we also use `sighash_single`),
+> so I'm tempted to remove that redundant blanking. It may not make a lot
+> of difference but it'd limit the ability to change the number of inputs
+> to a NOINPUT transaction (this now being the only field that commits to
+> the set of inputs).
+
+Commiting to just the sequence numbers seems really weird to me; it
+only really prevents you from adding inputs, since you could still
+replace any input that was meant to be there by almost any arbitrary
+other transaction...
+
+I could see this *maybe* making sense if you at least committed to the
+values of each input's outpoint; since that would be an actual constraint?
+
+I don't think you can commit to anything else about the other inputs:
+
+   -- txids of the other transactions wouldn't work if you had other
+      NOINPUT txes, and would introduce O(N^2) validation cost if someone
+      signed every input with NOINPUT but committed to the txids of
+      every other input
+
+   -- scriptPubKeys wouldn't really work for eltoo-like constructions
+      that want to vary the scripts but apply the same sig, but might
+      work sometimes?
+
+   -- witness scripts for the other inputs could be unknown at your
+      signing time, or arbitrarily large and thus a pain to have to send
+      to a hardware wallet
+
+Just treating NOINPUT as a subset of ANYONECANPAY seems simpler to
+me though...
+
+> As for your proposal, I really like the `sighash_scriptmask` proposal,
+> and committing to the fees (with the `nofee` escape hatch) also works
+> seems also a nice fix. My one concern is that introducing a new opcode
+> to mask things in the sighash looks like a similar layering violation as
+> `codeseparator` was, but that's just a minor issue imho.
+
+I think OP_MASK is okay as far as layering goes, if you just think of it
+as a (set of) multibyte "OP_MASKED_PUSH" opcode(s). So when you
+pseudocode a script like:
+
+    <n> OP_CSV OP_DROP <p> OP_CHECKSIG
+
+and then decide <n> needs to be masked, you rewrite it as:
+
+    [n] OP_CSV OP_DROP <p> OP_CHECKSIG
+
+indicating n is masked, and don't worry about the exact bytes that will
+encode the push, anymore than you currently worry about whether it's
+OP_0, OP_1..16, <1..75>+1..75-bytes, PUSHDATA[1,2,3]+n+n-bytes.
+
+As long as OP_MASK only applies to a PUSH and it's an error for OP_MASK
+not to be immediately followed by that PUSH, I think that all works
+out fine.
+
+Cheers,
+aj
+
