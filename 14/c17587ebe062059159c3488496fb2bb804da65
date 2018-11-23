@@ -1,0 +1,46 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 23 Nov 2018 18:47:10 +0800
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <CAMZUoKkdjHYd8BR6PCae-UG_QRoujW36kYf8s4Gk2FVBeSJnrw@mail.gmail.com>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<CAMZUoK==Bdn73Lc=swgf2F5_mqE84TR1GRBFhrFkn7kab4jBaw@mail.gmail.com>
+	<64A86A3A-4633-4BE2-AE09-30BD136BCC2D@xbt.hk>
+	<CAMZUoKkhrLKOaquP1_M9GwuKT1u7d+GoyW6tcK-t2uv+5VRfyA@mail.gmail.com>
+	<8CD6C248-9ADF-4324-B4E3-DE41A1ED49A9@xbt.hk>
+	<CAMZUoKkdjHYd8BR6PCae-UG_QRoujW36kYf8s4Gk2FVBeSJnrw@mail.gmail.com>
+Message-ID: <D8767C89-06AF-4FA7-B640-E99FE8A443C5@xbt.hk>
+
+>Even still, each call to OP_CODESEPARATOR / OP_CHECKSIG pair requires recomputing a new #5. scriptCode from BIP 143, and hence computes a new transaction digest.
+
+In the existing sighash (i.e. legacy and BIP143), there are 6 canonical SIGHASH types: 1, 2, 3, 0x81, 0x82, 0x83. In consensus, however, all 256 types are valid and distinct. An adversarial miner could use non-standard sighash types to nullify any attempt to cache sighash values (i.e. you have to compute a new tx digest for every OP_CHECKSIG, even without using OP_CODESEPARATOR).
+
+The only way to prevent this is reject OP_CODESEPARATOR, FindAndDelete(), and non-standard SIGHASH with a softfork. However, this doesn?t work in the next-generation SIGHASH, as tens of standard sighash types will exist. And, more importantly, sighash cache is no longer necessary in segwit, with the legacy O(n^2) hash bug being fixed.
+
+In summary, sighash cache is not necessary nor efficient in the next-generation SIGHASH, and is not a sufficient reason to remove OP_CODESEPARATOR, especially when people find OP_CODESEPARATOR useful in some way.
+
+But just to be clear, I think OP_CODESEPARATOR should be deprecated in legacy scripts. There is a general negative sentiment against OP_CODESEPARATOR but I think we need to evaluate case by case.
+
+> On 23 Nov 2018, at 6:10 AM, Russell O'Connor <roconnor at blockstream.io> wrote:
+> 
+> 
+> 
+> On Thu, Nov 22, 2018 at 3:53 PM Johnson Lau <jl2012 at xbt.hk <mailto:jl2012 at xbt.hk>> wrote:
+> Assuming a script size of 128 bytes (including SHA256 padding), 2^20 scripts is 134MB. Double it to 268MB for the merkle branch hashes. With roughly 100MB/s, this should take 2.5s (or 42min for 30 levels). However, memory use is not considered.
+> 
+> >each call to this operation effectively takes O(script-size) time
+> I?m not sure if this is correct. Actually, CTransactionSignatureSerializer() scans every script for OP_CODESEPARATOR. Scripts with and without OP_CODESEPARATOR should take exactly the same O(script-size) time (see https://github.com/bitcoin/bitcoin/pull/14786 <https://github.com/bitcoin/bitcoin/pull/14786>)
+> Also, this is no longer a concern under segwit (BIP143), which CTransactionSignatureSerializer() is not used. Actually, OP_CODESEPARATOR under segwit is way simpler than the proposed OP_MASK. If one finds OP_MASK acceptable, there should be no reason to reject OP_CODESEPARATOR.
+> 
+> Even still, each call to OP_CODESEPARATOR / OP_CHECKSIG pair requires recomputing a new #5. scriptCode from BIP 143, and hence computes a new transaction digest.  I understood that this issue was the main motivation for wanting to deprecate OP_CODESEPARATOR and remove it from later versions of script.
+> 
+> However, given that we are looking at a combinatorial explosion in SIGHASH flag combinations already, coupled with existing SigOp limitations, maybe the cost of recomputing scriptCode with OP_CODESEPARATOR isn't such a big deal.
+> 
+> And even if we choose remove the behavior of OP_CODESEPARATOR in new versions of Script, it seems more than 30 layers of sequential OP_IFs can be MASTified, so there is no need to use OP_CODESEPARATOR within that limit.
+> 
+> >One suggestion I heard (I think I heard it from Pieter) to achieve the above is to add an internal counter that increments on every control flow operator,??...
+> If I have to choose among OP_CODESEPARATOR and ?flow operator counting?, I?d rather choose OP_CODESEPARATOR. At least we don?t need to add more lines to the consensus code, just for something that is mostly archivable with MAST.
+> 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20181123/0c20c6f7/attachment-0001.html>
