@@ -1,0 +1,48 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 23 Nov 2018 15:03:30 +1000
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <CAMZUoK==Bdn73Lc=swgf2F5_mqE84TR1GRBFhrFkn7kab4jBaw@mail.gmail.com>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<CAMZUoK==Bdn73Lc=swgf2F5_mqE84TR1GRBFhrFkn7kab4jBaw@mail.gmail.com>
+Message-ID: <20181123050330.x4xrgouit7apwk45@erisian.com.au>
+
+On Wed, Nov 21, 2018 at 12:07:30PM -0500, Russell O'Connor via bitcoin-dev wrote:
+> Given that we want to move away from OP_CODESEPARATOR, because each call to
+> this operation effectively takes O(script-size) time, we need a replacement for
+> the functionality it currently provides.? While perhaps the original motivation
+> for OP_CODESEPARTOR is surrounded in mystery, it currently can be used (or
+> perhaps abused) for the task of creating signature that covers, not only which
+> input is being signed, but which specific branch within that input Script code
+> is being signed for.
+
+Would it be sufficient to sign the position within the script of the
+last OP_CODESEPARATOR? That is, if your script is:
+
+   DUP DUP CHECKSIG CODESEP CHECKSIG CODESEP CHECKSIG
+
+with the idea being that it can be spent by providing any pub key and
+three different signatures by that key, with the first sig committing
+to a "codesep position" of 0, the second a "codesep position" of 4,
+and the third a "codesep position" of 6? In each case, the signature
+also commits to the full (possibly masked) script as well.
+
+I think that covers all the behaviour you can currently achieve with
+CODESEP (which is pretty limited since every sig effectively commits
+to the full redeem script, and you can't commit to subsets of the
+signature/witness), and it keeps the things you can do with the various
+features a bit orthogonal:
+
+ NOINPUT -- lets the sig apply to different transactions
+ OP_MASK -- lets the different txes have variations in the script the
+            sig applies to
+ CODESEP -- lets you require different sigs for different parts of a
+            single script
+ MAST[0] -- provides alternative scripts, doesn't affect sigs
+ IF/etc  -- provides control flow within a script, doesn't affect sigs
+
+Cheers,
+aj
+
+[0] (I think I'm going to claim "MAST" stands for "merkelized alternative
+     script tree" these days, since they're not "abstract syntax trees")
+
