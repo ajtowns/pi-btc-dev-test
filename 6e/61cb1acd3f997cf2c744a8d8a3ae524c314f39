@@ -1,0 +1,85 @@
+From: bob@mcelrath.org (Bob McElrath)
+Date: Wed, 28 Nov 2018 14:04:13 +0000
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <8690D3D0-3815-4779-A571-C75AA75F707B@xbt.hk>
+References: <20181128005416.GB22873@mcelrath.org>
+	<8690D3D0-3815-4779-A571-C75AA75F707B@xbt.hk>
+Message-ID: <20181128140412.GC22873@mcelrath.org>
+
+We are also prototyping the OP_CHECKSIGFROMSTACK mechanism using Liquid/Elements.
+
+Given uncertainty about which features will actually be deployed on mainnet,
+we're exploring all possibilities so as to provide feedback about the "best" way
+to implement a covenant/vault, also including the OP_CHECKOUTPUTVERIFY
+originally proposed by Eyal et al. That's 3 ways to implement a covenant/vault,
+if there's others I'd be happy to hear about it.  ;-)  Thanks for the
+OP_PUSHTXDATA ref, I'm reading now...  Personally I think the
+OP_CHECKSIGFROMSTACK is probably the most elegant mechanism.
+
+Thanks for the feedback!
+
+Johnson Lau [jl2012 at xbt.hk] wrote:
+> This is incompatible with bip-schnorr, which intentionally disallow such use by always committing to the public key: https://github.com/sipa/bips/blob/bip-schnorr/bip-schnorr.mediawiki
+> 
+> With the recent fake Satoshi signature drama, and other potential ways to misuse and abuse, I think this is a better way to go, which unfortunately might disallow some legitimate applications.
+> 
+> Covenants could be made using OP_CHECKSIGFROMSTACK (https://fc17.ifca.ai/bitcoin/papers/bitcoin17-final28.pdf) or OP_PUSHTXDATA (https://github.com/jl2012/bips/blob/vault/bip-0ZZZ.mediawiki). I think this is the next step following the taproot soft fork
+> 
+> > On 28 Nov 2018, at 8:54 AM, Bob McElrath via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> > 
+> > I have been working on an experimental wallet that implements Bitcoin
+> > Covenants/Vaults following a blog post I wrote about 2 years ago, using
+> > "Pay-to-Timelock Signed Transaction" (P2TST).  (Also mentioned recently by
+> > kanzure in a talk somewheres...)  The idea is that you deposit to an address for
+> > which you don't know the private key.  Instead you construct a second
+> > transaction sending that to a timelocked staging address for which you DO have
+> > the privkey (it also has an IF/ELSE condition with a second spending condition
+> > for use in case of theft attempt).  In order to do this you either have to
+> > delete the privkey of the deposit address (a difficult proposition to know it's
+> > actually been deleted), but instead one can construct a signature directly using
+> > a RNG, and use the SIGHASH to compute the corresponding pubkey via ECDSA
+> > recover, from which you compute the corresponding address.  In this way your
+> > wallet is a set of P2TST transactions and a corresponding privkey, with a (set
+> > of) emergency keys.
+> > 
+> > This interacts with NOINPUT in the following way: if the input to the
+> > transaction commits to the pubkey in any way, you have a circular dependency on
+> > the pubkey that could only be satisfied by breaking a hash function.  This
+> > occurs with standard sighash's which commit to the txid, which in turn commit to
+> > the address, which commits to the pubkey, so this construction of
+> > covenants/vaults requires NOINPUT.
+> > 
+> > AFAICT sipa's proposal is compatible with the above vaulted construction by
+> > using SIGHASH_NOINPUT | SIGHASH_SCRIPTMASK to remove the
+> > scriptPubKey/redeemScript from the sighash.  Putting the
+> > scriptPubKey/redeemScript in the sighash introduces the same circular
+> > dependency, but SIGHASH_SCRIPTMASK removes it.
+> > 
+> > One would probably want to provide the fee from a separate wallet so as to be
+> > able to account for fluctuating fee pressures when the unvaulting occurs a long
+> > time after vaulting.  Thus you'd want to use SIGHASH_SINGLE so that a fee-wallet
+> > can add fees (or for composability of P2TSTs), and SIGHASH_NOFEE as well.
+> > 
+> > P.S. Also very excited to combine the above idea with Taproot/Graftroot/g'Root.
+> > 
+> > --
+> > Cheers, Bob McElrath
+> > 
+> > "For every complex problem, there is a solution that is simple, neat, and wrong."
+> >    -- H. L. Mencken 
+> > 
+> > _______________________________________________
+> > bitcoin-dev mailing list
+> > bitcoin-dev at lists.linuxfoundation.org
+> > https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
+> 
+> 
+> 
+> !DSPAM:5bfe5494217527839717631!
+--
+Cheers, Bob McElrath
+
+"For every complex problem, there is a solution that is simple, neat, and wrong."
+    -- H. L. Mencken 
+
