@@ -1,0 +1,78 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Wed, 28 Nov 2018 16:31:48 +0800
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <CAPg+sBiu0BjZEtz-t7m3M+TnAEDG_k1GKtxwkOKh6qrSezUO7g@mail.gmail.com>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<CAPg+sBiu0BjZEtz-t7m3M+TnAEDG_k1GKtxwkOKh6qrSezUO7g@mail.gmail.com>
+Message-ID: <8BD44CAB-D590-4B2D-8CB7-9CD6792E5EF9@xbt.hk>
+
+
+
+> On 28 Nov 2018, at 11:41 AM, Pieter Wuille via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> So a combined proposal:
+> * All existing sighash flags, plus NOINPUT and MASK
+> (ANYONECANPAY/NOINPUT/MASK are encoded in 2 bits).
+> * A new opcode called OP_MASKEDPUSH, whose only runtime behaviour is
+> failing if not immediately followed by a push, or when appearing as
+> last opcode in the script.
+
+I suggest to use the place of OP_RESERVED (0x50) as OP_MASKEDPUSH. The reason is 0x50 is not counted towards the 201 opcode limit, so people could mask as many pushes as needed.
+
+In a new script version, of course, we could make any opcode not being counted. But that would just create another special case in the EvalScript() code.
+
+(Or, maybe we should limit the use of OP_MASKEDPUSH? I think this is open for discussion.)
+
+> * Signatures are 64 plus an optional sighash byte. A missing sighash
+> byte implies ALL, and ALL cannot be specified explicitly.
+> * The sighash is computed from the following:
+>  * A 64-byte constant tag
+>  * Data about the spending transaction:
+>    * The transaction version number
+>    * The hash of txins' prevouts+amounts+sequences (or nothing if ANYONECANPAY)
+
+Do you want to make it 1 hash or 3 hashes? With 3 hashes, it could share hashPrevouts and hashSequence with BIP143. Making everything 1 hash will only result in redundent hashing for each input
+
+>    * The hash of all txouts (or just the corresponding txout if
+> SINGLE; nothing if NONE)
+
+Starting from this sighash version, I think we should forbid the use of SINGLE without a matching output. Also, the undefined output type should also be invalid.
+
+>    * The transaction locktime
+>  * Data about the output being spent:
+>    * The prevout (or nothing if NOINPUT)
+>    * The amount
+>    * The sequence number
+>    * The hash of the scriptPubKey (or nothing if MASK)
+
+I think we should just use the scriptPubKey, since sPK is fixed size (23-byte for p2sh and 35-byte for native segwit).
+
+In order to distinguish p2sh and native segwit for MASKED NOINPUT, you also need to commit to an additional 1-bit value
+
+>  * Data about the script being executed:
+>    * The hash of the scriptCode (after masking out, if MASK is set)
+
+For direct key-spending (i.e. not taprooted script), I suggest to set the H(scriptCode) to zero, for the following reasons:
+1) Since we have already committed to sPK, which is already a *direct* hash of scriptCode, it is redundant to do it again.
+2) This could save one SHA256 compression for direct key-spending, which is probably 90% of all cases
+3) This allows hardware wallet to tell whether they are using direct-spending path or taproot script path
+
+Since we may want 3) anyway, we don?t need to commit to another 1-bit value if we simply set H(scriptCode) to zero
+
+We should also ban MASKED NOINPUT for direct-spending, which doesn?t make sense. And it is not safe since both H(scriptCode) and sPK are empty.
+
+>    * The opcode number of the last executed OP_CODESEPARATOR (or
+> 0xFFFFFFFF if none)
+>  * The sighash mode
+
+This proposal will only use 4 out of the 8 sighash bits. Do we want to make those 4 unused bits invalid, or ignored? Leaving at least 1 bit valid but ignored (?bit-x"), and 1 bit invalid (?bit-y?), will allow opt-in/out hardfork replay-protection, for example:
+
+* default signatures are those with both bit-x and bit-y unset.
+* If we want to make default signatures replayable across chains, the new fork should reject signatures with bit-x, and accept sigs with or without bit-y. In this case, defaults sigs are valid for both chains. Sigs with bit-x is valid only for original chain, and sigs with bit-y is valid only for new chain.
+* If we want to make default signatures non-replayabble, the new fork should reject all default sigs, but accept sigs with either bit-x or bit-y set. In this case, default sig is valid only for original chain. Sigs with bit-x is valid for both chains, and sigs with bit-y is valid only for new chain.
+
+Replayability is sometimes desirable, for example, an LN opened before a fork should be able to be settled on both chains
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20181128/40369e53/attachment-0001.html>
