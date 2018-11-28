@@ -1,0 +1,80 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Wed, 28 Nov 2018 20:49:46 +1000
+Subject: [bitcoin-dev] Multi party Schnorr Rust implementation
+In-Reply-To: <CAB0O3SVjhXVV4PKYPh+2O4xZomcyT-T2Mis1A8riTtrnUUigig@mail.gmail.com>
+References: <CALhDas2W5QEPmw8JEgak0zf7y3N0UFTiMVk-djR8x9_WYZiyfQ@mail.gmail.com>
+	<CAB0O3SVjhXVV4PKYPh+2O4xZomcyT-T2Mis1A8riTtrnUUigig@mail.gmail.com>
+Message-ID: <20181128104946.bftgbclno6gzzji4@erisian.com.au>
+
+On Tue, Nov 27, 2018 at 10:33:30PM -0800, Devrandom via bitcoin-dev wrote:
+> Are there any candidates for non-interactive threshold signatures?? Interactive
+> signatures are not very suitable for air-gapped use cases.
+
+I think you can work around this to some extent by "batching" signing
+requests.
+
+(Background:
+
+For interactive multisignatures (threshold or not), the protocol is:
+
+   produce secret nonce r, calculate public nonce R=r*G
+   everyone shares H(R)
+   everyone shares R, checks received values match received hashes
+   everyone calculates s=r+H(R',P',m)*p, shares s
+
+For deterministic nonces, you generate r=H(p,m) based on the message
+being signed and your private key, so can only start this process when
+you start signing, and the sharing rounds mean interactivity.
+
+)
+
+But you don't strictly need deterministic nonces, you just have to never
+use the same nonce with a different message. If you arrange to do that
+by keeping some state instead, you can calculate nonces in advance:
+
+phase 1:
+    produce secret nonces r1..r1024, calculate R1..R1024
+    share H(R1)..H(R1024)
+
+phase 2:
+    store other parties hashes, eg as H1..H1024
+    share R1..R1024
+
+phase 3:
+    check received nonces match, ie H(R1)=H1, etc
+
+phase 4:
+    request to sign msg m, with nonce n
+    if nonce n has already been used, abort
+    mark nonce n as having being used
+    lookup other signer's nonces n and sum them to get R'
+    calculate s = rn + H(R',P',m)*p
+    share s
+
+That way you could do phases 1-3 once, and then do 1024 signatures during
+the month on whatever your current timetable is.
+
+You could also combine these phases, so when you get a signing request you:
+
+   * receive msg to sign m, n=4; everyone else's R4, H(R5)
+
+   * check  H(R4) = previously received "H(R4)"
+   * calculate R4' by summing up your and everyone's R4s
+   * bump state to n=5
+   * do the signature...
+
+   * send sig=(s,R4), R5, H(R6)
+
+which would let you have an untrusted app that does the coordination and
+shares the nonces and nonce-hashes, and getting all the needed air-gapped
+communication in a single round. (This is effectively doing phase 3 and
+4 for the current signature, phase 2 for the next signature, and phase
+1 for the signature after that all in one round of communication)
+
+That seems almost as good as true non-interactivity to me, if your signing
+hardware is capable of securely storing (and updating) a few kB of state
+(which is probably not quite as easy as it sounds).
+
+Cheers,
+aj
+
