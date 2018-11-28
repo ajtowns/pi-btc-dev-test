@@ -1,0 +1,128 @@
+From: pieter.wuille@gmail.com (Pieter Wuille)
+Date: Tue, 27 Nov 2018 19:41:02 -0800
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+Message-ID: <CAPg+sBiu0BjZEtz-t7m3M+TnAEDG_k1GKtxwkOKh6qrSezUO7g@mail.gmail.com>
+
+On Mon, 19 Nov 2018 at 14:37, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+> Here is a combined proposal:
+> * Three new sighash flags are added: SIGHASH_NOINPUT, SIGHASH_NOFEE, and SIGHASH_SCRIPTMASK.
+> * A new opcode OP_MASK is added, which acts as a NOP during execution.
+> * The sighash is computed like in BIP143, but:
+>   * If SIGHASH_SCRIPTMASK is present, for every OP_MASK in scriptCode the subsequent opcode/push is removed.
+>   * The scriptPubKey being spent is added to the sighash, unless SIGHASH_SCRIPTMASK is set.
+>   * The transaction fee is added to the sighash, unless SIGHASH_NOFEE is set.
+>   * hashPrevouts, hashSequence, and outpoint are set to null when SIGHASH_NOINPUT is set (like BIP118, but not for scriptCode).
+
+Thanks for all the input so far. Going over the suggestions and other ideas:
+
+* OP_MASK should be required to be followed by a push, as suggested by
+Anthony Towns. The alternative would permit substituting arbitrary
+opcodes for masked pushes, which is at least very hard to reason
+about. This would effectively turn it into a multi-byte OP_MASKEDPUSH
+opcode.
+
+* It's probably better to sign the amounts of all inputs, as suggested
+by Johnson Lau. As that would cause default sighashes to sign all
+input and output amounts, is there still a need to sign the tx fee
+explicitly? Or in other words, are there situations where changing the
+set of inputs or outputs after signing is desired, but the net
+difference between them cannot change? If not, that would remove the
+need for NOFEE.
+
+* Do we need to keep the rule that sequence values of other inputs are
+only signed with default sighash? It feels cleaner to always sign the
+sequence values of all inputs that are included in the sighash anyway
+(so all of them, unless ANYONECANPAY or NOINPUT, which would make it
+sign only the current input's sequence value). If NOINPUT also blanks
+the sequence values (as currently specified by BIP118), and all input
+amounts are signed, that would make amounts/sequence values always be
+treated identically.
+
+* If MASK implies NOINPUT, and NOINPUT implies ANYONECANPAY, the 3 of
+them can be encoded in just 2 bits using the
+PARTIALSCRIPT/KNOWNSCRIPT/KNOWNTX/ALL_INPUTS encoding Anthony Towns
+suggested.
+
+* Regarding the discussion about preventing signatures from being
+rebound to a different script(path)/checksig:
+  * With MAST there is indeed less need for this, but at least
+single-tree MAST constructions cannot replace all script branches (a
+script with 40 IF/THEN/ELSE constructions may have 2^40 different
+execution paths, for which computing a Merkle tree is intractable).
+  * Just signing the opcode position of the CHECKSIG operator isn't
+enough for all cases either. For example, you could have a complex
+nested set of branches that puts a number of pubkeys on the stack, and
+then a CHECKMULTISIG after the last ENDIF to verify all of them. In
+such a situation, if the same key can occur in multiple combinations,
+you still may want to prevent a signature generated for one
+combination from being rebindable to the same key in another
+combination. I believe that signing the opcode position plus the
+true/false condition of all previous(?) IF statements is probably
+sufficient to achieve that, but it would also introduce unnecessary
+complexity for signers in most cases (see next point).
+  * Thinking about signing code, adding these sort of execution trace
+commitments to the sighash means they need to know which checksig
+operator etc. they are signing for. I believe that in practice for
+example HW devices will just whatever position the wallet indicated,
+rather than verifying it corresponds with a particular intended code
+path. Preventing rebinding isn't very useful if an attacker can make
+you bind to the wrong thing regardless, so I'm not convinced this is
+even worth having by default.
+  * An alternative (not sure who suggested it) is to simply make every
+CHECKSIG sign the opcode position of the last executed CODESEPARATOR
+(and remove the earlier cut-of-scriptCode effect of CODESEPARATOR).
+This gives a simple (but somewhat limited) way for scripts that need
+to prevent certain kinds of cross-execution-trace rebinding.
+
+A few misc ideas:
+* (Taken from https://github.com/jl2012/bips/blob/sighash2/bip-sighash2.mediawiki)
+For a default sign-everything sighash, the sighash byte can be
+dropped.
+* For the commitments to the scriptPubKey and scriptCode, an
+intermediary hash should be used (so the data included in the sighash
+includes a hash of those, rather than the script directly). This
+prevents a blow up in hashing time for large scripts with many
+different sighash types in its signatures.
+* When masking the scriptCode, the push opcode immediately following
+OP_MASKEDPUSH can be replaced by OP_VERIF (which will never collide
+with any real script, as OP_VERIF makes a script invalid even when
+occurring in an unexecuted branch).
+* Sighashes (and really all new hashes that are introduced) should be
+prefixed with a fixed 64-byte array as "tag", chosen to not collide
+with any existing use of SHA256 in Bitcoin, to prevent signatures from
+being re-interpretable as something else. Picking 64 bytes as tag size
+means it can be efficiently implemented as just a modified SHA256 IV.
+
+So a combined proposal:
+* All existing sighash flags, plus NOINPUT and MASK
+(ANYONECANPAY/NOINPUT/MASK are encoded in 2 bits).
+* A new opcode called OP_MASKEDPUSH, whose only runtime behaviour is
+failing if not immediately followed by a push, or when appearing as
+last opcode in the script.
+* Signatures are 64 plus an optional sighash byte. A missing sighash
+byte implies ALL, and ALL cannot be specified explicitly.
+* The sighash is computed from the following:
+  * A 64-byte constant tag
+  * Data about the spending transaction:
+    * The transaction version number
+    * The hash of txins' prevouts+amounts+sequences (or nothing if ANYONECANPAY)
+    * The hash of all txouts (or just the corresponding txout if
+SINGLE; nothing if NONE)
+    * The transaction locktime
+  * Data about the output being spent:
+    * The prevout (or nothing if NOINPUT)
+    * The amount
+    * The sequence number
+    * The hash of the scriptPubKey (or nothing if MASK)
+  * Data about the script being executed:
+    * The hash of the scriptCode (after masking out, if MASK is set)
+    * The opcode number of the last executed OP_CODESEPARATOR (or
+0xFFFFFFFF if none)
+  * The sighash mode
+
+Cheers,
+
+-- 
+Pieter
