@@ -1,0 +1,97 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Thu, 29 Nov 2018 18:00:09 +0100
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <CAPg+sBiu0BjZEtz-t7m3M+TnAEDG_k1GKtxwkOKh6qrSezUO7g@mail.gmail.com>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<CAPg+sBiu0BjZEtz-t7m3M+TnAEDG_k1GKtxwkOKh6qrSezUO7g@mail.gmail.com>
+Message-ID: <87d0qnrf8m.fsf@gmail.com>
+
+Pieter Wuille via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org>
+writes:
+
+> On Mon, 19 Nov 2018 at 14:37, Pieter Wuille <pieter.wuille at gmail.com> wrote:
+> * It's probably better to sign the amounts of all inputs, as suggested
+> by Johnson Lau. As that would cause default sighashes to sign all
+> input and output amounts, is there still a need to sign the tx fee
+> explicitly? Or in other words, are there situations where changing the
+> set of inputs or outputs after signing is desired, but the net
+> difference between them cannot change? If not, that would remove the
+> need for NOFEE.
+
+So the final proposal would be to append a new `hashValues` field to the
+hashed representation, with `hashValues` just being the double SHA256 of
+all values? In that case SINGLE needs to blank that hash, otherwise we'd
+be committing to all inputs again.
+
+Once we have that detail, we can start thinking about what it means to
+commit to the fee vs. committing to the values. Since the fee is given
+by the output values and the input values we only need to consider the
+cases in which they can be modified.
+
+ - NOINPUT (as in BIP118) commits to the value (and I can't think of a
+   usecase where we'd want to change that), and that transparently
+   extends to all other inputs.
+ - For ANYONECANPAY can't really commit to a fee anyway so ANYONECANPAY
+   would likely imply NOFEE.
+ - With NONE all bets are off anyway, so no need to consider that :-)
+ - SINGLE is a bit special, and for value commitments it reduces to the
+   current commitment to its own value, for fee commitment it's hard to
+   see a use of that commitment at all afaik (I think the combination
+   SINGLE|NOFEE would always be used).
+
+> * Do we need to keep the rule that sequence values of other inputs are
+> only signed with default sighash? It feels cleaner to always sign the
+> sequence values of all inputs that are included in the sighash anyway
+> (so all of them, unless ANYONECANPAY or NOINPUT, which would make it
+> sign only the current input's sequence value). If NOINPUT also blanks
+> the sequence values (as currently specified by BIP118), and all input
+> amounts are signed, that would make amounts/sequence values always be
+> treated identically.
+
+Single cannot commit to other the sequence of other inputs, otherwise
+we're breaking SINGLE completely. As mentioned before NOINPUT doesn't
+need to blank `hashSequence`, but I'm happy to make it match if that
+makes implementations handle fewer cases.
+
+> * If MASK implies NOINPUT, and NOINPUT implies ANYONECANPAY, the 3 of
+> them can be encoded in just 2 bits using the
+> PARTIALSCRIPT/KNOWNSCRIPT/KNOWNTX/ALL_INPUTS encoding Anthony Towns
+> suggested.
+
+So we'd end up enumerating the combinations rather than having
+independent bits for each of them? This might save us storage bits, but
+it'd also result in uglier code imho, not a strong feeling but might
+come back to haunt us if we ever come up with something new :-)
+
+> So a combined proposal:
+> * All existing sighash flags, plus NOINPUT and MASK
+> (ANYONECANPAY/NOINPUT/MASK are encoded in 2 bits).
+> * A new opcode called OP_MASKEDPUSH, whose only runtime behaviour is
+> failing if not immediately followed by a push, or when appearing as
+> last opcode in the script.
+> * Signatures are 64 plus an optional sighash byte. A missing sighash
+> byte implies ALL, and ALL cannot be specified explicitly.
+> * The sighash is computed from the following:
+>   * A 64-byte constant tag
+>   * Data about the spending transaction:
+>     * The transaction version number
+>     * The hash of txins' prevouts+amounts+sequences (or nothing if ANYONECANPAY)
+
+This needs to be partially blanked for SINGLE as well, otherwise we
+break SINGLE.
+
+>     * The hash of all txouts (or just the corresponding txout if
+> SINGLE; nothing if NONE)
+>     * The transaction locktime
+>   * Data about the output being spent:
+>     * The prevout (or nothing if NOINPUT)
+>     * The amount
+>     * The sequence number
+
+I assume the sequence number here refers to the input being signed, not
+the sequence number of the transaction output being spent :-) Might be
+easier if we consider 3 parts: the spending transaction, the input being
+signed, and the output (or TX) being spent.
+
+Cheers,
+Christian
