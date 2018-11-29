@@ -1,0 +1,104 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Thu, 29 Nov 2018 19:37:54 +0000
+Subject: [bitcoin-dev] CPFP Carve-Out for Fee-Prediction Issues in
+ Contracting Applications (eg Lightning)
+Message-ID: <c3f68b73-84c6-7428-4bf6-b47802141392@mattcorallo.com>
+
+(cross-posted to both lists to make lightning-dev folks aware, please 
+take lightning-dev off CC when responding).
+
+As I'm sure everyone is aware, Lightning (and other similar systems) 
+work by exchanging pre-signed transactions for future broadcast. Of 
+course in many cases this requires either (a) predicting what the 
+feerate required for timely confirmation will be at some (or, really, 
+any) point in the future, or (b) utilizing CPFP and dependent 
+transaction relay to allow parties to broadcast low-feerate transactions 
+with children created at broadcast-time to increase the effective 
+feerate. Ideally transactions could be constructed to allow for 
+after-the-fact addition of inputs to increase fee without CPFP but it is 
+not always possible to do so.
+
+Option (a) is rather obviously intractible, and implementation 
+complexity has led to channel failures in lightning in practice (as both 
+sides must agree on a reasonable-in-the-future feerate). Option (b) is a 
+much more natural choice (assuming some form of as-yet-unimplemented 
+package relay on the P2P network) but is made difficult due to 
+complexity around RBF/CPFP anti-DoS rules.
+
+For example, if we take a simplified lightning design with pre-signed 
+commitment transaction A with one 0-value anyone-can-spend output 
+available for use as a CPFP output, a counterparty can prevent 
+confirmation of/significantly increase the fee cost of confirming A by 
+chaining a large-but-only-moderate-feerate transaction off of this 
+anyone-can-spend output. This transaction, B, will have a large absolute 
+fee while making the package (A, B) have a low-ish feerate, placing it 
+solidly at the bottom of the mempool but without significant risk of it 
+getting evicted during memory limiting. This large absolute fee forces a 
+counterparty which wishes to have the commitment transaction confirm to 
+increase on this absolute fee in order to meet RBF rules.
+
+For this reason (and many other similar attacks utilizing the package 
+size limits), in discussing the security model around CPFP, we've 
+generally considered it too-difficulty-to-prevent third parties which 
+are able to spend an output of a transaction from delaying its 
+confirmation, at least until/unless the prevailing feerates decline and 
+some of the mempool backlog gets confirmed.
+
+You'll note, however, that this attack doesn't have to be permanent to 
+work - Lightning's (and other contracting/payment channel systems') 
+security model assumes the ability to get such commitment transactions 
+confirmed in a timely manner, as otherwise HTLCs may time out and 
+counterparties can claim the timeout-refund before we can claim the HTLC 
+using the hash-preimage.
+
+To partially-address the CPFP security model considerations, a next step 
+might involve tweaking Lightning's commitment transaction to have two 
+small-value outputs which are immediately spendable, one by each channel 
+participant, allowing them to chain children off without allowng 
+unrelated third-parties to chain children. Obviously this does not 
+address the specific attack so we need a small tweak to the anti-DoS 
+CPFP rules in Bitcoin Core/BIP 125:
+
+The last transaction which is added to a package of dependent 
+transactions in the mempool must:
+  * Have no more than one unconfirmed parent,
+  * Be of size no greater than 1K in virtual size.
+(for implementation sanity, this would effectively reduce all mempool 
+package size limits by 1 1K-virtual-size transaction, and the last would 
+be "allowed to violate the limits" as long as it meets the above criteria).
+
+For contracting applications like lightning, this means that as long as 
+the transaction we wish to confirm (in this case the commitment transaction)
+  * Has only two immediately-spendable (ie non-CSV) outputs,
+  * where each immediately-spendable output is only spendable by one 
+counterparty,
+  * and is no larger than MAX_PACKAGE_VIRTUAL_SIZE - 1001 Vsize,
+each counterparty will always be able to independantly CPFP the 
+transaction in question. ie because if the "malicious" (ie 
+transaction-delaying) party bradcasts A with a child, it can never meet 
+the "last transaction" carve-out as its transaction cannot both meet the 
+package limit and have only one unconfirmed ancestor. Thus, the 
+non-delaying counterparty can always independently add its own CPFP 
+transaction, increasing the (A, Tx2) package feerate and confirming A 
+without having to concern themselves with the (A, Tx1) package.
+
+As an alternative proposal, at various points there have been 
+discussions around solving the "RBF-pinning" problem by allowing 
+transactors to mark their transactions as "likely-to-be-RBF'ed", which 
+could enable a relay policy where children of such transactions would be 
+rejected unless the resulting package would be "near the top of the 
+mempool". This would theoretically imply such attacks are not possible 
+to pull off consistently, as any "transaction-delaying" channel 
+participant will have to place the package containing A at an effective 
+feerate which makes confirmation to occur soon with some likelihood. It 
+is, however, possible to pull off this attack with low probability in 
+case of feerate spikes right after broadcast.
+
+Note that this clearly relies on some form of package relay, which comes 
+with its own challenges, but I'll start a separate thread on that.
+
+See-also: lightning-dev thread about the changes to lightning spec 
+required to incorporate this: 
+https://lists.linuxfoundation.org/pipermail/lightning-dev/2018-November/001643.html
+
+Matt
