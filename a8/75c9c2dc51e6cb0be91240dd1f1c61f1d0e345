@@ -1,0 +1,75 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Fri, 30 Nov 2018 19:33:56 +0000
+Subject: [bitcoin-dev] CPFP Carve-Out for Fee-Prediction Issues in
+ Contracting Applications (eg Lightning)
+In-Reply-To: <CAMZUoKnF65_4V6Lngg2eO2R+maqahEOzpgt=Z3EN5xTmMY=LKA@mail.gmail.com>
+References: <c3f68b73-84c6-7428-4bf6-b47802141392@mattcorallo.com>
+	<CAMZUoKnF65_4V6Lngg2eO2R+maqahEOzpgt=Z3EN5xTmMY=LKA@mail.gmail.com>
+Message-ID: <f0234c95-031b-3bc2-e055-37585ed247ec@mattcorallo.com>
+
+Hmm, you may be correct that this doesn't (striclty speaking) imply a 
+change to the BIP 125 itself, though the high-level protocol here is 
+likely of interest to the list, as well as likely to generate feedback. 
+Note that in your example, output Z must be CSV-delayed (ie you cannot 
+construct a packeg using that output as it must be spent in a different 
+block than TX0 is confirmed in) in order for the proposal to be secure 
+as otherwise Alice could use output A to pin the transaction, and then 
+"use up" the proposed "last-transaction" rule by spending output Z, 
+leaving Bob unable to spend output B without meeting the (expensive) RBF 
+criteria.
+
+It was further pointed out to me that while the original mail states 
+that this relies on package relay, this isn't really entirely true. The 
+status quo today may leave a commitment transaction unable to be 
+broadcast if feerates spike much higher than the feerate negotiated at 
+the time of construction. Under this proposal this is not changed, it is 
+only the implementation proposal which implies the commitment 
+transaction feerate negotiation will simply be replaced with a 
+1sat/vbyte constant which relies on some form of package relay.
+
+Matt
+
+On 11/30/18 5:38 PM, Russell O'Connor wrote:
+> On Fri, Nov 30, 2018 at 9:50 AM Matt Corallo via bitcoin-dev 
+> <bitcoin-dev at lists.linuxfoundation.org 
+> <mailto:bitcoin-dev at lists.linuxfoundation.org>> wrote:
+> 
+>     To partially-address the CPFP security model considerations, a next
+>     step
+>     might involve tweaking Lightning's commitment transaction to have two
+>     small-value outputs which are immediately spendable, one by each
+>     channel
+>     participant, allowing them to chain children off without allowng
+>     unrelated third-parties to chain children. Obviously this does not
+>     address the specific attack so we need a small tweak to the anti-DoS
+>     CPFP rules in Bitcoin Core/BIP 125:
+> 
+> 
+> It seems to me that this two-output scheme does address the specific 
+> attack without tweaking the RBF rules of BIP 125, since you are not 
+> doing an RBF at all.
+> 
+> Suppose we have a 1k-vbyte unconfirmed transaction, TX0, with outputs Z, 
+> A, and B, where A and B are small outputs controlled by the participants 
+> Alice and Bob respectively, with a 1ksat fee, yielding a fee rate of 
+> 1sat/vbyte.
+> Someone, maybe Alice, attempts to pin the transaction, maliciously or 
+> not, by attaching a 10k-vbyte transaction, TX1, to either output Z or 
+> output A, with a fee of 21ksats.? This brings the fee rate for the 
+> TX0-TX1 package to 2sat/vbyte, being 11k-vbyte total size with 22ksats 
+> in total fees.
+> 
+> Now Bob wants to CPFP to increase the effective fee rate of TX0 to 
+> 3sats/vbyte using output B.? He attaches a 1k-vbyte transaction, TX2, to 
+> output B with a fee of 5ksats.? This ought to create a new TX0-TX2 
+> package with a 3sat/vbyte fee rate, being 2k-vbyte total size with 
+> 6ksats in total fees.? TX1 has now been excluded from the package 
+> containing TX0. But TX1 hasn't been replaced, so the RBF rules from 
+> BIP125 don't apply.? TX1 is still a valid unconfirmed transaction 
+> operating at a fee rate of 2.1sats/vbyte.
+> 
+> That said, I'm not an expert on how packages and package fee rates are 
+> calculated in Bitcoin Core, so I am speculating a bit.? And, because I'm 
+> talking with Matt, it's more likely that I'm mistaken.? AFAIK, any rules 
+> about CPFP's behaviour in Bitcoin Core is undocumented.
+> 
