@@ -1,0 +1,48 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Fri, 30 Nov 2018 12:38:04 -0500
+Subject: [bitcoin-dev] CPFP Carve-Out for Fee-Prediction Issues in
+ Contracting Applications (eg Lightning)
+In-Reply-To: <c3f68b73-84c6-7428-4bf6-b47802141392@mattcorallo.com>
+References: <c3f68b73-84c6-7428-4bf6-b47802141392@mattcorallo.com>
+Message-ID: <CAMZUoKnF65_4V6Lngg2eO2R+maqahEOzpgt=Z3EN5xTmMY=LKA@mail.gmail.com>
+
+On Fri, Nov 30, 2018 at 9:50 AM Matt Corallo via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org> wrote:
+
+> To partially-address the CPFP security model considerations, a next step
+> might involve tweaking Lightning's commitment transaction to have two
+> small-value outputs which are immediately spendable, one by each channel
+> participant, allowing them to chain children off without allowng
+> unrelated third-parties to chain children. Obviously this does not
+> address the specific attack so we need a small tweak to the anti-DoS
+> CPFP rules in Bitcoin Core/BIP 125:
+>
+
+It seems to me that this two-output scheme does address the specific attack
+without tweaking the RBF rules of BIP 125, since you are not doing an RBF
+at all.
+
+Suppose we have a 1k-vbyte unconfirmed transaction, TX0, with outputs Z, A,
+and B, where A and B are small outputs controlled by the participants Alice
+and Bob respectively, with a 1ksat fee, yielding a fee rate of 1sat/vbyte.
+Someone, maybe Alice, attempts to pin the transaction, maliciously or not,
+by attaching a 10k-vbyte transaction, TX1, to either output Z or output A,
+with a fee of 21ksats.  This brings the fee rate for the TX0-TX1 package to
+2sat/vbyte, being 11k-vbyte total size with 22ksats in total fees.
+
+Now Bob wants to CPFP to increase the effective fee rate of TX0 to
+3sats/vbyte using output B.  He attaches a 1k-vbyte transaction, TX2, to
+output B with a fee of 5ksats.  This ought to create a new TX0-TX2 package
+with a 3sat/vbyte fee rate, being 2k-vbyte total size with 6ksats in total
+fees.  TX1 has now been excluded from the package containing TX0. But TX1
+hasn't been replaced, so the RBF rules from BIP125 don't apply.  TX1 is
+still a valid unconfirmed transaction operating at a fee rate of
+2.1sats/vbyte.
+
+That said, I'm not an expert on how packages and package fee rates are
+calculated in Bitcoin Core, so I am speculating a bit.  And, because I'm
+talking with Matt, it's more likely that I'm mistaken.  AFAIK, any rules
+about CPFP's behaviour in Bitcoin Core is undocumented.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20181130/95ecf9e6/attachment-0001.html>
