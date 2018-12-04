@@ -1,0 +1,48 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Tue, 04 Dec 2018 14:03:53 +1030
+Subject: [bitcoin-dev] [Lightning-dev] CPFP Carve-Out for Fee-Prediction
+	Issues in Contracting Applications (eg Lightning)
+In-Reply-To: <c3f68b73-84c6-7428-4bf6-b47802141392@mattcorallo.com>
+References: <c3f68b73-84c6-7428-4bf6-b47802141392@mattcorallo.com>
+Message-ID: <878t163qzi.fsf@rustcorp.com.au>
+
+Matt Corallo <lf-lists at mattcorallo.com> writes:
+> As an alternative proposal, at various points there have been 
+> discussions around solving the "RBF-pinning" problem by allowing 
+> transactors to mark their transactions as "likely-to-be-RBF'ed", which 
+> could enable a relay policy where children of such transactions would be 
+> rejected unless the resulting package would be "near the top of the 
+> mempool". This would theoretically imply such attacks are not possible 
+> to pull off consistently, as any "transaction-delaying" channel 
+> participant will have to place the package containing A at an effective 
+> feerate which makes confirmation to occur soon with some likelihood. It 
+> is, however, possible to pull off this attack with low probability in 
+> case of feerate spikes right after broadcast.
+
+I like this idea.
+
+Firstly, it's incentive-compatible[1]: assuming blocks are full, miners
+should always take a higher feerate tx if that tx would be in the
+current block and the replaced txs would not.[2]
+
+Secondly, it reduces the problem that the current lightning proposal
+adds to the UTXO set with two anyone-can-spend txs for 1000 satoshis,
+which might be too small to cleanup later.  This rule would allow a
+simple single P2WSH(OP_TRUE) output, or, with IsStandard changed,
+a literal OP_TRUE.
+
+> Note that this clearly relies on some form of package relay, which comes 
+> with its own challenges, but I'll start a separate thread on that.
+
+Could be done client-side, right?  Do a quick check if this is above 250
+satoshi per kweight but below minrelayfee, put it in a side-cache with a
+60 second timeout sweep.  If something comes in which depends on it
+which is above minrelayfee, then process them as a pair[3].
+
+Cheers,
+Rusty.
+[1] Miners have generally been happy with Defaults Which Are Good For The
+    Network, but I feel a long term development aim should to be reduce
+    such cases to smaller and smaller corners.
+[2] The actual condition is subtler, but this is a clear subset AFAICT.
+[3] For Lightning, we don't care about child-pays-for-grandparent etc.
