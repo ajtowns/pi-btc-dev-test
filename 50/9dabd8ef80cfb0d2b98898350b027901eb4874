@@ -1,0 +1,59 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Thu, 13 Dec 2018 10:19:02 +1030
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <DAAB7568-A004-4897-B5B3-0FBBC6895246@xbt.hk>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<87ftv3xerx.fsf@rustcorp.com.au>
+	<DAAB7568-A004-4897-B5B3-0FBBC6895246@xbt.hk>
+Message-ID: <87pnu6s3v5.fsf@rustcorp.com.au>
+
+Johnson Lau <jl2012 at xbt.hk> writes:
+>> On 12 Dec 2018, at 5:42 PM, Rusty Russell via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> 
+>> Pieter Wuille via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> writes:
+>>> Here is a combined proposal:
+>>> * Three new sighash flags are added: SIGHASH_NOINPUT, SIGHASH_NOFEE,
+>>> and SIGHASH_SCRIPTMASK.
+>>> * A new opcode OP_MASK is added, which acts as a NOP during execution.
+>>> * The sighash is computed like in BIP143, but:
+>>>  * If SIGHASH_SCRIPTMASK is present, for every OP_MASK in scriptCode
+>>> the subsequent opcode/push is removed.
+>> 
+>> Having the SIGHASH_SCRIPTMASK flag is redundant AFAICT: why not always
+>> perform mask-removal for signing?
+>
+> Because a hardware wallet may want to know what exact script it is signing?
+
+OK, removing OP_MASKs unconditionally would introduce a hole without
+some explicit flag to say they've been removed (the "real script" could
+be something different with OP_MASKs).  We could have the signature
+commit to the outputscript, but that's a bit meh.
+
+> Masked script has reduced security, but this is a tradeoff with
+> functionality (e.g. eltoo can?t work without masking part of the
+> script). So when you don?t need that extra functionality, you go back
+> to better security
+>
+> However, I?m not sure if there is any useful NOINPUT case with unmasked script.
+
+This is *not* true of Eltoo; the script itself need not change for the
+rebinding (Christian, did something change?).
+
+So, can we find an example where OP_MASK is useful?
+
+>> If you're signing arbitrary scripts, you're surely in trouble already?
+>> 
+>> And I am struggling to understand the role of scriptmask in a taproot
+>> world, where the alternate script is both hidden and general?
+>
+> It makes sure that your signature is applicable to a specific script branch, not others (assuming you use the same pubkey in many branches, which is avoidable)
+
+If I'm using SIGHASH_NOINPUT, I'm already required to take care with key
+reuse.
+
+Without a concrete taproot proposal it's hard to make assertions, but
+if the signature flags that it's using the taproot script, it's
+no less safe, and more general AFAICT.
+
+Thanks!
+Rusty.
