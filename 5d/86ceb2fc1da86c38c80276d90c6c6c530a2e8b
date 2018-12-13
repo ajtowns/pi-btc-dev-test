@@ -1,0 +1,69 @@
+From: roconnor@blockstream.io (Russell O'Connor)
+Date: Thu, 13 Dec 2018 11:50:10 -0500
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <864604F8-0BAF-403B-9A61-4788930F065F@xbt.hk>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<CAPg+sBiu0BjZEtz-t7m3M+TnAEDG_k1GKtxwkOKh6qrSezUO7g@mail.gmail.com>
+	<CAMZUoKkJdU0P_dVRvHn5zY6xUHYUptdK221ioQMp3FXZAerp3Q@mail.gmail.com>
+	<702FE74C-119C-4D14-BCD3-85C4355356A2@xbt.hk>
+	<CAMZUoKkYcXt7O39zdpz494f9Jm195mBtWyrH3siX4PBEAf8OKQ@mail.gmail.com>
+	<864604F8-0BAF-403B-9A61-4788930F065F@xbt.hk>
+Message-ID: <CAMZUoKkXJCWxm4_bGLrXzBPzVjxCanU9-0uLw8tXBu+QaYE5hw@mail.gmail.com>
+
+On Wed, Dec 12, 2018 at 2:53 PM Johnson Lau <jl2012 at xbt.hk> wrote:
+
+>
+> I think the root cause of witness weight malleability is some opcodes
+> accept variable size input (without affecting the output), and that input
+> is provided by the puzzle solver. Going through the opcode list, I think
+> such opcodes include IF, NOTIF, VERIFY, DROP, 2DROP, NIP, DEPTH, and all
+> arithmetic opcode that accepts CScriptNum (including CHECKMULTISIG)
+>
+> VERIFY, DROP, 2DROP, NIP are not real problem, since they should not be
+> the first opcode to interact with data directly provided by the puzzle
+> solver.
+>
+> CHECKMULTISIG is fixed by BIP147. For the key number and sig number, they
+> should be part of the script, so not malleable.
+>
+> DEPTH is a problem only if its inputs are not later examined by other
+> opcodes. Again, this is pointless.
+>
+> The liberally example should be protected by the MINIMAL_IF policy, which
+> requires the input of OP_IF be minimal. As you note, OP_IF could be
+> replaced by taproot in many cases
+>
+> Non-minimal CScriptNum is also banned as BIP62 policy.
+>
+> For the purpose of preventing malicious third party witness bloating, all
+> we need is the miners to enforce the policy. There is no reason for miners
+> to accept size malleated txs, as that will reduce the usable block space.
+> If they hate a tx, they would simply drop it, instead of wasting the block
+> space.
+>
+
+I don't know if it such a clear cut case for miner's policy.  A miner is
+passed a malleated tx.  They know that there is probably a non-malleated
+variant floating around out there somewhere, and they would rather have
+it.  But right now they don't, and they probably not going to try to
+unmalleate it themselves.  So, why not stick it into their mempool?  If it
+eventually makes it into one of their blocks, then it will because it has
+the best fee rate available, and to reject it outright is harmful to their
+bottom line.  If they find the non-malleated variant later, great, they can
+replace it and gain a higher-fee rate tx.  Of course, such a policy opens
+them up to a Denial of Service attack.
+
+So what do they do?  Do they accept malleated tx's and implement an RBF
+policy that requires sufficient fee rate increases?  Do they reject
+malleated txs outright to avoid falling in this trap in the first place as
+you suggest?  I don't know, but I don't think things are as clear cut as
+you present.
+
+
+That aside, your list of weight malleable opcodes is shorter than I
+imagined and I'm grateful you've compiled it.  Perhaps the best solution is
+to make MINIMAL_IF and minimal CScriptNum consensus enforced in the next
+version of Script and all but eliminate weight malleability in practice?
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20181213/b5787537/attachment.html>
