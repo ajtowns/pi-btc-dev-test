@@ -1,0 +1,63 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Thu, 13 Dec 2018 10:24:38 +1000
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <87ftv3xerx.fsf@rustcorp.com.au>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<87ftv3xerx.fsf@rustcorp.com.au>
+Message-ID: <20181213002438.r3bylrjcpwit5v2k@erisian.com.au>
+
+On Wed, Dec 12, 2018 at 08:12:10PM +1030, Rusty Russell via bitcoin-dev wrote:
+> Pieter Wuille via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> writes:
+> > Here is a combined proposal:
+> > * Three new sighash flags are added: SIGHASH_NOINPUT, SIGHASH_NOFEE,
+> > and SIGHASH_SCRIPTMASK.
+> > * A new opcode OP_MASK is added, which acts as a NOP during execution.
+> > * The sighash is computed like in BIP143, but:
+> >   * If SIGHASH_SCRIPTMASK is present, for every OP_MASK in scriptCode
+> > the subsequent opcode/push is removed.
+> I'm asking on-list because I'm sure I'm not the only confused one.
+> Having the SIGHASH_SCRIPTMASK flag is redundant AFAICT: why not always
+> perform mask-removal for signing?
+
+The way I'm thinking about it is there's four amounts of knowledge you
+could have about the input you're spending at the time you generate a
+signature:
+
+ ALL: you know everything about every input for this tx
+
+ SINGLE: you know everything about the input you're signing for, but
+   not necessarily the others
+
+ SCRIPTPUBKEY: you know the exact scriptPubKey you're trying to satisfy, but
+   don't know the txid
+
+ SCRIPTMASK: you don't know the txid, don't know the scriptPubKey, don't
+   know the other taproot branches, and maybe don't even know the masked
+   out terms in the script -- but you do know the structure of the
+   script, and the non-masked terms
+
+There's no value to masking in any but the final case -- the txid and
+scriptPubKey commit to the full scriptcode already, so also signing the
+scriptcode is just belt-and-suspenders protection.
+
+(It might be that the "SCRIPTPUBKEY" option isn't very useful in
+practice; maybe you'll always either know the txid, or need to mask
+something?)
+
+> And I am struggling to understand the role of scriptmask in a taproot
+> world, where the alternate script is both hidden and general?
+
+In a taproot world, your scriptPubKey is a point P=Q+H(Q,S)*G, where S
+is a merkle root of possibly many scripts, and is spendable either by:
+
+  sig(P)
+  Q, path(S,script), script, witness(script)
+
+SCRIPTMASK lets you prepare a signature for one particular script in
+advance, even before you've decided what the other scripts are (and even
+what the base point Q is), let alone built an actual transaction.
+
+At least, that's my current understanding; and I think it makes sense...
+
+Cheers,
+aj
