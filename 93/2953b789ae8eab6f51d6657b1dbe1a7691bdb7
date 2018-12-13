@@ -1,0 +1,48 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Thu, 13 Dec 2018 11:07:28 +1030
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <87pnu6s3v5.fsf@rustcorp.com.au>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<87ftv3xerx.fsf@rustcorp.com.au>
+	<DAAB7568-A004-4897-B5B3-0FBBC6895246@xbt.hk>
+	<87pnu6s3v5.fsf@rustcorp.com.au>
+Message-ID: <87h8fiqn1z.fsf@rustcorp.com.au>
+
+Rusty Russell <rusty at rustcorp.com.au> writes:
+>> However, I?m not sure if there is any useful NOINPUT case with unmasked script.
+>
+> This is *not* true of Eltoo; the script itself need not change for the
+> rebinding (Christian, did something change?).
+
+This is wrong, sorry.  I re-checked the paper, and the constant for the
+timelock comparison changes on each new update.
+
+(The alternative was a new opcode like OP_TIMELOCKGREATERVERIFY which
+required remembering the nLocktime for the UTXO).
+
+So now my opinion is closer to yours: what's the use for NOINPUT &&
+!NOMASK?
+
+And is it worthwhile doing the mask complexity, rather than just
+removing the commitment to script with NOINPUT?  It *feels* safer to
+restrict what scripts we can sign, but is it?
+
+Note that NOINPUT is only useful when you can't just re-sign the tx, and
+you need to be able to create a new tx even if this input is spent once
+(an attacker can do this with SIGHASH_MASK or not!).  ie. any other
+inputs need to be signed NOINPUT or this one
+SIGHASH_SINGLE|ANYONECANPAY.
+
+You already need both key-reuse and amount-reuse to be exploited.
+SIGHASH_MASK only prevents you from reusing this input for a "normal"
+output; if you used this key for multiple scripts of the same form,
+you're vulnerable[1].  Which, given the lightning software will be using
+the One True Script, is more likely that your normal wallet using the
+same keys.
+
+So I don't think it's worth it.  SIGHASH_NOINPUT is simply dangerous
+with key-reuse, and Don't Do That.
+
+Cheers,
+Rusty.
+[1] Attacker can basically clone channel state to another channel.
