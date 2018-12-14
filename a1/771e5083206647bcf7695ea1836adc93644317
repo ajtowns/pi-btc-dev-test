@@ -1,0 +1,238 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 14 Dec 2018 20:48:39 +1000
+Subject: [bitcoin-dev] Schnorr and taproot (etc) upgrade
+Message-ID: <20181214104839.ur4lde3dzncadmr4@erisian.com.au>
+
+Hi *,
+
+(All the following is heavily informed by talking with other smart people,
+and while probably all the clever ideas are theirs, any nonsense and
+mistakes are certainly my own. I guess I'll pretend there were Chatham
+House rules or something to avoid any blame/responsibility accidently
+landing on their shoulders? Anyway, I hope discussing this in public
+turns out more useful and productive than disastrous and bikesheddy :)
+
+
+Rusty wrote "Without a concrete taproot proposal it's hard to make
+assertions". I'm not going to offer a completely concrete proposal,
+but fwiw, here's my thoughts on what should be included in the segwit v1
+proposal, which I think might be concrete enough for discussion purposes:
+
+ - introduce 33-byte v1 witness addresses should encode a secp256k1 ECC
+   point (P), spendable either by:
+
+    - a direct schnorr signature (s,R) on that point
+      (s*G = R + H(R,P,txdigest)*P), with the 1-byte sighash per the
+      other thread indicating exactly what goes into the tx digest, etc
+
+    - a script (s), the witness data for the script (wit(s)),
+      with a taproot/merkle path to the script (P,path(S,s)),
+      satisfying the taproot condition (Q = P + H(P,S)*G)
+
+ - the taproot scripts should get a version, and since you have to
+   provide P anyway in order to spend by a script, you've got 7-bits spare
+   in the byte that encodes the evenness/oddness of P, so that gives you
+   v1.0 to v1.127 for free. So if we define script version 0 initially,
+   and just automatically accept any script with a later version, we
+   can soft-fork arbitrary script upgrades without bumping the segwit
+   (major) version.
+
+ - we should replace the ECDSA CHECKSIG/CHECKMULTISIG ops with new
+   Schnorr ops. A name that's been suggested for the new ops is "CHECKDLS"
+   for discrete-log-signature; I'm using that.
+
+   Rather than CHECKMULTISIG, a simple, more general approach seems to
+   be "CHECKDLSADD" which takes a signature, a number, and a pubkey,
+   and increments the number if the signature is valid, and leaves it
+   untouched if not. So "2 of 3 multisig" becomes "0 <p> CHECKDLSADD
+   <q> CHECKDLSADD <r> CHECKDLSADD 2 EQ", eg. That means replacing the
+   current four CHECK(multi)SIG(verify) opcodes, with three opcodes:
+   CHECKDLS, CHECKDLSVERIFY and CHECKDLSADD.
+
+   To make batch verifiability of signatures work, the only acceptable
+   invalid signature for CHECKDLS or CHECKDLSADD needs to be an empty
+   vector; anything else should fail the script/transaction/block.
+
+ - adding OP_MASK to support script masking via sighash per the other
+   thread; note this only matters for the new CHECKDLS opcodes, since for
+   direct signatures on the scriptPubKey, there is no script to mask.
+   This means it's completely changeable with new script versions,
+   if desired.
+
+ - making (almost) all the currently invalid opcodes upgradeable
+   with what I'm calling "OP_SUCCESS" semantics [0], so that we have more
+   flexibility than OP_NOP gives us. An approach for those semantics
+   that seems fairly easy to analyse is to treat script processing as
+   going in phases:
+
+      1. tokenise; check push sizes and overall script size
+      2. if any OP_SUCCESS appeared; succeed
+      3. if banned opcodes appeared; fail (OP_VERIF, OP_VERNOTIF?)
+      4. otherwise, run the script; fail if there's an error
+      5. if there's exactly one, non-zero item on the stack; succeed
+      6. otherwise; fail
+
+   (Obviously an implementation can do these in parallel if that's more
+   efficient)
+
+   That way any of the "OP_SUCCESS" opcodes can be replaced by any
+   normal opcode (eg addition, a different sort of signature checking,
+   push tx or blockchain data to the stack) in a soft-fork; and you
+   can easily be sure that the new functionality is a soft-fork (as
+   long as you're not trying to change how pushes work)
+
+   [1]
+
+   This even means you could use an OP_SUCCESS opcode to signal an
+   upgrade of other opcodes, eg an OP_ARITH64BIT that upgrades OP_ADD
+   etc to support arithmetic on 64 bit inputs.
+
+ - and that's it.
+
+I think this is a fairly modest collection of changes:
+
+ signature/address stuff:
+   - schnorr
+   - new sighash (including "noinput")
+   - taproot
+   - merkelized-scripts
+   - avoid weird CHECKMULTISIG behaviour
+ upgradeability:
+   - script minor versions
+   - OP_SUCCESS
+
+I think there's a good reason to bundle all those together: the signature
+stuff go together with a new address version, and the upgradeability
+stuff helps reduce the need to do more new address versions.
+
+Well, it's modest at least compared to what's conceivable: there are a
+*lot* of other neat ideas that could theoretically be done in the same
+soft-fork, but IMHO are better left for later, eg:
+
+ - graftroot, g'root, cross-input signature aggregation
+ - non-interactive half-signature aggregation
+ - re-enabling opcodes (CAT, MUL, XOR, etc)
+ - check-sig-of-msg-on-stack, push txdata, other covenant-y things
+ - different cryptosystems (eg, 384 bit curves for better protection
+   against future quantum computing advances; conceivably pairing curves?)
+ - "EVAL" and similar language features
+ - [etc]
+
+As far as how those things could get done in future, this collection of
+features leaves four ways to make further improvements:
+
+ - new segwit version (v2-v16)
+   (needed for graftroot, signature aggregation, different signature
+    systems)
+
+ - different length segwit v1 pubkey
+   (could be used to provide a hash instead of the actual taproot point,
+    or use a larger ECC curve)
+
+ - new segwit v1 script version (v1.0-v1.127)
+   (needed for big redesigns/simplifications of script)
+
+ - additional opcodes (OP_SUCCESS replacement)
+   (can be used to re-enable disabled opcodes like MUL/CAT/XOR/etc;
+    can be used to add more complicated things like CHECKSTACKDLS,
+    or PUSHTXDATA; can be used to try out different signature
+    schemes)
+
+I think its worth noting that OP_SUCCESS upgrades could be
+developed/deployed in parallel, since you just need to choose an opcode to
+take over and (presumably) a versionbit to signal when the new behaviour
+gets activated. The other methods require agreeing on everything that's
+going to go in the new version, which needs a bit more coordination.
+
+[2] 
+
+
+
+Anyway, to get back to the intro sentence, and to give an example of how I
+think v1 addresses will work, here's my take on Eltoo in a taproot world:
+
+  Funding tx:
+    inputs: <whatever>
+    outputs:
+      ...
+      i. pay to Q = P+H(P,S)G
+         P = muSig(A,B)
+         S = "MASK <500M> CLTV <P> CHECKDLSVERIFY"
+      ...
+
+  Update tx n:
+    nlocktime = 500M + n
+    inputs:
+      1. Funding tx, or Update tx m, m<n; 
+           witness: P, (S or Sm),
+             sig(P, sighash=in_scriptmask:"MASK VERIF CLTV <P> CHECKDLSVERIFY")
+    outputs:
+      1. pay to Qn = P+H(P,Sn)G
+         Sn = "MASK <500M+n+1> CLTV <P> CHECKDLSVERIFY
+
+  Settlement tx n:
+    inputs:
+      1. Update tx n (unknown txid); 
+	   witness: sig(Qn, sighash=in_scriptpubkey)
+           nseq = csv delay
+           (note: Qn != Qm unless n=m, because Sn != Sm)
+    outputs:
+      1: pay A's balance to A
+      2: pay B's balance to B
+      3..n: HTLC paying to B: see below
+
+  Cooperative close:
+    inputs:
+      Funding tx, sig(Q, sighash=in_all+out_all)
+    outputs:
+      1..n: as agreed
+
+(I'm assuming you create "Update tx 0" and "Settlement tx 0" to pay
+yourself back if setup fails, prior to publishing the funding tx. The
+eltoo paper has a "trigger" phase for that purpose instead, aiui. Also,
+these two txs don't actually need to use NOINPUT, because they directly
+spend from the funding tx)
+
+As far as the HTLC outputs go... For SHA256 preimages, you prepare
+a taproot address Q=P+H(P,SH), where SH is the merkle root for the
+tree of two scripts, "<t> CLTV <A> CHECKDLSVERIFY" and "HASH160 <h>
+EQUAL <B> CHECKDLSVERIFY". For secp256k1 preimages, your address is
+P'=muSig(A,B,n*G) for some value n that just ensures you have different
+keys for each htlc, and you prepare two pre-signed transactions, spending
+the settlement output (whose txid is unknown), both signed with sighash
+committing to the scriptPubKey and a single output. One pays A and has
+a partial signature from B and nTimeLock set to the timeout; so A can
+complete the signature and claim after the timeout; the other pays B
+and has a conditional partial signature from A, which B can complete
+upon finding out the preimage.
+
+The settlement and pre-signed-HTLC-spend transactions all make use of
+the NOINPUT-commit-to-scriptPubKey varaint in this arrangement; so it
+does seem like it's probably useful in practice; scriptless scripts make
+the direct-signature path pretty useful.
+
+Cheers,
+aj
+
+[0] aka OP_RETURNTRUE https://bitcointalk.org/index.php?topic=1106586.0
+    aka OP_RETURNVALID https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-March/015838.html
+
+[1] The "drawback" to this approach is that it means that you can't
+    partially verify a script if you think you know what the first few
+    opcodes mean; so if a script upgrade has happened but your node hasn't
+    upgraded, even if you see a transaction in a block with what you
+    think is "<p> OP_CHECKDLS OP_SUCCESS", you don't check the signature.
+
+[2] One thing that could be feasible would be to have some simple
+    OP_SUCCESS upgrades (like enabling CAT/XOR/etc or adding
+    CHECKSTACKDLS) specced, implemented, and tested, and have them
+    activate at the same time as schnorr/taproot/etc, while keeping them
+    as an independent feature at the BIP/concept/implementation levels.
+
+    The idea there is that if it turns out they're not ready in time,
+    schnorr/taproot/etc don't need to get delayed, and the others can
+    just be enabled when they're ready later using a separate version bit.
+    I'm not sure if there's anyone who's interested in shepherding/doing
+    the spec/implementation for any of the more straight-forward features
+    like that, though.
+
