@@ -1,0 +1,98 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 14 Dec 2018 10:47:29 +1000
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <CAMZUoKkPCNaPyiSanDH8cAZuybywZsNE0ErYJTctcYc+VAWQxg@mail.gmail.com>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<CAPg+sBiu0BjZEtz-t7m3M+TnAEDG_k1GKtxwkOKh6qrSezUO7g@mail.gmail.com>
+	<CAMZUoKkJdU0P_dVRvHn5zY6xUHYUptdK221ioQMp3FXZAerp3Q@mail.gmail.com>
+	<702FE74C-119C-4D14-BCD3-85C4355356A2@xbt.hk>
+	<CAMZUoKkYcXt7O39zdpz494f9Jm195mBtWyrH3siX4PBEAf8OKQ@mail.gmail.com>
+	<20181213000553.cikilodf65an225g@erisian.com.au>
+	<CAMZUoKkPCNaPyiSanDH8cAZuybywZsNE0ErYJTctcYc+VAWQxg@mail.gmail.com>
+Message-ID: <20181214004729.dc2ivs435bi55cdh@erisian.com.au>
+
+On Thu, Dec 13, 2018 at 11:21:10AM -0500, Russell O'Connor wrote:
+> On Wed, Dec 12, 2018 at 7:06 PM Anthony Towns <aj at erisian.com.au> wrote:
+>     On Tue, Dec 11, 2018 at 05:50:24PM -0500, Russell O'Connor via bitcoin-dev
+>     wrote:
+>     > On Sun, Dec 9, 2018 at 2:13 PM Johnson Lau <jl2012 at xbt.hk> wrote:
+>     >? ? ?The current proposal is that a 64-byte signature will be used for the
+>     >? ? ?default ?signing all? sighash, and 65-byte for other sighash types.
+>     The
+>     >? ? ?space saved will allow a few more txs in a block, so I think it
+>     worths
+>     >? ? ?doing. However, this also makes witness weight estimation more
+>     difficult in
+>     >? ? ?multisig cases.
+>     This seems strange to me -- why wouldn't you just assume every signature
+>     is 65 witness bytes, and just be grateful for the prioritisation benefit
+>     if someone chooses a shorter signature? Your error margin is just 0.25
+>     vbytes per signature.
+> The issue is that the proposal is to sign the actual weight, rather than sign
+> an upper bound on the weight.
+
+Sorry, I elided some of my reasoning. Suppose witness data wasn't
+malleable; in that case any valid witness for a particular script would
+have the exact same weight, and it would be good enough to just sign
+the script, because that also commits to the witness weight. (And if
+you're doing SIGHASH_ALL, you're committing to the exact transaction
+weight too)
+
+I think the benefit of signing the weight is mostly that it also commits
+to the feerate and hence transaction priority: you know how much you're
+paying in fees when you sign, but the reason you're paying any fees is
+to get a particular priority for your transaction, so if that can change
+from under you because the tx weight changes, you're being ripped off
+(either because you get less priority than you were paying for, or
+because you get more than you wanted and would have paid less if you'd
+known).
+
+But if, just from looking at the script, you can be sure the witness
+weight will be between "w" and "w + 0.8%" and your fee is "f", you
+know your feerate (and hence priority) is between "f/w - 0.8%" and
+"f/w". If the "0.8%" is small enough, that's just a rounding error and
+you probably have more uncertainty in your feerate estimations anyway. So
+I think at that point it's reasonable to target the lower bound feerate
+("f/w - 0.8%"), because your only potential loss is that you get a higher
+feerate and would have saved "0.8%" on f if you'd been able to be 100%
+sure of that.
+
+> The problem with signing an upper bound, is that you need to specify that upper
+> bound someplace in the transaction, and we are out of sneaky places to stash
+> that data.
+> Signing the actual weight is easy because the total weight is implicit, but now
+> you need to know the total weight before signing.
+
+The cases where the tx is malleable by someone else, and you know what
+the weight should be in advance, and you can't take the final tx once it
+hits your mempool and fix the weight to what it should be and
+rebroadcast, seem limited to me?
+
+Being able to commit to a minimum feerate seems like it would be more
+generally useful: it would apply for ANYONECANPAY crowd-funding type
+txes as well; "here's my input, and I'm paying 3 sat/vb feerate, but only
+if everyone else does too!". You could do that, I think, with a rule
+along the lines of:
+
+  (a) take the actual tx feerate, f*4000/w
+  (b) round it down to the nearest exponent of 1.05 sat/kvbyte,
+      so 1.3 sat/vbyte becomes 1240.62 (1.05**146 < 1.05**147=1302)
+  (c) if the signature doesn't have an extra byte, then it should
+      commit to that exponent (146)
+  (d) if the signature does have an extra byte, b, then b<=146 and
+      the signature should commit to 146-(1+b)
+
+That way if you sign something that says "minimum fee rate of 0.001 sat
+per vbyte", you commit to an exponent of 0, and someone else can raise the
+feerate anywhere up to 265.7 sat/vb just by tweaking your signature to
+indicate how much they've raised the feerate. Likewise you could commit
+to some other exponent, and anyone else could adjust your signature to
+remain valid for a tx with a feerate of up to 265,742 times greater than
+what you expected, but never more than 5% less than what you expected.
+
+This seems too complicated to do any time soon; and maybe more
+complicated than will ever be worthwhile, though.
+
+Cheers,
+aj
+
