@@ -1,0 +1,65 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Fri, 14 Dec 2018 19:30:02 +1000
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <87h8fiqn1z.fsf@rustcorp.com.au>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<87ftv3xerx.fsf@rustcorp.com.au>
+	<DAAB7568-A004-4897-B5B3-0FBBC6895246@xbt.hk>
+	<87pnu6s3v5.fsf@rustcorp.com.au> <87h8fiqn1z.fsf@rustcorp.com.au>
+Message-ID: <20181214093002.p2nvfrlaycqblww3@erisian.com.au>
+
+On Thu, Dec 13, 2018 at 11:07:28AM +1030, Rusty Russell via bitcoin-dev wrote:
+> And is it worthwhile doing the mask complexity, rather than just
+> removing the commitment to script with NOINPUT?  It *feels* safer to
+> restrict what scripts we can sign, but is it?
+
+If it's not safer in practice, we've spent a little extra complexity
+committing to a subset of the script in each signature to no gain. If
+it is safer in practice, we've prevented people from losing funds. I'm
+all for less complexity, but not for that tradeoff.
+
+Also, saying "I can't see how to break this, so it's probably good
+enough, even if other people have a bad feeling about it" is a crypto
+anti-pattern, isn't it?
+
+I don't see how you could feasibly commit to more information than script
+masking does for use cases where you want to be able to spend different
+scripts with the same signature [0]. If that's possible, I'd probably
+be for it.
+
+At the same time, script masking does seem feasible, both for
+lightning/eltoo, and even for possibly complex variations of scripts. So
+committing to less doesn't seem wise.
+
+> You already need both key-reuse and amount-reuse to be exploited.
+> SIGHASH_MASK only prevents you from reusing this input for a "normal"
+> output; if you used this key for multiple scripts of the same form,
+> you're vulnerable[1].
+
+For example, script masking seems general enough to prevent footguns
+even if (for some reason) key and value reuse across eltoo channels
+were a requirement, rather than prohibited: you'd make the script be
+"<eltoo-channel-id> MASK <statenum> CLTV 2DROP <a+b> CHECKSIG", and your
+signature will only apply to that channel, even if another channel has
+the same capacity and uses the same keys, a and b.
+
+> So I don't think it's worth it.  SIGHASH_NOINPUT is simply dangerous
+> with key-reuse, and Don't Do That.
+
+For my money, "NOINPUT" commits to dangerously little context, and
+doesn't really feel safe to include as a primitive -- as evidenced by
+the suggestion to add "_UNSAFE" or similar to its name. Personally, I'm
+willing to accept a bit of risk, so that feeling doesn't make me strongly
+against the idea; but it also makes it hard for me to want to support
+adding it. To me, committing to a masked script is a huge improvement.
+
+Heck, if it also makes it easier to do something safer, that's also
+probably a win...
+
+Cheers,
+aj
+
+[0] You could, perhaps, commit to knowing the private keys for all the
+    *outputs* you're spending to, as well as the inputs, which comes
+    close to saying "I know this is a scary NOINPUT transaction, but
+    we're paying to ourselves, so it will all be okay".
