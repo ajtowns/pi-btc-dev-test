@@ -1,0 +1,129 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Sun, 16 Dec 2018 17:25:48 +1030
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <20181214093002.p2nvfrlaycqblww3@erisian.com.au>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<87ftv3xerx.fsf@rustcorp.com.au>
+	<DAAB7568-A004-4897-B5B3-0FBBC6895246@xbt.hk>
+	<87pnu6s3v5.fsf@rustcorp.com.au> <87h8fiqn1z.fsf@rustcorp.com.au>
+	<20181214093002.p2nvfrlaycqblww3@erisian.com.au>
+Message-ID: <8736qyhsej.fsf@rustcorp.com.au>
+
+Anthony Towns via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> writes:
+> On Thu, Dec 13, 2018 at 11:07:28AM +1030, Rusty Russell via bitcoin-dev wrote:
+>> And is it worthwhile doing the mask complexity, rather than just
+>> removing the commitment to script with NOINPUT?  It *feels* safer to
+>> restrict what scripts we can sign, but is it?
+>
+> If it's not safer in practice, we've spent a little extra complexity
+> committing to a subset of the script in each signature to no gain. If
+> it is safer in practice, we've prevented people from losing funds. I'm
+> all for less complexity, but not for that tradeoff.
+
+There are many complexities we could add, each of which would prevent
+loss of funds in some theoretical case.
+
+>From practical experience; reuse of private keys between lightning and
+other things is not how people will lose funds[1].
+
+It *is* however non-trivially more complicated for wallets; they
+currently have a set of script templates which they will sign (ie. no
+OP_CODESEPARATOR) and I implemented BIP 143 with only the simplest of
+naive code[2].  In particular, there is no code to parse scripts.
+
+Bitcoind developers are not in a good position to assess complexity
+here.  They have to implement *everything*, so each increment seems
+minor.  In addition, none of these new script versions will ever make
+bitcoind simpler, since they have to support all prior ones.  Wallets,
+however, do not have to.
+
+I also think that minimal complexity for (future) wallets is an
+underappreciated feature: the state of wallets in bitcoin is poor[3]
+so simplicity should be a key goal.
+
+Respectfully,
+Rusty.
+
+[1] Reusing your revocation base point across two channels will lose
+    funds in a much more trivial way, as will reusing payment hashes
+    across invoices.
+[2] In fact, I added SIGHASH_ANYONECANPAY and SIGHASH_SINGLE recently
+    for Segwit and it worked first time!  Kudos to BIP143's authors for
+    such a clear guide.
+[3] Bitcoind's wallet can't restore from seed; this neatly demonstrates
+    how hard the wallet problem is, but there are many others.
+
+
+
+
+
+
+
+
+
+
+
+
+code, as modern wallets currently don't have to parse the scripts they
+sign.
+
+
+
+
+
+
+
+I'm telling you that this is not how people are losing funds.
+
+
+
+>
+> Also, saying "I can't see how to break this, so it's probably good
+> enough, even if other people have a bad feeling about it" is a crypto
+> anti-pattern, isn't it?
+>
+> I don't see how you could feasibly commit to more information than script
+> masking does for use cases where you want to be able to spend different
+> scripts with the same signature [0]. If that's possible, I'd probably
+> be for it.
+>
+> At the same time, script masking does seem feasible, both for
+> lightning/eltoo, and even for possibly complex variations of scripts. So
+> committing to less doesn't seem wise.
+>
+>> You already need both key-reuse and amount-reuse to be exploited.
+>> SIGHASH_MASK only prevents you from reusing this input for a "normal"
+>> output; if you used this key for multiple scripts of the same form,
+>> you're vulnerable[1].
+>
+> For example, script masking seems general enough to prevent footguns
+> even if (for some reason) key and value reuse across eltoo channels
+> were a requirement, rather than prohibited: you'd make the script be
+> "<eltoo-channel-id> MASK <statenum> CLTV 2DROP <a+b> CHECKSIG", and your
+> signature will only apply to that channel, even if another channel has
+> the same capacity and uses the same keys, a and b.
+>
+>> So I don't think it's worth it.  SIGHASH_NOINPUT is simply dangerous
+>> with key-reuse, and Don't Do That.
+>
+> For my money, "NOINPUT" commits to dangerously little context, and
+> doesn't really feel safe to include as a primitive -- as evidenced by
+> the suggestion to add "_UNSAFE" or similar to its name. Personally, I'm
+> willing to accept a bit of risk, so that feeling doesn't make me strongly
+> against the idea; but it also makes it hard for me to want to support
+> adding it. To me, committing to a masked script is a huge improvement.
+>
+> Heck, if it also makes it easier to do something safer, that's also
+> probably a win...
+>
+> Cheers,
+> aj
+>
+> [0] You could, perhaps, commit to knowing the private keys for all the
+>     *outputs* you're spending to, as well as the inputs, which comes
+>     close to saying "I know this is a scary NOINPUT transaction, but
+>     we're paying to ourselves, so it will all be okay".
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
