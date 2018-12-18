@@ -1,0 +1,67 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Tue, 18 Dec 2018 18:48:40 +0800
+Subject: [bitcoin-dev] Safer NOINPUT with output tagging
+In-Reply-To: <B4234D7B-B1AA-41C3-B60B-F1E89E90A47D@xbt.hk>
+References: <9F8C0789-48E9-448A-A239-DB4AFB902A00@xbt.hk>
+	<CAPv7TjYRVUGWCyFweootbMCJEkyFG4YOJ+M_N_N4j_t043bUfw@mail.gmail.com>
+	<B4234D7B-B1AA-41C3-B60B-F1E89E90A47D@xbt.hk>
+Message-ID: <BC5F60A5-5E45-4330-82A2-9124C83C232B@xbt.hk>
+
+
+
+> On 18 Dec 2018, at 4:08 AM, Johnson Lau via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+> 
+> 
+> 
+>> On 17 Dec 2018, at 11:48 PM, Ruben Somsen <rsomsen at gmail.com <mailto:rsomsen at gmail.com>> wrote:
+>> 
+>> Hi Johnson,
+>> 
+>> The design considerations here seem similar to the ML discussion of
+>> whether Graftroot should be optional [1].
+> 
+> Yes, but the ?tagging? emphasises more on the payer?s side: if the payer cannot guarantee that the payee would never reuse the key, the payer could avoid any NOINPUT-related trouble by tagging properly.
+> 
+>> 
+>>> While this seems fully compatible with eltoo, is there any other proposals require NOINPUT, and is adversely affected by either way of tagging?
+>> 
+>> As far as I can tell it should be compatible with Statechains [2],
+>> since it pretty much mirrors Eltoo in setup.
+>> 
+>> My understanding is somewhat lacking, so perhaps I am missing the
+>> mark, but it is not completely clear to me how this affects
+>> fungibility if taproot gets added and the setup and trigger tx for
+>> Eltoo get combined into a single transaction. Would the NOINPUT
+>> spending condition be hidden inside the taproot commitment?
+> 
+> For the design considerations I mentioned above, the tags must be explicit and configurable by the payer. So it couldn?t be hidden in taproot.
+> 
+> If you don?t care about fungibility, you can always tag your setup output, and makes it ready for NOINPUT spending. Every update will need 2 signatures: a NOINPUT to spend the setup output or an earlier update output, and a NOINPUT to settle the latest update output.
+> 
+> If you care about fungibility, you can?t tag your setup output. Every update will need 3 signatures: a SINGLEINPUT (aka ANYONECANPAY) to spend the setup output, a NOINPUT to spend an earlier update output, and a NOINPUT to settle the latest update output.
+> 
+> (Actually, as soon as you made the first update tx with SINGLEINPUT, you don?t strictly need to make any SINGLEINPUT signatures in the later updates again, as the first update tx (or any update with a SINGLEINPUT signature) could be effectively the trigger tx. While it makes the settlement more expensive, it also means accidentally missing a SINGLEINPUT signature will not lead to any fund loss. So security-wise it?s same as the always-tagging scenario.)
+> 
+> The most interesting observation is: you never have the need to use NOINPUT on an already confirmed UTXO, since nothing about a confirmed UTXO is mutable. And every smart contract must anchor to a confirmed UTXO, or the whole contract is double-spendable. So the ability to NOINPUT-spend a setup output should not be strictly needed. In some (but not all) case it might make the protocol simpler, though.
+> 
+> So the philosophy behind output tagging is ?avoid NOINPUT at all cost, until it is truly unavoidable"
+> 
+
+After thinking more carefully, I believe output tagging could have no adverse effect on eltoo.
+
+Consider a system without tagging, where you could always spend an output with NOINPUT. Under taproot, state update could be made in 2 ways:
+
+a) Making 2 sigs for each update. One sig is a ?script path? locktime NOINPUT spending of the setup output or an earlier update output. One sig is a ?key path? relative-locktime NOINPUT spending of the new update output. In taproot terminology, ?key path? means direct spending with the scriptPubKey, and ?script path? means revealing the script hidden in taproot. Key path spending is always cheaper.
+
+b) Making 3 sigs for each update. One sig is a key path SINGLEINPUT (aka ANYONECANPAY) or NOINPUT spending of the setup output, without any locktime. One sig is a script path locktime NOINPUT spending of an earlier update output (if this is not the first update). One sig is a key path relative-locktime NOINPUT spending of the new update output
+
+Note that in b), the first signature could be either SINGLEINPUT or NOINPUT, and they just work as fine. So SINGLEINPUT should be used to avoid unnecessary replayability.
+
+In the case of uncooperative channel closing, b) is always cheaper than a), since this first broadcast signature will be a key path signature. Also, b) has better privacy if no one is cheating (only the last update is broadcast). The only information leaked in b) is the use of SINGLEINPUT and the subsequent relative-locktime NOINPUT. However, the script path signature in a) will leak the state number, which is the maximum number of updates made in this channel.
+
+In conclusion, b) is cheaper and more private, but it is more complex by requiring 3 sigs per update rather than 2. I think it is an acceptable tradeoff. (And as I mentioned in my last mail, missing some SINGLEINPUT sigs is not the end of the world. As long as you find one SINGLEINPUT sig in your backup, it safely falls back to the trigger tx model)
+
+What if we require output tagging? For privacy reason you shouldn?t tag your setup tx, so the setup output could not be spent with NOINPUT. Option a) doesn?t work, but b) only requires SINGLEINPUT and has no problem. So in a fee-minimising and privacy-maximising eltoo design, output tagging should have no adverse effect.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20181218/76d443f8/attachment-0001.html>
