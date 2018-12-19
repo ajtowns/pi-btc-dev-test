@@ -1,0 +1,75 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Wed, 19 Dec 2018 11:09:26 +1030
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <6DE5291C-629D-4080-9B0C-E18BEFA28B16@xbt.hk>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<87ftv3xerx.fsf@rustcorp.com.au>
+	<DAAB7568-A004-4897-B5B3-0FBBC6895246@xbt.hk>
+	<87pnu6s3v5.fsf@rustcorp.com.au> <87h8fiqn1z.fsf@rustcorp.com.au>
+	<20181214093002.p2nvfrlaycqblww3@erisian.com.au>
+	<8736qyhsej.fsf@rustcorp.com.au>
+	<6DE5291C-629D-4080-9B0C-E18BEFA28B16@xbt.hk>
+Message-ID: <87efaenydd.fsf@rustcorp.com.au>
+
+Johnson Lau <jl2012 at xbt.hk> writes:
+>> On 16 Dec 2018, at 2:55 PM, Rusty Russell via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> wrote:
+>> 
+>> Anthony Towns via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org> writes:
+>>> On Thu, Dec 13, 2018 at 11:07:28AM +1030, Rusty Russell via bitcoin-dev wrote:
+>>>> And is it worthwhile doing the mask complexity, rather than just
+>>>> removing the commitment to script with NOINPUT?  It *feels* safer to
+>>>> restrict what scripts we can sign, but is it?
+>>> 
+>>> If it's not safer in practice, we've spent a little extra complexity
+>>> committing to a subset of the script in each signature to no gain. If
+>>> it is safer in practice, we've prevented people from losing funds. I'm
+>>> all for less complexity, but not for that tradeoff.
+>> 
+>> There are many complexities we could add, each of which would prevent
+>> loss of funds in some theoretical case.
+>
+> Every security measures are overkill, until someone get burnt. If these security measures are really effective, no one will get burnt. The inevitable conclusion is: every effective security measures are overkill.
+>
+>> 
+>> From practical experience; reuse of private keys between lightning and
+>> other things is not how people will lose funds[1].
+>
+> So you argument seems just begging the question. Without NOINPUT, it is just impossible to lose money by key reuse, and this is exactly the topic we are debating.
+
+I think we're getting confused here.  I'm contributing my thoughts from
+the lightning implementer's point of view; there are other important
+considerations, but this is my contribution.
+
+In *lightning* there are more ways to lose funds via secret reuse.
+
+Meanwhile, both SIGHASH_NOINPUT and OP_MASK have the reuse-is-dangerous
+property; with OP_MASK the danger is limited to reuse-on-the-same-script
+(ie. if you use the same key for a non-lightning output and a lightning
+output, you're safe with OP_MASK.  However, this is far less likely in
+practice).
+
+I state again: OP_MASK doesn't seem to gain *lightning* any significant
+security benefit.
+
+> It does not need to be something like GetMaskedScript(GetScriptCodeForMultiSig()). After all, only a very small number of script templates really need NOINPUT. A GetMaskedScript() in a wallet is just an overkill (and a vulnerability if mis-implemented) 
+
+Our current transaction signing code is quite generic (and, if I may say
+so, readable and elegant).  We could, of course, special case
+GetMaskedScript() for the case we need (the Eltoo examples I've seen
+have a single OP_MASK at the front, which makes it trivial).
+
+> It?s also about functionality here: as I mentioned in another reply, OP_CODESEPARATOR couldn?t function properly with NOINPUT but without OP_MASKEDPUSH
+
+The mailing list seems a bit backed up or something; I replied to that
+in the hope you can clear my confusion on that one.
+
+> This debate happens because NOINPUT introduces the third way to lose fund with key reuse. And once it is deployed, we have to support it forever, and is not something that we could softfork it away.
+
+A would use the same words to encourage you to create the simplest
+possible implementation?
+
+I don't think we disagree on philosophy, just trade-offs.  And that's
+OK.
+
+Cheers,
+Rusty.
