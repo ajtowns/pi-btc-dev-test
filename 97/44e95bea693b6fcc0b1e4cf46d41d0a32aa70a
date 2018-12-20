@@ -1,0 +1,162 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Fri, 21 Dec 2018 02:04:37 +0800
+Subject: [bitcoin-dev] Safer NOINPUT with output tagging
+In-Reply-To: <871s6cw1vt.fsf@gmail.com>
+References: <9F8C0789-48E9-448A-A239-DB4AFB902A00@xbt.hk>
+	<CAPv7TjYRVUGWCyFweootbMCJEkyFG4YOJ+M_N_N4j_t043bUfw@mail.gmail.com>
+	<87efadp3rl.fsf@gmail.com>
+	<195B4583-CE97-4C3A-9582-3C0C013CC1E9@xbt.hk>
+	<871s6cw1vt.fsf@gmail.com>
+Message-ID: <34A8F2C4-4732-4BE7-84F5-699B8D709D06@xbt.hk>
+
+
+
+> On 21 Dec 2018, at 1:20 AM, Christian Decker <decker.christian at gmail.com> wrote:
+> 
+> Johnson Lau <jl2012 at xbt.hk> writes:
+>> Correct me if I?m wrong.
+>> 
+>> For the sake of simplicity, in the following I assume BIP118, 143, and
+>> 141-P2WSH are used (i.e. no taproot). Also, I skipped all the possible
+>> optimisations.
+>> 
+>> 1. A and B are going to setup a channel.
+>> 
+>> 2. They create one setup tx, with a setup output of the following
+>> script: <s> CLTV DROP 2 Au Bu 2 CHECKMULTISIG. Do not sign
+> 
+> If we are using a trigger transaction the output of the setup
+> transaction would simply be `2 Au Bu 2 OP_CMS`. If we were to use a CLTV
+> in there we would not have an option to later attach a collaborative
+> close transaction that is valid immediately. Furthermore the timeout of
+> the CLTV would start ticking down the exact moment the setup transaction
+> is confirmed, hence whatever effect we are trying to achieve with that
+> timelock is limited, and we have a limit to the total lifetime of the
+> channel.
+
+CLTV is absolute locktime. Only CSV will have the ?time ticking? issue, but that?s not used here. The required locktime <s> is many years in the past. To collaboratively close, you just need to sign with SIGHASH_ALL, with a locktime s+1.
+
+> 
+>> 3. They create the update tx 0, spending the setup output with NOINPUT
+>> and locktime = s+1, to the update-0 output with the script: IF 2 As0
+>> Bs0 2 CHECKMULTISIG ELSE <s+1> CLTV DROP 2 Au Bu 2 CHECKMULTISIG ENDIF
+> 
+> Update 0 is usually what I call the trigger transaction. It takes the
+> 2-of-2 multisig from the setup transaction and translates it into the
+> two-branch output that further updates or settlements can be attached
+> to. The settlement transaction attached to the trigger / update 0
+> reflects the initial state of the channel, i.e., if A added 2 BTC and B
+> added 1 BTC then settlement 0 will have 2 outputs with value 2 and 1
+> respectively, with the user's keys (this can also be considered the
+> refund in case of one party disappearing right away).
+> 
+> The second branch in the script you posted is the update branch, which is
+> not encumbered by a CSV, while the first branch is the one encumbered
+> with the CSV and is called the settlement branch since we'll be
+> attaching settlement txs to it.
+> 
+> The CLTV looks correct to me and ensures that we can only attach any
+> state >= s+1.
+> 
+> So just to show the output script for state `i` how I think they are
+> correct:
+> 
+> ```
+> OP_IF
+>  <timeout> OP_CSV 2 <As_i> <Bs_i> 2 OP_CHECKMULTISIG
+> OP_ELSE
+>  <s+1> OP_CLTV OP_DROP 2 <Au> <Bu> 2 OP_CHECKMULTISIG 
+> ```
+> 
+> And the input scripts for the update tx and the settlement tx
+> respectively would be:
+> 
+> ```
+> OP_FALSE <Sig_Bu> <Sig_Au>
+> ```
+> 
+> and
+> 
+> ```
+> OP_TRUE <Sig_Bs_i> <Sig_As_i>
+> ```
+
+I think the use of OP_CSV (BIP112) is not needed here (although it doesn?t really harm except taking a few more bytes). All you need is to sign the settlement tx with a BIP68 relative locktime. Since this is a 2-of-2 branch, both parties need to agree with the relative locktime, so it is not necessary to restrict it through OP_CSV
+
+
+> 
+>> 4. They create the settlement tx 0, spending the update-0 output with
+>> As0 and Bs0 using BIP68 relative-locktime, with 2 settlement outputs
+> 
+> If I'm not mistaken the CSV needs to be in the scriptPubkey (or P2WSH
+> equivalent) since segwit witnesses only allow pushes. Hence the script
+> in point 3 needs to add that :-)
+
+I believe you confused OP_CSV (BIP112) with BIP68. Relative locktime is enforced by BIP68 (i.e. setting the nSequence). OP_CSV indirectly enforces relative-locktime by checking the value of nSequence. BIP68 could work standalone without OP_CSV, while OP_CSV is dependant on BIP68. In the case of n-of-n eltoo state update, OP_CSV is not needed because all n parties need to agree with the same nSequence value of the settlement tx. This is enough to make sure the settlement tx has delayed settlement.
+
+> 
+>> 5. They sign the setup tx and let it confirm
+> 
+> They also need to sign (but not broadcast) update_0, in order to allow
+> either party to initiate the closure if the counterparty become
+> unresponsive. The order in which settlement_0 and update_0 are signed is
+> not important by the way, so we can just batch these. The important part
+> is that signing the setup acts as a commitment.
+
+Sure. This is obvious.
+
+> 
+>> 6. To update, they create the update tx 1, spending the setup output
+>> with NOINPUT and locktime = s+2, to the update-1 output with the
+>> script: IF 2 As1 Bs1 2 CHECKMULTISIG ELSE <s+2> CLTV DROP 2 Au Bu 2
+>> CHECKMULTISIG ENDIF and create the settlement tx 1, spending the
+>> update-1 output with As1 and Bs1 using relative-locktime, with 2
+>> settlement outputs
+> 
+> The output script of the updates are identical to the ones in the
+> trigger or update_0 transaction, so they'd also need a CSV (this is why
+> committing to the script structure with masking still works).
+> 
+>> 7. To close the channel, broadcast update tx 1. Wait for several
+>> confirmations. And broadcast settlement-tx-1
+> 
+> We have to differentiate 2 cases: collaborative close and unilateral
+> close. In the collaborative close we come to a mutual agreement that
+> we'd like to take this latest state and settle. So we create a new
+> transaction that spends the setup output, and add outputs according to
+> the state we agreed upon, and we sign it. This transaction is
+> immediately valid, and does not need to be signed with NOINPUT. So all
+> the chain sees is a setup transaction with some inputs and one multisig
+> output (singlesig with Schnorr) and a collaborative close transaction
+> that spends the setup (also not signed with NOINPUT). About as normal as
+> transactions in Bitcoin can get.
+
+Collaborative close is always simple as I explained in the beginning
+
+> 
+> In the unilateral case, one party isn't there anymore, or refuses to
+> sign. So we take the trigger transaction (not signed with NOINPUT) and
+> the latest update_n transaction (signed with NOINPUT) and broadcast
+> them. Then we wait for the CSV timeout to expire, and then send the
+> settlement transaction, which gives us the enforcement of the latest
+> state that we agreed on. The chain sees a setup transaction and a
+> trigger transaction (normal transactions for all intents and purposes,
+> except for the output script of the trigger, but we can hide that with
+> taproot), followed by two more transactions which are signed with
+> NOINPUT. So 4 transactions in the worst case, of which 2 are special,
+> and 2 transactions in the good case.
+> 
+> 
+> So all in all I think it's a tradeoff between having a larger on-chain
+> footprint (4 txs vs 3 txs in the worst case) and putting a fixed
+> lifetime on the channel for the refund case if one party disappears
+> right away. We'll probably find out what acceptable parameters are for
+> these and where the cutoff points are :-)
+
+If no one is cheating (i.e. only the last update is broadcast), you always need only 3 txs. Think about this: every update tx could be a trigger tx, and you can settle directly on a trigger tx, so effectively you eliminate trigger tx.
+
+
+
+
+
+
