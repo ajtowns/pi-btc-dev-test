@@ -1,0 +1,62 @@
+From: rusty@rustcorp.com.au (Rusty Russell)
+Date: Fri, 21 Dec 2018 09:47:15 +1030
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <2302A26C-FB9C-47D2-AF6C-4D2EF02FFAC0@xbt.hk>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<87ftv3xerx.fsf@rustcorp.com.au>
+	<DAAB7568-A004-4897-B5B3-0FBBC6895246@xbt.hk>
+	<87pnu6s3v5.fsf@rustcorp.com.au> <87h8fiqn1z.fsf@rustcorp.com.au>
+	<20181214093002.p2nvfrlaycqblww3@erisian.com.au>
+	<F9FE2267-0BCB-4C67-9AE8-3285B7459D51@xbt.hk>
+	<87mup4hmq5.fsf@rustcorp.com.au>
+	<2302A26C-FB9C-47D2-AF6C-4D2EF02FFAC0@xbt.hk>
+Message-ID: <87y38jn5z8.fsf@rustcorp.com.au>
+
+Johnson Lau <jl2012 at xbt.hk> writes:
+
+>> On 17 Dec 2018, at 11:10 AM, Rusty Russell <rusty at rustcorp.com.au> wrote:
+>> My anti-complexity argument leads me to ask why we'd support
+>> OP_CODESEPARATOR at all?  Though my argument is weaker here: no wallet
+>> need support it.
+>
+> Because it could make scripts more compact in some cases?
+>
+> This is an example: https://github.com/bitcoin/bitcoin/pull/11423#issuecomment-333441321 <https://github.com/bitcoin/bitcoin/pull/11423#issuecomment-333441321>
+>
+> But this is probably not a good example for taproot, as it could be more efficient by making the 2 branches as different script merkle leaves.
+
+Thanks, I hadn't seen this before!  That's also the first time I've seen
+SIGHASH_NONE used.
+
+>> But I don't see how OP_CODESEPARATOR changes anything here, wrt NOINPUT?
+>> Remember, anyone can create an output which can be spent by any NOINPUT,
+>> whether we go for OP_MASK or simply not commiting to the input script.
+>> 
+>
+> Let me elaborate more. Currently, scriptCode is truncated at the last executed CODESEPARATOR. If we have a very big script with many CODESEPARATORs and CHECKSIGs, there will be a lot of hashing to do.
+>
+> To fix this problem, it is proposed that the new sighash will always commit to the same H(script), instead of the truncated scriptCode. So we only need to do the H(script) once, even if the script is very big
+
+Yes, I read this as proposed, it is clever.  Not sure we'd be
+introducing it if OP_CODESEPARATOR didn't already exist, but at least
+it's a simplfication.
+
+> In the case of NOINPUT with MASKEDSCRIPT, it will commit to the H(masked_script) instead of H(script).
+>
+> To make CODESEPARATOR works as before, the sighash will also commit to the position of the last executed CODESEPARATOR. So the semantics doesn?t change. For scripts without CODESEPARATOR, the committed value is a constant.
+>
+> IF NOINPUT does not commit to H(masked_script), technically it could still commit to the position of the last executed CODESEPARATOR. But since the wallet is not aware of the actual content of the script, it has to guess the meaning of such committed positions, like ?with the HD key path m/x/y/z, I assume the script template is blah blah blah because I never use this path for another script template, and the meaning of signing the 3rd CODESEPARATOR is blah blah blah?. It still works if the assumptions hold, but sounds quite unreliable to me.
+
+My question is more fundamental.  If NOINPUT doesn't commit to the input
+at all, no script, no code separator, nothing.  I'm struggling to
+understand your original comment was "without signing the script or
+masked script, OP_CODESEPARATOR becomes unusable or insecure with
+NOINPUT."
+
+I mean, non-useful, sure.  Its purpose is to alter signature behavior,
+and from the script POV there's no signature with this form of NOINPUT.
+But other than the already-established "I reused keys for multiple
+outputs" oops, I don't see any new dangers?
+
+Thanks,
+Rusty.
