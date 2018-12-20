@@ -1,0 +1,72 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Thu, 20 Dec 2018 19:00:53 +0800
+Subject: [bitcoin-dev] Safer NOINPUT with output tagging
+In-Reply-To: <87efadp3rl.fsf@gmail.com>
+References: <9F8C0789-48E9-448A-A239-DB4AFB902A00@xbt.hk>
+	<CAPv7TjYRVUGWCyFweootbMCJEkyFG4YOJ+M_N_N4j_t043bUfw@mail.gmail.com>
+	<87efadp3rl.fsf@gmail.com>
+Message-ID: <195B4583-CE97-4C3A-9582-3C0C013CC1E9@xbt.hk>
+
+
+
+> On 20 Dec 2018, at 6:09 AM, Christian Decker <decker.christian at gmail.com> wrote:
+> 
+> Ruben Somsen via bitcoin-dev <bitcoin-dev at lists.linuxfoundation.org <mailto:bitcoin-dev at lists.linuxfoundation.org>>
+> writes:
+> 
+>> Hi Johnson,
+>> 
+>> The design considerations here seem similar to the ML discussion of
+>> whether Graftroot should be optional [1].
+>> 
+>>> While this seems fully compatible with eltoo, is there any other proposals require NOINPUT, and is adversely affected by either way of tagging?
+>> 
+>> As far as I can tell it should be compatible with Statechains [2],
+>> since it pretty much mirrors Eltoo in setup.
+>> 
+>> My understanding is somewhat lacking, so perhaps I am missing the
+>> mark, but it is not completely clear to me how this affects
+>> fungibility if taproot gets added and the setup and trigger tx for
+>> Eltoo get combined into a single transaction. Would the NOINPUT
+>> spending condition be hidden inside the taproot commitment?
+> 
+> I'm not aware of a way to combine the setup and trigger transaction. The
+> trigger transaction was introduced in order to delay the start of the
+> timeouts until a later time, to avoid having an absolute lifetime limit
+> and having really huge timeout. If we were to combine the trigger
+> transaction with the setup transaction (which is broadcast during
+> channel creation), all of those timeouts would start counting down
+> immediately, and we could just skip the trigger transaction
+> altogether. It'd be more interesting to combine update and trigger
+> transactions in a sort of cut-through combination, but that doesn't seem
+> possible outside of Mimblewimble.
+> 
+> Cheers,
+> Christian
+
+
+Correct me if I?m wrong.
+
+For the sake of simplicity, in the following I assume BIP118, 143, and 141-P2WSH are used (i.e. no taproot). Also, I skipped all the possible optimisations.
+
+1. A and B are going to setup a channel.
+
+2. They create one setup tx, with a setup output of the following script: <s> CLTV DROP 2 Au Bu 2 CHECKMULTISIG. Do not sign
+
+3. They create the update tx 0, spending the setup output with NOINPUT and locktime = s+1, to the update-0 output with the script:
+IF 2 As0 Bs0 2 CHECKMULTISIG ELSE <s+1> CLTV DROP 2 Au Bu 2 CHECKMULTISIG ENDIF
+
+4. They create the settlement tx 0, spending the update-0 output with As0 and Bs0 using BIP68 relative-locktime, with 2 settlement outputs
+
+5. They sign the setup tx and let it confirm
+
+6. To update, they create the update tx 1, spending the setup output with NOINPUT and locktime = s+2, to the update-1 output with the script:
+IF 2 As1 Bs1 2 CHECKMULTISIG ELSE <s+2> CLTV DROP 2 Au Bu 2 CHECKMULTISIG ENDIF
+and create the settlement tx 1, spending the update-1 output with As1 and Bs1 using relative-locktime, with 2 settlement outputs
+
+7. To close the channel, broadcast update tx 1. Wait for several confirmations. And broadcast settlement-tx-1
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20181220/4c9d8779/attachment-0001.html>
