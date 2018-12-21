@@ -1,0 +1,77 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Fri, 21 Dec 2018 11:40:06 +0000
+Subject: [bitcoin-dev] Safer NOINPUT with output tagging
+In-Reply-To: <9F8C0789-48E9-448A-A239-DB4AFB902A00@xbt.hk>
+References: <9F8C0789-48E9-448A-A239-DB4AFB902A00@xbt.hk>
+Message-ID: <8z5NQkaOUo9z-wdBphQtZrxIf7OCtVQFvK3neMWvcRsngld5XJs-vt7CLuY46ZOp_pX8gEd92pMdkEkp8CUOMH9lUTw5ocWsbDPiaKdSa2I=@protonmail.com>
+
+Good morning Johnson,
+
+> The proposed solution is that an output must be ?tagged? for it to be spendable with NOINPUT, and the ?tag? must be made explicitly by the payer. There are 2 possible ways to do the tagging:
+
+First off, this is a very good idea I think.
+
+
+>     While this seems fully compatible with eltoo, is there any other proposals require NOINPUT, and is adversely affected by either way of tagging?
+
+
+It prevents use of SIGHASH_NOINPUT to support walletless offchain protocols.
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-May/015925.html
+https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-May/015926.html
+
+In brief, this idea of "walletless offchain software" is motivated by the fact, that various onchain wallets exist with many features.
+For instance, privacy-enhancement as in Samourai/Wasabi/etc.
+And so on.
+There are requests to include such features in e.g. Lightning software, for example: https://github.com/ElementsProject/lightning/issues/2105
+But it is enough of a challenge to implement Lightning, without the additional burden of implementing nice onchain features like coin control and change labelling.
+
+It would be best if we can retain features from an onchain wallet, while using our coin on an offchain system.
+Further, it would allow onchain wallet developers to focus and gain expertise on onchain wallet features, and, vice versa, for offchain walletless software developers to focus on offchain software features.
+
+The core idea comes from the way that offchain systems need to be set up:
+
+1.  First we agree on a (currently unconfirmed) txid and output number on which to anchor our offchain system (the funding transaction).
+2.  Then we sign a backout transaction (the initial commitment transactions under Poon-Dryja, or the timelock branches for CoinSwapCS, or the initial kickoff-settlement transactions for Decker-Russell-Osuntokun) spending the agreed TXO, to return the money back to the owner(s) in case some participant aborts the setting up of the offchain system.
+3.  Then we sign and broadcast the funding transaction.
+
+Unfortunately, the typical onchain wallet has a very simple and atomic (uncuttable) process for making transactions:
+
+1.  Make, sign, and broadcast transaction with an output paying to the desired address.
+
+Thus a typical onchain wallet cannot be used to set up a funding transaction for an offchain system.
+
+Now suppose we take advantage of `SIGHASH_NOINPUT`, and modify our offchain system setup as below:
+
+1.  First we agree on a N-of-N pubkey on which to anchor our offchain system (the funding address).
+2.  Then we sign (with SIGHASH_NOINPUT) a backout transaction (the initial commitment transactions under Poon-Dryja, or the timelock branches for CoinSwapCS, or the initial kickoff-settlement transactions for Decker-Russell-Osuntokun), spending the agreed funding address, to return the money back to the owner(s) in case some participant aborts the setting up of the offchain system.
+3.  Make, sign, and broadcast transaction with an output paying to the funding address.  This step can be done by any typical onchain wallet.
+
+Note that only the starting backout transaction is *required* to sign with `SIGHASH_NOINPUT`.
+For instance, a Poon-Dryja channel may sign succeeding commitment transactions with `SIGHASH_ALL`.
+Finally, only in case of disaster (some participant aborts before the offchain system is set up) is the `SIGHASH_NOINPUT` backoff transaction broadcasted.
+A "normal close" of the offchain system can be signed with typical `SIGHASH_ALL` for no fungibility problems.
+
+With this, an offchain system need not require its implementing software to implement its own wallet.
+Further, onchain wallets can directly put its funds into an offchain system, without requiring an onchain transfer to an offchain software wallet.
+
+This can be helpful when building overall software.
+We might take any commodity onchain wallet and any commodity offchain software, and we can integrate them easily to create a seamless wallet experience that allows spending and receiving onchain and offchain.
+Further, improvements in one software component do not require re-building of the other software component.
+
+--
+
+That said:
+
+1.  For Lightning and similar systems, the fact that the Lightning node will give you an address that, when paid using any commodity onchain wallet, opens a channel, means that people will make wrong assumptions.
+    In particular, they are likely to assume that address reuse is safe and will attempt to "refill" their channel by paying to the same address again in the future.
+    From this alone, we can immediately see that this idea is pointless.
+2.  Dual-funding, which for some reason is asked for as a feature, cannot be done with this anyway.
+3.  It may be better to provide some standard way of signing transactions without broadcasting them.
+    This would still allow similar separation of concerns between onchain and offchain software components.
+
+So output tagging still seems fine to me, even if this particular use cannot be supported.
+
+Regards,
+ZmnSCPxj
+
+
