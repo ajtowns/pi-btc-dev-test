@@ -1,0 +1,61 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Sat, 22 Dec 2018 02:54:42 +0800
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <87y38jn5z8.fsf@rustcorp.com.au>
+References: <CAPg+sBhuPG-2GXc+Bp0yv5ywry2fk56LPLT4AY0Kcs+YEoz4FA@mail.gmail.com>
+	<87ftv3xerx.fsf@rustcorp.com.au>
+	<DAAB7568-A004-4897-B5B3-0FBBC6895246@xbt.hk>
+	<87pnu6s3v5.fsf@rustcorp.com.au> <87h8fiqn1z.fsf@rustcorp.com.au>
+	<20181214093002.p2nvfrlaycqblww3@erisian.com.au>
+	<F9FE2267-0BCB-4C67-9AE8-3285B7459D51@xbt.hk>
+	<87mup4hmq5.fsf@rustcorp.com.au>
+	<2302A26C-FB9C-47D2-AF6C-4D2EF02FFAC0@xbt.hk>
+	<87y38jn5z8.fsf@rustcorp.com.au>
+Message-ID: <73F32BC6-751E-4F35-BE6D-B31170FC0A54@xbt.hk>
+
+
+
+> On 21 Dec 2018, at 7:17 AM, Rusty Russell <rusty at rustcorp.com.au> wrote:
+> 
+> Johnson Lau <jl2012 at xbt.hk> writes:
+> 
+>>> But I don't see how OP_CODESEPARATOR changes anything here, wrt NOINPUT?
+>>> Remember, anyone can create an output which can be spent by any NOINPUT,
+>>> whether we go for OP_MASK or simply not commiting to the input script.
+>>> 
+>> 
+>> Let me elaborate more. Currently, scriptCode is truncated at the last executed CODESEPARATOR. If we have a very big script with many CODESEPARATORs and CHECKSIGs, there will be a lot of hashing to do.
+>> 
+>> To fix this problem, it is proposed that the new sighash will always commit to the same H(script), instead of the truncated scriptCode. So we only need to do the H(script) once, even if the script is very big
+> 
+> Yes, I read this as proposed, it is clever.  Not sure we'd be
+> introducing it if OP_CODESEPARATOR didn't already exist, but at least
+> it's a simplfication.
+> 
+>> In the case of NOINPUT with MASKEDSCRIPT, it will commit to the H(masked_script) instead of H(script).
+>> 
+>> To make CODESEPARATOR works as before, the sighash will also commit to the position of the last executed CODESEPARATOR. So the semantics doesn?t change. For scripts without CODESEPARATOR, the committed value is a constant.
+>> 
+>> IF NOINPUT does not commit to H(masked_script), technically it could still commit to the position of the last executed CODESEPARATOR. But since the wallet is not aware of the actual content of the script, it has to guess the meaning of such committed positions, like ?with the HD key path m/x/y/z, I assume the script template is blah blah blah because I never use this path for another script template, and the meaning of signing the 3rd CODESEPARATOR is blah blah blah?. It still works if the assumptions hold, but sounds quite unreliable to me.
+> 
+> My question is more fundamental.  If NOINPUT doesn't commit to the input
+> at all, no script, no code separator, nothing.  I'm struggling to
+> understand your original comment was "without signing the script or
+> masked script, OP_CODESEPARATOR becomes unusable or insecure with
+> NOINPUT."
+> 
+> I mean, non-useful, sure.  Its purpose is to alter signature behavior,
+> and from the script POV there's no signature with this form of NOINPUT.
+> But other than the already-established "I reused keys for multiple
+> outputs" oops, I don't see any new dangers?
+> 
+> Thanks,
+> Rusty.
+
+The question I would like to ask is: is OP_CODESEPARATOR useful under taproot? Generally speaking, CODESEPARATOR is useful only with conditional opcodes (OP_IF etc), and conditional opcodes are mostly replaced by merklized scripts. I am not sure how much usability is left with CODESEPARATOR
+
+If no one needs CODESEPARATOR, we might just disable it, and makes the validation code a bit simpler
+
+If CODESEPARATOR is useful, then we should find a way to make it works with NOINPUT. With H(masked_script) committed, the meaning of the CODESEPARATOR position is very clear. Without H(masked_script), the meaning of the position totally relies on the assumption that ?this public key is only used in this script template?.
+
+Ignore CODESEPARATOR and more generally, I agree with you that script masking does not help in the case of address (scriptPubKey) reuse, which is the commonest type of reuse. However, it prevents replayability when the same public key is reused in different scripts
