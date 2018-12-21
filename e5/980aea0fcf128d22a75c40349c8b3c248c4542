@@ -1,0 +1,68 @@
+From: decker.christian@gmail.com (Christian Decker)
+Date: Fri, 21 Dec 2018 12:15:37 +0100
+Subject: [bitcoin-dev] Safer NOINPUT with output tagging
+In-Reply-To: <34A8F2C4-4732-4BE7-84F5-699B8D709D06@xbt.hk>
+References: <9F8C0789-48E9-448A-A239-DB4AFB902A00@xbt.hk>
+	<CAPv7TjYRVUGWCyFweootbMCJEkyFG4YOJ+M_N_N4j_t043bUfw@mail.gmail.com>
+	<87efadp3rl.fsf@gmail.com>
+	<195B4583-CE97-4C3A-9582-3C0C013CC1E9@xbt.hk>
+	<871s6cw1vt.fsf@gmail.com>
+	<34A8F2C4-4732-4BE7-84F5-699B8D709D06@xbt.hk>
+Message-ID: <87woo3uo4m.fsf@gmail.com>
+
+Johnson Lau <jl2012 at xbt.hk> writes:
+>> If we are using a trigger transaction the output of the setup
+>> transaction would simply be `2 Au Bu 2 OP_CMS`. If we were to use a CLTV
+>> in there we would not have an option to later attach a collaborative
+>> close transaction that is valid immediately. Furthermore the timeout of
+>> the CLTV would start ticking down the exact moment the setup transaction
+>> is confirmed, hence whatever effect we are trying to achieve with that
+>> timelock is limited, and we have a limit to the total lifetime of the
+>> channel.
+>
+> CLTV is absolute locktime. Only CSV will have the ?time ticking?
+> issue, but that?s not used here. The required locktime <s> is many
+> years in the past. To collaboratively close, you just need to sign
+> with SIGHASH_ALL, with a locktime s+1.
+
+Correct, we're using the CLTV here as a weird "compare two numbers that
+are committed to in the signatures" operation, by using locktimes in the
+past as you correctly point out.
+
+> I think the use of OP_CSV (BIP112) is not needed here (although it
+> doesn?t really harm except taking a few more bytes). All you need is
+> to sign the settlement tx with a BIP68 relative locktime. Since this
+> is a 2-of-2 branch, both parties need to agree with the relative
+> locktime, so it is not necessary to restrict it through OP_CSV
+
+I keep forgetting about BIP68, but you're right, that should be
+sufficient for our use-case and would safe us a few bytes.
+
+>> In the unilateral case, one party isn't there anymore, or refuses to
+>> sign. So we take the trigger transaction (not signed with NOINPUT) and
+>> the latest update_n transaction (signed with NOINPUT) and broadcast
+>> them. Then we wait for the CSV timeout to expire, and then send the
+>> settlement transaction, which gives us the enforcement of the latest
+>> state that we agreed on. The chain sees a setup transaction and a
+>> trigger transaction (normal transactions for all intents and purposes,
+>> except for the output script of the trigger, but we can hide that with
+>> taproot), followed by two more transactions which are signed with
+>> NOINPUT. So 4 transactions in the worst case, of which 2 are special,
+>> and 2 transactions in the good case.
+>> 
+>> 
+>> So all in all I think it's a tradeoff between having a larger on-chain
+>> footprint (4 txs vs 3 txs in the worst case) and putting a fixed
+>> lifetime on the channel for the refund case if one party disappears
+>> right away. We'll probably find out what acceptable parameters are for
+>> these and where the cutoff points are :-)
+>
+> If no one is cheating (i.e. only the last update is broadcast), you
+> always need only 3 txs. Think about this: every update tx could be a
+> trigger tx, and you can settle directly on a trigger tx, so
+> effectively you eliminate trigger tx.
+
+I seem to keep mentally mixing different variants of the protocol in my
+head. You are of course correct that the trigger and the update can be
+considered the same, hence the 3 txs limit is right. Sorry for the
+confusion :-(
