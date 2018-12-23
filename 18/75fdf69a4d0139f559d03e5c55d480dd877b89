@@ -1,0 +1,60 @@
+From: aj@erisian.com.au (Anthony Towns)
+Date: Sun, 23 Dec 2018 14:26:59 +1000
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <73F32BC6-751E-4F35-BE6D-B31170FC0A54@xbt.hk>
+References: <87ftv3xerx.fsf@rustcorp.com.au>
+	<DAAB7568-A004-4897-B5B3-0FBBC6895246@xbt.hk>
+	<87pnu6s3v5.fsf@rustcorp.com.au> <87h8fiqn1z.fsf@rustcorp.com.au>
+	<20181214093002.p2nvfrlaycqblww3@erisian.com.au>
+	<F9FE2267-0BCB-4C67-9AE8-3285B7459D51@xbt.hk>
+	<87mup4hmq5.fsf@rustcorp.com.au>
+	<2302A26C-FB9C-47D2-AF6C-4D2EF02FFAC0@xbt.hk>
+	<87y38jn5z8.fsf@rustcorp.com.au>
+	<73F32BC6-751E-4F35-BE6D-B31170FC0A54@xbt.hk>
+Message-ID: <20181223042659.munrqfe4l6nff2ug@erisian.com.au>
+
+On Sat, Dec 22, 2018 at 02:54:42AM +0800, Johnson Lau wrote:
+> The question I would like to ask is: is OP_CODESEPARATOR useful under taproot? Generally speaking, CODESEPARATOR is useful only with conditional opcodes (OP_IF etc), and conditional opcodes are mostly replaced by merklized scripts. I am not sure how much usability is left with CODESEPARATOR
+
+If you don't have conditionals, then I think committing to the (masked)
+script gives you everything you could do with codeseparator.
+
+If you don't commit to the (masked) script, don't have conditionals,
+and don't have codeseparator, then I don't think you can make a signature
+distinguish which alternative script it's intending to sign; but you can
+just give each alternative script in the MAST a slight variation of the
+key and that seems good enough.
+
+OTOH, I think for (roughly) the example you gave:
+
+  DEPTH 3 EQUAL
+  IF <Bob> CHECKSIGVERIFY HASH160 <H> EQUALVERIFY CODESEP
+  ELSE <n> CLTV DROP
+  ENDIF
+  <Alice> CHECKSIG
+
+then compared to the taproot equivalent:
+
+  P = muSig(Alice,Bob)
+  S1 = <Alice1> CHECKSIGVERIFY <Bob> CHECKSIGVERIFY HASH160 <H> EQUAL
+  S2 = <Alice2> CHECKSIGVERIFY <n> CLTV
+
+the IF+CODESEP approach is actually cheaper (lighter weight) if you're
+mostly (>2/3rds of the time) taking the S1 branch. This is because the
+"DEPTH 3 EQUAL IF/ELSE/ENDIF CODESEP <n> CLTV DROP" overhead is less
+than the 32B overhead to choose a merkle branch).
+
+(That said, I'm not sure what Alice's signature in the S1 branch actually
+achieves in that script; and without that in S1, the taproot approach is
+cheaper all the time. Scriptless scripts would be cheaper still)
+
+> If no one needs CODESEPARATOR, we might just disable it, and makes the validation code a bit simpler
+
+Since it only affects the behaviour of the checkdls (checksig) operators,
+even if it was disabled, it could be re-enabled fairly easily in a new
+script subversion if needed (ie, it could be re-added when upgrading
+witness version 1 from script version 0 to 1).
+
+Cheers,
+aj
+
