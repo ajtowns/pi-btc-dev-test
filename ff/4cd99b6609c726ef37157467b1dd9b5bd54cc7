@@ -1,0 +1,69 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Tue, 25 Dec 2018 05:23:44 +0800
+Subject: [bitcoin-dev] Safer sighashes and more granular SIGHASH_NOINPUT
+In-Reply-To: <_gOQU8sPtEG5jisR7GskWPyvzLK1xixz8-v1YbRWlAXFq9YGPyMEj9Q-xZ6CYfwgiGeJR2Qlboq4UFU_y6pur1HBG_yRTIgngWqiENmJ1Bc=@protonmail.com>
+References: <87ftv3xerx.fsf@rustcorp.com.au>
+	<20181214093002.p2nvfrlaycqblww3@erisian.com.au>
+	<F9FE2267-0BCB-4C67-9AE8-3285B7459D51@xbt.hk>
+	<87mup4hmq5.fsf@rustcorp.com.au>
+	<2302A26C-FB9C-47D2-AF6C-4D2EF02FFAC0@xbt.hk>
+	<87y38jn5z8.fsf@rustcorp.com.au>
+	<73F32BC6-751E-4F35-BE6D-B31170FC0A54@xbt.hk>
+	<20181223042659.munrqfe4l6nff2ug@erisian.com.au>
+	<F445FD1D-52E2-41E4-8FBD-3419A6317CF6@xbt.hk>
+	<_gOQU8sPtEG5jisR7GskWPyvzLK1xixz8-v1YbRWlAXFq9YGPyMEj9Q-xZ6CYfwgiGeJR2Qlboq4UFU_y6pur1HBG_yRTIgngWqiENmJ1Bc=@protonmail.com>
+Message-ID: <4CE7B999-F1C3-4E7F-BCED-E02C5D0BE4BB@xbt.hk>
+
+I find another proposed use of CODESEPARATOR here: https://lists.linuxfoundation.org/pipermail/lightning-dev/2016-March/000455.html <https://lists.linuxfoundation.org/pipermail/lightning-dev/2016-March/000455.html>
+
+<KeyA> OP_CHECKSIG
+OP_IF
+<KeyB>
+OP_ELSE
+<Delay> OP_CSV OP_DROP
+OP_CODESEPARATOR <KeyA>
+OP_ENDIF
+OP_CHECKSIG
+It is actually 2 scripts:
+
+S1: <KeyA> OP_CHECKSIGVERIFY <KeyB> OP_CHECKSIG
+S2: <Delay> OP_CSV OP_DROP <KeyA> OP_CHECKSIG
+
+Under taproot, we could make Q = P + H(P||S2)G, where P = MuSig(KeyA, KeyB)
+
+S1 becomes a direct spending with Q, and there is no need to use OP_IF or CODESEPARATOR in S2 at all.
+
+
+==================
+
+If it is only to force R reuse, there is no need to use CODESEPARATOR:
+
+Input: <R> <S2>  <S1>  Script: 2DUP EQUAL NOT VERIFY 2 PICK SWAP CAT <key> DUP TOALTSTACK CHECKSIGVERIFY CAT FROMALTSTACK CHECKSIG
+
+But using CODESEPARATOR will save 3 bytes
+Input: <S2> <R> <S1>    Script:  OVER SWAP CAT <key> DUP TOALTSTACK CHECKSIGVERIFY CODESEPARATOR SWAP CAT FROMALTSTACK CHECKSIG
+
+However, a much better way would be:
+
+Input: <S> Script: <known R> SWAP CAT <key> CHECKSIG
+
+The discrete log of R could be a shared secret between A and B. If the purpose is to publish the private key to the whole world, R = G could be used.
+
+> On 24 Dec 2018, at 8:01 PM, ZmnSCPxj <ZmnSCPxj at protonmail.com> wrote:
+> 
+> Good morning,
+> 
+>> Could anyone propose a better use case of CODESEPARATOR?
+> 
+> Long ago, aj sent an email on Lightning-dev about use of CODESEPARATOR to impose Scriptless Script even without Schnorr. It involved 3 signatures with different CODESEPARATOR places, and forced R reuse so that the signatures to claim the funds revealed the privkey.
+> 
+> The script shown had all CODESEPARATOR in a single branch.
+> 
+> I cannot claim to understand the script, and am having difficulty digging through the mailinglist
+> 
+> Regards,
+> ZmnSCPxj
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20181225/2bf63818/attachment-0001.html>
