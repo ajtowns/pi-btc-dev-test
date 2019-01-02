@@ -1,0 +1,45 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Wed, 02 Jan 2019 13:39:57 +0000
+Subject: [bitcoin-dev] Create a BIP to implement Confidential
+	Transactions in Bitcoin Core
+In-Reply-To: <DB6PR10MB1832A1A6EB2628CAB0035192A6B00@DB6PR10MB1832.EURPRD10.PROD.OUTLOOK.COM>
+References: <3VIFGj5yxFpKlSgjMAlPCuTJOSzYkZI2l7tMwtQq4LStjiXgfS7A61jdZ5ZoyalJmjo71EQtNC_F06JgpQ1m046fWbq_6Nhe3BGkMOU-17I=@protonmail.com>
+	<DB6PR10MB1832A1A6EB2628CAB0035192A6B00@DB6PR10MB1832.EURPRD10.PROD.OUTLOOK.COM>
+Message-ID: <knV3VcCBvchmrBDvcYs8I2mImVR7_fbYmtWPY1GOxHkhKlYsMjFCReM1d3_me13YekyI4NZYRovD8s103Yj6wLWBMir6SOBYlrCdS1tLqgo=@protonmail.com>
+
+Good morning SomberNight,
+
+> "Bulletproofs ... are computationally binding. An adversary that could
+> break the discrete logarithm assumption could generate acceptable range
+> proofs for a value outside the correct range. ... An adversary that can
+> break the binding property of the commitment scheme or the soundness of
+> the proof system can generate coins out of thin air and thus create
+> uncontrolled but undetectable inflation rendering the currency useless"
+>
+> I don't have the domain knowledge to debate whether quantum computers will
+> ever exist but AFAICT their emergence would easily kill a currency that
+> uses these kind of range proofs for confidential transactions.
+
+This can be mitigated by splitting the blockchain into a public part and a confidential-transactions part (i.e. extension block).
+This may be necessary for softforking of CT onto the blockchain anyway; existing pre-CT coins remain in the public part.
+
+When moving from public to CT, you send to some special "lockbox address" on the public part, then they will now be put in a coinbase-like transaction on the CT part.
+You then do some mixing and splitting in the CT part to obscure which of your UTXOs have what value.
+Then to move from CT to public, you can claim any of the lockboxes on the public part, by revealing the values of your CT UTXOs (and destroying them) and showing that they are equal or less than the lockboxes you are claiming on the public part, and putting back any remainder between the lockboxes total and your own CT UTXOs into another lockbox UTXO.
+
+This is essentially the same concept as sidechains, but with the "side" chain here being part of the consensus, and thus an extension block instead of a true sidechain.
+
+In this way, the amount of total money in the CT part is the sum of all the lockboxes.
+In case of a cryptographic break in the CT rangeproof protocol, then the first owner of a quantum computer can claim all the lockboxes, but at least the damage is bounded to only those UTXOs in the CT part.
+UTXOs in the public part retain their money.
+In addition, since creation of new coins remains in the public part, coin supply is protected, which I believe is the most important property.
+
+The weakness in this scheme is that there is incentive not to put your money for long in the CT part.
+
+Note that CT only hides transaction values.
+Structure of transactions from payers to payees remains visible onchain.
+I would suggest rather to use MimbleWimble, since at least under MimbleWimble transaction structure will need to be stored by the monitors of the blockchain rather than by the blockchain itself, which would help reduce their ability to see into historical data (they would only be able to see data they recorded themselves, and MimbleWimble allows third-party trustless CoinJoin so they might not even record accurate transaction structure).
+Drawback is lack of SCRIPT, but Scriptless Script should be sufficient for e.g. LN.
+
+Regards,
+ZmnSCPxj
