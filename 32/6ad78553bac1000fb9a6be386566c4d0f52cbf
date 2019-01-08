@@ -1,0 +1,53 @@
+From: lf-lists@mattcorallo.com (Matt Corallo)
+Date: Tue, 8 Jan 2019 09:46:45 -0500
+Subject: [bitcoin-dev] [Lightning-dev] CPFP Carve-Out for Fee-Prediction
+	Issues in Contracting Applications (eg Lightning)
+In-Reply-To: <87wonfem03.fsf@rustcorp.com.au>
+References: <c3f68b73-84c6-7428-4bf6-b47802141392@mattcorallo.com>
+	<878t163qzi.fsf@rustcorp.com.au>
+	<725fc55a-6263-a9fc-74a5-1017cb1cc885@mattcorallo.com>
+	<87wonfem03.fsf@rustcorp.com.au>
+Message-ID: <D072562F-5AD0-4B38-94D1-A0AEF04C3DEB@mattcorallo.com>
+
+I responded to a few things in-line before realizing I think we're out of sync on what this alternative proposal actually implies. In my understanding is it, it does *not* imply that you are guaranteed the ability to RBF as fees change. The previous problem is still there - your counterparty can announce a bogus package and leave you unable to add a new transaction to it, the difference being it may be significantly more expensive to do so. If it were the case the you could RBF after the fact, I would likely agree with you.
+
+> On Jan 8, 2019, at 00:50, Rusty Russell <rusty at rustcorp.com.au> wrote:
+> 
+> Matt Corallo <lf-lists at mattcorallo.com> writes:
+>> Ultimately, defining a "near the top of the mempool" criteria is fraught 
+>> with issues. While it's probably OK for the original problem (large 
+>> batched transactions where you don't want a single counterparty to 
+>> prevent confirmation), lightning's requirements are very different. 
+>> Instead is wanting a high probability that the transaction in question 
+>> confirms "soon", we need certainty that it will confirm by some deadline.
+> 
+> I don't think it's different, in practice.
+
+I strongly disagree. If you're someone sending a batched payment, 5% chance it takes 13 blocks is perfectly acceptable. If you're a lightning operator, that quickly turns into "5% chance, or 35% chance if your counterparty is malicious and knows more about the market structure than you". Eg in the past it's been the case that transaction volume would spike every day at the same time when Bitmex proceed a flood of withdrawals all at once in separate transactions. Worse, it's probably still the case that, in case is sudden market movement, transaction volume can spike while people arb exchanges and move coins into exchanges to sell.
+
+>> Thus, even if you imagine a steady-state mempool growth, unless the 
+>> "near the top of the mempool" criteria is "near the top of the next 
+>> block" (which is obviously *not* incentive-compatible)
+> 
+> I was defining "top of mempool" as "in the first 4 MSipa", ie. next
+> block, and assumed you'd only allow RBF if the old package wasn't in the
+> top and the replacement would be.  That seems incentive compatible; more
+> than the current scheme?
+
+My point was, because of block time variance, even that criteria doesn't hold up. If you assume a steady flow of new transactions and one or two blocks come in "late", suddenly "top 4MWeight" isn't likely to get confirmed until a few blocks come in "early". Given block variance within a 12 block window, this is a relatively likely scenario.
+
+> The attack against this is to make a 100k package which would just get
+> into this "top", then push it out with a separate tx at slightly higher
+> fee, then repeat.  Of course, timing makes that hard to get right, and
+> you're paying real fees for it too.
+> 
+> Sure, an attacker can make you pay next-block high fees, but it's still
+> better than our current "*always* overpay and hope!", and you can always
+> decide at the time based on whether the expiring HTLC(s) are worth it.
+> 
+> But I think whatever's simplest to implement should win, and I'm not in
+> a position to judge that accurately.
+> 
+> Thanks,
+> Rusty.
+
