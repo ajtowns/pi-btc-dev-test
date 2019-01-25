@@ -1,0 +1,327 @@
+From: ekaggata@gmail.com (Adam Gibson)
+Date: Fri, 25 Jan 2019 15:47:34 +0100
+Subject: [bitcoin-dev] bustapay BIP :: a practical sender/receiver
+ coinjoin protocol
+In-Reply-To: <TtjH2zicjKr8PBVCMOvA7ryt2z_XXvtrpC4y1wuWSxexNwMdbPGE7vPmu6UnzmfYqYBMxZ8NNoz4VUnODdIcjR4j-E1sYz_FA6ZZMjKHtuM=@protonmail.com>
+References: <TtjH2zicjKr8PBVCMOvA7ryt2z_XXvtrpC4y1wuWSxexNwMdbPGE7vPmu6UnzmfYqYBMxZ8NNoz4VUnODdIcjR4j-E1sYz_FA6ZZMjKHtuM=@protonmail.com>
+Message-ID: <e15c5dd7-6fe1-b253-e129-aeae6493acd1@gmail.com>
+
+Ryan and list,
+I want to add some commentary to this (BIP79) to see if we can get
+further in standardizing this idea.
+
+When I first mulled it over I thought it too impractical, but its virtue
+of steganographic hiding means only minimal uptake is still enormously
+interesting and worth pursuing; that's my current feeling. I've offered
+more detailed thoughts in my blog post[1] (def not required reading here).
+
+Both Joinmarket and Samourai have started implementing this kind of
+transaction. And while that's interesting experimentally, some kind of
+cross-wallet standard would be helpful, albeit there some differences
+between that and the merchant/centralized service use-case.
+
+We might imagine as a concrete goal for this BIP to create something
+that would be acceptable for inclusion into a project like BTCPayServer,
+so that it could be used in a realistic use case by smaller bitcoin
+accepting merchants.
+
+Comments to the BIP[2] as follows, with generic comments first, and then
+specific comments for existing points in the BIP:
+
+[1] https://joinmarket.me/blog/blog/payjoin
+[2] https://github.com/bitcoin/bips/blob/master/bip-0079.mediawiki
+
+Generic comments
+============
+* Protocol versioning. Since inevitably (even if only merchants), this
+must be implemented by multiple wallets to be useful, the communication
+protocol will need versioning (for example i have in my
+simple/experimental Joinmarket PayJoin that sender sends min and max
+supported version and receiver responds with a chosen protocol version
+so we can update). I do understand that as a client-server model can
+apply here, we can ditch a lot of the complexities around network/p2p
+interaction, but this much at least seems necessary.
+* Although it has its logic, I don't think "Bustapay" is a good name for
+this protocol. I prefer "PayJoin" which is neutral sounding and
+self-descriptive. Needless to say this is not a hill I intend to die on.
+* PSBT/BIP174. I realise this has already been discussed, but this is a
+good example of what this standardisation was designed for, so I'd be
+against not including it, even given the reality that, as you correctly
+observe, it is not yet implemented in the majority of wallets and
+libraries. One way round that is to make it optional (possibly combined
+with above point about versioning). Note that for example you were
+observing the necessity to check the sequence number was unchanged; that
+would be encapsulated by checking equality of PSBT Input objects/fields.
+While one can make such software architecture arguments, the really
+fundamental point is the need for standards for x-wallet compatibility.
+* Version, Locktime: Perhaps this is not needed; in a peer to peer
+wallet scenario I think there might be logic in trying to get cover
+traffic of (Core, Electrum, others), say, by using
+last-block-locktime-mostly, as they do. Version should be 2 and sequence
+is a function of your suggestion to use BIP125. Worth noting that BIP125
+is *not* currently widely used on the network, though (see
+https://p2sh.info/dashboard/db/replace-by-fee?orgId=1). For this reason
+it should perhaps be explicitly only optional.
+* Avoidance of non-payment "Unnecessary Input Heuristic" (1, 2). For
+reference, see the definition here
+https://gist.github.com/AdamISZ/4551b947789d3216bacfcb7af25e029e#gistcomment-2796539
+and some data here
+https://gist.github.com/AdamISZ/4551b947789d3216bacfcb7af25e029e#gistcomment-2800791
+(whole comment thread may be of interest) - note this UIH name is afaik
+Chris Belcher's invention, it seems useful as a categorisation.
+ So, it seems that UIH2 is more important to avoid; while some more
+sophisticated wallet coin selection algorithms *may* occasionally pick
+an input set where one input is larger than any output, most won't, and
+some in particular never will. So I think the text here should indicate
+that *the receiver's contributed input(s) SHOULD be chosen to avoid
+triggering the UIH2 heuristic where possible, so that the final payjoin
+transaction is maximally plausible as an ordinary payment" or similar.
+UIH1 is a nice-to-have (meaning the plausibility extends to two
+different (both wrong) payment amounts, but it may not be necessary to
+mention it in the BIP.
+
+
+Specific comments
+=================
+
+>> ====Step 4. Receiver validates, re-signs, and propagates on the
+bitcoin network====
+
+I believe this should say "Sender" not Receiver. Also for the next
+sentence, s/receiver/sender/:
+
+>> The receiver MUST validate the ''partial transaction'' was changed
+correctly and non-maliciously (to allow using potentially untrusted
+communication channels), re-sign its original inputs and propagate the
+final transaction over the bitcoin network.
+
+Your very correct highlighting of the attack vector of "receiver gives
+sender other inputs belonging to sender to unwittingly sign (described
+below), should be highlighted here, perhaps with the phrase "re-sign its
+ORIGINAL inputs" (only!)".
+
+>> When the sender is creating a "template transaction" it is done
+almost identically to creating a normal send, with the exception that
+*only* segwit inputs may be used. The sender is also encouraged to use a
+slightly more aggressive feerate than usual as well as BIP125 (Opt-in
+Full Replace-by-Fee Signaling), but neither is strictly required.
+
+"slightly more aggressive feerate than usual" - this I understand is to
+make up for receiver contributed utxo, OK.
+
+"*only* segwit inputs" - it certainly makes things simpler. One can work
+with non-segwit inputs but especially considering (as mentioned below)
+we really ought to "MUST" the part about matching input types, I tend to
+agree that non-segwit should be disallowed.
+
+>> The receiver must add at least one input to the transaction (the
+"contributed inputs"). If the receiver has no inputs, it should use a
+500 internal server error, so the client can send the transaction as per
+normal (or try again later).
+
+Would it not be much simpler for the server to return a different
+(non-error) response indicating that it will broadcast the template tx
+in this case?
+
+>> Its generally advised to only add a single contributed input, however
+they are circumstances where adding more than a single input can be useful.
+
+I don't see a good reason to advise the use of only 1 input? (but this
+will also connect with the above generic comment about "UIH"). I guess
+it's because of your approach to fees. I'd prefer not to create a
+limitation here.
+
+>> To prevent an attack where a receiver is continually sent variations
+of the same transaction to enumerate the receivers utxo set, it is
+essential that the receiver always returns the same contributed inputs
+when it's seen the same inputs.
+
+This is an approach to avoiding this problem which has the virtue of
+simplicity, but it seems a little problematic. (1) You must keep a
+mapping of proposed payment utxos to one's proposed contributed input
+utxos, but (2) how should this be updated if you need to spend the
+contribution mentioned in (1)? Ironically use of payjoin exacerbates
+this issue, because it results in a smaller number of utxos being held
+by the receiver at any one time :) All this considered, I still see the
+value in your approach, but it might end up with a re-attempted payment
+being rejected. Certainly the more complex suggested solutions coming
+out of the summer 2018 coinjoin workshop aren't as practical as this,
+and may be overkill for small merchants/receivers.
+
+>> It is strongly preferable that the receiver makes an effort to pick a
+contributed input of the same type as the other transaction inputs if
+possible.
+
+I have also thought about this and you could reasonably argue this
+should be a MUST section in the BIP, that is, if the receiver cannot use
+inputs of the same type, he should fall back to the template
+transaction. A mixed-input payjoin/coinjoin is essentially
+near-perfectly identifiable as such (there is almost zero other usage of
+multi-type-input transactions), which is a very different thing than a
+non-identifiable payjoin transaction. That may or may not be OK to the
+sender. This is debatable though, for sure.
+
+>> After adding inputs to the transaction, the receiver generally will
+want to adjust the output that pays himself by increasing it by the sum
+of the contributed input amounts (minus any fees he wants to
+contribute). However the only strict requirement is that the receiver
+*must never* add or remove inputs, and *must not* ever decrease any
+output amount.
+
+"*must never* add or remove inputs" - did you mean "must never remove
+inputs"? he surely has to add one! Or, perhaps you mean he must not
+alter the list of inputs provided by the sender (in which case it should
+be clarified).
+
+"must not decrease any output amount" - I initally disagreed with this
+but it is a better option than the one I currently chose in Joinmarket
+payjoin (sender pays all fee as long as receiver utxos are not too
+much). So this means that the receiver either consciously chooses to not
+increase the fee, meaning the fee rate may be a bit low (hence your
+earlier comment about being generous, got it), or contributes via the
+payout amount. I guess the latter might break merchant software
+expecting to have amount output fixed and fees determined by change.
+
+Regards,
+Adam Gibson/waxwing
+
+On 30. 08. 18 22:24, Ryan Havar via bitcoin-dev wrote:
+> I've just finished writing an implementing of this, and extremely happy
+> with how it turned out. So I'd like to go and try go down the path of
+> more formally describing it and getting some comments and ultimately
+> encourage its wide-spread use.
+> 
+> 
+> ==Abstract==
+> 
+> The way bitcoin transactions are overwhelming used is known to leak more
+> information than desirable. This has lead to fungibility concerns in bitcoin
+> and a raise of unreasonably effective blockchain analysis.
+> 
+> Bustapay proposes a simple, practical way to bust these assumptions to
+> immediate
+> benefit of the sender and recievers. Furthermore it does so in such a
+> way that
+> helps recievers avoid utxo bloat, a constant problem for bitcoin merchants.
+> 
+> ==Copyright==
+> 
+> This BIP is in the public domain.
+> 
+> ==Motivation==
+> 
+> One of the most powerful heuristic's employed by those whose goal is to
+> undermine
+> bitcoin's fungiblity has been to assume all inputs of a transaction are
+> signed by
+> a single party. In the few cases this assumption does not hold, it is
+> generally
+> readibly recognizable (e.g. traditional coinjoins have a very obvious
+> structure,
+> or multisig outputs are most frequently validated onchain).
+> 
+> Bustapay requires no changes to bitcoin and creates bitcoin transactions
+> that are
+> indistinguishable from normal ones.
+> 
+> It is worth noting that this specification has been intentionally kept
+> as simple
+> as possible to encourage adoption. There are almost an endless amount of
+> extensions
+> possible but the harder the implementation of clients/server the less
+> likely it
+> will ever be done. Should bustapay enjoy widespread adoption, a "v2"
+> specification
+> will be created with desired extensions.
+> 
+> ==Specification==
+> 
+> A bustapay payment is made from a sender to a receiver.
+> 
+> Step 1. Sender creates a bitcoin transaction paying the receiver
+> 
+> This transaction must be fully valid, signed and all inputs must use
+> segwit. This transaction is known as the "template transaction". This
+> transaction must not be propagated on the bitcoin network.
+> 
+> Step 2. Sender gives the "template transaction" to the receiver
+> 
+> This would generally be done as an HTTP POST. The exact URL to submit it
+> to could be specified with a bip21 encoded address. Such as
+> bitcoin:2NABbUr9yeRCp1oUCtVmgJF8HGRCo3ifpTT?bustapay=https://bp.bustabit.com/submit
+> and the HTTP body should be the raw transaction hex encoded as text.
+> 
+> Step 3. Receiver processes the transaction and returns a partially
+> signed coinjoin
+> 
+> The receiver validates the transaction is valid, pays himself and is
+> eligible for propation. The receiver then adds one of his own inputs
+> (known as the "contributed input") and increase the output that pays
+> himself by the contributed input amount. Doing so will invalidate the
+> "template transaction"'s original input signatures, so the sender needs
+> to return this "partial transaction" back to the receiver to sign. This
+> is returned as a hex-encoded raw transaction a response to the original
+> HTTP POST request.
+> 
+> Step 4. Receiver validates, re-signs, and propagates on the bitcoin network
+> 
+> The receiver is responsible in making sure the "partial transaction"
+> returned by the sender was changed correctly (it should assume the
+> connection has been MITM'd and act accordingly), resign its original
+> inputs and propagates this transaction over the bitcoin network. The
+> client must be aware that the server can reorder inputs and outputs.
+> 
+> Step 5. Receiver observes the finalized transaction on the bitcoin network
+> 
+> Once the receiver has seen the finalized transactions on the network
+> (and has enough confirmations) it can process it like a normal payment
+> for the sent amount (as opposed to the amount that it looks like on the
+> network). If the receiver does not see the finalized transaction after a
+> timeout will propagate the original "template transaction" to ensure the
+> payment happens and function a strong anti-DoS mechanism.
+> 
+> 
+> === Implementation Notes ===
+> For anyone wanting to implement bustapay payments, here are some notes
+> for receivers:
+> 
+> * A transaction can easily be checked if it's suitable for the mempool
+> with testmempoolaccept in bitcoin core 0.17
+> * Tracking transactions by txid is precarious. To keep your sanity make
+> sure all inputs are segwit. But remember segwit does not prevent txid
+> malleability unless you validate the transaction. So really make sure
+> you're using testmempoolaccept at the very least
+> * Bustapay could be abused by a malicious party to query if you own a
+> deposit address or not. So never accept a bustapay transaction that pays
+> an already used deposit address
+> * You will need to keep a mapping of which utxos people have showed you
+> and which you revealed. So if you see them again, you can reveal the
+> same one of your own
+> * Check if the transaction was already sorted according to BIP69, if so
+> ensure the result stays that way. Otherwise probably just shuffle the
+> inputs/outpus
+> 
+> Notes for sending applications:
+> 
+> * The HTTP response must *not* be trusted. It should be fully validated
+> that no unexpected changes have been made to the transaction.
+> * The sender should be aware the original "template transaction" may be
+> propagated at any time, and in fact can intentionally be
+> ? done so for the purpose of RBF as it should have a slightly higher fee
+> rate.
+> 
+> == Credits ==
+> The idea is obviously based upon Dr. Maxwell's seminal CoinJoin
+> proposal, and reduced scope inspired by a simplification of the "pay 2
+> endpoint" (now offline) blog post by blockstream.
+> 
+> 
+> -Ryan
+> 
+> 
+> 
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+> 
