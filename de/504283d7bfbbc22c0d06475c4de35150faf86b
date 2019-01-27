@@ -1,0 +1,85 @@
+From: rhavar@protonmail.com (rhavar at protonmail.com)
+Date: Sun, 27 Jan 2019 19:24:11 +0000
+Subject: [bitcoin-dev] bustapay BIP :: a practical sender/receiver
+	coinjoin protocol
+In-Reply-To: <2cd4fe6d-c0ca-5ae7-4107-38e1609743a8@gmail.com>
+References: <TtjH2zicjKr8PBVCMOvA7ryt2z_XXvtrpC4y1wuWSxexNwMdbPGE7vPmu6UnzmfYqYBMxZ8NNoz4VUnODdIcjR4j-E1sYz_FA6ZZMjKHtuM=@protonmail.com>
+	<e15c5dd7-6fe1-b253-e129-aeae6493acd1@gmail.com>
+	<-yZhdFkKfKAEz1_4GKKSpTxjvR8EDSsH_5-TTh_4X5qwa79igXKR14rh6JASrald-F97o1htWY_kcBQ7IVr7ZH9zOQlOEwzhkWDjTq0d7F4=@protonmail.com>
+	<2cd4fe6d-c0ca-5ae7-4107-38e1609743a8@gmail.com>
+Message-ID: <vJMuB76ZLt0LrRQZKavdrbfJZOdlTF_cmt81c2Eu2jwvzZ3c2SYaBu5aI6lAP-gEDO1QQdUB-WMJE-XkEGEOpNdSWGFBA8ptWDFVihGHTc4=@protonmail.com>
+
+> Is there a missing word. "by giving a person.."? Not actually sure what
+> you're getting at here but I suspect it's again tangential to this BIP
+> discussion.
+
+Correct on both points. I meant to say "giving a (txid:vout:privkey)" to a person as means of payment.
+
+
+> So I think the limiting factor is in fact creating a standard that a reasonable number
+> of people could agree with (and I like operational definitions, so
+> subjective as it is, I like the goal of "good/clear enough that it could
+> be incorporated into something like BtcPayServer")
+
+
+The problem with BtcPayServer (and a lot of similar software), is that it's not very unsuitable for any sender/receiver coinjoin due to it not having its own wallet. As I understand the basic architecture is just a fancy wrapper around bip32 address generation and monitoring the payment to those addresses. This means that adding support is not only a large code change, but it also entails a substantial change for merchants (you can't just have your payments flow into your trezor, but need to run a hot wallet)
+
+But I strongly believe that bustapay is good enough _right now_ for BtcPayServer integration (which I'd happily contribute myself, if it wasn't for my unfamiliarity of the project and c#)
+
+
+> But this relates back to my first "generic" point that you haven't
+> addressed here - protocol versioning and the possibility of more than
+> one option. Perhaps more realistic (debatable): have the current version
+> be non-PSBT but with a plan to have a version bump with PSBT in future.
+> Stuff like that. It seems crazy to actually long term reject it.
+
+Adding backwards-compatible versioning at a later stage would be pretty trivial through either the URL or HTTP header (e.g  version=2)  and if breaking backwards compatible is desirable it can also easily been done (e.g. bump the bip21 or send an incompatible request/response). I don't see this as a problem at all, and I'm not rejecting it long-term, I just don't think it's particularly helpful to bikeshed now, when adoption is pretty much zero.
+
+
+
+> I don't want to be that guy, but this was a central part of the proposal
+> that came of the meetup last summer and is in Haywood's blogpost. I mean
+> if you came up it with separately, then cool :) But I was there, that
+> was established immediately as the right way of doing this to avoid a
+> trivial attack.
+
+Oh wow. had no idea. I saw the part about the receiver spamming the sender with a bunch of transactions, where only 1 of them are real and thought "ewww" and "came up" with the idea of a "template transaction" instead. I was always wondering why no one came up it, but now it makes sense. The transaction-spam stage was just an _additional_ layer of protection.
+
+Ok, now I feel like an idiot =)  Thanks for letting me know.
+
+
+> The counterargument is Laurent's statistics which I previously linked,
+> suggesting that maybe 30% of txs violate this anyway, today. I'm not
+> sure about that, will need more analysis; Core's SRD algo may be one
+> reason, but anyway ... better to make things look like payments.
+
+I think it's interesting, but I don't think it particularly matters. Avoiding UIH1 I think is pretty much irrelevant, as it'll likely just confuse any analysis into thinking the payment is the reverse of what it actually is. And wallets already don't care about violating UIH2(as a way to do implicit consolidation). If 30% of tx's are violating it, you can be pretty sure it means the _vast majority_ of wallets run coin selection in such a way that can violation UIH2.  Most wallets use a coin selection algorithm that you can approximate with:
+
+while !enoughMoney {
+    inputs += getAnotherInput();
+}
+
+and don't run a final pass that would prune superfluous inputs.  Even coinsayer (shill alert) which I believe runs the most advanced coin selection algorithms, will routinely and intentionally violate UIH2 when it's ideal (e.g. most classic case: when `consolidationFeeRate >= minFeeRate`).
+
+I'm not trying to dismiss your analysis, as I find it interesting. I'm just against increasing the cognitive burden on implementations by mentioning all this stuff, when the truth is it (barely) matters.  If wallets routinely avoided UIH2 and making a UIH2 payment would "out" the transaction as much more likely to be a bustapay, then I'd definitely reconsider and provide a basic suggestion into how to try avoid it.
+
+And like I said, I also think there's much more important things that go into "picking a contributed input" than just this.
+
+
+
+> A last point, you also don't see value in being more explicit about
+> simple things like transaction version and locktime? Even if you think
+> these things should not be controlled, e.g. the protocol should allow
+> either transaction version, then it'd be better to explicitly say so.
+
+
+My intention was that wallets create a transaction exactly like they normally would do, and use that as the template transaction. The only time I wanted to be prescriptive was when it would increase the implementation complexity (e.g. being non-segwit compatible is a pain in the ass. So I'd rather just be "pure segwit only" transactions). But something like locktime makes no difference as long as the transaction is mempool eligible, so I'd rather just wallets do what they do anyway.
+
+Although I think there should be a separate discussion on improving the uniformity of bitcoin transactions in general. The current state of affairs is really atrocious.
+
+
+
+---
+
+
+P.S. I know I come across as obstinate, but it's not really so. If you can come up with an alternative to bustapay with some traction, I'd love to get behind it and deprecate bustapay in favor of it. I just am pretty happy with the state of bustapay and it's status a sort of "MVP of pay2endpoint", and unless the argument is in the form: "We'd love to support it, but in order to do so we'd need X" I'm probably going to disagree.
