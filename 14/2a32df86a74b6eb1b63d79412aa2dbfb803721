@@ -1,0 +1,103 @@
+From: oleganza@gmail.com (Oleg Andreev)
+Date: Fri, 1 Feb 2019 09:56:49 -0800
+Subject: [bitcoin-dev] Predicate Tree in ZkVM: a variant of
+	Taproot/G'root
+In-Reply-To: <B88B34DB-8FBE-4B45-9E24-6676384C54F2@gmail.com>
+References: <B88B34DB-8FBE-4B45-9E24-6676384C54F2@gmail.com>
+Message-ID: <902846E6-80CC-4713-8467-932274182B75@gmail.com>
+
+A follow-up comment: I've have sent this email right before Pieter's talk on miniscript at Stanford yesterday. I want to express my appreciation to the thinking about scripts/contracts that Pieter, Andy, Greg have been promoting for long time. These ideas influenced a lot the design decisions in ZkVM: "blockchain as a court", very limited functionality and clarity of scripts, and, as Pieter laid out yesterday, composition of policies. These are all the same values that I'm trying to reflect in ZkVM, that's why i think it might be interesting to this mailing list.
+
+Also, Neha Narula asked a question this morning:
+
+> Isn't this a DoS vector, in that an attacker could generate a lot of expensive code to execute in the VM which would then be rejected once the checks get executed?  If so, how critical is this deferred execution of point operations to your design? 
+
+The answer: hopefully it's not a DoS vector, we are working on this right now. Programs for `call` and `delegate` have to be statically built into the transaction bytecode string, and cannot be constructed within the VM (so it's very similar to P2SH). ZkVM is similar to Bitcoin Script in that the execution cost is proportional to the program length: one cannot make a short program that would use loops or recursion into dynamically constructed programs to exhibit arbitrary validation cost. For those familiar with TxVM released last year, we are removing loops and dynamic program construction, and gas-like "runlimit" with them from ZkVM.
+
+Another feature is inspired by old proposal by Pieter (IIRC) to treat checksig as all-or-nothing. ZkVM does not do dynamic branching based on outcomes of expensive operations. Signature checks, predicate tree traversal - all have to unconditionally succeed.
+
+1. This makes the program execution (w/o ECC ops) very fast and proportional to the length of the program.
+2. Then, all the collected ECC ops give precise metric of how expensive the rest of the validation would be.
+3. Plus, the constraint system proof blob (that comes with the transaction) by itself gives an exact measurement of the bulletproofs validation cost.
+
+The upstream protocol ("blockchain rules") can have soft- or hard- caps on both program length and amount of ECC operations (similar to the limit on sig checks per block in Bitcoin). That said, we haven't drilled into specifics what these caps should be and how they should be enforced, that's still in the works.
+
+
+> On Jan 31, 2019, at 15:44 , Oleg Andreev <oleganza at gmail.com> wrote:
+> 
+> Hi,
+> 
+> We've been working for a thing called ZkVM [1] for the last few weeks. It is a "blockchain virtual machine" in the spirit of Bitcoin, with multi-asset transfers and zero-knowledge programmable constraints.
+> 
+> As a part of its design, there is a "Predicate Tree" ? a variant of Taproot by Greg Maxwell [2] and G'root by Anthony Towns [3] that I would like to present here. Hopefully it is useful to the discussion, and I would appreciate any feedback.
+> 
+> ## Background
+> 
+> In ZkVM there are linear types Contract and Value (in addition to plain data types), where Contract also implements "object capabilities" pattern: Contract "locks" a collection of data and Values under a "predicate" which is represented by a single group element ("point" in ECC terms). The predicate can be "satisfied" in a number of allowed ways which makes the contract unlock its contents, e.g. release the stored Value which can then be locked in a new unspent output.
+> 
+> ## Predicate Tree
+> 
+> Predicate is a point that represents one of three things, which allows composing conditions in an arbitrary tree:
+> 
+> 1. Public key
+> 2. Program
+> 3. Disjunction of two other predicates
+> 
+> Public key allows representing N-of-N signing conditions (and M-of-N with proper threshold key setup, although small combinations like 2-of-3 can be non-interactively represented as a tree of 3 combinations of 2-of-2 conditions):
+> 
+>   P = x*B  (x is a secret, B is a primary generator point)
+> 
+> Program commitment is a P2SH-like commitment:
+> 
+>   P = hash2scalar(program)*B2   (B2 is orthogonal to B, so one cannot sign for P, but must reveal the program)
+> 
+> Disjunction (asymmetric to allow happy-path signing with the left predicate):
+> 
+>   P = L + hash2scalar(L,R)*B
+> 
+> 
+> ## VM instructions
+> 
+> To use the predicate trees, ZkVM provides 4 instructions:
+> 
+> 1. `signtx` to verify the signature over the transaction ID treating the predicate as a pubkey.
+> 2. `call` to reveal the committed program and execute it.
+> 3. `left`/`right` to replace the contract's predicate with one of the sub-predicates in a disjunction.
+> 4. `delegate` to check a signature over a program and execute that program (pay-to-signed-program pattern).
+> 
+> More details are in the ZkVM spec: https://github.com/interstellar/zkvm/blob/main/spec/ZkVM.md#signtx
+> 
+> `call` and `delegate` differ in that `call` reveals and runs a pre-arranged program (like in P2SH), while `delegate` allows choosing the program later which can be signed with a pre-arranged public key. `delegate` also enables use cases for SIGHASH: if a specific output or outputs or constraints must be signed, they can be represented by such program snippet. Likewise, a "revocation token" for the payment channel (LN) can be implemented with `delegate` instruction.
+> 
+> 
+> ## Performance
+> 
+> For performance, the following rules are built into ZkVM:
+> 
+> 1. All point operations are deferred. Signature checks, disjunction proofs, program commitment proofs - are not executed right away, but deferred and verified in a batch after the VM execution is complete. This enables significant savings, especially since half or third of the terms reuse static points B and B2.
+> 2. `signtx` does not accept individual signatures, but uses a single aggregated signature for the whole transaction. All the pubkeys are remembered in a separate set and combined via MuSig-style [4] protocol to check the single 64-byte signature over txid in the end of the VM execution. In other words, signature aggregation is not optional for `signtx` (signatures over txid). Note: the `delegate` instruction permits arbitrary programs, so it uses one signature per program.
+> 
+> 
+> ## What is different from Taproot/G'root
+> 
+> (1) No pure hash-based MAST: each time one peels off a layer of a tree, there's an ECC check which is more expensive than pure-hash merkle path check, but makes the design simpler and all ECC ops are batched alongside bulletproofs R1CS verification statement, making the performance difference unimportant.
+> 
+> (2) There is no designated blinding factor or a pubkey with the program commitment like in G'root. This is not something i'm particularly sure about, but will lay out the current rationale:
+> 1. The happy-path one-time-key normally acts as a sufficient blinding factor for the program.
+> 2. If the program needs a blinding factor, it can be embedded as a `<garbage> drop`.
+> 3. The combo of "sign + programmatic constraints" is done by having instructions inside the program that wrap the value(s) in a transient contract with the required pubkey and leaving it on the stack.
+> 
+> 
+> ## References
+> 
+> [1] https://github.com/interstellar/zkvm
+> [2] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-January/015614.html
+> [3] https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-July/016249.html
+> [4] https://blockstream.com/2018/01/23/musig-key-aggregation-schnorr-signatures/
+> 
+> 
+> 
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20190201/20c16a4b/attachment.html>
