@@ -1,0 +1,123 @@
+From: ZmnSCPxj@protonmail.com (ZmnSCPxj)
+Date: Fri, 01 Feb 2019 09:19:00 +0000
+Subject: [bitcoin-dev] Proof-of-Stake Bitcoin Sidechains
+In-Reply-To: <CACV3+OU1ynRuR2SioW+O+CAp5M7ZQA6af_hEY5JZCVrXpqjtKQ@mail.gmail.com>
+References: <CACV3+OU1ynRuR2SioW+O+CAp5M7ZQA6af_hEY5JZCVrXpqjtKQ@mail.gmail.com>
+Message-ID: <VwCJ55YVFwMwQk83TlSxhluf6q5-m3Ad6AquADm1psVXzXRWdaMoGERtU4AFF-QGqWYJ1POLur484QzH1jGExc8qjkfWZiTb0sc_u10Vd88=@protonmail.com>
+
+Good morning Matt Bell,
+
+Thinking of this further, I observe that there are limits on the number of operations in a SCRIPT (I believe 201 non-push operations, and maybe a smaller number of CHECKSIG operations?).
+This implies that the number of signatories of the sidechain funds in the mainchain are limited.
+This is an important care point.
+I am uncertain what is the best way to solve this issue.
+
+
+---
+
+In any case, I now present a design for a proof-of-mainstake sidechain, now without any modifications to Bitcoin mainchain.
+
+---
+
+I observe that a blockchain is, stripped to its barest minimum, nothing more than a Merklized singly-linked list.
+Each block header is a node in a singly-linked list.
+It commits to the previous block header, and also commits to the block data (traditionally a Merkle binary tree).
+
+Via such block headers, a chain of blocks --- a blockchain --- is formed.
+
+---
+
+I observe that a (non-coinbase) transaction in Bitcoin refers to at least one existing transaction output.
+A representation of that transaction output must be committed to in the transaction.
+
+If we create single-input single-output transactions, a chain of transactions is formed.
+
+---
+
+Thus the idea: the sidechain *is* the transaction chain.
+
+I observe that the mainchain *must* contain some UTXO(s) that are purportedly controlled by the sidechain rules.
+
+It is also possible that the sidechain funds be a single UTXO, with deposits and withdrawals requiring that the single UTXO be spent, in order to maintain the invariant that the sidechains funds are handled completely in a single UTXO.
+In addition, it is possible for a transaction to commit to some data arbitrarily, either via `OP_RETURN`, or via some technique such as pay-to-contract (which reduces space utilization on the mainchain compared to `OP_RETURN`).
+
+When we use the above technique (i.e. the sidechain only "owns" a single mainchain UTXO at each block of the mainchain):
+
+1.  Each transaction commits to the previous transaction (via spending the output of the previous transaction).
+2.  Each transaction may commit to some other data (via `OP_RETURN` or other technique).
+
+I observe also that under a blockchain:
+
+1.  Each block header commits to the previous block header.
+2.  Each block header commits to the block data.
+
+>From this, the analogy is simple and obvious.
+The sidechain "blockchain" *is* the transaction chain.
+
+---
+
+Under certain forms of proof-of-stake, the block must be signed by some set of signatories of the stakers.
+Under transaction rules, the transaction must be signed according to the SCRIPT, and the SCRIPT may indicate that some set of signatories must sign.
+
+Thus, it becomes possible to simply embed the sidechain block headers on the mainchain directly, by spending the previous transaction (== sidechain block header).
+This spend requires that the transaction be signed in order to authorize the spend.
+However, these same signatures are in fact also the signatures that, under proof-of-stake, prove that a sufficient signatory set of the stakers has authorized a particular block of the proof-of-stake blockchain.
+
+The magic here is that, on the mainchain, a transaction may only be spent once.
+Thus, nothing-at-stake and stake-grinding problems disappear.
+
+---
+
+Now let us introduce some details.
+
+We have two mainchain-to-sidechain requests:
+
+1.  An indication that a mainchain coin owner wants to stake coins to the sidechain.
+2.  An indication that a mainchain coin owner wants to transfer coins to the sidechain.
+
+>From within the sidechain, sidechain-to-mainchain withdrawals must somehow be signalled, but that is up to the sidechain to define.
+We shall ignore it here.
+
+When a sidechain receives a request to add stake, then the current stakers create a mainchain transaction, spending the sidechain UTXO, plus the  staked coins, and outputting the next sidechain UTXO (with the signatory set modified appropriately), plus a stake UTXO that locks the coins.
+When a sidechain receives a request to transfer coins from mainchain to sidechain, then the current stakers create a mainchain transaction, spending the sidechain UTXO, plus the transferred coins, and outputting the next sidechain UTXO (with the same signatory set).
+
+Multiple such requests can be processed for each transaction (i.e. sidechain block).
+This simply consumes the sidechain UTXO, any stake or transfer coins, and creates the next sidechain UTXO and any stake UTXOs.
+
+Now, the indication to stake is a UTXO with a special script.
+It has two branches:
+
+1.  A signature from the current signatory set.
+2.  Or, 2 OP_CSV and the staker signature.
+
+The intent of the latter branch is to ensure that, if the current signatories ignore the incoming staker, the incoming staker can still recover its funds.
+
+If the current set of stakers accepts the incoming staker (which requires both that they change the signatory set, and put the money being staked into a stake UTXO which is simply a long CSV and the staker signature), then the first branch is performed and the coin is an input of the sidechain block header (== sidechain managing transaction).
+
+A similar technique is used for mainchain-to-sidechain transfers.
+If the mainchain-to-sidechain transfer is ignored (either deliberately, or by an accident of disrupted communication from the mainchain trasnferrer to the sidechain network), the mainchain transferrer can recover its money and try again.
+
+---
+
+Ideally, every mainchain block would have a sidechain managing transaction (== sidechain block header).
+Of course, we must consider fees.
+Obviously the sidechain itself must charge fees within the sidechain.
+Some fraction of those fees will be spent in order for the sidechain managing transaction to be confirmed on the mainchain.
+
+Now it may happen that the sidechain managing transaction is not confirmed immediately on the mainchain.
+The sidechain stakers (the signatory set) may elect to sacrifice even more of their fees to increase the fees of the sidechain managing transaction via RBF.
+
+---
+
+Now perhaps the sidechain may wish to have a faster (or more regular) block rate than the mainchain.
+In such a case, it may maintain a "real" blockchain (i.e. headers that commit to a single previous header, and commits the block data).
+Then each sidechain managing transaction would commit to the latest sidechain block header agreed upon by the stakers.
+
+These sidechain blocks need not be signed; they only become "real" if they are committed to, directly or indirectly, in a sidechain managing transaction.
+
+At each sidechain block, the signatory set (the stakers) create a sidechain managing transaction.
+If it is immediately put into a mainchain block, then the next sidechain managing transaction spends it.
+Otherwise, if it is not put into a mainchain block, then the stakers just recreate the sidechain managing transaction with RBF.
+
+Regards,
+ZmnSCPxj
