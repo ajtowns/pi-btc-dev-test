@@ -1,0 +1,30 @@
+From: tamas.blummer@gmail.com (Tamas Blummer)
+Date: Sun, 3 Feb 2019 21:15:25 +0100
+Subject: [bitcoin-dev] BIP157 server Murmel introduced,
+	enchancement suggestion to BIP158
+Message-ID: <9509A1AC-287A-48E9-84E9-D507D6A2A4CD@gmail.com>
+
+TLDR: I suggest to add outpoint filter to BIP158 as it proved to be useful while developing a filter server and allows further checks in filter client.
+
+Murmel is my project within the rust-bitcoin community. https://github.com/rust-bitcoin/murmel
+
+Its goal is to provide a lightweight, at least SPV security, settlement layer for the Lightning Network implementation in Rust. https://github.com/rust-bitcoin/rust-lightning
+
+Murmel relies on BIP157 (Client Side Block Filtering). Since Bitcoin Core does not yet support this protocol extension, I also added filter and block server functionality to Murmel and this might be useful for 
+development purposes any other BIP157 client project.
+
+You may compile and run a Murmel filter server to support your client development. It bootstraps within a few hours. Follow the instructions at: https://github.com/rust-bitcoin/murmel
+
+While implementing both client and server side I made an observation that should be considered for BIP158:
+
+BIP158 specifies base filter containing all scripts spent or created by a block (except those with OP_RETURN). I found it useful to also compute a filter on spent and created outpoints.
+The Murmel filter server consults these outpoint filters to find the transactions with the spent scripts while computing the base script filter. Since outpoints usually getting spent shortly after created, this approach works well enough to
+keep up with the blockchain, although far too slow to rely on it while bootstrapping. An advantage of this approach of looking up UTXO is that there is nothing to be recomputed at re-org, filters are consulted following
+the path from current tip back to genesis. This fits well with Murmel?s storage, that is my other project Hammersbald https://github.com/rust-bitcoin/hammersbald, a highly efficient truly append only blockchain store in Rust.
+Filter matching is also nicely parallelizable looking up subsets of spent outputs in parallel. 
+
+A lightweight client can use outpoint filters to efficiently validate spent coins or miner reward, which goes beyond SPV guarantees. This is probabilistically possible now, and definitely once filters are committed.
+
+For above reasons I suggest to also add outpoint filter to BIP158, so filter servers may support it, as does Murmel. Murmel is moving quickly; I tagged the version as of this mail with DEVLIST for later reference.
+
+Tamas Blummer
