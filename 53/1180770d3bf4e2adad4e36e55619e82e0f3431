@@ -1,0 +1,32 @@
+From: tamas.blummer@gmail.com (Tamas Blummer)
+Date: Mon, 4 Feb 2019 12:41:20 +0100
+Subject: [bitcoin-dev] Interrogating a BIP157 server, BIP158 change proposal
+Message-ID: <6D57649F-0236-4FBA-8376-4815F5F39E8A@gmail.com>
+
+TLDR: a change to BIP158 would allow decision on which filter chain is correct at lower bandwith use
+
+Assume there is a BIP157 client that learned a filter header chain earlier and is now offered an alternate reality by a newly connected BIP157 server.
+
+The client notices the alternate reality by routinely asking for filter chain checkpoints after connecting to a new BIP157 server. A divergence at a checkpoint means that the server disagrees the client's history at or before the first diverging checkpoint. The client would then request the filter headers between the last matching and first divergent checkpoint, and quickly figure which block?s filter is the first that does not match previous assumption, and request that filter from the server.
+
+The client downloads the corresponding block, checks that its header fits the PoW secured best header chain, re-calculates merkle root of its transaction list to know that it is complete and queries the filter to see if every output script of every transaction is contained in there, if not the server is lying, the case is closed, the server disconnected.
+
+Having all output scripts in the filter does not however guarantee that the filter is correct since it might omit input scripts. Inputs scripts are not part of the downloaded block, but are in some blocks before that. Checking those are out of reach for lightweight client with tools given by the current BIP.
+
+A remedy here would be an other filter chain on created and spent outpoints as is implemented currently by Murmel. The outpoint filter chain must offer a match for every spent output of the block with the divergent filter, otherwise the interrogated server is lying since a PoW secured block can not spend coins out of nowhere. Doing this check would already force the client to download the outpoint filter history up-to the point of divergence. Then the client would have to download and PoW check every block that shows a match in outpoints until it figures that one of the spent outputs has a script that was not in the server?s filter, in which case the server is lying. If everything checks out then the previous assumption on filter history was incorrect and should be replaced by the history offered by the interrogated server. 
+
+As you see the interrogation works with this added filter but is highly ineffective. A really light client should not be forced to download lots of blocks just to uncover a lying filter server. This would actually be an easy DoS on light BIP157 clients.
+
+A better solution is a change to BIP158 such that the only filter contains created scripts and spent outpoints. It appears to me that this would serve well both wallets and interrogation of filter servers well:
+
+Wallets would recognize payments to their addresses by the filter as output scripts are included, spends from the wallet would be recognized as a wallet already knows outpoints of its previously received coins, so it can query the filters for them.
+
+Interrogation of a filter server also simplifies, since the filter of the block can be checked entirely against the contents of the same block. The decision on filter correctness does not require more bandwith then download of a block at the mismatching checkpoint. The client could only be forced at max. to download 1/1000 th of the blockchain in addition to the filter header history.
+
+Therefore I suggest to change BIP158 to have a base filter, defined as:
+
+A basic filter MUST contain exactly the following items for each transaction in a block:
+	? Spent outpoints
+	? The scriptPubKey of each output, aside from all OP_RETURN output scripts.
+
+Tamas Blummer
