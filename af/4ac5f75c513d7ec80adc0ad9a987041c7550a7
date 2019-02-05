@@ -1,0 +1,206 @@
+From: laolu32@gmail.com (Olaoluwa Osuntokun)
+Date: Mon, 4 Feb 2019 17:42:57 -0800
+Subject: [bitcoin-dev] Interrogating a BIP157 server,
+	BIP158 change proposal
+In-Reply-To: <CDAFC2F7-A0AD-460B-B5B1-A717F7EC700E@gmail.com>
+References: <6D57649F-0236-4FBA-8376-4815F5F39E8A@gmail.com>
+	<CADZtCSgKu1LvjePNPT=0C0UYQvb47Ca0YN+B_AfgVNTpcOno4w@mail.gmail.com>
+	<CDAFC2F7-A0AD-460B-B5B1-A717F7EC700E@gmail.com>
+Message-ID: <CAO3Pvs_gvYy99Bch=7RwVszM_0PFTKUyqDVok=xfm4OOcqwaaQ@mail.gmail.com>
+
+Hi Tamas,
+
+This is how the filter worked before the switch over to optimize for a
+filter containing the minimal items needed for a regular wallet to function.
+When this was proposed, I had already implemented the entire proposal from
+wallet to full-node. At that point, we all more or less decided that the
+space savings (along with intra-block compression) were worthwhile, we
+weren't cutting off any anticipated application level use cases (at that
+point we had already comprehensively integrated both filters into lnd), and
+that once committed the security loss would disappear.
+
+I think it's too late into the current deployment of the BIPs to change
+things around yet again. Instead, the BIP already has measures in place for
+adding _new_ filter types in the future. This along with a few other filter
+types may be worthwhile additions as new filter types.
+
+-- Laolu
+
+On Mon, Feb 4, 2019 at 12:59 PM Tamas Blummer <tamas.blummer at gmail.com>
+wrote:
+
+> I participated in that discussion in 2018, but have not had the insight
+> gathered by now though writing both client and server implementation of
+> BIP157/158
+>
+> Pieter Wuille considered the design choice I am now suggesting here as
+> alternative (a) in:
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-June/016064.html
+> In his evaluation he recognized that a filter having spent output and
+> output scripts would allow decision on filter correctness by knowing the
+> block only.
+> He did not evaluate the usefulness in the context of checkpoints, which I
+> think are an important shortcut here.
+>
+> Yes, a filter that is collecting input and output scripts is shorter if
+> script re-use is frequent, but I showed back in 2018 in the same thread
+> that this saving is not that significant in recent history as address reuse
+> is no longer that frequent.
+>
+> A filter on spent outpoint is just as useful for wallets as is one on
+> spent script, since they naturally scan the blockchain forward and thereby
+> learn about their coins by the output script before they need to check
+> spends of those outpoints.
+>
+> It seems to me that implementing an interrogation by evtl. downloading
+> blocks at checkpoints is much simpler than following multiple possible
+> filter paths.
+>
+> A spent outpoint filter allows us to decide on coin availability based on
+> immutable store, without updated and eventually rolled back UTXO store. The
+> availability could be decided by following the filter path to current tip
+> to genesis and
+> check is the outpoint was spent earlier. False positives can be sorted out
+> with a block download. Murmel implements this if running in server mode,
+> where blocks are already there.
+>
+> Therefore I ask for a BIP change based on better insight gained through
+> implementation.
+>
+> Tamas Blummer
+>
+> On Feb 4, 2019, at 21:18, Jim Posen <jim.posen at gmail.com> wrote:
+>
+> Please see the thread "BIP 158 Flexibility and Filter Size" from 2018
+> regarding the decision to remove outpoints from the filter [1].
+>
+> Thanks for bringing this up though, because more discussion is needed on
+> the client protocol given that clients cannot reliably determine the
+> integrity of a block filter in a bandwidth-efficient manner (due to the
+> inclusion of input scripts).
+>
+> I see three possibilities:
+> 1) Introduce a new P2P message to retrieve all prev-outputs for a given
+> block (essentially the undo data in Core), and verify the scripts against
+> the block by executing them. While this permits some forms of input script
+> malleability (and thus cannot discriminate between all valid and invalid
+> filters), it restricts what an attacker can do. This was proposed by Laolu
+> AFAIK, and I believe this is how btcd is proceeding.
+> 2) Clients track multiple possible filter header chains and essentially
+> consider the union of their matches. So if any filter received for a
+> particular block header matches, the client downloads the block. The client
+> can ban a peer if they 1) ever return a filter omitting some data that is
+> observed in the downloaded block, 2) repeatedly serve filters that trigger
+> false positive block downloads where such a number of false positives is
+> statistically unlikely, or 3) repeatedly serves filters that are
+> significantly larger than the expected size (essentially padding the actual
+> filters with garbage to waste bandwidth). I have not done the analysis yet,
+> but we should be able to come up with some fairly simple banning heuristics
+> using Chernoff bounds. The main downside is that the client logic to track
+> multiple possible filter chains and filters per block is more complex and
+> bandwidth increases if connected to a malicious server. I first heard about
+> this idea from David Harding.
+> 3) Rush straight to committing the filters into the chain (via witness
+> reserved value or coinbase OP_RETURN) and give up on the pre-softfork BIP
+> 157 P2P mode.
+>
+> I'm in favor of option #2 despite the downsides since it requires the
+> smallest number of changes and is supported by the BIP 157 P2P protocol as
+> currently written. (Though the recommended client protocol in the BIP needs
+> to be updated to account for this). Another benefit of it is that it
+> removes some synchronicity assumptions where a peer with the correct
+> filters keeps timing out and is assumed to be dishonest, while the
+> dishonest peer is assumed to be OK because it is responsive.
+>
+> If anyone has other ideas, I'd love to hear them.
+>
+> -jimpo
+>
+> [1]
+> https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-June/016057.html
+>
+>
+>
+> On Mon, Feb 4, 2019 at 10:53 AM Tamas Blummer via bitcoin-dev <
+> bitcoin-dev at lists.linuxfoundation.org> wrote:
+>
+>> TLDR: a change to BIP158 would allow decision on which filter chain is
+>> correct at lower bandwith use
+>>
+>> Assume there is a BIP157 client that learned a filter header chain
+>> earlier and is now offered an alternate reality by a newly connected BIP157
+>> server.
+>>
+>> The client notices the alternate reality by routinely asking for filter
+>> chain checkpoints after connecting to a new BIP157 server. A divergence at
+>> a checkpoint means that the server disagrees the client's history at or
+>> before the first diverging checkpoint. The client would then request the
+>> filter headers between the last matching and first divergent checkpoint,
+>> and quickly figure which block?s filter is the first that does not match
+>> previous assumption, and request that filter from the server.
+>>
+>> The client downloads the corresponding block, checks that its header fits
+>> the PoW secured best header chain, re-calculates merkle root of its
+>> transaction list to know that it is complete and queries the filter to see
+>> if every output script of every transaction is contained in there, if not
+>> the server is lying, the case is closed, the server disconnected.
+>>
+>> Having all output scripts in the filter does not however guarantee that
+>> the filter is correct since it might omit input scripts. Inputs scripts are
+>> not part of the downloaded block, but are in some blocks before that.
+>> Checking those are out of reach for lightweight client with tools given by
+>> the current BIP.
+>>
+>> A remedy here would be an other filter chain on created and spent
+>> outpoints as is implemented currently by Murmel. The outpoint filter chain
+>> must offer a match for every spent output of the block with the divergent
+>> filter, otherwise the interrogated server is lying since a PoW secured
+>> block can not spend coins out of nowhere. Doing this check would already
+>> force the client to download the outpoint filter history up-to the point of
+>> divergence. Then the client would have to download and PoW check every
+>> block that shows a match in outpoints until it figures that one of the
+>> spent outputs has a script that was not in the server?s filter, in which
+>> case the server is lying. If everything checks out then the previous
+>> assumption on filter history was incorrect and should be replaced by the
+>> history offered by the interrogated server.
+>>
+>> As you see the interrogation works with this added filter but is highly
+>> ineffective. A really light client should not be forced to download lots of
+>> blocks just to uncover a lying filter server. This would actually be an
+>> easy DoS on light BIP157 clients.
+>>
+>> A better solution is a change to BIP158 such that the only filter
+>> contains created scripts and spent outpoints. It appears to me that this
+>> would serve well both wallets and interrogation of filter servers well:
+>>
+>> Wallets would recognize payments to their addresses by the filter as
+>> output scripts are included, spends from the wallet would be recognized as
+>> a wallet already knows outpoints of its previously received coins, so it
+>> can query the filters for them.
+>>
+>> Interrogation of a filter server also simplifies, since the filter of the
+>> block can be checked entirely against the contents of the same block. The
+>> decision on filter correctness does not require more bandwith then download
+>> of a block at the mismatching checkpoint. The client could only be forced
+>> at max. to download 1/1000 th of the blockchain in addition to the filter
+>> header history.
+>>
+>> Therefore I suggest to change BIP158 to have a base filter, defined as:
+>>
+>> A basic filter MUST contain exactly the following items for each
+>> transaction in a block:
+>>         ? Spent outpoints
+>>         ? The scriptPubKey of each output, aside from all OP_RETURN
+>> output scripts.
+>>
+>> Tamas Blummer
+>> _______________________________________________
+>> bitcoin-dev mailing list
+>> bitcoin-dev at lists.linuxfoundation.org
+>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>
+>
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20190204/84289ae9/attachment.html>
