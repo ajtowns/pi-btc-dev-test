@@ -1,0 +1,127 @@
+From: jl2012@xbt.hk (Johnson Lau)
+Date: Sun, 10 Feb 2019 01:43:50 +0800
+Subject: [bitcoin-dev] Safer NOINPUT with output tagging
+In-Reply-To: <3567673f-e12b-c107-2a33-0b23b5518c96@gmail.com>
+References: <9F8C0789-48E9-448A-A239-DB4AFB902A00@xbt.hk>
+	<9bae18fa-3266-61ce-0b62-6ee429198260@gmail.com>
+	<FB1FBB2C-D202-4583-B596-F746E20AFD3E@xbt.hk>
+	<3567673f-e12b-c107-2a33-0b23b5518c96@gmail.com>
+Message-ID: <BF34D0BD-A0EF-4F9F-81B7-66965BDC81E4@xbt.hk>
+
+And this scheme could be generalised to the combinatorial settlement model in my earlier post.
+
+Let?s say the settlement tx has 3 outputs: (A&B),(B&C),(A&C). There will be 4 versions of this tx:
+
+tx-X: all 3 outputs are tagged, signed by all 3 parties
+tx-Y-AB: output (A&B) is untagged, the other 2 outputs are tagged. Signed only by C
+tx-Y-AC: output (A&C) is untagged, the other 2 outputs are tagged. Signed only by B
+tx-Y-BC: ???
+
+All 4 txs will have the same relative-lock-time
+
+If C is missing at the time of settlement, A and B will settle upon tx-Y-AB with a simple signature
+
+If B and C are missing, A will settle upon tx-X
+
+However, I think this is just an overkill, and hardly improves fungibility. It is very clear that this is an uncooperative eltoo closing (due to the update tx of the main channel), and this is a multi-party channel (due to multiple settlement outputs). There is little doubt that the remaining parties would like to continue trading. So there is actually no secret to hide, and it might be easier to just tag all outputs
+
+Nonetheless, this example shows that the fungibility impact of output tagging is quite manageable. Most likely you just need to prepare more versions of intermediate txs, and only use the tagged one when things go against you.
+
+> On 10 Feb 2019, at 12:52 AM, Jonas Nick <jonasdnick at gmail.com> wrote:
+> 
+> Johnson's modification solves the issue I pointed out.
+> 
+> Moreover, as Johnson and I discussed in private, using different locktimes for
+> X and Y is not necessary. They can have the same relative locktime. If A and B
+> would only sign Y as soon as the update tx is confirmed, there is no risk of Y
+> changing its txid and therefore invalidating updates built on it.
+> 
+> 
+> On 2/9/19 10:15 AM, Johnson Lau wrote:
+>> This is really interesting. If I get it correctly, I think the fungibility hit could be avoided, just by making one more signature, and not affecting the blockchain space usage.
+>> 
+>> Just some terminology first. In a 3-party channel, ?main channel? means the one requires all parties to update, and ?branch channel? requires only 2 parties to update.
+>> 
+>> By what you describe, I think the most realistic scenario is ?C is going to offline soon, and may or may not return. So the group wants to keep the main channel open, and create a branch channel for A and B, during the absence of C?. I guess this is what you mean by being able to "predict in advance who will become absent?
+>> 
+>> I call this process as ?semi-cooperative channel closing? (SCCC). During a SCCC, the settlement tx will have 2 outputs: one as (A & B), one as (C). Therefore, a branch channel could be opened with the (A & B) output. The channel opening must use NOINPUT signature, since we don?t know the txid of the settlement tx. With the output tagging requirement, (A & B) must be tagged, and lead to the fungibility loss you described.
+>> 
+>> However, it is possible to make 2 settlement txs during SCCC. Outputs of the settlement tx X are tagged(A&B) and C. Outputs of the settlement tx Y are untagged(A&B) and C. Both X and Y are BIP68 relative-time-locked, but Y has a longer time lock.
+>> 
+>> The branch channel is opened on top of the tagged output of tx X. If A and B want to close the channel without C, they need to publish the last update tx of the main channel. Once the update tx is confirmed, its txid becomes permanent, so are the txids of X and Y. If A and B decide to close the channel cooperatively, they could do it on top of the untagged output of tx Y, without using NOINPUT. There won?t be any fungibility loss. Other people will only see the uncooperative closing of the main channel, and couldn?t even tell the number of parties in the main channel. Unfortunately, the unusual long lock time of Y might still tell something.
+>> 
+>> If anything goes wrong, A or B could publish X before the lock time of Y, and settle it through the usual eltoo style. Since this is an uncooperative closing anyway, the extra fungibility loss due to tagging is next to nothing. However, it may suggest that the main channel was a multi-party one.
+>> 
+>> For C, the last update tx of the main channel and the settlement tx Y are the only things he needs to get the money back. C has to sign tx X, but he shouldn?t get the complete tx X. Otherwise, C might have an incentive to publish X in order to get the money back earlier, at the cost of fungibility loss of the branch channel.
+>> 
+>> To minimise the fungibility loss, we?d better make it a social norm: if you sign your tx with NOINPUT, always try to make all outputs tagged to be NOINPUT-spendable. (NOTE: you can still spend tagged outputs with normal signatures, so this won?t permanently taint your coins as NOINPUT-spendable) It makes sense because the use of NOINPUT signature strongly suggests that you don?t know the txid of the parent tx, so you may most likely want your outputs to be NOINPUT-spendable as well. I thought of making this a policy or consensus rule, but may be it?s just overkill.
+>> 
+>> 
+>> 
+>>> On 9 Feb 2019, at 3:01 AM, Jonas Nick <jonasdnick at gmail.com> wrote:
+>>> 
+>>> Output tagging may result in reduced fungibility in multiparty eltoo channels.
+>>> If one party is unresponsive, the remaining participants want to remove
+>>> the party from the channel without downtime. This is possible by creating
+>>> settlement transactions which pay off the unresponsive party and fund a new
+>>> channel with the remaining participants.
+>>> 
+>>> When the party becomes unresponsive, the channel is closed by broadcasting the
+>>> update transaction as usual. As soon as that happens the remaining
+>>> participants can start to update their new channel. Their update signatures
+>>> must use SIGHASH_NOINPUT. This is because in eltoo the settlement txid is not
+>>> final (because update tx is not confirmed and may have to rebind to another
+>>> output). Therefore, the funding output of the new channel must be NOINPUT
+>>> tagged. Assuming the remaining parties later settle cooperatively, this loss
+>>> of fungibility would not have happened without output tagging.
+>>> 
+>>> funding output          update output                                    settlement outputs              update output
+>>> [ A & B & C ] -> ... -> [ (A & B & C & state CLTV) | (As & Bs & Cs) ] -> [ NOINPUT tagged: (A' & B'), -> ...
+>>>                                                                          C' ]
+>>> If the expectation is that the unresponsive party returns, fungibility is
+>>> not reduced due to output tagging because the above scheme can be used
+>>> off-chain until the original channel can be continued.
+>>> 
+>>> Side note: I was not able to come up with an similar, eltoo-like protocol that works
+>>> if you can't predict in advance who will become absent.
+>>> 
+>>> On 12/13/18 12:32 PM, Johnson Lau via bitcoin-dev wrote:
+>>>> NOINPUT is very powerful, but the tradeoff is the risks of signature replay. While the key holders are expected not to reuse key pair, little could be done to stop payers to reuse an address. Unfortunately, key-pair reuse has been a social and technical norm since the creation of Bitcoin (the first tx made in block 170 reused the previous public key). I don?t see any hope to change this norm any time soon, if possible at all.
+>>>> 
+>>>> As the people who are designing the layer-1 protocol, we could always blame the payer and/or payee for their stupidity, just like those people laughed at victims of Ethereum dumb contracts (DAO, Parity multisig, etc). The existing bitcoin script language is so restrictive. It disallows many useful smart contracts, but at the same time prevented many dumb contracts. After all, ?smart? and ?dumb? are non-technical judgement. The DAO contract has always been faithfully executed. It?s dumb only for those invested in the project. For me, it was just a comedy show.
+>>>> 
+>>>> So NOINPUT brings us more smart contract capacity, and at the same time we are one step closer to dumb contracts. The target is to find a design that exactly enables the smart contracts we want, while minimising the risks of misuse.
+>>>> 
+>>>> The risk I am trying to mitigate is a payer mistakenly pay to a previous address with the exactly same amount, and the previous UTXO has been spent using NOINPUT. Accidental double payment is not uncommon. Even if the payee was honest and willing to refund, the money might have been spent with a replayed NOINPUT signature. Once people lost a significant amount of money this way, payers (mostly exchanges) may refuse to send money to anything other than P2PKH, native-P2WPKH and native-P2WSH (as the only 3 types without possibility of NOINPUT)
+>>>> 
+>>>> The proposed solution is that an output must be ?tagged? for it to be spendable with NOINPUT, and the ?tag? must be made explicitly by the payer. There are 2 possible ways to do the tagging:
+>>>> 
+>>>> 1. A certain bit in the tx version must be set
+>>>> 2. A certain bit in the scriptPubKey must be set
+>>>> 
+>>>> I will analyse the pros and cons later.
+>>>> 
+>>>> Using eltoo as example. The setup utxo is a simple 2-of-2 multisig, and should not be tagged. This makes it indistinguishable from normal 1-of-1 utxo. The trigger tx, which spends the setup utxo, should be tagged, so the update txs could spend the trigger utxo with NOINPUT. Similarly, all update txs should be tagged, so they could be spent by other update txs and settlement tx with NOINPUT. As the final destination, there is no need to tag in the settlement tx.
+>>>> 
+>>>> In payer?s perspective, tagging means ?I believe this address is for one-time-use only? Since we can?t control how other people manage their addresses, we should never do tagging when paying to other people.
+>>>> 
+>>>> I mentioned 2 ways of tagging, and they have pros and cons. First of all, tagging in either way should not complicate the eltoo protocol in anyway, nor bring extra block space overhead.
+>>>> 
+>>>> A clear advantage of tagging with scriptPubKey is we could tag on a per-output basis. However, scriptPubKey tagging is only possible with native-segwit, not P2SH. That means we have to disallow NOINPUT in P2SH-segwit (Otherwise, *all* P2SH addresses would become ?risky? for payers) This should be ok for eltoo, since it has no reason to use P2SH-segwit in intermediate txs, which is more expensive.
+>>>> 
+>>>> Another problem with scriptPubKey tagging is all the existing bech32 implementations will not understand the special tag, and will pay to a tagged address as usual. An upgrade would be needed for them to refuse sending to tagged addresses by default.
+>>>> 
+>>>> On the other hand, tagging with tx version will also protect P2SH-segwit, and all existing wallets are protected by default. However, it is somewhat a layer violation and you could only tag all or none output in the same tx. Also, as Bitcoin Core has just removed the tx version from the UTXO database, adding it back could be a little bit annoying, but doable.
+>>>> 
+>>>> There is an extension to the version tagging, which could make NOINPUT even safer. In addition to tagging requirement, NOINPUT will also sign the version of the previous tx. If the wallet always uses a randomised tx version, it makes accidental replay very unlikely. However, that will burn a few more bits in the tx version field.
+>>>> 
+>>>> While this seems fully compatible with eltoo, is there any other proposals require NOINPUT, and is adversely affected by either way of tagging?
+>>>> _______________________________________________
+>>>> bitcoin-dev mailing list
+>>>> bitcoin-dev at lists.linuxfoundation.org
+>>>> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>>>> 
+>> 
+>> 
+
+
