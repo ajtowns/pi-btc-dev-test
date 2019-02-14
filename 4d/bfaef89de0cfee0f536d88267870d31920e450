@@ -1,0 +1,122 @@
+From: hampus.sjoberg@gmail.com (=?UTF-8?Q?Hampus_Sj=C3=B6berg?=)
+Date: Thu, 14 Feb 2019 23:32:17 +0100
+Subject: [bitcoin-dev] Implementing Confidential Transactions in
+	extension blocks
+In-Reply-To: <U-ugv1xWdp4czsN38WhD6KQUPcYa4VLxNzUusM3YLRu4825eigldn3xTOw6IyoqpyFbymdKxWUGOQdlknr3L7rBOtssEKeYMkW4RKj5Rc1o=@protonmail.com>
+References: <DB6PR10MB183228F27750132F9A6A3542A6690@DB6PR10MB1832.EURPRD10.PROD.OUTLOOK.COM>
+	<U-ugv1xWdp4czsN38WhD6KQUPcYa4VLxNzUusM3YLRu4825eigldn3xTOw6IyoqpyFbymdKxWUGOQdlknr3L7rBOtssEKeYMkW4RKj5Rc1o=@protonmail.com>
+Message-ID: <CAFMkqK9tt3P+svrPNU7vG5oc06jscOQSzomjELUscegNQhwP4g@mail.gmail.com>
+
+Hi ZmnSCPxj.
+
+> There is a position that fullnodes must be able to get a view of the UTXO
+set, and extension blocks (which are invisible to pre-extension-block
+fullnodes) means that fullnodes no longer have an accurate view of the UTXO
+set.
+> SegWit still provides pre-SegWit fullnodes with a view of the UTXO set,
+although pre-SegWit fullnodes could be convinced that a particular UTXO is
+anyone-can-spend even though they are no longer anyone-can-spend.
+> Under this point-of-view, then, extension block is "not" soft fork.
+
+There's a way to do CT without an extension block and while still
+maintaining a correct UTXO set for old nodes. Perhaps it is similar what
+you meant with this comment (I believe you don't need to do a hardfork
+though)
+
+>  Then it becomes impossible to move from confidential to public
+transactions with a value more than this counter, thus preventing inflation
+even if a future QC breach allows confidential transaction value
+commitments to be opened to any value.
+> (do note that a non-extension-block approach is a definite hardfork)
+
+Anyway, the method goes like this:
+
+Funds that go in to CT-mode are placed in a consensus/miner controlled
+reserve pool. To go out from CT back to normal, funds are then transferred
+back to the user from this pool.
+CT transactions seen from a non-upgraded node will be a transaction with 0
+sat outputs. The actual rangeproof commitment could be placed in the script
+output or perhaps somewhere else.
+
+To enter CT-mode, you'll need to make a commitment. The transaction
+contains two outputs, one to the reserve pool containing the funds that can
+only be reclaimed when you go back to normal and one CT-output that you can
+start doing CT transactions from.
+I believe this could be made seamlessly with just a new bech32 address
+specifically for CT. Sending to a CT address could be done as easily as
+sending to a P2SH. In other words, it doesn't have to be two steps to send
+to someone over at CT space.
+
+> It is "evil" soft fork since older nodes are forced to upgrade as their
+intended functionality becomes impossible.
+> In this point-of-view, it is no better than a hard fork, which at least
+is very noisy about how older fullnode versions will simply stop working.
+
+Regarding normal extension blocks, I think it is definitely better than a
+hardfork since there's no way to be derailed from the network, even though
+you do not understand the rules fully.
+
+Sidenote, I think Trey Del Bonis is right regarding the terminology here,
+evil softforks/soft hardforks usually mean that you abandon the old chain
+to force all nodes to upgrade (https://petertodd.org/2016/forced-soft-forks
+).
+
+Best
+Hampus
+
+
+Den tis 12 feb. 2019 kl 13:49 skrev ZmnSCPxj via bitcoin-dev <
+bitcoin-dev at lists.linuxfoundation.org>:
+
+> Good morning Kenshiro,
+>
+> > - Soft fork: old nodes see CT transactions as "sendtoany" transactions
+>
+> There is a position that fullnodes must be able to get a view of the UTXO
+> set, and extension blocks (which are invisible to pre-extension-block
+> fullnodes) means that fullnodes no longer have an accurate view of the UTXO
+> set.
+> SegWit still provides pre-SegWit fullnodes with a view of the UTXO set,
+> although pre-SegWit fullnodes could be convinced that a particular UTXO is
+> anyone-can-spend even though they are no longer anyone-can-spend.
+>
+> Under this point-of-view, then, extension block is "not" soft fork.
+> It is "evil" soft fork since older nodes are forced to upgrade as their
+> intended functionality becomes impossible.
+> In this point-of-view, it is no better than a hard fork, which at least is
+> very noisy about how older fullnode versions will simply stop working.
+>
+> > - Safe: if there is a software bug in CT it's impossible to create new
+> coins because the coins move from normal block to normal block as public
+> transactions
+>
+> I think more relevant here is the issue of a future quantum computing
+> breach of the algorithms used to implement confidentiality.
+>
+> I believe this is also achievable with a non-extension-block approach by
+> implementing a globally-verified publicly-visible counter of the total
+> amount in all confidential transaction outputs.
+> Then it becomes impossible to move from confidential to public
+> transactions with a value more than this counter, thus preventing inflation
+> even if a future QC breach allows confidential transaction value
+> commitments to be opened to any value.
+>
+> (do note that a non-extension-block approach is a definite hardfork)
+>
+> > - Capacity increase: the CT signature is stored in the extension block,
+> so CT transactions increase the maximum number of transactions per block
+>
+> This is not an unalloyed positive: block size increase, even via extension
+> block, translates to greater network capacity usage globally on all
+> fullnodes.
+>
+> Regards,
+> ZmnSCPxj
+> _______________________________________________
+> bitcoin-dev mailing list
+> bitcoin-dev at lists.linuxfoundation.org
+> https://lists.linuxfoundation.org/mailman/listinfo/bitcoin-dev
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <http://lists.linuxfoundation.org/pipermail/bitcoin-dev/attachments/20190214/a82b2025/attachment.html>
